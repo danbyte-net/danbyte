@@ -33,6 +33,7 @@ from customization.models import (
 from routing.models import RoutingKeychain
 from . import raised_floor_geometry as rfg
 from .rooms import reconcile_room
+from .dcim_choices import PLUGGABLE_INTERFACE_TYPES
 from .models import (
     Antenna, AntennaTemplate, Application,
     Aggregate, ASN, AuxPort, AuxPortTemplate,
@@ -4732,6 +4733,17 @@ class InterfaceSerializer(TableSerializerMixin, StatusSerializerMixin, CustomFie
                     {"device_id": "An interface can only move between members of "
                                   "the same virtual chassis."}
                 )
+
+        # A seated transceiver needs a pluggable port on its own device.
+        seated = self.instance is not None and InventoryItem.objects.filter(
+            interface_id=self.instance.pk).exists()
+        if seated and attrs.get("type", self.instance.type) not in PLUGGABLE_INTERFACE_TYPES:
+            raise serializers.ValidationError(
+                {"type": "This port holds a transceiver: remove it first, or keep a "
+                         "pluggable type."})
+        if seated and "device" in attrs and attrs["device"].id != self.instance.device_id:
+            raise serializers.ValidationError(
+                {"device_id": "This port holds a transceiver: remove it first."})
 
         # All three self-relations must point at an interface on the same device
         # - or on another member of the same virtual chassis, where the

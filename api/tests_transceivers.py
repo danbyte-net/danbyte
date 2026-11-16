@@ -85,6 +85,18 @@ class RecordTests(_Base):
         iface = self.client.get(f"/api/interfaces/{self.te1.id}/").json()
         self.assertEqual(iface["transceiver"]["part_id"], "SFP-10G-SR")
 
+    def test_seated_port_keeps_a_pluggable_type(self):
+        _item(self.dev, "SFP 0", interface=self.te1)
+        url = f"/api/interfaces/{self.te1.id}/"
+        res = self.client.patch(url, {"type": "1000base-t"}, format="json")
+        self.assertEqual(res.status_code, 400, res.content)
+        self.assertIn("holds a transceiver", str(res.json()["type"]))
+        res = self.client.patch(url, {"type": "25gbase-x-sfp28"}, format="json")
+        self.assertEqual(res.status_code, 200, res.content)
+        res = self.client.patch(f"/api/interfaces/{self.te2.id}/", {"type": "1000base-t"},
+                                format="json")
+        self.assertEqual(res.status_code, 200, res.content)
+
     def test_rules(self):
         res = self._post(interface_id=str(self.te1.id), kind="disk")
         self.assertEqual(res.status_code, 400)

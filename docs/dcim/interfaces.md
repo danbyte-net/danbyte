@@ -181,7 +181,9 @@ sensors and channels can be pinned to the interface's Overview
 
 On a port of a pluggable type (SFP, SFP+, QSFP28…), the **Interface** card
 has a **Transceiver** row: the part ID, serial and standard of the optic in
-it, with **Set**, **Change** and **Remove**. See
+it, with **Set**, **Change** and **Remove**. While a transceiver sits in
+it, the port keeps a pluggable type and stays on its device: remove the
+transceiver before changing either. See
 [Transceivers](inventory.md#transceivers).
 
 On the Overview, the **Switching** card has an **Uplink** row: the
