@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Danbyte API
-  version: 0.20.0-dev4
+  version: 0.20.0
   description: 'REST API for Danbyte - IPAM / DCIM and network operations. Authenticate
     with a scoped **API token** (`Authorization: Token <key>`) or, from a browser
     session, the logged-in session cookie. Every request is scoped to your active
@@ -13855,6 +13855,8 @@ paths:
         name: id
         schema:
           type: string
+          format: uuid
+        description: A UUID string identifying this dashboard.
         required: true
       tags:
       - dashboards
@@ -13880,6 +13882,8 @@ paths:
         name: id
         schema:
           type: string
+          format: uuid
+        description: A UUID string identifying this dashboard.
         required: true
       tags:
       - dashboards
@@ -13917,6 +13921,8 @@ paths:
         name: id
         schema:
           type: string
+          format: uuid
+        description: A UUID string identifying this dashboard.
         required: true
       tags:
       - dashboards
@@ -13953,6 +13959,8 @@ paths:
         name: id
         schema:
           type: string
+          format: uuid
+        description: A UUID string identifying this dashboard.
         required: true
       tags:
       - dashboards
@@ -13971,6 +13979,8 @@ paths:
         name: id
         schema:
           type: string
+          format: uuid
+        description: A UUID string identifying this dashboard.
         required: true
       tags:
       - dashboards
@@ -72278,6 +72288,8 @@ paths:
         name: id
         schema:
           type: string
+          format: uuid
+        description: A UUID string identifying this saved filter.
         required: true
       tags:
       - saved-filters
@@ -72299,6 +72311,8 @@ paths:
         name: id
         schema:
           type: string
+          format: uuid
+        description: A UUID string identifying this saved filter.
         required: true
       tags:
       - saved-filters
@@ -72332,6 +72346,8 @@ paths:
         name: id
         schema:
           type: string
+          format: uuid
+        description: A UUID string identifying this saved filter.
         required: true
       tags:
       - saved-filters
@@ -72364,6 +72380,8 @@ paths:
         name: id
         schema:
           type: string
+          format: uuid
+        description: A UUID string identifying this saved filter.
         required: true
       tags:
       - saved-filters
