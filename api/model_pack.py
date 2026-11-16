@@ -754,7 +754,9 @@ def import_pack(tenant, files: PackFiles, *, dry_run: bool = True,
 
     from audit.context import cause
 
-    from .devicetype_import import import_devicetype_yaml, import_moduletype_yaml
+    from .devicetype_import import (
+        add_module_power_ports, import_devicetype_yaml, import_moduletype_yaml,
+    )
     from .models import DeviceType, ModuleType
 
     result = PackResult()
@@ -823,6 +825,10 @@ def import_pack(tenant, files: PackFiles, *, dry_run: bool = True,
                 else:
                     tr.action = "matched"
                     tr.name = obj.name
+                    # A PSU type imported before module types carried power
+                    # ports gains the inlets its YAML names.
+                    if kind == "module-type" and (n := add_module_power_ports(obj, data)):
+                        tr.notes.append(f"power-ports: added {n}.")
                 if not dry_run:
                     tr.id = str(obj.pk)
                 tr.notes += apply_model3d(obj, block, files, dry_run=dry_run) or [

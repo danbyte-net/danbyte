@@ -21,6 +21,10 @@ import. Matching, for one anchor over a set of names:
 ``interface_name`` turns an anchor into the interface a device really has:
 the matched template rendered with ``{module}`` → the bay's position, then
 ``{position}`` → the device's stack member, as the interfaces were stamped.
+A ``port:`` anchor may also name another port-like template - a console
+port (``port:con 0``), a PSU's power inlet (``port:PSU{module}``), an aux
+port: ``chassis_port`` / ``module_port`` answer which kind the anchor is,
+with the name rendered the same way.
 """
 from __future__ import annotations
 
@@ -100,9 +104,11 @@ def prime(devices) -> None:
 
     Only a stack member needs them. Standalone, a template renders to its
     authored spelling, so the anchor (with any token of its own rendered) is
-    already the interface's name."""
+    already the interface's name. Every device gets its types' other
+    port-like template names (``_anchor_kinds``), in two more queries."""
     from .models import InterfaceTemplate, ModuleInterfaceTemplate
 
+    _prime_kinds(devices)
     wanted = []
     for d in devices:
         if hasattr(d, "_anchor_matchers"):
@@ -134,6 +140,115 @@ def prime(devices) -> None:
             if mt is not None:
                 d._anchor_matchers[("mt", mt.id)] = matchers.get(
                     ("mt", mt.id)) or NameMatcher(())
+
+
+#: The port-like template kinds besides interfaces a ``port:`` anchor may
+#: name, in the order they are tried, with each owner's relation: a device
+#: type's (``"dt"``) and a module type's (``"mt"``; it carries power ports
+#: only). The marker kinds api.face_ports resolves.
+OTHER_PORT_KINDS = (
+    ("power-port", "power_port_templates", "power_port_templates"),
+    ("console-port", "console_port_templates", None),
+    ("console-server-port", "console_server_port_templates", None),
+    ("aux-port", "aux_port_templates", None),
+    ("power-outlet", "power_outlet_templates", None),
+    ("front-port", "front_port_templates", None),
+    ("rear-port", "rear_port_templates", None),
+)
+
+
+def _relations(key: str) -> list[tuple[str, str]]:
+    return [(kind, dt if key == "dt" else mt) for kind, dt, mt in OTHER_PORT_KINDS
+            if (dt if key == "dt" else mt)]
+
+
+def other_port_names(type_obj, key: str) -> dict[str, list[str]]:
+    """``{kind: [template names]}`` of a device type's (``"dt"``) or module
+    type's (``"mt"``) port-like templates other than interfaces."""
+    return {kind: list(getattr(type_obj, rel).values_list("name", flat=True))
+            for kind, rel in _relations(key)}
+
+
+def _prime_kinds(devices) -> None:
+    """``_anchor_kinds`` on each device: ``{("dt" | "mt", type id): [(kind,
+    NameMatcher)]}`` over its type's and installed modules' port-like
+    templates other than interfaces, one query per owner kind for the lot."""
+    from django.db.models import CharField, Value
+
+    from .models import DeviceType, ModuleType
+
+    wanted = [d for d in devices if not hasattr(d, "_anchor_kinds")]
+    if not wanted:
+        return
+    ids = {
+        "dt": {d.device_type_id for d in wanted if d.device_type_id},
+        "mt": {r["type"].id for d in wanted for r in getattr(d, "_installed_parts", ())
+               if r.get("type") is not None},
+    }
+    owner_model = {"dt": DeviceType, "mt": ModuleType}
+    names: dict = {}
+    for key, type_ids in ids.items():
+        if not type_ids:
+            continue
+        # Every kind in one query (UNION ALL), as the interface names are.
+        parts = []
+        for kind, rel in _relations(key):
+            field = owner_model[key]._meta.get_field(rel)
+            fk = field.field.name + "_id"
+            parts.append(
+                field.related_model.objects.filter(**{f"{fk}__in": type_ids}).order_by()
+                .annotate(kind=Value(kind, output_field=CharField()))
+                .values_list(fk, "kind", "name"))
+        rows = parts[0].union(*parts[1:], all=True) if len(parts) > 1 else parts[0]
+        for type_id, kind, name in rows:
+            names.setdefault((key, type_id), {}).setdefault(kind, []).append(name)
+    for d in wanted:
+        own = {}
+        keys = [("dt", d.device_type_id)] if d.device_type_id else []
+        keys += [("mt", r["type"].id) for r in getattr(d, "_installed_parts", ())
+                 if r.get("type") is not None]
+        for k in keys:
+            by_kind = names.get(k, {})
+            own[k] = [(kind, NameMatcher(by_kind[kind]))
+                      for kind, _rel in _relations(k[0]) if by_kind.get(kind)]
+        d._anchor_kinds = own
+
+
+def _kinds(device, key: str, type_obj) -> list:
+    cache = device.__dict__.setdefault("_anchor_kinds", {})
+    k = (key, type_obj.id)
+    if k not in cache:
+        cache[k] = [(kind, NameMatcher(n))
+                    for kind, n in other_port_names(type_obj, key).items() if n]
+    return cache[k]
+
+
+def _kind_of(device, key: str, type_obj, anchor: str):
+    """``(kind, matcher)`` for ``anchor``: an interface when it matches an
+    interface template (or nothing at all), else the first other port-like
+    template kind it matches - a console port, a power inlet, …"""
+    iface = _matcher(device, key, type_obj)
+    if type_obj is None or (iface is not None and iface.resolve(anchor) is not None):
+        return "interface", iface
+    for kind, m in _kinds(device, key, type_obj):
+        if m.resolve(anchor) is not None:
+            return kind, m
+    return "interface", iface
+
+
+def chassis_port(device, anchor: str) -> tuple[str, str]:
+    """``(kind, name)`` of the device's component a chassis ``port:``
+    anchor stands for: an interface, or a console port, power inlet or
+    other port-like component its type has a template of."""
+    kind, m = _kind_of(device, "dt", device.device_type, anchor)
+    return kind, interface_name(anchor, m, device.vc_position)
+
+
+def module_port(device, module_type, anchor: str, bay_position: str) -> tuple[str, str]:
+    """``(kind, name)`` for an installed module's ``port:`` anchor - a
+    PSU's ``port:PSU{module}`` is its power port ``PSU1`` in bay "1"."""
+    kind, m = _kind_of(device, "mt", module_type, anchor)
+    return kind, interface_name(anchor, m, device.vc_position, bay_position)
 
 
 def _matcher(device, key: str, type_obj) -> NameMatcher | None:

@@ -18,7 +18,7 @@ nearly 1:1:
 
 Module-type files (``module-types/<Manufacturer>/*.yaml`` - line cards whose
 port names carry ``{module}``) are auto-detected (no ``u_height``/``slug``)
-and import as :class:`ModuleType` + interface templates. Rack-type files
+and import as :class:`ModuleType` + interface and power port templates. Rack-type files
 (``rack-types/<Manufacturer>/*.yaml``) carry ``form_factor``/``width``, which
 no device type has, and import as :class:`RackType`. Everything Danbyte
 doesn't model (device-bays, inventory-items) is *skipped and reported*, never
@@ -50,6 +50,7 @@ from .models import (
     Manufacturer,
     ModuleBayTemplate,
     ModuleInterfaceTemplate,
+    ModulePowerPortTemplate,
     ModuleType,
     PowerOutletTemplate,
     PowerPortTemplate,
@@ -547,11 +548,43 @@ def _model3d(obj, data: dict, files) -> list[str]:
     return apply_model3d(obj, data.get("model3d"), files)
 
 
+def _watts(value):
+    try:
+        n = int(value)
+    except (TypeError, ValueError):
+        return None
+    return n if 0 <= n <= 2_147_483_647 else None
+
+
+def add_module_power_ports(mt, data: dict) -> int:
+    """Power port templates from a module-types YAML's ``power-ports:`` (a
+    PSU's inlet; ``{module}`` kept) that ``mt`` lacks by name. Returns the
+    created count - a re-import adds what a type is missing, never edits."""
+    rows = data.get("power-ports")
+    rows = [r for r in rows if isinstance(r, dict)] if isinstance(rows, list) else []
+    have = set(mt.power_port_templates.values_list("name", flat=True))
+    made, seen = [], set()
+    for r in rows:
+        name = str(r.get("name") or "").strip()[:64]
+        if not name or name in have or name in seen:
+            continue
+        seen.add(name)
+        made.append(ModulePowerPortTemplate(
+            module_type=mt, name=name,
+            type=str(r.get("type") or "")[:32],
+            maximum_draw=_watts(r.get("maximum_draw")),
+            allocated_draw=_watts(r.get("allocated_draw")),
+            description=str(r.get("description") or "")[:255],
+        ))
+    ModulePowerPortTemplate.objects.bulk_create(made)
+    return len(made)
+
+
 def import_moduletype_yaml(tenant, text: str, *, owning_site=None, files=None) -> dict:
-    """Create a ModuleType (+ interface templates) from a module-types YAML
-    doc. Port names keep their ``{module}`` token - it resolves to the bay
-    position at install time. Same report shape as the device-type importer;
-    a ``model3d:`` block is handled as there."""
+    """Create a ModuleType (+ interface and power port templates) from a
+    module-types YAML doc. Port names keep their ``{module}`` token - it
+    resolves to the bay position at install time. Same report shape as the
+    device-type importer; a ``model3d:`` block is handled as there."""
     try:
         data = yaml.safe_load(text)
     except yaml.YAMLError as exc:
@@ -592,10 +625,12 @@ def import_moduletype_yaml(tenant, text: str, *, owning_site=None, files=None) -
     ]
     ModuleInterfaceTemplate.objects.bulk_create(made)
 
-    # M1: module types carry interfaces only - report the rest.
+    power = add_module_power_ports(mt, data)
+
+    # Module types carry interfaces and power ports - report the rest.
     skipped = [
-        f"{key}: not modelled on module types (M1) - skipped"
-        for key in ("console-ports", "console-server-ports", "power-ports",
+        f"{key}: not modelled on module types - skipped"
+        for key in ("console-ports", "console-server-ports",
                     "power-outlets", "front-ports", "rear-ports",
                     "module-bays")
         if data.get(key)
@@ -605,7 +640,7 @@ def import_moduletype_yaml(tenant, text: str, *, owning_site=None, files=None) -
         "ok": True,
         "name": mt.name,
         "id": str(mt.id),
-        "created": {"interfaces": len(made)},
+        "created": {"interfaces": len(made), "power_ports": power},
         "skipped": skipped,
         "error": None,
     }

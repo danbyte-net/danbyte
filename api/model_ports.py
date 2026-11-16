@@ -139,7 +139,7 @@ def anchored_model_ports(device) -> dict | None:
     named as the device's interfaces (api.anchor_names: the template an
     anchor matches, ``{module}`` → the bay's position, ``{position}`` → the
     stack member). None when none apply."""
-    from .anchor_names import chassis_interface, module_interface, prime
+    from .anchor_names import chassis_port, module_port, prime
     from .model_3d import effective_owner, has_bays, parts_of
     from .model_anchors import port_doc
 
@@ -156,14 +156,15 @@ def anchored_model_ports(device) -> dict | None:
                 continue
             parts.append((
                 row["name"],
-                lambda name, mt=mt, pos=row["position"]: module_interface(
+                lambda name, mt=mt, pos=row["position"]: module_port(
                     device, mt, name, pos),
                 mod,
             ))
     if not anchors.get("ports") and not parts:
         return None
     prime([device])
-    return port_doc(owner, parts, rename=lambda name: chassis_interface(device, name))
+    # A power inlet's anchor gives a power-port marker (spec 1.6).
+    return port_doc(owner, parts, rename=lambda name: chassis_port(device, name))
 
 
 def similar_bounds(a, b, tol: float = SIMILAR_TOL) -> bool:

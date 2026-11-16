@@ -312,6 +312,7 @@ from .viewsets import (
     ModuleBayTemplateViewSet,
     ModuleBayViewSet,
     ModuleInterfaceTemplateViewSet,
+    ModulePowerPortTemplateViewSet,
     ModuleTypeViewSet,
     ModuleViewSet,
     NATRuleViewSet,
@@ -559,6 +560,7 @@ router.register(
 )
 router.register(r"cable-routes", CableRouteViewSet, basename="cable-route")
 router.register(r"module-interface-templates", ModuleInterfaceTemplateViewSet, basename="module-interface-template")
+router.register(r"module-power-port-templates", ModulePowerPortTemplateViewSet, basename="module-power-port-template")
 router.register(r"modules", ModuleViewSet, basename="module")
 router.register(r"cables",        CableViewSet,       basename="cable")
 # Device dependencies and their media catalog (#450).

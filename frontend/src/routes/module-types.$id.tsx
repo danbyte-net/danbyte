@@ -6,7 +6,12 @@ import { Pencil, Plus, Trash2 } from "lucide-react"
 import { useCallback, useEffect, useState } from "react"
 import { toast } from "sonner"
 
-import { api, type ModuleInterfaceTemplate, type ModuleType } from "@/lib/api"
+import {
+  api,
+  type ModuleInterfaceTemplate,
+  type ModulePowerPortTemplate,
+  type ModuleType,
+} from "@/lib/api"
 import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
 import { IconTip } from "@/components/icon-tip"
@@ -168,6 +173,9 @@ function Body({ moduleType: m }: { moduleType: ModuleType }) {
         <div className="mt-6">
           <InterfaceTemplatesPane moduleTypeId={m.id} />
         </div>
+        <div className="mt-6">
+          <PowerPortTemplatesPane moduleTypeId={m.id} />
+        </div>
       </DetailTab>
       <DetailTab value="faceplate">
         {/* Modules are 1U full-width blades to the builder; the layout is
@@ -325,6 +333,271 @@ function InterfaceTemplatesPane({ moduleTypeId }: { moduleTypeId: string }) {
   )
 }
 
+/** The power inlets this module contributes when installed - a PSU's, so
+ * the host device's power can be cabled through it. */
+function PowerPortTemplatesPane({ moduleTypeId }: { moduleTypeId: string }) {
+  const { canDo } = useMe()
+  const canWrite = canDo("moduletype", "change")
+  const qc = useQueryClient()
+  const [editing, setEditing] = useState<ModulePowerPortTemplate | null>(null)
+  const [adding, setAdding] = useState(false)
+
+  const q = useQuery({
+    queryKey: ["mt-power-port-templates", moduleTypeId],
+    queryFn: () =>
+      apiAll<ModulePowerPortTemplate>(
+        `/api/module-power-port-templates/?module_type=${moduleTypeId}`
+      ),
+  })
+  const del = useMutation({
+    mutationFn: (id: string) =>
+      api<void>(`/api/module-power-port-templates/${id}/`, {
+        method: "DELETE",
+      }),
+    onSuccess: () =>
+      qc.invalidateQueries({
+        queryKey: ["mt-power-port-templates", moduleTypeId],
+      }),
+    onError: (err) => apiErrorToast(err),
+  })
+  const rows = q.data?.results ?? []
+
+  return (
+    <section className="space-y-3">
+      <div className="flex items-center justify-between">
+        <h3 className="text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
+          Power port templates
+        </h3>
+        {canWrite && (
+          <Button size="sm" onClick={() => setAdding(true)}>
+            <Plus className="h-3.5 w-3.5" /> Add
+          </Button>
+        )}
+      </div>
+      {q.isError ? (
+        <QueryError error={q.error} />
+      ) : rows.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          No power port templates.
+        </p>
+      ) : (
+        <ScrollFrame className="rounded-lg border border-border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Name</TableHead>
+                <TableHead>Type</TableHead>
+                <TableHead>Maximum draw</TableHead>
+                <TableHead>Allocated draw</TableHead>
+                <TableHead />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map((t) => (
+                <TableRow key={t.id}>
+                  <TableCell className="font-mono font-medium">
+                    {t.name}
+                  </TableCell>
+                  <TableCell className="font-mono text-xs">
+                    {t.type || "-"}
+                  </TableCell>
+                  <TableCell className="num text-xs">
+                    {t.maximum_draw != null ? `${t.maximum_draw} W` : "-"}
+                  </TableCell>
+                  <TableCell className="num text-xs">
+                    {t.allocated_draw != null ? `${t.allocated_draw} W` : "-"}
+                  </TableCell>
+                  <TableCell>
+                    {canWrite && (
+                      <div className="flex justify-end gap-1">
+                        <IconTip label="Edit">
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-7 w-7"
+                            onClick={() => setEditing(t)}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                        </IconTip>
+                        <IconTip label="Delete">
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-7 w-7 text-destructive hover:text-destructive"
+                            onClick={() => del.mutate(t.id)}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </IconTip>
+                      </div>
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </ScrollFrame>
+      )}
+
+      <ModulePowerPortTemplateDialog
+        moduleTypeId={moduleTypeId}
+        template={editing}
+        open={adding || !!editing}
+        onOpenChange={(o) => {
+          if (!o) {
+            setAdding(false)
+            setEditing(null)
+          }
+        }}
+      />
+    </section>
+  )
+}
+
+function ModulePowerPortTemplateDialog({
+  moduleTypeId,
+  template,
+  open,
+  onOpenChange,
+}: {
+  moduleTypeId: string
+  template: ModulePowerPortTemplate | null
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
+  const qc = useQueryClient()
+  const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const saveObject = useSaveObject()
+  const choices = useDcimChoices()
+  const [name, setName] = useState("")
+  const [type, setType] = useState("")
+  const [maximumDraw, setMaximumDraw] = useState("")
+  const [allocatedDraw, setAllocatedDraw] = useState("")
+
+  useEffect(() => {
+    if (!open) return
+    setName(template?.name ?? "")
+    setType(template?.type ?? "")
+    setMaximumDraw(
+      template?.maximum_draw != null ? String(template.maximum_draw) : ""
+    )
+    setAllocatedDraw(
+      template?.allocated_draw != null ? String(template.allocated_draw) : ""
+    )
+    reset()
+  }, [open, template, reset])
+
+  const editing = !!template
+  const watts = (v: string) => (v.trim() === "" ? null : Number(v))
+  const mutation = useMutation({
+    mutationFn: async () => {
+      const payload = {
+        module_type_id: moduleTypeId,
+        name: name.trim(),
+        type,
+        maximum_draw: watts(maximumDraw),
+        allocated_draw: watts(allocatedDraw),
+      }
+      const post = (n: string) =>
+        saveObject<ModulePowerPortTemplate>({
+          objectType: "api.modulepowerporttemplate",
+          endpoint: "/api/module-power-port-templates/",
+          id: template?.id,
+          payload: { ...payload, name: n },
+        })
+      if (editing) {
+        await post(payload.name)
+        return { count: 1 }
+      }
+      return createEach(expandNameRange(payload.name), post)
+    },
+    onSuccess: ({ count }) => {
+      qc.invalidateQueries({
+        queryKey: ["mt-power-port-templates", moduleTypeId],
+      })
+      toast.success(
+        editing
+          ? "Template updated"
+          : count > 1
+            ? `Created ${count} templates`
+            : "Template created"
+      )
+      onOpenChange(false)
+    },
+    onError: (err) => {
+      const msg = handleApiError(err)
+      if (msg) toast.error(msg)
+    },
+  })
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent size="lg">
+        <DialogHeader>
+          <DialogTitle>
+            {editing ? "Edit power port template" : "Add power port template"}
+          </DialogTitle>
+        </DialogHeader>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault()
+            mutation.mutate()
+          }}
+          className="grid gap-4"
+        >
+          <FormText
+            label="Name"
+            required
+            autoFocus
+            value={name}
+            onChange={setName}
+            mono
+            placeholder="PSU{module}"
+            hint="{module} → bay position at install · {position} → stack member"
+            error={fieldErrors.name}
+          />
+          <ModuleNamePreview name={name} editing={editing} />
+          <FormCombobox
+            label="Type"
+            value={type || null}
+            onChange={(v) => setType(v ?? "")}
+            noneLabel="No type"
+            placeholder="Pick a type"
+            searchPlaceholder="Search types…"
+            emptyText="No types."
+            options={choices.power_port_types}
+            error={fieldErrors.type}
+          />
+          <div className="grid grid-cols-2 gap-3">
+            <FormText
+              label="Maximum draw (W)"
+              type="number"
+              value={maximumDraw}
+              onChange={setMaximumDraw}
+              placeholder="Optional"
+              error={fieldErrors.maximum_draw}
+            />
+            <FormText
+              label="Allocated draw (W)"
+              type="number"
+              value={allocatedDraw}
+              onChange={setAllocatedDraw}
+              placeholder="Optional"
+              error={fieldErrors.allocated_draw}
+            />
+          </div>
+          <FormFooter
+            onCancel={() => onOpenChange(false)}
+            submitting={mutation.isPending}
+            submitLabel={editing ? "Save changes" : "Create template"}
+          />
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 function ModuleInterfaceTemplateDialog({
   moduleTypeId,
   template,
@@ -371,7 +644,10 @@ function ModuleInterfaceTemplateDialog({
           id: editing ? template!.id : undefined,
           payload: { ...payload, name: n },
         })
-      if (editing) return { count: 1 }
+      if (editing) {
+        await post(payload.name)
+        return { count: 1 }
+      }
       // A [a-b] range fans out into one create per port, like the device-type
       // template dialog (the server expands too; this keeps the toast honest).
       return createEach(expandNameRange(payload.name), post)

@@ -329,6 +329,8 @@ def port_index(dt, rows: list[dict]) -> dict:
             pos = r["position"]
             owners.append(("interface", mt.interface_templates.all(),
                            lambda n, pos=pos: render_module_name(n, pos)))
+            owners.append(("power-port", mt.power_port_templates.all(),
+                           lambda n, pos=pos: render_module_name(n, pos)))
     return _port_index_of(owners)
 
 
@@ -359,6 +361,8 @@ def type_payload(dt, user=None, tenant=None) -> dict:
             part = {"url": type_url(mt), "far_url": far_type_url(mt)}
             pos = r["position"]
             owners.append(("interface", mt.interface_templates.all(),
+                           lambda n, pos=pos: render_module_name(n, pos)))
+            owners.append(("power-port", mt.power_port_templates.all(),
                            lambda n, pos=pos: render_module_name(n, pos)))
         bays.append({
             "name": r["name"], "position": r["position"], "installed": part is not None,

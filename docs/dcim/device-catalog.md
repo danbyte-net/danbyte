@@ -1004,6 +1004,17 @@ add, from the dialog or the API. A range written with curly braces
 own **cooling** method (`cooling_method`) too; it is a fact about the module
 and does not change its host device's.
 
+A module type can also carry **power port templates** - a PSU's inlet - in
+the **Power port templates** table under its interface templates (API
+`/api/module-power-port-templates/?module_type=<id>`: `name`, `type`,
+`maximum_draw`, `allocated_draw`, `description`). Names take `{module}`,
+`{position}` and `[1-2]` ranges as interface templates do, so a PSU type
+with `PSU{module}` gives the device `PSU0` in bay position 0 and `PSU1` in
+position 1. The resulting power port is a normal device power port: cable it
+to a PDU's power outlet like any other, and it counts towards the rack's
+power. RBAC object type: **Module power port templates**
+(`modulepowerporttemplate`).
+
 The workflow:
 
 1. Give a device type **module bay** templates (Components → Module bays) -
@@ -1014,19 +1025,21 @@ The workflow:
 2. Devices of the type get concrete bays stamped at creation, with any default
    modules already seated.
 3. On the device page's **Hardware** tab, **Install…** a module type into an
-   empty bay - its interfaces appear on the device (and its faceplate)
-   instantly. **Remove** takes exactly those interfaces away again.
+   empty bay - its interfaces and power ports appear on the device (and its
+   faceplate) instantly. **Remove** takes exactly those away again.
 
-A module **owns** the interfaces it creates (`module_id` on each interface in
-the API; null for the device's own ports). Ownership survives renaming the
-interface, and decides what goes when the module does:
+A module **owns** the interfaces and power ports it creates (`module_id` on
+each interface and power port in the API; null for the device's own ports).
+Ownership survives renaming the component, and decides what goes when the
+module does. Power ports follow every rule below exactly as interfaces do:
 
-- **Install** refuses a module whose interface names the device already uses -
-  its own ports or another module's. Rename or remove the clashing interface
-  first; nothing is adopted.
-- **Remove** deletes the module's own interfaces and nothing else, with the
-  usual interface delete rules: a cable left with no port on that end is
-  removed (see [Cabling](cabling.md)) and IP addresses stay, unassigned.
+- **Install** refuses a module whose component names the device already
+  uses - its own ports or another module's - unless you
+  [adopt them](#adopting-existing-components). The refusal names them and
+  says which can be adopted.
+- **Remove** deletes the module's own interfaces and power ports and nothing
+  else, with the usual delete rules: a cable left with no port on that end
+  is removed (see [Cabling](cabling.md)) and IP addresses stay, unassigned.
 - **Deleting a module bay** removes its module the same way, as does deleting
   the device.
 - **Moving a module to another bay, or changing its type**, keeps the
@@ -1042,6 +1055,31 @@ interface, and decides what goes when the module does:
   Imports cannot set or clear an interface's module either.
 - A **default module** whose interface names clash with the device's is not
   seated.
+
+### Adopting existing components
+
+A device type sometimes models a module's ports as fixed ones - a C9300
+type with the `TenGigabitEthernet1/1/1-8` uplinks a C9300-NM-8X brings, or
+PSU inlets a PSU module also carries. Installing the module then clashes.
+When the install or replace dialog reports the clash, it offers **Adopt
+existing components**: tick it and save again, and each clashing interface
+or power port is handed to the module instead of a new one being created.
+It is the same row, so its cables, IP addresses, MACs, VLANs, tags, custom
+fields, description and journal stay; one with no media type takes the
+template's.
+
+Only a component without a module and of the template's media type (or
+with no type on either side) is adoptable. If any clashing component is
+another module's or of another type, nothing is adopted and the install is
+refused. In the API, send `"adopt_components": true` with
+`POST /api/modules/` or the `PATCH` that replaces the type; a refused
+install's error carries `adoptable` with the names an adopting install
+would take over. The response lists what was taken over in `adopted` (on a
+replace, `interfaces.adopted`). Each adoption is a change-log update on the
+component.
+
+An adopted component belongs to the module from then on: removing the
+module removes it, and sync-from-type creates the device type's port again.
 
 Modules installed before 0.17.2 had no recorded owner. The upgrade marks an
 existing interface as the module's only when that is unambiguous: its name is
@@ -1064,9 +1102,11 @@ the module type, changing it **change**.
 
 ### Re-stamping a module
 
-Each module interface remembers the template it was stamped from. On a bay
-move or type change (`PATCH /api/modules/<id>/` with `module_bay_id` or
-`module_type_id`), every interface is matched to its successor:
+Each module interface and power port remembers the template it was stamped
+from. On a bay move or type change (`PATCH /api/modules/<id>/` with
+`module_bay_id` or `module_type_id`), every one is matched to its successor
+(interfaces against interface templates, power ports against power port
+templates):
 
 - **Same type, new bay**: each template continues as itself. The interface
   is renamed to the template's new rendering (`Te1/1/1` → `Te1/2/1`).
@@ -1078,15 +1118,18 @@ move or type change (`PATCH /api/modules/<id>/` with `module_bay_id` or
   longer be traced (renamed before 0.18, or its template deleted) is left
   as it is.
 
-Removing an interface that carries a **cable or an IP address** needs
-`"confirm_remove": true` in the request. Without it the change is refused
+Removing an interface that carries a **cable or an IP address**, or a power
+port that carries a cable, needs `"confirm_remove": true` in the request. Without it the change is refused
 with a `confirm_remove` error naming those interfaces, and nothing changes.
-With it, the usual interface delete rules apply. A name clash with an
-interface the module does not own refuses the change. Either way the
-module stays as it was.
+With it, the usual interface delete rules apply. A name clash with a
+component the module does not own refuses the change unless
+`adopt_components` takes it over (see [Adopting existing
+components](#adopting-existing-components)). Either way the module stays
+as it was.
 
-The response carries what happened under `interfaces`:
-`kept`, `renamed` (`{"from", "to"}`), `created` and `removed`.
+The response carries what happened under `interfaces`: `kept`, `renamed`
+(`{"from", "to"}`), `created` and `removed` for the interfaces, the same
+four under `interfaces.power_ports`, and `interfaces.adopted`.
 
 A **default module** only decides what's *pre-seated* - it never locks a bay.
 Sync-from-type fills empty matching bays with the default but **never

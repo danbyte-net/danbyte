@@ -295,6 +295,7 @@ _ENTRIES: list[tuple[str, str, str]] = [
     ("api.ModuleBay", "Module bays", "DCIM"),
     ("api.ModuleBayTemplate", "Module bay templates", "DCIM"),
     ("api.ModuleInterfaceTemplate", "Module interface templates", "DCIM"),
+    ("api.ModulePowerPortTemplate", "Module power port templates", "DCIM"),
     ("api.InventoryItem", "Inventory items", "DCIM"),
     ("api.InventoryItemTemplate", "Inventory item templates", "DCIM"),
     # ─── Virtualization ─────────────────────────────────────────────

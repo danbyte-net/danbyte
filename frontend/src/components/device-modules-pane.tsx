@@ -42,6 +42,7 @@ import {
 import { ScrollFrame } from "@/components/table-scroll"
 import { Section } from "@/components/ui/section"
 import {
+  FormCheckbox,
   FormCombobox,
   FormStatusSelect,
   FormText,
@@ -266,6 +267,7 @@ export function invalidateModuleCaches(qc: QueryClient, deviceId: string) {
     predicate: (x) =>
       typeof x.queryKey[0] === "string" && x.queryKey[0].includes("interface"),
   })
+  qc.invalidateQueries({ queryKey: ["device-power-ports", deviceId] })
   qc.invalidateQueries({ queryKey: ["device-face-ports", deviceId] })
   qc.invalidateQueries({ queryKey: ["device", deviceId] })
   invalidatePortCounts(qc)
@@ -328,6 +330,14 @@ export function RemoveModuleDialog({
   )
 }
 
+/** What a module save answers: an install's created counts, a replace's
+ * re-stamp report, and the components taken over either way. */
+interface InstallResult {
+  created_interfaces?: number
+  adopted?: string[]
+  interfaces?: { adopted?: string[] }
+}
+
 /** The module in a bay, for the dialog's replace and edit modes. */
 export interface SeatedModule {
   id: string
@@ -373,6 +383,10 @@ export function InstallModuleDialog({
   // The server named interfaces a type swap would drop: saving again
   // confirms their removal.
   const [confirmRemove, setConfirmRemove] = useState(false)
+  // The server named same-named components the device already has that the
+  // module may take over: the option to adopt them, off until ticked.
+  const [adoptable, setAdoptable] = useState<string[]>([])
+  const [adopt, setAdopt] = useState(false)
   const existing = mode === "install" ? null : seated
 
   useEffect(() => {
@@ -381,6 +395,8 @@ export function InstallModuleDialog({
     setStatusId(existing?.status?.id ?? null)
     setSerial(existing?.serial_number ?? "")
     setConfirmRemove(false)
+    setAdoptable([])
+    setAdopt(false)
     reset()
     // Keyed on the module's id: a host building `seated` inline must not
     // wipe what is being typed on every render.
@@ -420,7 +436,8 @@ export function InstallModuleDialog({
         }
         if (mode === "replace") body.module_type_id = moduleTypeId
         if (confirmRemove) body.confirm_remove = true
-        return saveObject<{ created_interfaces?: number }>({
+        if (adopt) body.adopt_components = true
+        return saveObject<InstallResult>({
           objectType: "api.module",
           endpoint: "/api/modules/",
           id: existing.id,
@@ -434,7 +451,8 @@ export function InstallModuleDialog({
         status_id: pickedStatus,
         serial_number: serial.trim(),
       }
-      return saveObject<{ created_interfaces?: number }>({
+      if (adopt) payload.adopt_components = true
+      return saveObject<InstallResult>({
         objectType: "api.module",
         endpoint: "/api/modules/",
         payload,
@@ -445,13 +463,17 @@ export function InstallModuleDialog({
       // the Modules pane, the 2D faceplate, the 3D room and viewer -
       // refreshes the same way.
       invalidateModuleCaches(qc, deviceId)
+      const adopted = r.adopted?.length ?? r.interfaces?.adopted?.length ?? 0
+      const took = adopted ? ` - ${adopted} adopted` : ""
       if (mode === "install") {
         const n = r.created_interfaces ?? 0
         toast.success(
-          `Module installed${n ? ` - ${n} interface${n === 1 ? "" : "s"} added` : ""}`
+          `Module installed${n ? ` - ${n} interface${n === 1 ? "" : "s"} added` : ""}${took}`
         )
       } else
-        toast.success(mode === "replace" ? "Module replaced" : "Module saved")
+        toast.success(
+          (mode === "replace" ? "Module replaced" : "Module saved") + took
+        )
       onInstalled?.()
       onOpenChange(false)
     },
@@ -466,6 +488,16 @@ export function InstallModuleDialog({
         "confirm_remove" in err.body
       )
         setConfirmRemove(true)
+      if (
+        err instanceof ApiError &&
+        err.status === 400 &&
+        err.body &&
+        typeof err.body === "object" &&
+        "adoptable" in err.body
+      ) {
+        const names = (err.body as { adoptable?: unknown }).adoptable
+        setAdoptable(Array.isArray(names) ? names.map(String) : [])
+      }
     },
   })
   const title =
@@ -504,6 +536,8 @@ export function InstallModuleDialog({
               onChange={(v) => {
                 setModuleTypeId(v)
                 setConfirmRemove(false)
+                setAdoptable([])
+                setAdopt(false)
               }}
               placeholder="Pick a module type"
               searchPlaceholder="Search module types…"
@@ -529,6 +563,14 @@ export function InstallModuleDialog({
             hint="optional"
             error={fieldErrors.serial_number}
           />
+          {adoptable.length > 0 && (
+            <FormCheckbox
+              label="Adopt existing components"
+              checked={adopt}
+              onChange={setAdopt}
+              info={`The module takes over ${adoptable.join(", ")} - same ports, so their cables, IP addresses and settings stay.`}
+            />
+          )}
           {confirmRemove && fieldErrors.confirm_remove && (
             <p className="text-sm text-destructive">
               {fieldErrors.confirm_remove}

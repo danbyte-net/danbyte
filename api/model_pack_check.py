@@ -166,6 +166,11 @@ def _frame_mm(data: dict) -> tuple[float, float | None]:
     return round(w, 2), (round(h, 2) if h is not None else None)
 
 
+#: The YAML lists besides ``interfaces`` whose names a ``port:`` may use.
+PORT_KEYS = ("power-ports", "console-ports", "console-server-ports", "aux-ports",
+             "power-outlets", "front-ports", "rear-ports")
+
+
 def _names(data: dict, key: str) -> list[str]:
     rows = data.get(key)
     if not isinstance(rows, list):
@@ -322,7 +327,11 @@ class _Checker:
         row.bays, row.ports, row.leds = len(bays), len(ports), len(leds)
         bay_names = set(_names(data, "module-bays"))
         ifaces = _names(data, "interfaces")
+        # A port: anchor names an interface or another port-like component:
+        # a console port, a power inlet (spec 1.6), an aux port, …
         iface_set = set(ifaces)
+        for key in PORT_KEYS:
+            iface_set.update(_names(data, key))
         if kind == "module-type":
             for b in bays:
                 self.add("error", rel, f"bay:{b} - a module's model holds no bays.", row)
@@ -337,7 +346,8 @@ class _Checker:
                 self.add("error", rel, f"empty:{e} has no bay:{e} beside it.", row)
         for p in ports:
             if p not in iface_set:
-                self.add("error", rel, f"port:{p} matches no interface in the YAML.", row)
+                self.add("error", rel,
+                         f"port:{p} matches no interface or other port in the YAML.", row)
         missing = [i for i in ifaces if i not in ports]
         if missing and (ports or kind == "device-type"):
             self.add("warning", rel, f"{len(missing)} interface{'s' if len(missing) != 1 else ''}"

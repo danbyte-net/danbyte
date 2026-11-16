@@ -115,9 +115,10 @@ from .models import (
     DeviceBay, DeviceBayTemplate, InventoryItem, InventoryItemTemplate,
     TopologyView,
     Module,
-    ModuleBay, ModuleBayTemplate, ModuleInterfaceTemplate, ModuleType,
+    ModuleBay, ModuleBayTemplate, ModuleInterfaceTemplate, ModulePowerPortTemplate,
+    ModuleType,
     NATRule,
-    ModuleInstallConflict, ModuleRemovalUnconfirmed, install_module,
+    ModuleInstallConflict, ModuleRemovalUnconfirmed, install_module_report,
     reinstall_module, uninstall_module,
     CableTermination, PortReservation,
     CoolingFeed, CoolingIntake, CoolingIntakeTemplate, CoolingOutflow,
@@ -178,6 +179,7 @@ from .serializers import (
     ModuleBaySerializer,
     ModuleBayTemplateSerializer,
     ModuleInterfaceTemplateSerializer,
+    ModulePowerPortTemplateSerializer,
     ModuleSerializer,
     ModuleTypeMiniSerializer,
     TopologyDefaultViewSerializer,
@@ -819,7 +821,7 @@ def _is_module_ownership(field) -> bool:
     """A component's link to the installed module that stamped it, or to the
     module template it came from - set by install only, never copied."""
     return field.is_relation and field.related_model in (
-        Module, ModuleInterfaceTemplate,
+        Module, ModuleInterfaceTemplate, ModulePowerPortTemplate,
     )
 
 
@@ -7147,6 +7149,16 @@ class ModuleInterfaceTemplateViewSet(NameRangeCreateMixin, TenantScopedViewSet):
         serializer.save()
 
 
+class ModulePowerPortTemplateViewSet(ModuleInterfaceTemplateViewSet):
+    """Power port templates on a MODULE type (a PSU's inlet) - scoped and
+    range-expanded exactly as its interface templates; ?module_type=."""
+
+    queryset = (
+        ModulePowerPortTemplate.objects.select_related("module_type").order_by(NATURAL_NAME)
+    )
+    serializer_class = ModulePowerPortTemplateSerializer
+
+
 class ModuleBayViewSet(_DevicePortViewSet):
     # Bays have no `type` field - the shared port base declares one for
     # front/rear ports, and bulk-updating `type` here used to 500 inside
@@ -7197,22 +7209,36 @@ class ModuleViewSet(TenantScopedViewSet):
         # create() runs in a transaction: a refused install rolls the module
         # row back with it.
         serializer.save()
-        # Stamp the module's interfaces onto the host device.
-        self._created_interfaces = self._install(install_module, serializer.instance)
+        # Stamp the module's interfaces and power ports onto the host device;
+        # with adopt_components, take over same-named components it has.
+        adopt = self._flag("adopt_components")
+        self._install_report = self._install(
+            lambda m: install_module_report(m, adopt=adopt), serializer.instance
+        )
+
+    def _flag(self, name) -> bool:
+        return self.request.data.get(name) in (True, "true", "1", 1)
 
     @staticmethod
-    def _install(fn, module) -> int:
+    def _install(fn, module):
         try:
             return fn(module)
         except ModuleInstallConflict as exc:
-            raise ValidationError({"module_type_id": str(exc)}) from exc
+            detail = {"module_type_id": str(exc)}
+            # What an install with adopt_components would take over - the
+            # dialog offers the option when this is present.
+            if exc.adoptable:
+                detail["adoptable"] = exc.adoptable
+            raise ValidationError(detail) from exc
 
     def create(self, request, *args, **kwargs):
+        self._install_report = None
         resp = super().create(request, *args, **kwargs)
-        if resp.status_code == 201:
-            resp.data["created_interfaces"] = getattr(
-                self, "_created_interfaces", 0
-            )
+        rep = self._install_report
+        if resp.status_code == 201 and rep is not None:
+            resp.data["created_interfaces"] = rep["created"]["interfaces"]
+            resp.data["created_power_ports"] = rep["created"]["power_ports"]
+            resp.data["adopted"] = rep["adopted"]
         return resp
 
     def perform_update(self, serializer):
@@ -7235,10 +7261,12 @@ class ModuleViewSet(TenantScopedViewSet):
             or module.module_bay_id != before["module_bay_id"]
             or module.device_id != before["device_id"]
         ):
-            confirm = self.request.data.get("confirm_remove") in (True, "true", "1", 1)
+            confirm = self._flag("confirm_remove")
+            adopt = self._flag("adopt_components")
             try:
                 self._interface_report = self._install(
-                    lambda m: reinstall_module(m, before, confirm_remove=confirm),
+                    lambda m: reinstall_module(
+                        m, before, confirm_remove=confirm, adopt=adopt),
                     module,
                 )
             except ModuleRemovalUnconfirmed as exc:
@@ -7252,8 +7280,9 @@ class ModuleViewSet(TenantScopedViewSet):
         return resp
 
     def perform_destroy(self, instance):
-        # Interface.module cascades: the module's own interfaces go with it,
-        # whichever path deletes it (this, its bay, its device).
+        # Interface.module and PowerPort.module cascade: the module's own
+        # components go with it, whichever path deletes it (this, its bay,
+        # its device).
         uninstall_module(instance)
         instance.delete()
 

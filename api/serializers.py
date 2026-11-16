@@ -57,7 +57,8 @@ from .models import (
     DeviceBay, DeviceBayTemplate, InventoryItem, InventoryItemTemplate,
     TopologyView,
     Module,
-    ModuleBay, ModuleBayTemplate, ModuleInterfaceTemplate, ModuleType,
+    ModuleBay, ModuleBayTemplate, ModuleInterfaceTemplate, ModulePowerPortTemplate,
+    ModuleType,
     NATRule,
     NumIdMixin, Platform, PlatformGroup, PortReservation,
     release_reservations_for, retire_port_placeholders, weight_kg,
@@ -5213,6 +5214,9 @@ class ConsoleServerPortSerializer(_DevicePortSerializer):
 
 
 class PowerPortSerializer(_DevicePortSerializer):
+    # The installed module (a PSU) that owns this inlet; null for the
+    # device's own. Set by module install only.
+    module_id = serializers.UUIDField(read_only=True, allow_null=True)
     outlet_count = serializers.SerializerMethodField()
 
     def get_outlet_count(self, obj) -> int:
@@ -5222,7 +5226,7 @@ class PowerPortSerializer(_DevicePortSerializer):
 
     class Meta:
         model = PowerPort
-        fields = ["id", "device", "device_id", "name", "type", "type_display",
+        fields = ["id", "device", "device_id", "module_id", "name", "type", "type_display",
                   "maximum_draw", "allocated_draw", "description",
                   "outlet_count", "tags", "tag_ids", "cable", "reservation",
                   "custom_fields",
@@ -5905,6 +5909,30 @@ class ModuleInterfaceTemplateSerializer(serializers.ModelSerializer):
         model = ModuleInterfaceTemplate
         fields = ["id", "module_type_id", "name", "type", "enabled",
                   "mgmt_only", "description", "created_at", "updated_at"]
+        read_only_fields = ["id", "created_at", "updated_at"]
+
+
+class ModulePowerPortTemplateSerializer(serializers.ModelSerializer):
+    """A module type's power inlet (a PSU's). ``{module}`` / ``{position}``
+    in the name resolve at install, as on interface templates."""
+
+    module_type_id = TenantScopedPrimaryKeyRelatedField(
+        source="module_type", queryset=ModuleType.objects.all(),
+        write_only=True,
+    )
+
+    def validate_name(self, value):
+        from .name_range import range_error
+
+        err = range_error(value)
+        if err:
+            raise serializers.ValidationError(err)
+        return value
+
+    class Meta:
+        model = ModulePowerPortTemplate
+        fields = ["id", "module_type_id", "name", "type", "maximum_draw",
+                  "allocated_draw", "description", "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]
 
 

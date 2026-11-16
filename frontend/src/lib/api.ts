@@ -4479,6 +4479,19 @@ export interface ModuleInterfaceTemplate {
   updated_at: string
 }
 
+/** A module type's power inlet (a PSU's) - stamped onto the host device as
+ * a power port when the module is installed. */
+export interface ModulePowerPortTemplate {
+  id: string
+  name: string
+  type: string
+  maximum_draw: number | null
+  allocated_draw: number | null
+  description: string
+  created_at: string
+  updated_at: string
+}
+
 /** Hardware kind of an inventory item - what the part IS. */
 export type InventoryItemKind =
   | "other"
@@ -4695,6 +4708,8 @@ export interface ModuleWritePayload {
   status_id?: string | null
   serial_number?: string
   description?: string
+  /** Take over same-named components the device already has. */
+  adopt_components?: boolean
 }
 
 export interface ComponentTemplateBase {

@@ -58,7 +58,7 @@ The models name the nodes Danbyte reads, exactly, in the glTF file:
 |---|---|
 | `bay:<module bay name>` | Where an installed module's origin goes. Its place and turn are the module's pose in the chassis. |
 | `empty:<module bay name>` | The cover drawn while that bay is empty. |
-| `port:<interface name>` | A port, at the opening, pointing out of it. A module's ports keep their template's `{module}` token, for example `port:TwentyFiveGigE{module}/0/1`. |
+| `port:<interface name>` | A port, at the opening, pointing out of it. A module's ports keep their template's `{module}` token, for example `port:TwentyFiveGigE{module}/0/1`. Any other port-like component is a `port:` named after its template the same way: a console port (`port:con 0`), a PSU's power inlet (`port:PSU{module}`, from `power-ports:` in the YAML), an aux, front or rear port. |
 | `led:<id>`, `led:port:<interface name>` | A status light: its own mesh, with the material `LED`. |
 | `cover:port:<interface name>` | A removable blank or dust plug in a port, such as a StackWise blank or an SFP plug: its own mesh, placed where it sits. Shown while the port is free (export spec v1.5). See [Port covers](#port-covers). |
 
@@ -106,7 +106,7 @@ size, turned with the empty, and generated photo ports use it for their
 box. A port with no size, or a size above 0.5 m, uses the standard size
 for its port type instead. A module's ports keep their size through the
 bay's pose. Bay names must equal the type's module bay names and port names
-its interface names, character for character.
+its interface or other port names, character for character.
 
 ## What Danbyte does with them
 
@@ -114,10 +114,10 @@ its interface names, character for character.
   **3D model** card - is scanned for these names. The card's **Anchors** row
   and the upload dialog show what was found (*7 bays, 53 ports, 54 LEDs*)
   and, as warnings, what matched nothing: a `bay:` with no module bay of
-  that name, a module bay the model has no anchor for, a `port:` that is no
-  interface, an LED without the `LED` material, a `cover:port:` that is no
-  interface, a `cover:` node that is not `cover:port:`. Warnings never block
-  the save.
+  that name, a module bay the model has no anchor for, a `port:` that is
+  neither an interface nor another port of the type, an LED without the
+  `LED` material, a `cover:port:` that is no interface, a `cover:` node
+  that is not `cover:port:`. Warnings never block the save.
 - **Assembly.** A device draws its chassis, then each installed module
   whose type has a model, posed at the matching `bay:` node. An empty bay
   shows its `empty:` cover; so does a bay whose module has no model yet,
@@ -127,7 +127,10 @@ its interface names, character for character.
 - **Ports.** When the drawn chassis or its installed modules name ports,
   those are the device's port markers in the room and the viewer, and where
   cables end - `{module}` in a module's port becomes the bay's position, as
-  in the interface names a module installs. Hand-mapped ports
+  in the interface names a module installs. A `port:` that names another
+  port-like template is a marker of that kind: a console port takes a
+  console cable, a PSU's inlet a cable to a PDU outlet, through the same
+  **Connect cable…** in the room, the viewer and the photos. Hand-mapped ports
   ([Map ports](device-catalog.md#model-ports)) are for models that name no
   ports.
 - **Distance.** From about 14 m away a model with a far copy draws that
@@ -422,7 +425,7 @@ render's module part number may then be a module type the tenant has.
 | Archive | A refusal from [the limits above](#security-limits). | |
 | `pack.yaml` | Missing; no `name`, `id`, `version` or `license`; `types` lists a part with no YAML. | No `types`; a YAML it doesn't list. |
 | Models | Not a valid `.glb`; over the triangle budget (chassis 150,000, far 15,000; module 30,000, far 3,000) or the size budget (8 MB, far 1 MB). | A model no YAML names; no far copy on a chassis or on a module of 5,000 triangles or more. |
-| Names | `bay:` with no module bay in the YAML; `bay:` in a module; `empty:` without its `bay:`; `port:` or `led:port:` with no interface in the YAML (module interfaces with `{module}`, as written); a name twice; an LED not on the `LED` material; the far copy missing a `bay:`, `empty:` or `led:` of the full model. | A module bay without a `bay:`; interfaces without a `port:`. |
+| Names | `bay:` with no module bay in the YAML; `bay:` in a module; `empty:` without its `bay:`; `port:` with no interface or other port (console, power, aux, front or rear port) in the YAML, `led:port:` with no interface (module names with `{module}`, as written); a name twice; an LED not on the `LED` material; the far copy missing a `bay:`, `empty:` or `led:` of the full model. | A module bay without a `bay:`; interfaces without a `port:`. |
 | LEDs | A `leds:` entry that doesn't parse or names no `led:` in the model; on a module type, a `led:` without an entry. | On a chassis, a `led:` without an entry (it stays off); a glob matching nothing. |
 | Port sizes | | Ports without `danbyte_w` / `danbyte_h`. |
 | Renders | A file missing, not a WebP or PNG, or without a transparent background; a front or rear not exactly the type's face frame at 2,000 px across; `model_sha256` missing or not the `.glb`'s; `modules` naming a bay the YAML or the model lacks, or a part number in neither the pack nor the tenant. | No front or rear render; renders on a module type. |
@@ -465,7 +468,10 @@ A pack can also be imported with a management command, from a folder or a
 
 - Each YAML is matched to an existing type by **manufacturer and part
   number** (by name when it has no part number). A type that isn't there is
-  created from the YAML, with its templates.
+  created from the YAML, with its templates. A matched module type that
+  lacks a power port its YAML names (a PSU type imported before module
+  types carried power ports) gets it added; nothing else on a matched type
+  changes.
 - The matched or created type gets the pack's model and far model,
   replacing what it had, with the scan's report per type. A hand-made port
   mapping on the replaced model is cleared.

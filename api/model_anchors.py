@@ -484,7 +484,30 @@ def interface_matcher(obj, interface_names) -> NameMatcher:
             rendered = render_component_name(t, obj.vc_position)
             if rendered in have and rendered != t:
                 aliases[t] = rendered
+    # A console port's, power inlet's or other port-like component's anchor
+    # (port:con 0, a PSU's port:PSU{module}) matches it; it is not counted
+    # among the interfaces it lacks.
+    for p in other_port_names(obj):
+        aliases.setdefault(p, p)
     return NameMatcher(interface_names or [], aliases)
+
+
+def other_port_names(obj) -> list[str]:
+    """The port-like component (template) names other than interfaces a
+    ``port:`` anchor may also name (api.anchor_names.OTHER_PORT_KINDS)."""
+    from .anchor_names import OTHER_PORT_KINDS, other_port_names as of_type
+    from .models import Device, DeviceType, ModuleType
+
+    if isinstance(obj, DeviceType):
+        return [n for names in of_type(obj, "dt").values() for n in names]
+    if isinstance(obj, ModuleType):
+        return [n for names in of_type(obj, "mt").values() for n in names]
+    if isinstance(obj, Device):
+        out = []
+        for _kind, rel, _mt in OTHER_PORT_KINDS:
+            out += getattr(obj, rel.replace("_templates", "s")).values_list("name", flat=True)
+        return out
+    return []
 
 
 def mismatches(anchors: dict, bay_names, interface_names) -> list[str]:
@@ -623,8 +646,10 @@ def port_doc(owner, parts, rename=None) -> dict | None:
     type's or a device's own) with ``parts`` installed: ``[(bay_name,
     render, module_anchors)]``, ``render`` turning a module's anchor name
     into the device's interface name as ``rename`` does the chassis' (both
-    api.anchor_names: a stack member's real names). None when no port
-    anchor applies or the model's box is unknown."""
+    api.anchor_names: a stack member's real names). Either may return
+    ``(kind, name)`` instead of a name - a power inlet's anchor is a
+    ``power-port`` (spec 1.6); a bare name is an interface. None when no
+    port anchor applies or the model's box is unknown."""
     anchors = owner.model_anchors or {}
     box = anchors.get("box")
     if not (isinstance(box, list) and len(box) == 2):
@@ -632,6 +657,7 @@ def port_doc(owner, parts, rename=None) -> dict | None:
     points: list[tuple[str, list, list, tuple | None]] = []
     for name, p, n, op in _port_points(anchors):
         points.append((rename(name) if rename is not None else name, p, n, op))
+    # A renamer may answer (kind, name); a bare name is an interface.
     bays = anchors.get("bays") or {}
     for bay_name, render, mod in parts:
         bay = bays.get(bay_name)
@@ -653,13 +679,14 @@ def port_doc(owner, parts, rename=None) -> dict | None:
         return None
     longest = max(size)
     ports, seen = [], set()
-    for name, p, n, op in points:
+    for named, p, n, op in points:
+        kind, name = named if isinstance(named, tuple) else ("interface", named)
         if not name or len(name) > 64 or name in seen:
             continue
         seen.add(name)
         q = apply_point(r, p)
         entry = {
-            "kind": "interface", "name": name,
+            "kind": kind, "name": name,
             "p": [round(min(1.0, max(0.0, (q[i] - lo[i]) / size[i])), 5) for i in range(3)],
             "n": [round(x, 5) for x in unit(apply_dir(r, n))],
         }

@@ -89,6 +89,7 @@ export const PLAN_CAPABLE: ReadonlySet<string> = new Set([
   "api.manufacturer",
   "api.module",
   "api.moduleinterfacetemplate",
+  "api.modulepowerporttemplate",
   "api.moduletype",
   "api.platform",
   "api.platformgroup",

@@ -392,7 +392,8 @@ Each installed module (a PSU, fan tray, network module) and each empty
 bay's cover is pickable: a click outlines it and shows the bay, the module
 type, its status, serial and position; a right-click offers, on a module, **Open
 module type**, **Edit…** (status and serial), **Replace…** (another module
-type - the device's interfaces are re-stamped, and dropping any asks again)
+type - the device's interfaces and power ports are re-stamped, and dropping
+any asks again)
 and **Remove from bay…**, and on an empty bay **Install module…**, its
 picker listing the chassis maker's module types first (all of them when it
 has none). These are the Hardware tab's
@@ -637,8 +638,10 @@ On a **photo faceplate** (a type with
 [photo ports](device-catalog.md#photo-ports)), the markers are work surfaces
 too, permissions allowing. An **empty module bay** takes a click to seat a
 module - the same install dialog as Components → Hardware, stamping the module
-type's interfaces onto the device - and the bay marker flips to occupied on
-save. The same works in the
+type's interfaces and power ports onto the device (with **Adopt existing
+components** when they clash with ports it already has - see
+[Adopting existing components](device-catalog.md#adopting-existing-components)),
+and the bay marker flips to occupied on save. The same works in the
 [3D room](../features/floor-plans.md#the-3d-room-view): the port card offers
 **Install module** on an empty bay and **Edit part** on a hardware marker (the
 same part editor the 2D faceplate opens for disk bays and PSUs). A **free**

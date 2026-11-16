@@ -89,6 +89,7 @@ AUDITED_MODELS = [
     "api.ModuleType",
     "api.ModelPack",
     "api.ModuleInterfaceTemplate",
+    "api.ModulePowerPortTemplate",
     "api.Module",
     "api.ConsoleServerPortTemplate",
     "api.PowerPortTemplate",
