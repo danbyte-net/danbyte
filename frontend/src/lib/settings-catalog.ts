@@ -1,5 +1,6 @@
 import {
   Bell,
+  Box,
   CalendarClock,
   Cable,
   Columns3,
@@ -110,6 +111,7 @@ const ICONS: Record<string, LucideIcon> = {
   maps: Map,
   "snmp-profiles": Radio,
   "snmp-sensors": Cable,
+  "device-library": Box,
   "connect-protocols": Plug,
   credentials: KeyRound,
   branding: Puzzle,

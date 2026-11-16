@@ -55,6 +55,7 @@ export const OBJECT_DETAIL_ROUTES: Record<string, string> = {
   "api.sensitivitylabel": "/sensitivity-labels/$id",
   "api.room": "/rooms/$id",
   "api.manufacturer": "/manufacturers/$id",
+  "api.modelpack": "/settings/device-library/packs/$id",
   "api.moduletype": "/module-types/$id",
   "api.platform": "/platforms/$id",
   "api.application": "/applications/$id",

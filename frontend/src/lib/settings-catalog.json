@@ -199,6 +199,15 @@
       "keywords": ["oid", "sensor", "temperature", "psu", "fan", "mib"]
     },
     {
+      "key": "device-library",
+      "label": "Device library",
+      "description": "3D model packs for device and module types",
+      "to": "/settings/device-library",
+      "group": "devices",
+      "scopes": ["tenant"],
+      "keywords": ["3d", "model", "pack", "glb", "blender", "renders", "zip"]
+    },
+    {
       "key": "connect-protocols",
       "label": "Connect protocols",
       "description": "How the Connect button reaches a device",
@@ -636,6 +645,13 @@
       "description": "Vendor OIDs mapped to inventory item health",
       "page": "snmp-sensors",
       "keywords": ["oid", "sensor", "temperature", "psu", "fan"]
+    },
+    {
+      "key": "devices.model-packs",
+      "label": "3D model packs",
+      "description": "Install a pack of device and module type models",
+      "page": "device-library",
+      "keywords": ["3d", "glb", "zip", "install", "pack", "upload"]
     },
     {
       "key": "devices.connect",

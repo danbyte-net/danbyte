@@ -19334,3 +19334,115 @@ export interface DependencyTree {
   /** Upstreams whose fastest check runs less often than the hold. */
   slow_upstreams?: { id: string; name: string; interval_seconds: number }[]
 }
+
+// ─── 3D model packs (/api/model-packs/) ─────────────────────────────────────
+
+export type ModelPackStatus =
+  | "checking"
+  | "checked"
+  | "refused"
+  | "installing"
+  | "installed"
+  | "failed"
+  | "replaced"
+
+/** One finding of the pack checker. */
+export interface ModelPackFinding {
+  level: "error" | "warning"
+  path: string
+  message: string
+}
+
+/** One type's row of the pack checker's table. */
+export interface ModelPackPart {
+  kind: "device-type" | "module-type"
+  path: string
+  part: string
+  triangles: number | null
+  far_triangles: number | null
+  bytes: number | null
+  far_bytes: number | null
+  bays: number
+  ports: number
+  leds: number
+  errors: number
+  warnings: number
+}
+
+/** A type the dry run or the install matched or created. */
+export interface ModelPackType {
+  kind: "device-type" | "module-type"
+  path: string
+  name: string
+  action: "matched" | "created" | "error"
+  /** Set once installed. */
+  id: string
+  notes: string[]
+}
+
+export interface ModelPackImport {
+  created: number
+  matched: number
+  errors: number
+  types: ModelPackType[]
+  unused_models: string[]
+}
+
+export interface ModelPack {
+  id: string
+  slug: string
+  name: string
+  version: string
+  license: string
+  author: string
+  source: "upload" | "url"
+  source_url: string
+  filename: string
+  sha256: string
+  size: number
+  status: ModelPackStatus
+  progress: { phase?: string; done?: number; total?: number }
+  error: string
+  replace_photos: boolean
+  types: number
+  installable: boolean
+  check_errors: number
+  check_warnings: number
+  created_at: string
+  created_by: string | null
+  installed_at: string | null
+  installed_by: string | null
+}
+
+export interface ModelPackDetail extends ModelPack {
+  report: {
+    refusals?: string[]
+    check?: {
+      ok: boolean
+      errors: number
+      warnings: number
+      pack: Record<string, string>
+      parts: ModelPackPart[]
+      findings: ModelPackFinding[]
+    }
+    import?: ModelPackImport
+    installed?: { id: string; version: string; sha256: string } | null
+  }
+  result: Partial<ModelPackImport>
+  files: { path: string; size: number }[]
+  history: {
+    id: string
+    version: string
+    status: ModelPackStatus
+    installed_at: string | null
+    installed_by: string | null
+  }[]
+}
+
+export interface ModelPackLimits {
+  max_bytes: number
+  source_url: string
+  allowed_hosts: string[]
+  downloads: boolean
+  can_install: boolean
+}

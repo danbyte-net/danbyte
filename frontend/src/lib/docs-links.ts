@@ -194,6 +194,7 @@ export const DOCS_LINKS: Record<string, string> = {
   "/settings/monitoring-defaults": "features/monitoring/",
   "/settings/snmp": "features/snmp-discovery/",
   "/settings/snmp-sensors": "features/snmp-discovery/",
+  "/settings/device-library": "dcim/model-packs/",
   "/settings/connect": "features/device-access/",
   "/settings/updates": "getting-started/upgrading/",
   "/scripts": "features/scripts/",
