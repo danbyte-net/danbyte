@@ -5900,6 +5900,70 @@ class DeviceTypeImportRun(TimestampedModel):
         return f"{self.source_url} ({self.status})"
 
 
+class ModelPack(TimestampedModel):
+    """A 3D model pack brought in through Settings → Device library
+    (api.model_pack_install, docs/dcim/model-packs.md).
+
+    One row per upload or download: it is checked (the pack checker plus a
+    dry-run import) and only then installed, both off the RQ ``low`` queue.
+    The row is the run and, once installed, the record of what the pack
+    changed. Installing a newer copy of the same pack marks the older row
+    ``replaced``; the device and module types stay with the tenant either
+    way, so forgetting a pack removes only this record."""
+
+    STATUS_CHOICES = [
+        ("checking", "Checking"),
+        ("checked", "Checked"),
+        ("refused", "Refused"),
+        ("installing", "Installing"),
+        ("installed", "Installed"),
+        ("failed", "Failed"),
+        ("replaced", "Replaced"),
+    ]
+    SOURCE_CHOICES = [("upload", "Upload"), ("url", "URL")]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name="model_packs")
+    #: pack.yaml ``id``, ``name``, ``version``, ``license`` and ``author``.
+    slug = models.CharField(max_length=100, blank=True, default="")
+    name = models.CharField(max_length=200, blank=True, default="")
+    version = models.CharField(max_length=50, blank=True, default="")
+    license = models.CharField(max_length=100, blank=True, default="")
+    author = models.CharField(max_length=200, blank=True, default="")
+    source = models.CharField(max_length=8, choices=SOURCE_CHOICES, default="upload")
+    source_url = models.CharField(max_length=1024, blank=True, default="")
+    filename = models.CharField(max_length=255, blank=True, default="")
+    #: SHA-256 of the archive as received, and its size in bytes.
+    sha256 = models.CharField(max_length=64, blank=True, default="")
+    size = models.BigIntegerField(default=0)
+    #: The archive's files: [{"path": …, "size": n}, …].
+    files = models.JSONField(default=list, blank=True)
+    status = models.CharField(max_length=12, choices=STATUS_CHOICES, default="checking")
+    #: Live progress of the current step: {"phase": …, "done": n, "total": n}.
+    progress = models.JSONField(default=dict, blank=True)
+    #: The check: {"check": <pack checker report>, "import": <dry run>}.
+    report = models.JSONField(default=dict, blank=True)
+    #: The install: {"created": n, "matched": n, "errors": n, "types": [...]}.
+    result = models.JSONField(default=dict, blank=True)
+    replace_photos = models.BooleanField(default=False)
+    error = models.TextField(blank=True, default="")
+    created_by = models.ForeignKey(
+        "auth.User", on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
+    )
+    installed_at = models.DateTimeField(null=True, blank=True)
+    installed_by = models.ForeignKey(
+        "auth.User", on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
+    )
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["tenant", "slug", "-created_at"])]
+
+    def __str__(self) -> str:
+        label = self.name or self.slug or self.filename or str(self.id)
+        return f"{label} {self.version}".strip()
+
+
 class TopologyView(NumIdMixin, TimestampedModel):
     """A saved topology-map view: the filter set plus hand-tuned node
     positions, so a curated diagram survives reloads and re-layouts."""

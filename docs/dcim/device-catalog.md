@@ -428,8 +428,10 @@ null; `model_3d_fit`, `model_3d_up` and `model_3d_front` are plain fields you
 can `PATCH`. The spreadsheet export carries the three settings; the file
 itself is never imported or exported. Library bundles and the NetBox
 library import don't carry models; a library YAML with a `model3d:` block
-imports without it, and [`import_model_pack`](model-packs.md#importing-a-pack)
-brings the files.
+imports without it, and a [model pack](model-packs.md) brings the files:
+installed under **Settings → Device library → 3D model packs**
+([installing in the app](model-packs.md#installing-in-the-app)) or with
+[`import_model_pack`](model-packs.md#importing-a-pack).
 
 ### Jumping to the devices
 

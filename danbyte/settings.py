@@ -765,6 +765,23 @@ DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024
 # The largest 3D model (binary glTF) a device type or device takes, in bytes
 # (api.model_3d). 25 MB by default.
 DEVICE_MODEL_MAX_BYTES = int(os.getenv("DEVICE_MODEL_MAX_BYTES", str(25 * 1024 * 1024)))
+# 3D model packs installed in the app (api.model_pack_install,
+# docs/dcim/model-packs.md). The largest .zip an upload or download may be
+# (keep it at or under nginx client_max_body_size: 512m, 100m on Docker), and
+# where a download may come from: a URL under MODEL_PACK_SOURCE_URL, or any
+# https URL on a host in MODEL_PACK_ALLOWED_HOSTS (comma-separated). A
+# download may redirect only to those, or to a host in
+# MODEL_PACK_REDIRECT_HOSTS (GitHub's release-asset hosts by default).
+MODEL_PACK_MAX_BYTES = int(os.getenv("MODEL_PACK_MAX_BYTES", str(200 * 1024 * 1024)))
+MODEL_PACK_SOURCE_URL = os.getenv(
+    "MODEL_PACK_SOURCE_URL", "https://github.com/danbyte-net/device-models/releases/download/")
+MODEL_PACK_ALLOWED_HOSTS = [
+    h.strip().lower() for h in os.getenv("MODEL_PACK_ALLOWED_HOSTS", "").split(",") if h.strip()]
+MODEL_PACK_REDIRECT_HOSTS = [
+    h.strip().lower() for h in os.getenv(
+        "MODEL_PACK_REDIRECT_HOSTS",
+        "objects.githubusercontent.com,release-assets.githubusercontent.com",
+    ).split(",") if h.strip()]
 # Largest vulnerability data file an admin may upload (#451): NVD feeds, OSV
 # zips, KEV, EPSS. Keep it at or under nginx client_max_body_size (512m).
 VULN_IMPORT_MAX_BYTES = int(

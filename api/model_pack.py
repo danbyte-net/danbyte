@@ -36,12 +36,18 @@ read the files from, so the block is skipped with a note.
 ``import_pack`` imports a whole pack: it matches each YAML to an existing
 type by manufacturer and part number, creates the ones that are missing
 (api.devicetype_import) and sets their models. ``manage.py
-import_model_pack`` drives it.
+import_model_pack`` and the in-app installer (api.model_pack_install) drive
+it.
+
+``PackFiles`` refuses an unsafe zip outright (``zip_refusals``: paths out
+of the pack, links, odd or encrypted entries, file types a pack doesn't
+hold, members over their cap, zip bombs). Nothing is extracted to disk.
 """
 from __future__ import annotations
 
 import io
 import math
+import os
 import posixpath
 import zipfile
 from dataclasses import dataclass, field
@@ -60,6 +66,139 @@ MAX_YAML_FILES = 2000
 MAX_YAML_BYTES = 2 * 1024 * 1024
 #: The faces a device type's ``renders`` may ship.
 RENDER_FACES = ("front", "rear", "iso")
+
+
+#: The only files a pack may hold (lower-cased suffix). Nothing in a pack is
+#: ever executed or extracted to disk: members are read into memory, checked
+#: and stored through the model and image validators.
+PACK_EXTENSIONS = (".yaml", ".yml", ".glb", ".webp", ".png", ".md")
+#: Archive ceilings against zip bombs: members, their unpacked total, and how
+#: far one member may inflate past its compressed size.
+MAX_PACK_FILES = 5000
+MAX_UNPACKED_BYTES = 1024 * 1024 * 1024
+MAX_RATIO = 200
+MAX_MD_BYTES = 1024 * 1024
+#: Junk an archiver or a file manager adds; never read, so not refused.
+_JUNK = ("__MACOSX/",)
+
+
+class PackRefused(ValidationError):
+    """The archive is refused as a whole; ``messages`` say why."""
+
+
+def _ignored(rel: str) -> bool:
+    """A hidden file or folder (``.DS_Store``, ``.git/``) or archiver junk:
+    never read, so neither listed nor refused."""
+    return rel.startswith(_JUNK) or any(part.startswith(".") for part in rel.split("/"))
+
+
+def member_cap(rel: str) -> int:
+    """The largest a pack file of this kind may be."""
+    from . import model_3d
+    from .model_studio import MAX_IMAGE_BYTES
+
+    ext = posixpath.splitext(rel)[1].lower()
+    if ext == ".glb":
+        return model_3d.max_bytes()
+    if ext in (".webp", ".png"):
+        return MAX_IMAGE_BYTES
+    if ext in (".yaml", ".yml"):
+        return MAX_YAML_BYTES
+    return MAX_MD_BYTES
+
+
+def zip_refusals(zf: zipfile.ZipFile) -> list[str]:
+    """Why a zip can't be read as a pack: a member that leaves the pack
+    (absolute, ``..``, a drive, a backslash), a link or device file, an
+    encrypted or duplicate member, a file type a pack doesn't hold, a
+    member over its size cap or inflating too far, or too many members or
+    unpacked bytes in all. Empty when the zip is fine."""
+    import stat
+
+    out: list[str] = []
+    infos = zf.infolist()
+    if len(infos) > MAX_PACK_FILES:
+        return [f"The archive holds {len(infos)} entries; a pack may hold {MAX_PACK_FILES}."]
+    seen: set[str] = set()
+    total = 0
+    for info in infos:
+        name = info.filename
+        if "\x00" in name:
+            out.append("An entry's name holds a NUL byte.")
+            continue
+        mode = (info.external_attr >> 16) & 0o170000
+        if mode == stat.S_IFLNK:
+            out.append(f"{name}: a symbolic link.")
+            continue
+        if mode not in (0, stat.S_IFREG, stat.S_IFDIR):
+            out.append(f"{name}: not a regular file.")
+            continue
+        raw = name.rstrip("/") if info.is_dir() else name
+        rel = _clean_path(raw)
+        if rel is None or rel != raw or "//" in name:
+            out.append(f"{name}: the path leaves the pack.")
+            continue
+        if info.is_dir() or _ignored(rel):
+            continue
+        if info.flag_bits & 0x1:
+            out.append(f"{name}: encrypted.")
+            continue
+        if rel in seen:
+            out.append(f"{name}: in the archive twice.")
+            continue
+        seen.add(rel)
+        if not rel.lower().endswith(PACK_EXTENSIONS):
+            out.append(f"{name}: not a file a pack holds ({', '.join(PACK_EXTENSIONS)}).")
+            continue
+        cap = member_cap(rel)
+        if info.file_size > cap:
+            out.append(f"{name}: {info.file_size} bytes, over the {cap} a "
+                       f"{posixpath.splitext(rel)[1].lower()} may be.")
+            continue
+        if info.file_size > 1024 * 1024 and info.file_size > MAX_RATIO * max(
+                info.compress_size, 1):
+            out.append(f"{name}: inflates more than {MAX_RATIO} times.")
+            continue
+        total += info.file_size
+    if total > MAX_UNPACKED_BYTES:
+        out.append(f"The archive unpacks to {total} bytes; a pack may unpack to "
+                   f"{MAX_UNPACKED_BYTES}.")
+    return out
+
+
+def folder_refusals(root: Path) -> list[str]:
+    """The same for a pack folder: links and other non-files, file types a
+    pack doesn't hold, and files over their cap."""
+    out: list[str] = []
+    root = root.resolve()
+    count = 0
+    for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
+        here = Path(dirpath)
+        for d in list(dirnames):
+            p = here / d
+            rel = p.relative_to(root).as_posix()
+            if _ignored(rel):
+                dirnames.remove(d)
+            elif p.is_symlink():
+                out.append(f"{rel}: a symbolic link.")
+                dirnames.remove(d)
+        for f in filenames:
+            p = here / f
+            rel = p.relative_to(root).as_posix()
+            if _ignored(rel):
+                continue
+            count += 1
+            if p.is_symlink():
+                out.append(f"{rel}: a symbolic link.")
+            elif not p.is_file():
+                out.append(f"{rel}: not a regular file.")
+            elif not rel.lower().endswith(PACK_EXTENSIONS):
+                out.append(f"{rel}: not a file a pack holds ({', '.join(PACK_EXTENSIONS)}).")
+            elif p.stat().st_size > member_cap(rel):
+                out.append(f"{rel}: over the size cap for its kind.")
+    if count > MAX_PACK_FILES:
+        out.append(f"The folder holds {count} files; a pack may hold {MAX_PACK_FILES}.")
+    return out
 
 
 def _clean_path(path) -> str | None:
@@ -81,12 +220,19 @@ class PackFiles:
     confined to the pack; reads are capped at the model size cap."""
 
     def __init__(self, source):
+        """Raises :class:`PackRefused` for a zip :func:`zip_refusals`
+        refuses, and ``zipfile.BadZipFile`` for one that isn't a zip."""
         self.source = Path(source)
         self._zip = None
         self._prefix = ""
         if self.source.is_file():
             self._zip = zipfile.ZipFile(self.source)
-            names = [n for n in self._zip.namelist() if not n.endswith("/")]
+            refusals = zip_refusals(self._zip)
+            if refusals:
+                self._zip.close()
+                raise PackRefused(refusals)
+            names = [n for n in self._zip.namelist()
+                     if not n.endswith("/") and not _ignored(n)]
             # A zip of the pack folder has one top folder around everything.
             tops = {n.split("/", 1)[0] for n in names}
             if len(tops) == 1 and all("/" in n for n in names):
@@ -105,13 +251,32 @@ class PackFiles:
     def names(self) -> list[str]:
         if self._zip is not None:
             return sorted(n[len(self._prefix):] for n in self._zip.namelist()
-                          if n.startswith(self._prefix) and not n.endswith("/"))
+                          if n.startswith(self._prefix) and not n.endswith("/")
+                          and not _ignored(n[len(self._prefix):]))
         root = self.source.resolve()
         out = []
         for p in root.rglob("*"):
             if p.is_file() and not p.is_symlink():
-                out.append(p.relative_to(root).as_posix())
+                rel = p.relative_to(root).as_posix()
+                if not _ignored(rel):
+                    out.append(rel)
         return sorted(out)
+
+    def sizes(self) -> dict[str, int]:
+        """Each file's size in bytes, by pack-relative path."""
+        if self._zip is not None:
+            return {n[len(self._prefix):]: i.file_size for i in self._zip.infolist()
+                    if (n := i.filename).startswith(self._prefix) and not n.endswith("/")
+                    and not _ignored(n[len(self._prefix):])}
+        root = self.source.resolve()
+        return {rel: (root / rel).stat().st_size for rel in self.names()}
+
+    def refusals(self) -> list[str]:
+        """Why the pack can't be read safely (a zip that got this far has
+        none; a folder is walked)."""
+        if self._zip is not None:
+            return []
+        return folder_refusals(self.source)
 
     def read(self, path, cap: int) -> bytes | None:
         """The file's bytes, None when it isn't in the pack. Raises
@@ -534,6 +699,7 @@ class TypeResult:
     name: str = ""
     action: str = ""    # "matched" | "created" | "error"
     notes: list[str] = field(default_factory=list)
+    id: str = ""        # the matched or created type (applied runs)
 
 
 @dataclass
@@ -563,12 +729,14 @@ def _match(model_cls, tenant, data):
 
 
 def import_pack(tenant, files: PackFiles, *, dry_run: bool = True,
-                replace_photos: bool = False) -> PackResult:
+                replace_photos: bool = False, label: str = "",
+                progress=None) -> PackResult:
     """Import every device type and module type YAML in the pack with its
     models and renders. Inside one transaction, rolled back on ``dry_run``
-    (which also stores no file). Audited as ordinary saves, with the pack as
-    the cause. ``replace_photos`` lets renders replace faces uploaded by
-    hand."""
+    (which also stores no file). Audited as ordinary saves, with ``label``
+    (default: the command and the pack) as the cause. ``replace_photos``
+    lets renders replace faces uploaded by hand. ``progress(done, total)``
+    is called after each YAML."""
     from django.db import transaction
 
     from audit.context import cause
@@ -594,11 +762,14 @@ def import_pack(tenant, files: PackFiles, *, dry_run: bool = True,
     # reader sees the parts before the chassis that holds them.
     yamls.sort(key=lambda n: (not n.startswith("module-types/"), n))
     referenced: set[str] = set()
-    label = f"manage.py import_model_pack {result.name or files.source.name}"
-    if result.version:
-        label += f" {result.version}"
+    if not label:
+        label = f"manage.py import_model_pack {result.name or files.source.name}"
+        if result.version:
+            label += f" {result.version}"
     with cause(label), transaction.atomic():
-        for path in yamls:
+        for done, path in enumerate(yamls):
+            if progress is not None:
+                progress(done, len(yamls))
             kind = "module-type" if path.startswith("module-types/") else "device-type"
             tr = TypeResult(kind=kind, path=path)
             result.types.append(tr)
@@ -639,6 +810,8 @@ def import_pack(tenant, files: PackFiles, *, dry_run: bool = True,
                 else:
                     tr.action = "matched"
                     tr.name = obj.name
+                if not dry_run:
+                    tr.id = str(obj.pk)
                 tr.notes += apply_model3d(obj, block, files, dry_run=dry_run) or [
                     "no model3d block."]
                 if kind == "device-type":
@@ -655,6 +828,8 @@ def import_pack(tenant, files: PackFiles, *, dry_run: bool = True,
                                         "to generate them.")
         if dry_run:
             transaction.set_rollback(True)
+    if progress is not None:
+        progress(len(yamls), len(yamls))
     result.unused_models = [n for n in names
                             if n.startswith("models/") and n.endswith(".glb")
                             and n not in referenced]

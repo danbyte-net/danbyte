@@ -327,10 +327,108 @@ without bays, a bad `only` or an unknown key is dropped with a note, and an
 exact key the model has no `led:` for is noted. The stored bindings are
 validated again on save.
 
+## Installing in the app
+
+**Settings → Device library → 3D model packs** lists the packs installed in
+the tenant: name, version, licence, author, how many types they brought,
+and when and by whom they were installed. **Install pack…** adds one:
+
+1. **Upload** a `.zip` of the pack (the way in for an airgapped install),
+   or give its **URL**. A URL must be `https`, under the configured pack
+   source or on an allowed host; see
+   [the settings](../reference/settings.md#3d-model-packs-model_pack_).
+2. Danbyte **checks** it in the background: it downloads it, refuses an
+   unsafe archive, runs the [pack checker](#checking-a-pack) and a **dry
+   run** of the import. The dialog shows the result: the types it would
+   create or update, with each type's notes (its model scan, photos,
+   reference modules), and every error and warning the checker found.
+3. **Install** applies it, again in the background, with an optional
+   **Replace hand-uploaded photos** (the `--replace-photos` of the command
+   below). A pack with check errors can't be installed in the app; fix the
+   pack, or import it with the command.
+
+Nothing changes before Install. The install is one transaction: a failure
+leaves every type as it was. Each change lands in the type's change log
+under the installer's name, with *3D model pack <name> <version>* as its
+cause. The pack's own page shows what it changed (**Types**, with a link to
+each), the checker's table (**Models**) and findings (**Checks**), its
+other versions and its change log.
+
+**Reinstalling.** Installing a pack whose `id` is already installed (a new
+version, or the same one again) updates the types it matches, and the older
+record becomes *Replaced*. The dry run names the installed version.
+
+**Forget** removes the pack's record and nothing else: the device and
+module types, their models and photos stay. There is no uninstall: a pack
+replaces models and photos on types that devices use, and undoing that
+can't know what was there before or what has been changed since. To take a
+model off a type, remove it on the type.
+
+Who may: reading the list takes view on device types. Installing and
+forgetting take tenant admin rights plus add and change on device types and
+module types, unconstrained and on every site, because a pack's types are
+the whole tenant's. The background jobs check these again when they run.
+
+A pack that is checked but never installed is dropped after a day; a check
+or install that stops (a worker restart) is marked failed after two hours.
+
+### Security limits
+
+A pack is data. Nothing in it is executed, and nothing is extracted to
+disk: each file is read into memory and goes through the same validators
+as an upload. The archive is refused as a whole when:
+
+- an entry's path is absolute, has a drive, a backslash or `..`, or isn't
+  plain;
+- an entry is a symbolic link or another non-regular file, is encrypted, or
+  is in the archive twice;
+- a file isn't one a pack holds: `.yaml`, `.yml`, `.glb`, `.webp`, `.png`
+  or `.md` (hidden files and `__MACOSX/` are ignored, never read);
+- a file is over its cap: a model over
+  [`DEVICE_MODEL_MAX_BYTES`](../reference/settings.md#device-3d-models-device_model_max_bytes),
+  an image over 8 MB, a YAML over 2 MB, a Markdown file over 1 MB;
+- a file over 1 MB inflates more than 200 times, there are more than 5,000
+  entries, or the whole unpacks to more than 1 GB.
+
+Every `.glb` is checked like an upload, and every image must be a WebP or
+PNG that Pillow verifies, at most 4,096 px a side. The upload is capped at
+`MODEL_PACK_MAX_BYTES`, and so is a download, which also passes the
+outbound-request guard and may only be redirected to an allowed host. The
+archive's SHA-256 is recorded, and an install refuses an archive that
+changed since its check.
+
+## Checking a pack
+
+The pack checker runs the review Danbyte gives a pack before shipping or
+installing it, against the export spec:
+
+```bash
+.venv/bin/python manage.py check_model_pack ./cisco-catalyst-9500
+.venv/bin/python manage.py check_model_pack cisco-catalyst-9500.zip --json
+```
+
+It prints a row per type (triangles and size of the model and its far
+copy, bays, ports, LEDs, errors, warnings) and every finding, and exits `1`
+when there is an error, `0` otherwise. `--json` prints the report for CI. It
+writes nothing and reads no database, unless `--tenant <slug>` is given: a
+render's module part number may then be a module type the tenant has.
+
+| Check | Error | Warning |
+|---|---|---|
+| Archive | A refusal from [the limits above](#security-limits). | |
+| `pack.yaml` | Missing; no `name`, `id`, `version` or `license`; `types` lists a part with no YAML. | No `types`; a YAML it doesn't list. |
+| Models | Not a valid `.glb`; over the triangle budget (chassis 150,000, far 15,000; module 30,000, far 3,000) or the size budget (8 MB, far 1 MB). | A model no YAML names; no far copy on a chassis or on a module of 5,000 triangles or more. |
+| Names | `bay:` with no module bay in the YAML; `bay:` in a module; `empty:` without its `bay:`; `port:` or `led:port:` with no interface in the YAML (module interfaces with `{module}`, as written); a name twice; an LED not on the `LED` material; the far copy missing a `bay:`, `empty:` or `led:` of the full model. | A module bay without a `bay:`; interfaces without a `port:`. |
+| LEDs | A `leds:` entry that doesn't parse or names no `led:` in the model; on a module type, a `led:` without an entry. | On a chassis, a `led:` without an entry (it stays off); a glob matching nothing. |
+| Port sizes | | Ports without `danbyte_w` / `danbyte_h`. |
+| Renders | A file missing, not a WebP or PNG, or without a transparent background; a front or rear not exactly the type's face frame at 2,000 px across; `model_sha256` missing or not the `.glb`'s; `modules` naming a bay the YAML or the model lacks, or a part number in neither the pack nor the tenant. | No front or rear render; renders on a module type. |
+
+The in-app check runs the same checker, with the tenant.
+
 ## Importing a pack
 
-A pack is imported with a management command, from a folder or a `.zip` of
-one:
+A pack can also be imported with a management command, from a folder or a
+`.zip` of one:
 
 ```bash
 .venv/bin/python manage.py import_model_pack ./cisco-catalyst-9500 --tenant acme
@@ -363,6 +461,12 @@ pack.
 
 | Call | Does |
 |---|---|
+| `GET /api/model-packs/` | The tenant's packs, newest first; `?status=installed` (comma-separated statuses: `checking`, `checked`, `refused`, `installing`, `installed`, `failed`, `replaced`). View on device types. |
+| `GET /api/model-packs/{id}/` | One pack, with `report` (`check`: the checker's report; `import`: the dry run; `installed`: the version installed before), `result` (what the install did: `created`, `matched`, `errors`, `types`), `files` and `history`. |
+| `POST /api/model-packs/` | Add a pack: a multipart `file` (`.zip`) or JSON `{"url": …}`. Answers `202` with the row; poll it while `status` is `checking`. `413` over the size cap. Install rights. |
+| `POST /api/model-packs/{id}/install/` | Install a checked pack without check errors (`installable`). Body `{"replace_photos": bool}`. `202`; poll while `installing`. `409` for a pack that isn't checked, has errors, or while another installs. |
+| `DELETE /api/model-packs/{id}/` | Forget the pack: the record and its archive. The types stay. |
+| `GET /api/model-packs/limits/` | `max_bytes`, `source_url`, `allowed_hosts`, `downloads` (false when airgapped) and `can_install`. |
 | `GET/POST/DELETE /api/module-types/{id}/model/` | A module type's model, as for device types. View / change on the module type. |
 | `GET/POST/DELETE /api/{device-types,module-types,devices}/{id}/model-far/` | The far copy. Needs the full model first; removing the full model removes it too. |
 | `GET /api/devices/{id}/module-model/{module id}/` (and `module-model-far/`) | An installed module's model, through its device. |

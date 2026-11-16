@@ -18,6 +18,7 @@ change log as system writes, with the pack named as their cause.
 from __future__ import annotations
 
 import uuid
+import zipfile
 
 from django.core.management.base import BaseCommand, CommandError
 
@@ -35,7 +36,7 @@ class Command(BaseCommand):
                                  "markers uploaded by hand.")
 
     def handle(self, *args, pack, tenant, apply=False, replace_photos=False, **opts):
-        from api.model_pack import PackFiles, import_pack
+        from api.model_pack import PackFiles, PackRefused, import_pack
         from core.models import Tenant
 
         try:
@@ -47,7 +48,9 @@ class Command(BaseCommand):
             raise CommandError(f"No tenant {tenant!r}.")
         try:
             files = PackFiles(pack)
-        except (FileNotFoundError, OSError) as exc:
+        except PackRefused as exc:
+            raise CommandError("The archive is refused:\n  " + "\n  ".join(exc.messages)) from exc
+        except (FileNotFoundError, OSError, zipfile.BadZipFile) as exc:
             raise CommandError(f"Can't open the pack: {exc}") from exc
         try:
             result = import_pack(t, files, dry_run=not apply, replace_photos=replace_photos)

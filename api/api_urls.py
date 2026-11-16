@@ -232,6 +232,7 @@ from .topology_views import (
     topology_summary_view,
     topology_view,
 )
+from .model_pack_views import ModelPackViewSet
 from .viewsets import (
     AggregateViewSet,
     AntennaTemplateViewSet,
@@ -533,6 +534,7 @@ router.register(r"device-bays", DeviceBayViewSet, basename="device-bay")
 router.register(r"module-bay-templates", ModuleBayTemplateViewSet, basename="module-bay-template")
 router.register(r"module-bays", ModuleBayViewSet, basename="module-bay")
 router.register(r"module-types", ModuleTypeViewSet, basename="module-type")
+router.register(r"model-packs", ModelPackViewSet, basename="model-pack")
 router.register(r"topology-views", TopologyViewViewSet, basename="topology-view")
 router.register(r"floor-tile-types", FloorTileTypeViewSet, basename="floor-tile-type")
 router.register(r"floor-plans", FloorPlanViewSet, basename="floor-plan")

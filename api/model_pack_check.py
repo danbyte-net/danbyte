@@ -1,0 +1,548 @@
+"""The model pack checker: the review a pack gets before Danbyte ships or
+installs it (docs/dcim/model-packs.md#checking-a-pack, the export spec's
+sections 4, 5, 8 and 12).
+
+``check_pack`` runs on a pack folder or zip (api.model_pack.PackFiles) and
+needs no database unless a ``tenant`` is given, which only widens where a
+render's module part numbers may be found. ``manage.py check_model_pack``
+prints it; the in-app installer's check (api.model_pack_install) stores it
+and refuses to install a pack with errors.
+
+What it checks:
+
+* the archive: paths, links, file types and sizes (api.model_pack);
+* ``pack.yaml``: present, with ``name``, ``id``, ``version`` and
+  ``license``, and its ``types`` lists the pack's YAML;
+* every ``.glb``: ``api.model_3d.validate_glb``, the triangle and file size
+  budgets for a chassis or a module and its far LOD;
+* every image: a WebP or PNG Pillow can verify, within the size caps;
+* each type's names: ``bay:``, ``empty:``, ``port:`` and ``led:port:``
+  against the YAML's ``module-bays`` and ``interfaces`` (``{module}`` as
+  written), LEDs on the ``LED`` material, the far LOD's names, ``leds:``
+  keys against the model's ``led:`` nodes (equal on a module type), port
+  opening sizes (a warning when missing);
+* renders: the files, WebP or PNG, front and rear exactly the type's face
+  frame at 2000 px, a transparent background, ``model_sha256`` equal to the
+  ``.glb``, and ``modules`` naming real bays and module types in the pack
+  (or the tenant).
+"""
+from __future__ import annotations
+
+import fnmatch
+import hashlib
+import io
+import math
+from dataclasses import asdict, dataclass, field
+
+import yaml
+from django.core.exceptions import ValidationError
+
+from .model_pack import (
+    MAX_YAML_BYTES,
+    RENDER_FACES,
+    PackFiles,
+    _clean_path,
+    face_px,
+)
+
+#: Triangle and file budgets (the export spec, section 5): (full, far).
+BUDGETS = {
+    "device-type": {"triangles": (150_000, 15_000)},
+    "module-type": {"triangles": (30_000, 3_000)},
+}
+FILE_BUDGET = (8 * 1024 * 1024, 1024 * 1024)
+#: A module under this many triangles needs no far LOD.
+FAR_OPTIONAL_BELOW = 5_000
+#: The largest image a pack may carry, in pixels per side.
+MAX_IMAGE_SIDE = 4096
+RACK_FACE_MM = 482.6
+RACK_UNIT_MM = 44.45
+PACK_KEYS = ("name", "id", "version", "license")
+
+
+@dataclass
+class Finding:
+    level: str          # "error" | "warning"
+    path: str
+    message: str
+
+
+@dataclass
+class Part:
+    """One type's row in the report table."""
+    kind: str           # "device-type" | "module-type"
+    path: str
+    part: str = ""
+    triangles: int | None = None
+    far_triangles: int | None = None
+    bytes: int | None = None
+    far_bytes: int | None = None
+    bays: int = 0
+    ports: int = 0
+    leds: int = 0
+    errors: int = 0
+    warnings: int = 0
+
+
+@dataclass
+class CheckReport:
+    pack: dict = field(default_factory=dict)
+    parts: list[Part] = field(default_factory=list)
+    findings: list[Finding] = field(default_factory=list)
+
+    @property
+    def errors(self) -> int:
+        return sum(1 for f in self.findings if f.level == "error")
+
+    @property
+    def warnings(self) -> int:
+        return sum(1 for f in self.findings if f.level == "warning")
+
+    @property
+    def ok(self) -> bool:
+        return self.errors == 0
+
+    def to_dict(self) -> dict:
+        return {"ok": self.ok, "errors": self.errors, "warnings": self.warnings,
+                "pack": self.pack, "parts": [asdict(p) for p in self.parts],
+                "findings": [asdict(f) for f in self.findings]}
+
+
+# ── glTF numbers ────────────────────────────────────────────────────────────
+
+def triangles(doc: dict) -> int:
+    """Triangles the default scene draws: each mesh node's primitives, a
+    mesh used twice counted twice. Points and lines count none."""
+    from .model_anchors import _world
+
+    nodes = doc.get("nodes") if isinstance(doc.get("nodes"), list) else []
+    meshes = doc.get("meshes") if isinstance(doc.get("meshes"), list) else []
+    accessors = doc.get("accessors") if isinstance(doc.get("accessors"), list) else []
+
+    def count(i) -> int:
+        if isinstance(i, int) and 0 <= i < len(accessors) and isinstance(accessors[i], dict):
+            n = accessors[i].get("count")
+            return n if isinstance(n, int) and n > 0 else 0
+        return 0
+
+    total = 0
+    for i in _world(doc):
+        mi = nodes[i].get("mesh") if isinstance(nodes[i], dict) else None
+        if not isinstance(mi, int) or not (0 <= mi < len(meshes)):
+            continue
+        for prim in (meshes[mi] or {}).get("primitives") or []:
+            if not isinstance(prim, dict):
+                continue
+            mode = prim.get("mode", 4)
+            n = count(prim.get("indices")) if "indices" in prim else count(
+                (prim.get("attributes") or {}).get("POSITION"))
+            if mode == 4:
+                total += n // 3
+            elif mode in (5, 6):
+                total += max(n - 2, 0)
+    return total
+
+
+def _frame_mm(data: dict) -> tuple[float, float | None]:
+    """A YAML type's face frame (mm), as Danbyte computes it for a type
+    imported from it (api.model_studio.frame_mm)."""
+    try:
+        w = float(data.get("width_mm") or 0) or None
+    except (TypeError, ValueError):
+        w = None
+    if w is None:
+        w = RACK_FACE_MM / 2 if str(data.get("rack_width") or "") == "half" else RACK_FACE_MM
+    try:
+        raw_u = float(data.get("u_height", 1) or 0)
+    except (TypeError, ValueError):
+        raw_u = 0
+    u = max(0, math.ceil(raw_u))
+    h = u * RACK_UNIT_MM if u else None
+    if h is None:
+        try:
+            h = float(data.get("height_mm") or 0) or None
+        except (TypeError, ValueError):
+            h = None
+    return round(w, 2), (round(h, 2) if h is not None else None)
+
+
+def _names(data: dict, key: str) -> list[str]:
+    rows = data.get(key)
+    if not isinstance(rows, list):
+        return []
+    return [str(r["name"]) for r in rows if isinstance(r, dict) and r.get("name") not in (None, "")]
+
+
+# ── the checker ─────────────────────────────────────────────────────────────
+
+class _Checker:
+    def __init__(self, files: PackFiles, tenant=None):
+        self.files = files
+        self.tenant = tenant
+        self.report = CheckReport()
+        self.names = files.names()
+        self.sizes = files.sizes()
+        self.glbs: dict[str, tuple[bytes, dict] | None] = {}
+        self.referenced: set[str] = set()
+
+    def add(self, level, path, message, part: Part | None = None):
+        self.report.findings.append(Finding(level, path, message))
+        if part is not None:
+            if level == "error":
+                part.errors += 1
+            else:
+                part.warnings += 1
+
+    # files ------------------------------------------------------------
+
+    def glb(self, rel: str):
+        """``(bytes, doc)`` of a pack glb that validates, else None (with
+        the error added once)."""
+        from . import model_3d
+
+        if rel in self.glbs:
+            return self.glbs[rel]
+        got = None
+        try:
+            data = self.files.read(rel, model_3d.max_bytes())
+        except ValidationError as exc:
+            self.add("error", rel, " ".join(exc.messages))
+            data = None
+        if data is not None:
+            try:
+                got = (data, model_3d.validate_glb(data))
+            except ValidationError as exc:
+                self.add("error", rel, " ".join(exc.messages))
+        self.glbs[rel] = got
+        return got
+
+    def image(self, rel: str):
+        """``(format, (w, h), image bytes)`` of a pack image that verifies,
+        else None (with the error added)."""
+        from PIL import Image
+
+        from .model_studio import IMAGE_FORMATS, MAX_IMAGE_BYTES
+
+        try:
+            data = self.files.read(rel, MAX_IMAGE_BYTES)
+        except ValidationError as exc:
+            self.add("error", rel, " ".join(exc.messages))
+            return None
+        if data is None:
+            return None
+        try:
+            img = Image.open(io.BytesIO(data))
+            fmt, size = (img.format or "").upper(), tuple(img.size)
+            if max(size) > MAX_IMAGE_SIDE:
+                self.add("error", rel, f"{size[0]} × {size[1]} px; an image may be "
+                                       f"{MAX_IMAGE_SIDE} px a side.")
+                return None
+            img.verify()
+        except Exception:  # noqa: BLE001 - Pillow raises many kinds
+            self.add("error", rel, "Not an image Pillow can read.")
+            return None
+        if fmt not in IMAGE_FORMATS:
+            self.add("error", rel, "Not a WebP or PNG.")
+            return None
+        return fmt, size, data
+
+    # pack.yaml --------------------------------------------------------
+
+    def manifest(self, yamls: dict[str, dict]):
+        if "pack.yaml" not in self.names:
+            self.add("error", "pack.yaml", "The pack has no pack.yaml.")
+            return
+        try:
+            meta = yaml.safe_load(self.files.read("pack.yaml", MAX_YAML_BYTES) or b"")
+        except (ValidationError, yaml.YAMLError) as exc:
+            self.add("error", "pack.yaml", f"Not readable: {exc}")
+            return
+        if not isinstance(meta, dict):
+            self.add("error", "pack.yaml", "Not a mapping.")
+            return
+        self.report.pack = {k: str(meta[k]) for k in (*PACK_KEYS, "author", "spec")
+                            if meta.get(k) not in (None, "")}
+        for k in PACK_KEYS:
+            if meta.get(k) in (None, ""):
+                self.add("error", "pack.yaml", f"No {k}.")
+        types = meta.get("types")
+        if not isinstance(types, dict):
+            self.add("warning", "pack.yaml", "No types: list.")
+            return
+        for kind, key in (("device-type", "device"), ("module-type", "module")):
+            listed = types.get(key) or []
+            listed = {str(x) for x in listed} if isinstance(listed, list) else set()
+            have = {str(d.get("part_number") or d.get("model") or "")
+                    for p, d in yamls.items() if p.startswith(kind + "s/")}
+            for pn in sorted(listed - have):
+                self.add("error", "pack.yaml", f"types.{key} lists {pn}, which has no YAML.")
+            for pn in sorted(have - listed):
+                self.add("warning", "pack.yaml", f"types.{key} doesn't list {pn}.")
+
+    # a type -----------------------------------------------------------
+
+    def part(self, kind: str, path: str, data: dict, module_parts: set[str]):
+        from .led_state import validate_bindings
+        from .model_anchors import far_mismatches, scan
+
+        row = Part(kind=kind, path=path,
+                   part=str(data.get("part_number") or data.get("model") or ""))
+        self.report.parts.append(row)
+        block = data.get("model3d")
+        if block in (None, "", {}):
+            self.add("warning", path, "No model3d block.", row)
+            return
+        if not isinstance(block, dict):
+            self.add("error", path, "model3d is not a mapping.", row)
+            return
+        rel = _clean_path(block.get("file"))
+        if rel is None:
+            self.add("error", path, "model3d.file is missing or leaves the pack.", row)
+            return
+        self.referenced.add(rel)
+        if rel not in self.names:
+            self.add("error", path, f"model3d.file {rel} is not in the pack.", row)
+            return
+        got = self.glb(rel)
+        if got is None:
+            row.errors += 1
+            return
+        data_bytes, doc = got
+        tri_full, tri_far = BUDGETS[kind]["triangles"]
+        row.triangles, row.bytes = triangles(doc), len(data_bytes)
+        if row.triangles > tri_full:
+            self.add("error", rel, f"{row.triangles} triangles; the budget is {tri_full}.", row)
+        if row.bytes > FILE_BUDGET[0]:
+            self.add("error", rel, f"{row.bytes} bytes; the budget is {FILE_BUDGET[0]}.", row)
+
+        anchors, scan_warnings = scan(doc)
+        for w in scan_warnings:
+            self.add("error", rel, w, row)
+        bays, ports, leds = anchors["bays"], anchors["ports"], anchors["leds"]
+        row.bays, row.ports, row.leds = len(bays), len(ports), len(leds)
+        bay_names = set(_names(data, "module-bays"))
+        ifaces = _names(data, "interfaces")
+        iface_set = set(ifaces)
+        if kind == "module-type":
+            for b in bays:
+                self.add("error", rel, f"bay:{b} - a module's model holds no bays.", row)
+        else:
+            for b in bays:
+                if b not in bay_names:
+                    self.add("error", rel, f"bay:{b} matches no module bay in the YAML.", row)
+            for b in sorted(bay_names - set(bays)):
+                self.add("warning", rel, f"Module bay “{b}” has no bay:{b} anchor.", row)
+        for e in anchors["empties"]:
+            if e not in bays:
+                self.add("error", rel, f"empty:{e} has no bay:{e} beside it.", row)
+        for p in ports:
+            if p not in iface_set:
+                self.add("error", rel, f"port:{p} matches no interface in the YAML.", row)
+        missing = [i for i in ifaces if i not in ports]
+        if missing and (ports or kind == "device-type"):
+            self.add("warning", rel, f"{len(missing)} interface{'s' if len(missing) != 1 else ''}"
+                                     f" without a port: anchor (first: {missing[0]}).", row)
+        unsized = [p for p, a in ports.items() if "s" not in a]
+        if unsized:
+            self.add("warning", rel, f"{len(unsized)} port{'s' if len(unsized) != 1 else ''} "
+                                     "without danbyte_w / danbyte_h opening sizes "
+                                     f"(first: {unsized[0]}).", row)
+        for led in leds:
+            if led.startswith("port:") and led[5:] not in iface_set:
+                self.add("error", rel, f"led:{led} matches no interface in the YAML.", row)
+
+        # leds: bindings against the model's lights.
+        bindings, notes = validate_bindings(block.get("leds"))
+        for n in notes:
+            self.add("error", path, f"model3d.{n}", row)
+        for key in bindings:
+            exact = not any(c in key for c in "*?[")
+            if exact and key not in leds:
+                self.add("error", path, f"model3d.leds.{key}: the model has no led:{key}.", row)
+            elif not exact and not any(fnmatch.fnmatchcase(led, key) for led in leds):
+                self.add("warning", path, f"model3d.leds.{key}: matches no led: in the model.",
+                         row)
+        for led in leds:
+            if not any(led == k or fnmatch.fnmatchcase(led, k) for k in bindings):
+                level = "error" if kind == "module-type" else "warning"
+                self.add(level, path, f"led:{led} has no model3d.leds entry, so it stays off.",
+                         row)
+
+        # The far LOD.
+        far = block.get("far")
+        if far not in (None, ""):
+            frel = _clean_path(far)
+            if frel is None or frel not in self.names:
+                self.add("error", path, f"model3d.far {far} is not in the pack.", row)
+            else:
+                self.referenced.add(frel)
+                fgot = self.glb(frel)
+                if fgot is None:
+                    row.errors += 1
+                else:
+                    fdata, fdoc = fgot
+                    row.far_triangles, row.far_bytes = triangles(fdoc), len(fdata)
+                    if row.far_triangles > tri_far:
+                        self.add("error", frel, f"{row.far_triangles} triangles; the far "
+                                                f"budget is {tri_far}.", row)
+                    if row.far_bytes > FILE_BUDGET[1]:
+                        self.add("error", frel, f"{row.far_bytes} bytes; the far budget is "
+                                                f"{FILE_BUDGET[1]}.", row)
+                    fanchors, fwarn = scan(fdoc)
+                    for w in fwarn:
+                        self.add("error", frel, w, row)
+                    for m in far_mismatches(anchors, fanchors):
+                        self.add("error", frel, m, row)
+        elif kind == "device-type" or row.triangles >= FAR_OPTIONAL_BELOW:
+            self.add("warning", path, "No far LOD (model3d.far).", row)
+
+        if kind == "device-type":
+            self.renders(path, data, block, data_bytes, bays, bay_names, module_parts, row)
+        elif block.get("renders") not in (None, "", {}):
+            self.add("warning", path, "model3d.renders on a module type is ignored.", row)
+
+    def renders(self, path, data, block, glb_bytes, bays, bay_names, module_parts, row):
+        renders = block.get("renders")
+        if renders in (None, "", {}):
+            return
+        if not isinstance(renders, dict):
+            self.add("error", path, "model3d.renders is not a mapping.", row)
+            return
+        frame = _frame_mm(data)
+        expect = face_px(frame)
+        for face in RENDER_FACES:
+            p = renders.get(face)
+            if p in (None, ""):
+                if face != "iso":
+                    self.add("warning", path, f"renders.{face}: none.", row)
+                continue
+            rel = _clean_path(p)
+            if rel is None or rel not in self.names:
+                self.add("error", path, f"renders.{face}: {p} is not in the pack.", row)
+                continue
+            self.referenced.add(rel)
+            got = self.image(rel)
+            if got is None:
+                row.errors += 1
+                continue
+            _fmt, size, img_bytes = got
+            if face != "iso":
+                if expect is None:
+                    self.add("error", rel, "The type has no rack units or height to frame "
+                                           "the face against.", row)
+                elif size != tuple(expect):
+                    self.add("error", rel, f"{size[0]} × {size[1]} px; the type's face frame "
+                                           f"({frame[0]} × {frame[1]} mm) needs "
+                                           f"{expect[0]} × {expect[1]}.", row)
+            if not _transparent(img_bytes):
+                self.add("error", rel, "No transparent background.", row)
+        raw = renders.get("model_sha256")
+        claimed = (raw.strip().lower() if isinstance(raw, str) else
+                   ("" if raw is None else str(raw)))
+        actual = hashlib.sha256(glb_bytes).hexdigest()
+        if not claimed:
+            self.add("error", path, "renders.model_sha256: none.", row)
+        elif claimed != actual:
+            self.add("error", path, f"renders.model_sha256 is {claimed[:12]}…; the .glb is "
+                                    f"{actual[:12]}…. Re-render from the shipped model.", row)
+        modules = renders.get("modules")
+        if modules in (None, "", {}):
+            return
+        if not isinstance(modules, dict):
+            self.add("error", path, "renders.modules is not a mapping.", row)
+            return
+        for bay, pn in modules.items():
+            bay, pn = str(bay), str(pn or "").strip()
+            if bay not in bay_names:
+                self.add("error", path, f"renders.modules.{bay}: no module bay of this name.",
+                         row)
+            elif bay not in bays:
+                self.add("error", path, f"renders.modules.{bay}: the model has no bay:{bay}.",
+                         row)
+            if pn and pn not in module_parts and not self._in_tenant(pn):
+                where = "the pack or the tenant" if self.tenant is not None else "the pack"
+                self.add("error", path, f"renders.modules.{bay}: module type {pn} is not in "
+                                        f"{where}.", row)
+
+    def _in_tenant(self, pn: str) -> bool:
+        if self.tenant is None:
+            return False
+        from .models import ModuleType
+
+        return ModuleType.objects.filter(tenant=self.tenant, part_number=pn).exists()
+
+    # run --------------------------------------------------------------
+
+    def run(self) -> CheckReport:
+        for r in self.files.refusals():
+            self.add("error", r.split(":", 1)[0], r)
+        yamls: dict[str, dict] = {}
+        for p in self.names:
+            if not p.startswith(("device-types/", "module-types/")) or not p.endswith(
+                    (".yaml", ".yml")):
+                continue
+            try:
+                doc = yaml.safe_load((self.files.read(p, MAX_YAML_BYTES) or b"").decode("utf-8"))
+            except (ValidationError, UnicodeDecodeError, yaml.YAMLError) as exc:
+                self.add("error", p, f"Not readable: {exc}")
+                continue
+            if not isinstance(doc, dict) or not doc.get("manufacturer") or not doc.get("model"):
+                self.add("error", p, "Needs manufacturer and model.")
+                continue
+            yamls[p] = doc
+        self.manifest(yamls)
+        module_parts = {str(d.get("part_number") or d.get("model"))
+                        for p, d in yamls.items() if p.startswith("module-types/")}
+        for p in sorted(yamls, key=lambda n: (not n.startswith("module-types/"), n)):
+            kind = "module-type" if p.startswith("module-types/") else "device-type"
+            self.part(kind, p, yamls[p], module_parts)
+        for p in self.names:
+            ext = p.lower().rsplit(".", 1)[-1]
+            if ext == "glb" and p not in self.referenced:
+                self.glb(p)
+                self.add("warning", p, "No YAML names this model.")
+            elif ext in ("webp", "png") and p not in self.referenced:
+                self.image(p)
+                self.add("warning", p, "No YAML names this image.")
+        return self.report
+
+
+def _transparent(data: bytes) -> bool:
+    """Has the image an alpha channel with at least one see-through pixel."""
+    from PIL import Image
+
+    try:
+        img = Image.open(io.BytesIO(data))
+        if "A" not in img.getbands() and "transparency" not in img.info:
+            return False
+        alpha = img.convert("RGBA").getchannel("A")
+        return alpha.getextrema()[0] < 255
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def check_pack(files: PackFiles, *, tenant=None) -> CheckReport:
+    """Check a whole pack. ``tenant`` lets a render's module part numbers be
+    found among the tenant's module types too."""
+    return _Checker(files, tenant).run()
+
+
+def check_source(source, *, tenant=None) -> CheckReport:
+    """Check a pack folder or zip by path; a refused archive comes back as
+    a report of its refusals."""
+    import zipfile
+
+    from .model_pack import PackRefused
+
+    try:
+        files = PackFiles(source)
+    except PackRefused as exc:
+        rep = CheckReport()
+        rep.findings = [Finding("error", m.split(":", 1)[0], m) for m in exc.messages]
+        return rep
+    except zipfile.BadZipFile:
+        return CheckReport(findings=[Finding("error", str(source), "Not a zip file.")])
+    try:
+        return check_pack(files, tenant=tenant)
+    finally:
+        files.close()

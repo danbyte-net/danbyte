@@ -388,6 +388,23 @@ takes, in bytes. The default is `26214400` (25 MB); a larger upload is
 refused with the limit in the message. Keep it under the web server's
 `client_max_body_size` (512 MB in the shipped nginx templates).
 
+## 3D model packs (`MODEL_PACK_*`)
+
+These govern [installing model packs in the app](../dcim/model-packs.md#installing-in-the-app).
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `MODEL_PACK_MAX_BYTES` | `209715200` (200 MB) | The largest pack `.zip` an upload or a download may be. Keep it at or under the web server's `client_max_body_size`: 512 MB in the shipped nginx templates, 100 MB in the Docker stack's. |
+| `MODEL_PACK_SOURCE_URL` | `https://github.com/danbyte-net/device-models/releases/download/` | The configured pack source: a download URL under it is allowed. Empty turns it off. |
+| `MODEL_PACK_ALLOWED_HOSTS` | empty | More hosts any `https` pack URL may come from, comma-separated (an internal mirror). |
+| `MODEL_PACK_REDIRECT_HOSTS` | `objects.githubusercontent.com,release-assets.githubusercontent.com` | Hosts a download may be redirected to, and only redirected to: GitHub serves release assets from these. |
+
+Every download also passes the outbound-request guard: the host must
+resolve to a public address (or one in `DANBYTE_SSRF_ALLOWLIST`). An
+airgapped install (*Disable update check*) downloads nothing; upload the
+`.zip` instead. Archives wait in `MEDIA_ROOT/model-packs/` between the check
+and the install, then are deleted; the folder is not served under `/media/`.
+
 ## Vulnerability data uploads (`DANBYTE_VULN_IMPORT_MAX_BYTES`)
 
 `DANBYTE_VULN_IMPORT_MAX_BYTES` is the largest file a deployment admin may

@@ -87,6 +87,7 @@ AUDITED_MODELS = [
     "api.ModuleBayTemplate",
     "api.ModuleBay",
     "api.ModuleType",
+    "api.ModelPack",
     "api.ModuleInterfaceTemplate",
     "api.Module",
     "api.ConsoleServerPortTemplate",
