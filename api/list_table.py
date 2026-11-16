@@ -32,7 +32,9 @@ RBAC rows, site scope.
 from __future__ import annotations
 
 import datetime
+import functools
 import json
+import operator
 import re
 import uuid
 from collections.abc import Callable, Mapping
@@ -138,6 +140,17 @@ class Facet:
     buckets: Callable | None = None
     #: ``range``: ``(qs, request, lo, hi) -> qs``.
     between: Callable | None = None
+    #: ``buckets``, counted by grouping instead: ``request -> (fields,
+    #: bucket_of)`` - the rows grouped by ``fields`` once, each group's
+    #: bucket ``bucket_of(row)`` (None for none). For buckets over a
+    #: correlated subquery, which a ``COUNT(...) FILTER (WHERE …)`` per
+    #: bucket evaluated once per bucket per row (#525). Must agree with
+    #: ``buckets``.
+    classify: Callable | None = None
+    #: ``buckets``, counted by hand: ``(qs, request) -> {bucket: count}`` -
+    #: a count from the related rows' side (the hosts' worst vulnerability)
+    #: that beats any per-row form. Must agree with ``buckets``.
+    counter: Callable | None = None
 
     def filter(self, qs, request, values):
         if self.kind == "range":
@@ -173,32 +186,59 @@ class Facet:
                 q |= Q(**{self.field: ""})
         return qs.filter(q)
 
+    def _bucket_out(self, known, got) -> list[dict]:
+        out = [
+            {"value": v, "label": (self.labels or {}).get(v), "count": got[f"b{i}"]}
+            for i, v in enumerate(known)
+        ]
+        out = [o for o in out if o["count"]]
+        out.sort(key=lambda o: -o["count"])
+        return out
+
     def count(self, qs, request, selected: list[str]) -> list[dict]:
         if self.kind == "range":
             return []
         if self.kind == "tags":
             return _tag_buckets(qs, selected)
+        if self.kind == "buckets" and self.counter is not None:
+            known = self.buckets(request)
+            if not known:
+                return []
+            n = self.counter(qs, request)
+            got = {f"b{i}": n.get(v, 0) for i, v in enumerate(known)}
+            return self._bucket_out(known, got)
         if self.prepare:
             qs = self.prepare(qs, request)
         if self.kind == "buckets":
             known = self.buckets(request)
-            got = qs.order_by().aggregate(**{
-                f"b{i}": Count("pk", filter=q, distinct=True)
-                for i, q in enumerate(known.values())
-            })
-            out = [
-                {"value": v, "label": (self.labels or {}).get(v), "count": got[f"b{i}"]}
-                for i, v in enumerate(known)
-            ]
-            out = [o for o in out if o["count"]]
-            out.sort(key=lambda o: -o["count"])
-            return out
+            if not known:
+                return []
+            if self.classify is not None:
+                fields, bucket_of = self.classify(request)
+                grouped = qs.order_by().values(*fields)
+                n: dict[str, int] = {}
+                for row in grouped.annotate(
+                        _n=Count("pk", distinct=fans_out(grouped))).order_by():
+                    b = bucket_of(row)
+                    if b is not None:
+                        n[b] = n.get(b, 0) + row["_n"]
+                got = {f"b{i}": n.get(v, 0) for i, v in enumerate(known)}
+            else:
+                # The buckets' own joins count too: a bucket over a to-many
+                # path repeats a row inside the aggregate.
+                probe = qs.filter(functools.reduce(operator.or_, known.values()))
+                distinct = fans_out(probe)
+                got = qs.order_by().aggregate(**{
+                    f"b{i}": Count("pk", filter=q, distinct=distinct)
+                    for i, q in enumerate(known.values())
+                })
+            return self._bucket_out(known, got)
         labels = self.labels() if callable(self.labels) else self.labels
         paths = [p for p in (self.label, self.color) if p]
-        rows = (
-            qs.order_by().values(self.field, *paths)
-            .annotate(_n=Count("pk", distinct=True)).order_by("-_n")
-        )
+        grouped = qs.order_by().values(self.field, *paths)
+        # Counted distinct only where a row can repeat (#525): COUNT(DISTINCT)
+        # sorts every group's ids, a plain COUNT does not.
+        rows = grouped.annotate(_n=Count("pk", distinct=fans_out(grouped))).order_by("-_n")
         merged: dict[str, dict] = {}
         for r in rows:
             raw = r[self.field]
@@ -217,8 +257,64 @@ class Facet:
                     if self.text_color is not None:
                         got["text_color"] = self.text_color(r[self.color])
             got["count"] += r["_n"]
-        out = sorted(merged.values(), key=lambda o: -o["count"])
-        return _cap(out, selected)
+        return _cap(_by_count(merged.values()), selected)
+
+
+def group_count(rows, key: str) -> list[tuple]:
+    """``[(value, rows)]`` of ``rows`` (a ``values`` queryset selecting the
+    annotation ``key``) grouped by ``key``, counted in SQL over it as a
+    derived table: each of its rows counts once, and the expression behind
+    ``key`` is computed once per row."""
+    from django.db import connections
+
+    if key not in rows.query.annotation_select:
+        raise ValueError(f"{key} is not an annotation the rows select")
+    from django.core.exceptions import EmptyResultSet
+
+    try:
+        sql, params = rows.query.sql_with_params()
+    except EmptyResultSet:
+        # A filter that can match nothing (``pk__in=[]``, ``none()``).
+        return []
+    col = connections[rows.db].ops.quote_name(key)
+    with connections[rows.db].cursor() as cur:
+        cur.execute(f"SELECT s.{col}, COUNT(*) FROM ({sql}) s GROUP BY s.{col}", params)
+        return cur.fetchall()
+
+
+def row_count(qs) -> int:
+    """How many objects ``qs`` holds, distinct when a row can repeat."""
+    qs = qs.order_by()
+    if fans_out(qs):
+        return qs.values("pk").distinct().count()
+    return qs.count()
+
+
+def fans_out(qs) -> bool:
+    """Can ``qs`` give an object more than one row - DISTINCT, or a join
+    across a to-many relation (a filter, a grouped value or a bucket over
+    one)? Then its counts must be distinct (#525)."""
+    from django.db.models.sql.datastructures import Join
+
+    q = qs.query
+    if q.distinct:
+        return True
+    for join in q.alias_map.values():
+        f = join.join_field if isinstance(join, Join) else None
+        if f is None:
+            continue
+        # A reverse join's ``join_field`` is the relation object; the forward
+        # side of a many-to-many is the field itself.
+        if getattr(f, "many_to_many", False) or getattr(f, "one_to_many", False):
+            return True
+    return False
+
+
+def _by_count(rows) -> list[dict]:
+    """Most used first; equal counts by label, then value, so the order is
+    stable from one request to the next (#525)."""
+    return sorted(rows, key=lambda o: (
+        -o["count"], str(o.get("label") or o["value"]).casefold(), str(o["value"])))
 
 
 def ordering_annotations(qs) -> list[str]:
@@ -303,24 +399,31 @@ def _cap(out: list[dict], selected: list[str]) -> list[dict]:
 
 
 def _tag_buckets(qs, selected):
-    rows = (
+    """Rows per tag. Counted over the distinct (tag, row) pairs - hashed -
+    rather than ``COUNT(DISTINCT)`` per tag, which sorted every tag's ids
+    and was four times slower (#525); a tag on a row twice still counts
+    once."""
+    from core.models import Tag
+
+    pairs = (
         qs.order_by().filter(tags__isnull=False)
-        .values("tags__id", "tags__slug", "tags__name", "tags__color")
-        .annotate(_n=Count("pk", distinct=True)).order_by("-_n")
+        .annotate(_tag=F("tags__id")).values("_tag", "pk").distinct()
     )
+    counts = dict(group_count(pairs, "_tag"))
+    tags = (Tag.objects.filter(pk__in=list(counts)).order_by("name", "id")
+            .values("id", "slug", "name", "color"))
     merged: dict[str, dict] = {}
-    for r in rows:
-        slug = r["tags__slug"]
-        got = merged.get(slug)
+    for t in tags:
+        got = merged.get(t["slug"])
         if got is None:
-            got = merged[slug] = {
-                "value": slug, "label": r["tags__name"], "count": 0,
-                "color": r["tags__color"] or None,
-                "text_color": _text_color(r["tags__color"]),
-                "id": r["tags__id"],
+            got = merged[t["slug"]] = {
+                "value": t["slug"], "label": t["name"], "count": 0,
+                "color": t["color"] or None,
+                "text_color": _text_color(t["color"]),
+                "id": t["id"],
             }
-        got["count"] += r["_n"]
-    return _cap(sorted(merged.values(), key=lambda o: -o["count"]), selected)
+        got["count"] += counts[t["id"]]
+    return _cap(_by_count(merged.values()), selected)
 
 
 def fk(field: str, *, label: str = "name", color: str = "", none_label: str | None = None,

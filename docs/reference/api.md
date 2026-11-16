@@ -161,7 +161,9 @@ Each facet counts the rows every other filter leaves, so its own selection
 does not hide its other buckets; at most 500 buckets per facet, the selected
 ones always. `GET <list>/table-ids/` answers every matching id in list
 order (`{"count", "truncated", "results"}`, at most 50,000). Both are scoped
-exactly like the list: tenant, permissions and site scope.
+exactly like the list: tenant, permissions and site scope. A facet's
+buckets come most used first, equal counts by label, so the order is the
+same from one request to the next.
 
 A page costs about the same whatever its number and its sort: the list reads
 the page's ids first, with only the filters and the sort, then those rows in

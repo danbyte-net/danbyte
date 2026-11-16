@@ -1,5 +1,6 @@
-"""The device list's cost stays flat as the list grows, and the page by id
-first answers exactly what one query did (#524)."""
+"""The device list's cost stays flat as the list grows, and the faster
+paths answer exactly what the old ones did: the page by id first (#524),
+plain facet counts (#525) and the stored vulnerability summaries (#526)."""
 from __future__ import annotations
 
 from datetime import timedelta
@@ -13,6 +14,7 @@ from rest_framework.test import APITestCase
 
 from core.models import Organization, Tag, Tenant
 
+from .list_table import fans_out, group_count
 from .models import (
     Device,
     DeviceRole,
@@ -213,6 +215,36 @@ class DeviceListCostTests(ListFixture):
                 self.assertIn("vulnerabilities", row)
                 self.assertIn("coverage", row)
 
+    def test_coverage_counts_agree_with_the_coverage_filter(self):
+        counts = self._bucket_counts("coverage")
+        self.assertEqual(sum(counts.values()), 12)
+        for bucket in ("covered", "expiring", "expired", "none"):
+            with self.subTest(bucket=bucket):
+                self.assertEqual(counts.get(bucket, 0), self._filtered_count("coverage", bucket))
+        self.assertTrue(counts.get("none"))
+        self.assertTrue(counts.get("covered"))
+
+    def test_tag_counts_count_each_device_once(self):
+        counts = self._bucket_counts("tags")
+        self.assertEqual(counts, {"core": 6})
+
+    def test_to_many_filters_are_counted_distinct(self):
+        plain = Device.objects.filter(tenant=self.tenant)
+        self.assertFalse(fans_out(plain))
+        joined = plain.filter(support_coverage__contract__in=list(self.contracts.values()))
+        self.assertTrue(fans_out(joined))
+        self.assertTrue(fans_out(plain.distinct()))
+
+    def test_group_count_of_nothing(self):
+        from django.db.models import F
+
+        rows = Device.objects.filter(pk__in=[]).annotate(_k=F("site_id")).values("_k")
+        self.assertEqual(group_count(rows, "_k"), [])
+        rows = Device.objects.filter(tenant=self.tenant).annotate(_k=F("site_id")).values("_k")
+        self.assertEqual(sorted(group_count(rows, "_k")), sorted([(self.site.id, 9),
+                                                                  (self.sites[1].id, 3)]))
+
+
 class SameAnswersTests(ListFixture):
     """Every faster path against the one it replaced, response for response,
     as an admin and as a site-bound user."""
@@ -237,3 +269,34 @@ class SameAnswersTests(ListFixture):
                     compared += 1
                 self.assertTrue(any(a[1].get("results") for a in after.values()))
         self.assertGreater(compared, 100)
+
+    def test_plain_counts_answer_as_counting_distinct(self):
+        """Counted with COUNT(DISTINCT) everywhere, the rail says the same -
+        with and without a to-many filter (tags)."""
+        urls = [
+            "/api/devices/facets/",
+            "/api/devices/facets/?f_tags=core",
+            f"/api/devices/facets/?f_tags=core&f_role={self.role.id}",
+            "/api/devices/facets/?search=dev-1",
+        ]
+        for user in (self.admin, self.scoped):
+            with self.subTest(user=user.username):
+                self._login(user)
+                after = self._answers(urls)
+                with mock.patch("api.list_table.fans_out", return_value=True):
+                    before = self._answers(urls)
+                self.assertEqual(after, before)
+        # Narrowed by a tag, the counts are of tagged devices, each once.
+        body = after["/api/devices/facets/?f_tags=core"][1]["facets"]
+        self.assertEqual(sum(o["count"] for o in body["status"]), 13)
+
+    def test_equal_counts_come_in_label_order(self):
+        Device.objects.filter(tenant=self.tenant).update(role=None)
+        for name in ("Zulu", "alpha", "Mike"):
+            role = DeviceRole.objects.create(tenant=self.tenant, name=name, slug=name.lower())
+            Device.objects.filter(pk__in=Device.objects.filter(
+                tenant=self.tenant, role=None).values("pk")[:2]).update(role=role)
+        Device.objects.filter(tenant=self.tenant, role=None).update(
+            role=DeviceRole.objects.create(tenant=self.tenant, name="Most", slug="most"))
+        body = self.client.get("/api/devices/facets/").json()["facets"]["role"]
+        self.assertEqual([o["label"] for o in body], ["Most", "alpha", "Mike", "Zulu"])

@@ -233,6 +233,18 @@ def status_q(status: str, warning_days: int, field: str = "coverage_end_annotate
     raise ValueError(status)
 
 
+def status_of_end(end: date | None, warning_days: int, today: date | None = None) -> str:
+    """:func:`status_q` for one latest covered day (``coverage_end_annotated``)."""
+    if end is None:
+        return "none"
+    today = today or timezone.localdate()
+    if end < today:
+        return "expired"
+    if end <= today + timedelta(days=warning_days):
+        return "expiring"
+    return "covered"
+
+
 def parse_statuses(raw: str | None, allowed=STATUSES, key="coverage") -> list[str]:
     """``a,b`` → ``["a", "b"]``; an unknown value is a 400."""
     from rest_framework.exceptions import ValidationError

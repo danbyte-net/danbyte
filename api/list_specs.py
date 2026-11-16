@@ -19,6 +19,7 @@ from django.db.models import (
     IntegerField,
     OuterRef,
     Prefetch,
+    Q,
     Subquery,
     Value,
     When,
@@ -110,6 +111,33 @@ def _coverage_buckets(request):
 
 def _coverage_prepare(qs, request):
     return support_coverage.annotate_devices(qs)
+
+
+def _coverage_counter(qs, request) -> dict:
+    """The coverage facet counted by each device's latest covered day, from
+    one join over the coverage rows grouped per device, rather than a
+    subquery per device in every bucket's FILTER (#525)."""
+    from django.db.models import Max
+    from django.db.models.functions import Greatest
+    from django.utils import timezone
+
+    from .list_table import group_count
+
+    days = support_coverage.warning_days_for(request)
+    today = timezone.localdate()
+    end = Coalesce("support_coverage__contract__end_date",
+                   Value(support_coverage.OPEN_ENDED), output_field=DateField())
+    per_device = (
+        qs.order_by().values("pk", "warranty_end")
+        .annotate(_m=Max(end, filter=Q(support_coverage__isnull=False)))
+        .annotate(_e=Greatest("_m", "warranty_end", output_field=DateField()))
+        .values("pk", "_e")
+    )
+    out: dict[str, int] = {}
+    for day, n in group_count(per_device, "_e"):
+        status = support_coverage.status_of_end(day, days, today)
+        out[status] = out.get(status, 0) + n
+    return out
 
 
 def _coverage_sort() -> Sort:
@@ -280,7 +308,8 @@ DEVICE_TABLE = TableSpec(
         "role": fk("role", color="color", none_label="No role"),
         "platform": fk("platform", none_label="No platform"),
         "eol": Facet(kind="buckets", buckets=_eol_buckets("platform__eol_mapping__")),
-        "coverage": Facet(kind="buckets", prepare=_coverage_prepare, buckets=_coverage_buckets),
+        "coverage": Facet(kind="buckets", prepare=_coverage_prepare, buckets=_coverage_buckets,
+                          counter=_coverage_counter),
         "type": fk("device_type", none_label="No type"),
         "manufacturer": value("device_type__manufacturer__name"),
         "cooling": value("cooling_effective", prepare=_cooling_prepare),
