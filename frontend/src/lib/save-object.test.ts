@@ -47,6 +47,10 @@ const UNMIGRATED_FORMS = new Set<string>([
   // single-object save and has no meaning as one planned change.
   "components/automation-target-wizard.tsx",
   "components/onboarding-wizard.tsx",
+  // Seats a transceiver in a port: creates the item, takes the old one out
+  // and seats the new one - several writes in sequence, not one object's
+  // form, and no plan path leads to the interface page's Transceiver row.
+  "components/transceiver-dialog.tsx",
   // Direct manipulation, not a form: dragging a device in the 3D scene and
   // editing floor-plan tiles both write positions as you move things.
   "components/floorplan3d/scene.tsx",
