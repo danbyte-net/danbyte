@@ -10,6 +10,7 @@ import {
   AO_MAX_PIXELS,
   aoRadiusFor,
   aoSize,
+  isHitOnly,
   isOverlay,
   weakGpu,
 } from "./viewer-look"
@@ -51,6 +52,18 @@ describe("aoSize", () => {
     const [w, h] = aoSize(5120, 2880)
     expect(w * h).toBeLessThanOrEqual(AO_MAX_PIXELS * 1.001)
     expect(w / h).toBeCloseTo(5120 / 2880, 2)
+  })
+})
+
+describe("isHitOnly", () => {
+  it("keeps pick boxes out of the AO and depth passes", () => {
+    const box = new THREE.BoxGeometry()
+    const hit = new THREE.Mesh(box, new THREE.MeshBasicMaterial())
+    hit.material.visible = false
+    expect(isHitOnly(hit)).toBe(true)
+    expect(isHitOnly(new THREE.Mesh(box, new THREE.MeshBasicMaterial()))).toBe(
+      false
+    )
   })
 })
 

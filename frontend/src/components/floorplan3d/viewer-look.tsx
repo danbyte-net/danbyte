@@ -100,6 +100,14 @@ export function isOverlay(o: THREE.Object3D): boolean {
   return mats.some((m) => m.transparent || m.toneMapped === false)
 }
 
+/** Whether an object only takes the pointer: every material invisible.
+ * Plain rendering skips it; a pass with an override material would not. */
+export function isHitOnly(o: THREE.Object3D): boolean {
+  const mat = (o as THREE.Object3D & { material?: unknown }).material
+  const mats = (Array.isArray(mat) ? mat : mat ? [mat] : []) as THREE.Material[]
+  return mats.length > 0 && mats.every((m) => !m.visible)
+}
+
 /** Sort the scene's renderables into the model and overlay layers (lights
  * on both); answers whether any overlay is visible. */
 function sortLayers(scene: THREE.Scene): boolean {
@@ -113,6 +121,13 @@ function sortLayers(scene: THREE.Scene): boolean {
     if (!drawn) {
       o.layers.enable(MODEL_LAYER)
       o.layers.enable(OVERLAY_LAYER)
+      return
+    }
+    if (isHitOnly(o)) {
+      // A pick box: an override material (the AO's normals, the depth
+      // pass) would draw it.
+      o.layers.disable(MODEL_LAYER)
+      o.layers.disable(OVERLAY_LAYER)
       return
     }
     const over = isOverlay(o)
