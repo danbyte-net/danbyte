@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query"
+import { keepPreviousData, useQuery } from "@tanstack/react-query"
 
 import { api } from "@/lib/api"
 import type { DeviceLeds, DeviceLedsPayload } from "@/lib/led-state"
@@ -7,19 +7,32 @@ import type { DeviceLeds, DeviceLedsPayload } from "@/lib/led-state"
  * cadence. */
 export const LED_POLL_MS = 30_000
 
+/** Devices one request may ask about (the server's limit, api.led_state
+ * MAX_DEVICES); a longer list is cut, its tail left unlit. */
+export const LED_MAX_DEVICES = 500
+
 const NONE: Record<string, DeviceLeds> = {}
+
+/** The ids one request asks about: each once, in the caller's order (so
+ * the ones it lists first are the ones kept past the limit), then sorted
+ * for a stable query key. */
+export function ledRequestIds(deviceIds: readonly string[]): string[] {
+  return [...new Set(deviceIds)].slice(0, LED_MAX_DEVICES).sort()
+}
 
 /**
  * The status LEDs of `deviceIds` (docs/dcim/model-packs.md → Status LEDs),
  * polled every 30 s. One POST for the whole set (a scene's devices can
  * outgrow a request line); the model is never reloaded for it. Empty until
- * the first answer, and while `enabled` is false.
+ * the first answer, and while `enabled` is false. When the set changes (a
+ * rack's devices come near) the last answer stays up until the new one
+ * lands, so the lights that were on don't blink out.
  */
 export function useDeviceLeds(
   deviceIds: readonly string[],
   enabled = true
 ): Record<string, DeviceLeds> {
-  const ids = [...new Set(deviceIds)].sort()
+  const ids = ledRequestIds(deviceIds)
   const q = useQuery({
     queryKey: ["device-leds", ids.join(",")],
     queryFn: () =>
@@ -30,6 +43,7 @@ export function useDeviceLeds(
     enabled: enabled && ids.length > 0,
     refetchInterval: LED_POLL_MS,
     staleTime: LED_POLL_MS / 2,
+    placeholderData: keepPreviousData,
   })
-  return q.data?.devices ?? NONE
+  return (enabled && ids.length > 0 ? q.data?.devices : null) ?? NONE
 }

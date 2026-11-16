@@ -130,8 +130,14 @@ its interface names, character for character.
   ports.
 - **Distance.** From about 14 m away a model with a far copy draws that
   instead, for the chassis and each part that has one.
+- **Racks.** A racked device draws its model in its slot, fitted between
+  the ears and to its units: the full model up close, the far copy (shared
+  by every identical device in the rack, one instanced draw per part) a
+  few metres off, and the box with its generated face photos further out.
+  See [Devices in racks](../features/floor-plans.md#the-3d-room-view).
 - **Budget.** Every part counts against the room's triangle budget. Past
-  it, a device draws its chassis alone, then its box.
+  it, a floor device draws its chassis alone, then its box; a racked device
+  its far copy, then its box. Floor devices spend first.
 - **Status LEDs.** The `led:` lights glow with live state. See below.
 
 Module models come from the module type. A reader who may view the device
@@ -310,8 +316,9 @@ the light is lit only in those states. A PSU's FAIL light is
   neutral. Without view on an interface, its port light is neutral. Without
   view on modules, the module lights are neutral. A light never leaks a
   state the reader couldn't read elsewhere.
-- **Where.** In the 3D room and the device's 3D viewer, polled every 30
-  seconds without reloading the model. On rack-face images that list LED
+- **Where.** In the 3D room - on floor devices and racked ones - and the
+  device's 3D viewer, polled every 30 seconds without reloading the model:
+  one request for every model the room draws. On rack-face images that list LED
   positions, the same lights are drawn as small hardware lights over the
   photo.
 

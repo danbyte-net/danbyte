@@ -29,6 +29,8 @@ import {
 } from "./device-model"
 import type { ModelEntry, ReadyPart } from "./device-model"
 import { ModelPortMarkers } from "./device-model-port-markers"
+import { useModelBudget } from "./rack-model-draw"
+import type { ModelBudget } from "./rack-models"
 import type { MappedPortPick } from "./device-model-port-markers"
 import { CHECK_COLOR } from "./rack-mesh"
 import type { Sel } from "./rack-mesh"
@@ -445,7 +447,14 @@ export function FloorDevicesLayer({
   onSelect,
   onFlyTo,
   onTooDetailed,
+  leds: roomLeds,
+  budget: roomBudget,
 }: {
+  /** The room's triangle budget, shared with its racks (rack-model-draw). */
+  budget?: ModelBudget
+  /** The room's status LEDs by device (one request for the room). Left
+   * out, the layer asks for its own devices'. */
+  leds?: Readonly<Record<string, DeviceLeds>>
   /** The plan's filter leaves these out: ghosted. */
   recedeTileIds?: ReadonlySet<string> | null
   scene: ScenePayload
@@ -470,12 +479,14 @@ export function FloorDevicesLayer({
 
   // Status LEDs of every device wearing a model: one request for the room,
   // polled; a state change swaps materials, the models stay loaded.
-  const leds = useDeviceLeds(
+  const ownLeds = useDeviceLeds(
     useMemo(
       () => placed.filter((p) => p.dev.model).map((p) => p.dev.id),
       [placed]
-    )
+    ),
+    roomLeds === undefined
   )
+  const leds = roomLeds ?? ownLeds
 
   // Loaded models by URL (one probe per distinct URL).
   const [entries, setEntries] = useState<Map<string, ModelEntry>>(new Map())
@@ -549,7 +560,7 @@ export function FloorDevicesLayer({
   // assembled while all of it fits, else its chassis alone; a model past
   // its own limit, or past what the room has left, draws as its bounding
   // box.
-  const { overBudget, partsOf } = useMemo(() => {
+  const { overBudget, partsOf, floorSpent } = useMemo(() => {
     const over = new Set<string>()
     const byTile = new Map<string, ReadyPart[]>()
     let spent = 0
@@ -573,8 +584,14 @@ export function FloorDevicesLayer({
         spent += parts.reduce((n, r) => n + r.entry.triangles, 0)
       }
     }
-    return { overBudget: over, partsOf: byTile }
+    return { overBudget: over, partsOf: byTile, floorSpent: spent }
   }, [placed, entries, chassisUrl, planned])
+  // Racked models share what the floor devices leave (rack-model-draw).
+  const budget = useModelBudget(roomBudget)
+  useEffect(() => {
+    budget.setFloor(floorSpent)
+  }, [budget, floorSpent])
+  useEffect(() => () => budget.setFloor(0), [budget])
   const tooDetailedKey = placed
     .filter((p) => overBudget.has(p.tile.id))
     .map((p) => p.tile.label || p.dev.name)

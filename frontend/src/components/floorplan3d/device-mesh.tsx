@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { useThree } from "@react-three/fiber"
+import type { ThreeEvent } from "@react-three/fiber"
 import { useQuery } from "@tanstack/react-query"
 import * as THREE from "three"
 
@@ -21,10 +22,15 @@ import type { ObservedPort } from "@/components/device-faceplate"
 import type { PointerMenuAt } from "@/components/pointer-menu"
 import { useReportLegend, type LegendReporter } from "@/components/speed-scale"
 import { effectivePortLabelSource, portLabelText } from "@/lib/port-label"
+import type { DeviceLeds } from "@/lib/led-state"
 import type { PortLabelSource } from "@/lib/api"
 import { fetchFacePortsBatched } from "@/lib/face-ports-batch"
 import { facePortsOnSide } from "@/lib/faceplate-layout"
 
+import { PlacedModel } from "./device-model"
+import { ModelPortMarkers } from "./device-model-port-markers"
+import type { MappedPortPick } from "./device-model-port-markers"
+import type { RackModelDraw } from "./rack-model-draw"
 import { FaceLabel } from "./text-sprite"
 import { useMaxAnisotropy } from "./texture-quality"
 import {
@@ -542,6 +548,10 @@ export function DeviceMesh({
   portLabelSource = "",
   portLabelColor = "#ffffff",
   markReserved = false,
+  model = null,
+  leds,
+  showModelPorts = false,
+  onSelectModelPort,
 }: {
   rack: SceneRack
   dev: SceneDevice
@@ -590,6 +600,16 @@ export function DeviceMesh({
   portLabelColor?: string
   /** Draw ports held for a cable amber (`PORT_RESERVED`). */
   markReserved?: boolean
+  /** Its 3D model in the slot (rack-model-draw), granted by the room's
+   * budget: "full" draws it here, "far" is drawn instanced by the rack and
+   * this keeps only the pointer's box. Null: the photo box. */
+  model?: RackModelDraw | null
+  /** Its status LEDs (null: none lit), on the full model. */
+  leds?: DeviceLeds | null
+  /** Draw the ports mapped onto the full model (near, engaged rack). */
+  showModelPorts?: boolean
+  /** A port on the model was clicked. */
+  onSelectModelPort?: (deviceId: string, pick: MappedPortPick) => void
 }) {
   const [hovered, setHovered] = useState(false)
   const labelSource = effectivePortLabelSource(portLabelSource, dev.port_labels)
@@ -659,31 +679,79 @@ export function DeviceMesh({
   const box = sharedBox(dw, boxH, dd)
   const edges = ghosted ? null : sharedEdges(dw, boxH, dd)
 
+  const handlers = {
+    onClick: (e: ThreeEvent<MouseEvent>) => {
+      e.stopPropagation()
+      onSelect(dev.id)
+    },
+    onDoubleClick: onZoomTo
+      ? (e: ThreeEvent<MouseEvent>) => {
+          e.stopPropagation()
+          onZoomTo(dev)
+        }
+      : undefined,
+    onPointerOver: (e: ThreeEvent<PointerEvent>) => {
+      e.stopPropagation()
+      setHovered(true)
+      document.body.style.cursor = "pointer"
+    },
+    onPointerOut: () => {
+      setHovered(false)
+      document.body.style.cursor = ""
+    },
+  }
+
+  if (model && !ghosted) {
+    // The model in its slot: drawn here up close, by the rack's instanced
+    // groups further off. The pointer's target is one invisible box the
+    // model's size, not its triangles.
+    const [mw, mh, md] = model.fit.size
+    return (
+      <group
+        position={model.pose.position}
+        rotation={[0, model.pose.rotY, 0]}
+        {...handlers}
+      >
+        {model.level === "full" && (
+          <PlacedModel
+            entry={model.entry}
+            fit={model.fit}
+            parts={model.parts}
+            bays={model.bays}
+            emptyMode={model.emptyMode}
+            leds={leds ?? null}
+          />
+        )}
+        <mesh position={[0, mh / 2, 0]} geometry={sharedBox(mw, mh, md)}>
+          <meshBasicMaterial colorWrite={false} depthWrite={false} />
+        </mesh>
+        {(selected || hovered) && (
+          <lineSegments
+            position={[0, mh / 2, 0]}
+            geometry={sharedEdges(mw, mh, md)}
+            raycast={() => null}
+          >
+            <lineBasicMaterial
+              color={selected ? DEVICE_SELECTED : DEVICE_EDGE}
+              transparent={!selected}
+              opacity={selected ? 1 : 0.5}
+            />
+          </lineSegments>
+        )}
+        {model.level === "full" && showModelPorts && onSelectModelPort && (
+          <ModelPortMarkers
+            deviceId={dev.id}
+            size={model.fit.size}
+            selectedPort={selectedPort ?? null}
+            onSelect={(pk) => onSelectModelPort(dev.id, pk)}
+          />
+        )}
+      </group>
+    )
+  }
+
   return (
-    <group
-      position={[dx, y + h / 2, dz]}
-      onClick={(e) => {
-        e.stopPropagation()
-        onSelect(dev.id)
-      }}
-      onDoubleClick={
-        onZoomTo
-          ? (e) => {
-              e.stopPropagation()
-              onZoomTo(dev)
-            }
-          : undefined
-      }
-      onPointerOver={(e) => {
-        e.stopPropagation()
-        setHovered(true)
-        document.body.style.cursor = "pointer"
-      }}
-      onPointerOut={() => {
-        setHovered(false)
-        document.body.style.cursor = ""
-      }}
-    >
+    <group position={[dx, y + h / 2, dz]} {...handlers}>
       {/* receiveShadow as well as cast: without it a device took no shadow
           from the gear above it and the rack interior rendered flat.
           Ghosts take a fixed transparent order so they can't reshuffle

@@ -13,7 +13,7 @@ from django.test.utils import CaptureQueriesContext
 from auth_api.models import ObjectPermission, UserProfile
 
 from .model_anchors import port_doc, scan
-from .models import Device, FloorPlan, FloorPlanTile, Module
+from .models import Device, FloorPlan, FloorPlanTile, Module, Rack
 from .tests_model_anchors import _Base, chassis, module_glb
 
 
@@ -188,3 +188,48 @@ class InstalledPartsTests(_Base):
         many, body = count()
         self.assertEqual(len(body["tiles"]), 5)
         self.assertLessEqual(many, one + 2, "parts are loaded per device")
+
+    def test_racked_devices_carry_their_model(self):
+        rack = Rack.objects.create(tenant=self.tenant, site=self.site, name="R1")
+        self.dev.rack, self.dev.position, self.dev.face = rack, 10, "front"
+        self.dev.save()
+        plan = FloorPlan.objects.create(tenant=self.tenant, site=self.site, name="Hall")
+        FloorPlanTile.objects.create(floor_plan=plan, x=1, y=1, rack=rack, link_kind="rack")
+
+        def count():
+            with CaptureQueriesContext(connection) as ctx:
+                body = self.client.get(f"/api/floor-plans/{plan.id}/scene/").json()
+            return len(ctx.captured_queries), body
+
+        one, body = count()
+        dev = body["tiles"][0]["rack"]["devices"][0]
+        self.assertTrue(dev["model"]["url"].startswith(f"/api/device-types/{self.dt.id}/model/"))
+        self.assertTrue(any(b["installed"] for b in dev["model"]["bays"]))
+        for i in range(2, 6):
+            d, bays = self._device(f"sw{i}")
+            d.rack, d.position = rack, 10 + i * 2
+            d.save()
+            Module.objects.create(device=d, module_bay=bays["PS-1"], module_type=self.mt)
+        many, body = count()
+        self.assertEqual(len(body["tiles"][0]["rack"]["devices"]), 5)
+        self.assertLessEqual(many, one + 2, "parts are loaded per device")
+        # The rack page's own 3D view carries the same.
+        geo = self.client.get(f"/api/racks/{rack.id}/scene/").json()
+        self.assertTrue(all(d["model"] for d in geo["devices"]))
+
+    def test_racked_device_model_respects_type_scope(self):
+        """A reader who may view the device but not its type gets the
+        device's own model URL, never the type's."""
+        rack = Rack.objects.create(tenant=self.tenant, site=self.site, name="R1")
+        self.dev.rack, self.dev.position = rack, 10
+        self.dev.save()
+        user = User.objects.create_user("u3", password="x")
+        UserProfile.objects.create(user=user).tenants.add(self.tenant)
+        grant = ObjectPermission.objects.create(
+            name="d", object_types=["device", "rack"], actions=["view"])
+        grant.users.add(user)
+        grant.tenants.add(self.tenant)
+        self._login(user)
+        geo = self.client.get(f"/api/racks/{rack.id}/scene/").json()
+        url = geo["devices"][0]["model"]["url"]
+        self.assertTrue(url.startswith(f"/api/devices/{self.dev.id}/model/"), url)

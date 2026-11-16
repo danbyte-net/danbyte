@@ -74,6 +74,10 @@ export interface SceneDevice {
   /** Which redundant feed powers this PDU: "primary" | "redundant" | "". The
    * whole strip tints by it - the A/B story - when no per-outlet leg is set. */
   power_feed_type?: string
+  /** The 3D model a racked device draws in its slot (its own, else its
+   * type's), null when it has none. Optional for older cached payloads;
+   * a floor device's is required (SceneFloorDevice). */
+  model?: SceneModel | null
 }
 
 export interface SceneRack {

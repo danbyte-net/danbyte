@@ -8791,8 +8791,14 @@ class RackViewSet(ImageAttachmentMixin, TenantScopedViewSet):
         loaded = scene_geo.load_racks(
             Rack.objects.filter(pk=rack.pk), devices=self._viewable_devices(rack)
         )[rack.pk]
+        from .views import _get_active_tenant
+
+        types = scene_geo.prepare_rack_models(
+            [loaded], request.user, _get_active_tenant(request)
+        )
         return Response(scene_geo.rack_geo(
-            loaded, scene_geo.image_url(request), scene_geo.power_feed_types([loaded])
+            loaded, scene_geo.image_url(request), scene_geo.power_feed_types([loaded]),
+            types,
         ))
 
     @elevation_pdf.pdf_schema("rack")
@@ -14403,9 +14409,12 @@ class FloorPlanViewSet(TenantScopedViewSet):
         )
         feed_types = scene_geo.power_feed_types(racks.values())
         img = scene_geo.image_url(request)
+        # Racked devices draw their 3D models in their slots: their module
+        # bays in one batch, and which types the reader may view.
+        rack_types = scene_geo.prepare_rack_models(racks.values(), user, tenant)
 
         def rack_geo(r):
-            return scene_geo.rack_geo(r, img, feed_types)
+            return scene_geo.rack_geo(r, img, feed_types, rack_types)
 
         def cabinet_geo(c):
             return scene_geo.cabinet_geo(c, cabinet_counts.get(c.id, 0))

@@ -141,8 +141,33 @@ def device_geo(d, img, feed_types) -> dict:
     }
 
 
-def rack_geo(r, img, feed_types) -> dict:
-    """One rack and the devices it holds, as the 3D views draw it."""
+def prepare_rack_models(racks, user, tenant) -> set:
+    """Ready ``racks``' devices for their 3D models: what each has in its
+    module bays (one batch, the reader's scope) and the ids of their types
+    the reader may view - pass the result to ``rack_geo``."""
+    from .model_3d import installed_parts
+
+    devices = [d for r in racks for d in r.devices.all()]
+    installed_parts(devices, user, tenant)
+    return viewable_type_ids(user, tenant, devices)
+
+
+def racked_device_geo(d, img, feed_types, viewable_types) -> dict:
+    """A racked device and, with ``viewable_types`` (``prepare_rack_models``),
+    the 3D model the room draws in its slot (``model_3d.effective``)."""
+    from .model_3d import effective
+
+    geo = device_geo(d, img, feed_types)
+    dt = d.device_type
+    geo["model"] = None if viewable_types is None or d.position is None else effective(
+        d, type_viewable=bool(dt and dt.id in viewable_types), load_parts=False
+    )
+    return geo
+
+
+def rack_geo(r, img, feed_types, viewable_types=None) -> dict:
+    """One rack and the devices it holds, as the 3D views draw it. With
+    ``viewable_types`` each positioned device carries its 3D model."""
     return {
         "id": str(r.id),
         "name": r.name,
@@ -153,7 +178,7 @@ def rack_geo(r, img, feed_types) -> dict:
         "outer_width_mm": r.outer_width_mm,
         "outer_depth_mm": r.outer_depth_mm,
         "devices": [
-            device_geo(d, img, feed_types)
+            racked_device_geo(d, img, feed_types, viewable_types)
             for d in r.devices.all()
             # Positioned gear AND side-mounted 0U strips - a mounted
             # PDU has no U position but very much exists in the room.

@@ -72,6 +72,8 @@ import type { FocusBox } from "./focus-boxes"
 import { Room } from "./room"
 import type { DrawingFloor } from "./room"
 import { RackMesh } from "./rack-mesh"
+import { newModelBudget, useDrawnModelDevices } from "./rack-model-draw"
+import { useDeviceLeds } from "@/lib/use-device-leds"
 import type { Sel, ShellMode } from "./rack-mesh"
 import { RackHud } from "./rack-hud"
 import { roomStamp } from "./room-stamp"
@@ -291,6 +293,23 @@ export default function FloorScene3D({
   // viewer's own switch (View menu) can clear the labels off this screen.
   const { faceplatePortLabels, faceplatePortLabelColor } = useMe()
   const portLabelsShown = usePortLabelsShown()
+  // One triangle budget for every model in the room - floor devices first,
+  // racked ones nearest first (rack-model-draw) - and one polled LED
+  // request for every device drawing a model.
+  const [modelBudget] = useState(newModelBudget)
+  const rackModelIds = useDrawnModelDevices(modelBudget)
+  const sceneTiles = scene.data?.tiles
+  const floorModelIds = useMemo(
+    () =>
+      (sceneTiles ?? []).flatMap((t) => (t.device?.model ? [t.device.id] : [])),
+    [sceneTiles]
+  )
+  const roomLeds = useDeviceLeds(
+    useMemo(
+      () => [...floorModelIds, ...rackModelIds],
+      [floorModelIds, rackModelIds]
+    )
+  )
   const [selection, setSelection] = useState<Sel | null>(null)
   // A right-click on a disk or a PSU: its part's statuses at the pointer.
   const canSetStatus = useCanSetPartStatus()
@@ -1161,6 +1180,8 @@ export default function FloorScene3D({
               flyToRef.current = { target, position }
               setViewSide("front")
             }}
+            leds={roomLeds}
+            budget={modelBudget}
           />
         ))}
         {shownCabinets.map((t) => (
@@ -1353,6 +1374,8 @@ export default function FloorScene3D({
             setViewSide("front")
           }}
           onTooDetailed={setTooDetailed}
+          leds={roomLeds}
+          budget={modelBudget}
         />
         <PlanTextDriver bus={textBus} />
         <PlanTextLayer

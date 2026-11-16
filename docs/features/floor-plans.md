@@ -771,6 +771,38 @@ ceiling, underfloor runs sit beneath the slab) and zones tint the floor.
     modules in their bays, every part counted: past the budget it draws its
     chassis alone, then its box. From about 14 m off, a model with a far
     copy draws that instead.
+- **Devices in racks with a 3D model** (the device's own, else its type's)
+  draw that model in their slot once the rack is near enough to show its
+  gear one by one:
+    - **Fitted to the slot**: as wide as the frame between the ears (482.6
+      mm in a 19 inch rack, half that for half-width gear) and its units
+      tall, the model's own depth kept. A front-mounted device's front sits
+      on the front rails and it runs back from there; a rear-mounted one is
+      turned round, its front on the rear rails. It turns with the rack.
+    - **Assembled**: installed modules in their bays, covers over the empty
+      ones, as on the floor ([model packs](../dcim/model-packs.md)).
+    - **By distance**: within about 3.5 m (back past 4.5 m) the full model;
+      out to about 9 m (back past 11 m) the far copy - the full model when
+      there is none - drawn as one instanced mesh per part for every device
+      in the rack that looks the same, so a rack of identical switches
+      costs one model's draw calls; beyond that, or when the rack's gear is
+      not drawn one by one, the box with its face photos, which the
+      [generated images](../dcim/model-packs.md#generated-images) make look
+      the same from there.
+    - **Budget**: the room's 2,000,000-triangle budget is shared with the
+      devices on the floor, which spend first; racked devices take what is
+      left across every rack: the ones up close get their far copy (with up
+      to half of it), the nearest of them are then raised to their full
+      model, and the rest get far copies with what remains. Past it a device steps down
+      to its far copy, then its box - silently, as the box looks right.
+    - **Status LEDs** glow on the model, the locate beacon included (blinking
+      up close, steady on the far copy). The room asks for every
+      model-drawn device's lights in one request every 30 seconds.
+    - Click selects the device, double-click flies to it, focus ghosts its
+      siblings back to boxes. In the rack you are working on, its
+      [model's ports](#port-markers-on-3d-models) show up close, as on a
+      floor device; the photo ports and their right-click part menus stay
+      with the box.
 - **Light that grounds the room**: one shadow-casting key light plus a
   procedural studio environment (no downloaded assets - it works
   airgapped), so cabinets stand *on* the floor instead of floating in
@@ -985,8 +1017,9 @@ port itself stays visible:
   bounding box (over the triangle budget) or ghosted by focus shows no
   markers.
 
-Racked devices still draw as boxes in the rack, so their mapped ports are
-not shown there; their photo ports are.
+A racked device drawn as its full model shows its mapped ports the same
+way, up close, in the rack you have selected (or the rack's own page); a
+racked device drawn as its box shows its photo ports.
 
 ### Drift in the room
 

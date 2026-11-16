@@ -30,6 +30,16 @@ import {
 } from "./world"
 import type { ScenePayload, SceneTile, Tier } from "./world"
 import type { PointerMenuAt } from "@/components/pointer-menu"
+import type { DeviceLeds } from "@/lib/led-state"
+import { useDeviceLeds } from "@/lib/use-device-leds"
+
+import type { ModelBudget } from "./rack-models"
+import {
+  RackModelInstances,
+  useDrawnModelDevices,
+  useModelBudget,
+  useRackModels,
+} from "./rack-model-draw"
 
 /** Monitoring worst-status → beacon color (same semantics as the 2D rings).
  * A DIN-rail cabinet's outline takes the same colours. */
@@ -138,6 +148,8 @@ export function RackMesh({
   markReserved = false,
   tint = null,
   highlighted = false,
+  leds: roomLeds,
+  budget: roomBudget,
 }: {
   plan: ScenePayload["plan"]
   tile: SceneTile
@@ -182,12 +194,21 @@ export function RackMesh({
   tint?: string | null
   /** Pointed at from outside the room - a row in the plan's rack table. */
   highlighted?: boolean
+  /** The room's status LEDs by device (one request for the room). Left
+   * out, the rack asks for its own model-drawn devices'. */
+  leds?: Readonly<Record<string, DeviceLeds>>
+  /** The room's triangle budget (rack-model-draw); left out, the rack has
+   * its own. */
+  budget?: ModelBudget
 }) {
   const rack = tile.rack!
   const { width, depth, height } = rackFootprintM(rack)
   // U-positioned gear renders per tier; side-mounted 0U strips render in
   // BOTH tiers (one box each - a PDU that pops in/out reads as a glitch).
-  const positioned = rack.devices.filter((d) => d.position != null)
+  const positioned = useMemo(
+    () => rack.devices.filter((d) => d.position != null),
+    [rack.devices]
+  )
   const mounted = rack.devices.filter((d) => d.mount && d.position == null)
   // Turned by its whole facing about the tile's centre (tile-pose.ts).
   const {
@@ -310,6 +331,50 @@ export function RackMesh({
     engagedProp || selection?.tileId === tile.id || focusDeviceId != null
   const liveData = tier === "detail" && !dimmed && engaged
 
+  // Racked devices with a 3D model draw it in their slot while the rack is
+  // near (rack-model-draw): full up close, the far copy instanced further
+  // off, the photo box past the room's triangle budget. Focus-ghosted
+  // siblings keep their ghost box.
+  const ghostIds = useMemo(
+    () =>
+      focusDeviceId == null
+        ? null
+        : new Set(
+            positioned
+              .filter(
+                (d) =>
+                  d.id !== focusDeviceId &&
+                  !(
+                    (selection?.kind === "device" ||
+                      selection?.kind === "port") &&
+                    selection.deviceId === d.id
+                  )
+              )
+              .map((d) => d.id)
+          ),
+    [focusDeviceId, positioned, selection]
+  )
+  const rackCentre = useMemo(() => [cx, cz] as const, [cx, cz])
+  const budget = useModelBudget(roomBudget)
+  const models = useRackModels({
+    owner: tile.id,
+    rack,
+    devices: positioned,
+    rackDepthM: depth,
+    centre: rackCentre,
+    rotY,
+    active: tier === "detail" && !dimmed,
+    skip: ghostIds,
+    budget,
+  })
+  // Their LEDs: the room's, else this rack's own request.
+  const drawn = useDrawnModelDevices(budget)
+  const ownLeds = useDeviceLeds(
+    roomLeds === undefined ? drawn : [],
+    roomLeds === undefined
+  )
+  const leds = roomLeds ?? ownLeds
+
   return (
     <group
       position={[cx, 0, cz]}
@@ -368,6 +433,19 @@ export function RackMesh({
                 key={d.id}
                 rack={rack}
                 dev={d}
+                model={models.get(d.id) ?? null}
+                leds={leds[d.id] ?? null}
+                showModelPorts={liveData}
+                onSelectModelPort={(deviceId, pk) =>
+                  onSelect({
+                    kind: "port",
+                    tileId: tile.id,
+                    deviceId,
+                    portName: pk.port.marker,
+                    portKind: pk.port.kind ?? "interface",
+                    portSide: "model",
+                  })
+                }
                 rackWidthM={width}
                 rackDepthM={depth}
                 selected={isSel}
@@ -429,6 +507,7 @@ export function RackMesh({
               />
             )
           })}
+          <RackModelInstances draws={models} leds={leds} />
         </group>
       ) : (
         <group>
