@@ -764,6 +764,46 @@ class VulnerabilityMatchGroup(models.Model):
         return f"{self.matches} of {self.cve_id} in {self.tenant_id}"
 
 
+class VulnerabilityHostStat(models.Model):
+    """A host's live open matches in a tenant, summed up (#526): what the
+    Devices and VMs lists' vulnerability column, facets and sorts read for a
+    caller who sees every match of the tenant, instead of a subquery over
+    the host's matches per row. One row per host with a live match (open,
+    no exception covering it). Rebuilt from the matches with the per-record
+    counts (:mod:`vulnerabilities.host_stats`); never edited, never
+    change-logged."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        "core.Tenant", on_delete=models.CASCADE, related_name="vulnerability_host_stats")
+    device = models.OneToOneField(
+        "api.Device", null=True, blank=True, on_delete=models.CASCADE,
+        related_name="vulnerability_stat")
+    virtual_machine = models.OneToOneField(
+        "api.VirtualMachine", null=True, blank=True, on_delete=models.CASCADE,
+        related_name="vulnerability_stat")
+    #: The worst priority rank among the live matches (0 = fix first).
+    rank = models.PositiveSmallIntegerField()
+    #: Records with a live match on the host.
+    open_records = models.PositiveIntegerField()
+    #: One of them is in CISA KEV.
+    kev = models.BooleanField()
+    #: The top CVSS score among them.
+    max_cvss = models.DecimalField(max_digits=3, decimal_places=1, null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(device__isnull=False, virtual_machine__isnull=True)
+                | models.Q(device__isnull=True, virtual_machine__isnull=False),
+                name="vuln_host_stat_one_host",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"Vulnerabilities of {self.device_id or self.virtual_machine_id}"
+
+
 class VulnerabilityTenantState(models.Model):
     """Per-tenant bookkeeping of the recompute (#521): when the last full
     recompute evaluated every host, which an open match's ``last_seen_at``

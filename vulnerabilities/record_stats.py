@@ -24,6 +24,9 @@ which writes only the rows that differ):
 * a host's site change and a deleted host or install (their matches go with
   them) queue a whole-tenant refresh (``jobs.enqueue_stats``).
 
+Each refresh also brings the per-host summaries of the hosts concerned in
+line (:mod:`vulnerabilities.host_stats`, #526).
+
 Only callers that see every match of the tenant read the rows (``sees_all``
 in :mod:`vulnerabilities.match_api`); a site-bound or constrained role reads
 the matches themselves, as does any plain filter on a match property.
@@ -137,8 +140,15 @@ def refresh(tenant_id, cve_ids: Iterable | None = None, *, models=None) -> int:
     group_model.objects.bulk_update(changed_groups, ["matches"], batch_size=1000)
     for i in range(0, len(gone_groups), 5000):
         group_model.objects.filter(pk__in=gone_groups[i:i + 5000]).delete()
-    return (len(new) + len(changed) + len(gone) + len(new_groups) + len(changed_groups)
-            + len(gone_groups))
+    written = (len(new) + len(changed) + len(gone) + len(new_groups) + len(changed_groups)
+               + len(gone_groups))
+    if models is None:
+        # The per-host summaries follow the same matches (#526). A migration
+        # older than their table refreshes only these.
+        from . import host_stats
+
+        written += host_stats.refresh(tenant_id, cve_ids)
+    return written
 
 
 def refresh_locked(tenant_id) -> int:

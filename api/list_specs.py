@@ -224,9 +224,11 @@ def _vuln_facets(kind: str) -> dict:
 
     return {
         "vulnerabilities": Facet(kind="buckets", prepare=vh.prepare(kind),
-                                 buckets=vh.priority_buckets, labels=vh.LABELS),
+                                 buckets=vh.priority_buckets, labels=vh.LABELS,
+                                 counter=vh.priority_counter(kind)),
         "vuln_kev": Facet(kind="buckets", prepare=vh.prepare(kind), buckets=vh.kev_buckets,
-                          labels={"yes": "Known exploited", "no": "Not in KEV"}),
+                          labels={"yes": "Known exploited", "no": "Not in KEV"},
+                          classify=vh.kev_classify),
     }
 
 

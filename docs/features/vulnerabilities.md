@@ -895,8 +895,8 @@ parameter anywhere) reads the matches, as does a role limited to some sites
 or by constraints, which only ever counts what it may see. The answers are
 the same either way.
 
-A full recompute checks every record's counts (it writes only those that
-differ). A host's site change, or a deleted device, VM or install, queues a
+A full recompute checks every record's counts and every host's summary
+(it writes only those that differ). A host's site change, or a deleted device, VM or install, queues a
 refresh of the tenant's counts on the `low` queue. A site change written
 straight to the database, past the application, shows on the next
 recompute.
@@ -936,6 +936,17 @@ in the list's Download. **CVE score** shows the host's top open score as a
 badge in its severity's colour (`9.8` in solid red for Critical), the
 counts on hover, linked to its Vulnerabilities tab, and sorts by the top
 score.
+
+For someone who may view every device, VM and install of the tenant, the
+column, both facets and both sorts read a stored summary per host - its
+worst priority, open records, KEV flag and top score - kept in step with the
+matches by the same refreshes as the [counts on a large
+tenant](#counts-on-a-large-tenant). Sorting a 50,000-device list by
+**Vulnerabilities** or filtering it by priority then costs about what any
+other column does, however many matches the hosts have. A role limited to
+some sites, by constraints or without the installed-software right counts
+only the matches it may see, so its list reads the matches, grouped once
+per request for the facet. The answers are the same either way.
 
 ## Exceptions
 

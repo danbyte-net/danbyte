@@ -550,7 +550,8 @@ class MatchTests(Base):
                                                     site=self.site), ubr=1000 + i)
         first = queries()
         again = queries()
-        self.assertLessEqual(first, small + 3)
+        # + the new hosts' vulnerability summaries, one INSERT (#526).
+        self.assertLessEqual(first, small + 4)
         self.assertLessEqual(again, small + 1)
         self.assertEqual(self.open().count(), 2 * 31)
 

@@ -2,9 +2,10 @@
 
 Each row of the slim table (``view=table``) carries ``vulnerabilities``:
 ``{open, priority, kev}`` - the open records on the host, the worst
-priority among them and whether one is in CISA KEV - from three correlated
-subqueries on the page's query, so a page costs the same however many rows
-it has. The rail's ``vulnerabilities`` facet buckets hosts by that worst
+priority among them and whether one is in CISA KEV. For a caller who sees
+every match of the tenant they come from the host's stored summary
+(``host_stats``, one join, #526); for anyone else from three correlated
+subqueries over the matches they may see. The rail's ``vulnerabilities`` facet buckets hosts by that worst
 priority (``none`` for a clean host) and ``vuln_kev`` by the KEV flag; the
 column sorts worst first.
 
@@ -28,6 +29,7 @@ and the filters are read but do nothing.
 from __future__ import annotations
 
 from django.db.models import (
+    BooleanField,
     Case,
     Count,
     Exists,
@@ -49,8 +51,6 @@ from . import priority as prio
 
 #: The worst-priority rank of a host without open records.
 NONE_RANK = len(prio.LEVELS)
-_RANK = Case(*[When(priority=k, then=Value(v)) for k, v in prio.RANK.items()],
-             default=Value(NONE_RANK), output_field=IntegerField())
 _SEVERITIES = ("critical", "high", "medium", "low", "none")
 _TRUE = ("1", "true", "yes")
 _FALSE = ("0", "false", "no")
@@ -74,16 +74,41 @@ def enabled(request) -> bool:
     return cached
 
 
-def _open_matches(request, kind: str):
-    """The open matches of the outer host row the caller may see."""
+def stored(request) -> bool:
+    """Read the per-host summaries (``host_stats``, #526): the caller sees
+    every match of the tenant, so the stored numbers are theirs. Anyone else
+    reads the matches they may see, per row."""
+    cached = getattr(request, "_vuln_stored", None)
+    if cached is None:
+        from api.views import _get_active_tenant
+
+        from .match_api import sees_all
+
+        tenant = _get_active_tenant(request)
+        cached = tenant is not None and sees_all(request, tenant)
+        try:
+            request._vuln_stored = cached
+        except AttributeError:
+            pass
+    return cached
+
+
+def _open_matches(request, kind: str, hosts=None):
+    """The open matches of the outer host row the caller may see - or, with
+    ``hosts`` (a host queryset), of those hosts, uncorrelated."""
     from api.models import InstalledSoftware
     from api.views import _get_active_tenant
     from auth_api import rbac
 
     from .models import VulnerabilityMatch
 
-    m = VulnerabilityMatch.objects.filter(
-        **{kind: OuterRef("pk")}, tenant_id=OuterRef("tenant_id"), resolved_at__isnull=True)
+    if hosts is None:
+        m = VulnerabilityMatch.objects.filter(
+            **{kind: OuterRef("pk")}, tenant_id=OuterRef("tenant_id"), resolved_at__isnull=True)
+    else:
+        m = VulnerabilityMatch.objects.filter(
+            **{f"{kind}__in": hosts.order_by().values("pk")},
+            tenant=_get_active_tenant(request), resolved_at__isnull=True)
     user = request.user
     if not user.is_superuser:
         tenant = _get_active_tenant(request)
@@ -109,8 +134,20 @@ def annotate(qs, request, kind: str):
         return qs
     if not enabled(request):
         return qs.annotate(vuln_rank=Value(NONE_RANK, output_field=IntegerField()))
+    if stored(request):
+        # One LEFT JOIN on the host's summary row; no row = nothing open.
+        return qs.annotate(
+            vuln_rank=Coalesce(F("vulnerability_stat__rank"), Value(NONE_RANK),
+                               output_field=IntegerField()),
+            vuln_open=Coalesce(F("vulnerability_stat__open_records"), Value(0),
+                               output_field=IntegerField()),
+            vuln_kev=Coalesce(F("vulnerability_stat__kev"), Value(False),
+                              output_field=BooleanField()),
+        )
     m = _open_matches(request, kind)
-    rank = m.annotate(_r=_RANK).order_by("_r").values("_r")[:1]
+    # The stored rank (#520), not a CASE over the priority sorted per row:
+    # a plain MIN over the host's matches.
+    rank = m.order_by().values(kind).annotate(_r=Min("rank")).values("_r")[:1]
     count = (m.order_by().values(kind).annotate(n=Count("cve_id", distinct=True))
              .values("n")[:1])
     return qs.annotate(
@@ -180,6 +217,8 @@ def score_sort_prepare(kind: str):
             return qs
         if not enabled(request):
             return qs.annotate(_sort_vuln_score=Value(None, output_field=IntegerField()))
+        if stored(request):
+            return qs.annotate(_sort_vuln_score=F("vulnerability_stat__max_cvss"))
         top = (_open_matches(request, kind).order_by().values(kind)
                .annotate(s=Max("cve__cvss_score")).values("s")[:1])
         return qs.annotate(_sort_vuln_score=Subquery(top))
@@ -200,6 +239,40 @@ def kev_buckets(request) -> dict:
     if not enabled(request):
         return {}
     return {"yes": Q(vuln_kev=True), "no": Q(vuln_kev=False)}
+
+
+def priority_counter(kind: str):
+    """The priority facet counted in one grouped query (#526): from the
+    hosts' summary rows, or - for a caller who sees fewer matches - their
+    worst rank grouped once over the matches they may see, the hosts without
+    one ``none``. Not the rank's subquery for every host in every bucket."""
+
+    def run(qs, request) -> dict:
+        from api.list_table import fans_out, group_count, row_count
+
+        out: dict[str, int] = {}
+        if stored(request):
+            rows = annotate(qs, request, kind).order_by().values("vuln_rank")
+            for row in rows.annotate(_n=Count("pk", distinct=fans_out(rows))).order_by():
+                name = BUCKETS[min(row["vuln_rank"], NONE_RANK)]
+                out[name] = out.get(name, 0) + row["_n"]
+            return out
+        worst = (_open_matches(request, kind, hosts=qs).order_by().values(kind)
+                 .annotate(_r=Min("rank")).values(kind, "_r"))
+        for rank, n in group_count(worst, "_r"):
+            name = BUCKETS[min(rank, NONE_RANK)]
+            out[name] = out.get(name, 0) + n
+        clean = row_count(qs) - sum(out.values())
+        out["none"] = out.get("none", 0) + clean
+        return out
+
+    return run
+
+
+def kev_classify(request):
+    """The KEV facet counted by grouping on the flag: its subquery once per
+    host, not once per bucket (#526)."""
+    return ("vuln_kev",), lambda row: "yes" if row["vuln_kev"] else "no"
 
 
 def prepare(kind: str):

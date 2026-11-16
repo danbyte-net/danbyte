@@ -143,7 +143,8 @@ class PackageMatchTests(Base):
                 pkg(self.tenant, d, f"other{j}", "1.0-1")
         first = queries()  # creates 40 matches in bulk
         again = queries()
-        self.assertLessEqual(first, small + 3)
+        # + the new hosts' vulnerability summaries, one INSERT (#526).
+        self.assertLessEqual(first, small + 4)
         self.assertLessEqual(again, small + 1)
         self.assertEqual(self.open().count(), 42)
 
