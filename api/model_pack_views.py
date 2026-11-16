@@ -152,6 +152,8 @@ class ModelPackViewSet(viewsets.GenericViewSet):
         check starts at once; poll the row until ``status`` leaves
         ``checking``."""
         tenant = self._installer()
+        if not isinstance(request.data, dict):
+            raise ValidationError({"url": 'Send a JSON object: {"url": "https://…"}, or a file.'})
         upload = request.FILES.get("file")
         url = request.data.get("url") if upload is None else None
         try:
@@ -170,7 +172,10 @@ class ModelPackViewSet(viewsets.GenericViewSet):
         """Install a checked pack. Body: ``{"replace_photos": bool}``."""
         self._installer()
         pack = self._get(pk)
-        replace = request.data.get("replace_photos", False)
+        data = request.data if isinstance(request.data, dict) else None
+        if data is None:
+            raise ValidationError({"replace_photos": 'Send a JSON object: {"replace_photos": false}.'})
+        replace = data.get("replace_photos", False)
         if not isinstance(replace, bool):
             raise ValidationError({"replace_photos": "true or false."})
         try:
