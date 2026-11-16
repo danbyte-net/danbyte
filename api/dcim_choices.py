@@ -300,6 +300,27 @@ INTERFACE_TYPE_CHOICES: GroupedChoices = [
 #: counts it as virtual even where the flag was never set.
 VIRTUAL_INTERFACE_TYPES: tuple[str, ...] = ("virtual", "bridge", "lag", "vxlan")
 
+#: Interface types with a cage a transceiver plugs into: the pluggable
+#: Ethernet and Fibre Channel groups above, plus ``other``. Only these take
+#: a transceiver record (InventoryItem.interface, docs/dcim/inventory.md).
+PLUGGABLE_INTERFACE_TYPES: frozenset[str] = frozenset(
+    [v for g, opts in INTERFACE_TYPE_CHOICES
+     if g in ("Ethernet (pluggable transceivers)", "Fibre Channel") for v, _ in opts]
+    + ["other"]
+)
+
+#: The connector a transceiver takes (InventoryItem.connector).
+TRANSCEIVER_CONNECTOR_CHOICES: Choices = [
+    ("lc", "LC"),
+    ("sc", "SC"),
+    ("mpo-12", "MPO-12"),
+    ("mpo-16", "MPO-16"),
+    ("rj45", "RJ45"),
+    ("dac", "DAC"),
+    ("aoc", "AOC"),
+    ("other", "Other"),
+]
+
 # ─── Cable types (standard cable-type taxonomy) ──────────────────────────────
 CABLE_TYPE_CHOICES: GroupedChoices = [
     ("Copper - twisted pair", [
@@ -727,6 +748,9 @@ def dcim_choices_view(request):
 
     return Response({
         "interface_types": fmt(INTERFACE_TYPE_CHOICES),
+        # The types that take a transceiver record, and its connectors.
+        "pluggable_interface_types": sorted(PLUGGABLE_INTERFACE_TYPES),
+        "transceiver_connectors": flat(TRANSCEIVER_CONNECTOR_CHOICES),
         "interface_duplex": flat([
             ("half", "Half"), ("full", "Full"), ("auto", "Auto"),
         ]),

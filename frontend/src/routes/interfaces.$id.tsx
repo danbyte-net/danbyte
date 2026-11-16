@@ -57,6 +57,8 @@ import { JournalPanel } from "@/components/audit/journal-panel"
 import { VlanBadge } from "@/components/cells/vlan-badge"
 import { InterfaceRoutingCard } from "@/components/routing/interface-routing-card"
 import { useMe } from "@/lib/use-me"
+import { useDcimChoices } from "@/lib/use-dcim-choices"
+import { TransceiverValue } from "@/components/transceiver-dialog"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { buildLearnedMacColumns } from "@/components/columns/learned-mac-columns"
 import { RefreshMacsButton, UplinkBadge } from "@/components/learned-macs-cell"
@@ -395,6 +397,9 @@ function InterfaceOverview({
   /** Its device reads a MAC table, so Automatic has an answer. */
   macTable: boolean
 }) {
+  const { canDo } = useMe()
+  const choices = useDcimChoices()
+  const pluggable = new Set(choices.pluggable_interface_types)
   const attributes: KvRow[] = [
     {
       label: "Device",
@@ -445,6 +450,20 @@ function InterfaceOverview({
         dash
       ),
     },
+    // The optic in the cage (docs/dcim/inventory.md → Transceivers).
+    ...(pluggable.has(i.type) || i.transceiver
+      ? [
+          {
+            label: "Transceiver",
+            value: (
+              <TransceiverValue
+                iface={i}
+                canEdit={canDo("inventoryitem", "change")}
+              />
+            ),
+          } satisfies KvRow,
+        ]
+      : []),
     { label: "Speed", value: i.speed || dash },
     { label: "Duplex", value: i.duplex || dash },
     {

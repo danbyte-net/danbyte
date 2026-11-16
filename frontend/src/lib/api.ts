@@ -3911,6 +3911,9 @@ export interface DcimChoices {
   poe_modes: DcimChoice[]
   poe_types: DcimChoice[]
   interface_types: DcimChoice[]
+  /** The interface types that take a transceiver record. */
+  pluggable_interface_types: string[]
+  transceiver_connectors: DcimChoice[]
   cable_types: DcimChoice[]
   front_port_types: DcimChoice[]
   console_port_types: DcimChoice[]
@@ -4084,6 +4087,8 @@ export interface Interface {
     role_display: string
     tunnel: { id: string; name: string }
   }[]
+  /** The transceiver recorded in the port, when the reader may view it. */
+  transceiver?: InterfaceTransceiver | null
   /** Virtual / logical interface (sub-interface, LAG, loopback, tunnel). */
   virtual: boolean
   /** The interface this one nests under (sub-interface parent), if any. */
@@ -4678,7 +4683,60 @@ export interface InventoryItemRow {
   /** CPU cores (kind=cpu). */
   cores: number | null
   status: StatusMini | null
+  /** A transceiver's port (docs/dcim/inventory.md → Transceivers). */
+  interface: { id: string; name: string } | null
+  standard: string
+  wavelength_nm: number | null
+  reach_m: number | null
+  connector: TransceiverConnector | ""
+  /** The 3D part drawn in its port, set by hand. */
+  accessory_type: { id: string; vendor: string; name: string } | null
   tags: Tag[]
+}
+
+export type TransceiverConnector =
+  "lc" | "sc" | "mpo-12" | "mpo-16" | "rj45" | "dac" | "aoc" | "other"
+
+export const TRANSCEIVER_CONNECTOR_OPTIONS: {
+  value: TransceiverConnector
+  label: string
+}[] = [
+  { value: "lc", label: "LC" },
+  { value: "sc", label: "SC" },
+  { value: "mpo-12", label: "MPO-12" },
+  { value: "mpo-16", label: "MPO-16" },
+  { value: "rj45", label: "RJ45" },
+  { value: "dac", label: "DAC" },
+  { value: "aoc", label: "AOC" },
+  { value: "other", label: "Other" },
+]
+
+/** Standards the transceiver form suggests; any text is allowed. */
+export const TRANSCEIVER_STANDARDS = [
+  "1000BASE-SX",
+  "1000BASE-LX",
+  "1000BASE-T",
+  "10GBASE-SR",
+  "10GBASE-LR",
+  "10GBASE-ER",
+  "10GBASE-CU",
+  "25GBASE-SR",
+  "25GBASE-LR",
+  "40GBASE-SR4",
+  "40GBASE-LR4",
+  "100GBASE-SR4",
+  "100GBASE-LR4",
+  "100GBASE-CWDM4",
+  "400GBASE-DR4",
+]
+
+/** The transceiver an interface holds, as the interface row names it. */
+export interface InterfaceTransceiver {
+  id: string
+  name: string
+  part_id: string
+  serial_number: string
+  standard: string
 }
 
 export interface DeviceBayRow {

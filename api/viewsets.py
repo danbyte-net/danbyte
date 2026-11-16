@@ -5630,6 +5630,8 @@ def _interface_list_prefetch():
         listed.prefetch(
             "tunnel_terminations", TunnelTermination.objects.select_related("tunnel"),
         ),
+        # The transceiver recorded in the port (InventoryItem.interface).
+        "transceiver",
     )
 
 
@@ -5732,7 +5734,7 @@ class InterfaceViewSet(
             ),
             TAGS, "terminations__cable__status", "reservations", "children",
             "lag_members", "tagged_vlans", "mac_addresses",
-            "tunnel_terminations__tunnel",
+            "tunnel_terminations__tunnel", "transceiver",
             *FAR_END_PREFETCH,
         )
         .order_by(natural("device__name"), NATURAL_NAME)
@@ -6885,20 +6887,46 @@ class InventoryItemTemplateViewSet(_ComponentTemplateViewSet):
 class InventoryItemViewSet(_DevicePortViewSet):
     queryset = (
         InventoryItem.objects
-        .select_related("device", "manufacturer", "parent")
+        .select_related("device", "manufacturer", "parent", "interface", "accessory_type")
         .prefetch_related(TAGS)
         .order_by(natural("device__name"), NATURAL_NAME)
     )
     serializer_class = InventoryItemSerializer
     # InventoryItem has no `type` column - its own allowlist. kind/media are
     # choice-backed CharFields (validated against the model choices); status
-    # is the tenant's Status catalog; capacity is raw bytes.
+    # is the tenant's Status catalog; capacity is raw bytes. The port is set
+    # one item at a time (it is unique per interface).
     bulk_str_fields = (
         "description", "part_id", "serial_number", "asset_tag",
-        "kind", "media", "speed",
+        "kind", "media", "speed", "standard", "connector",
     )
-    bulk_int_fields = ("capacity_bytes",)
+    bulk_int_fields = ("capacity_bytes", "wavelength_nm", "reach_m")
     bulk_fk_fields = {"status_id": Status}
+
+    # ``picker=1`` from the transceiver picker: the full row is light enough.
+    extra_query_params = ("picker",)
+
+    def get_queryset(self):
+        # ``kind=transceiver`` and ``in_port=false``: the set-transceiver
+        # dialog's free optics on one device.
+        qs = super().get_queryset()
+        kind = self.request.query_params.get("kind") if self.request else None
+        if kind:
+            qs = qs.filter(kind=kind)
+        in_port = self.request.query_params.get("in_port") if self.request else None
+        if in_port in ("true", "false"):
+            qs = qs.filter(interface__isnull=in_port == "false")
+        return qs
+
+    def check_bulk_rows(self, rows, updates):
+        # Only a transceiver sits in a port, in bulk as one by one.
+        if "kind" in updates and updates["kind"] != "transceiver":
+            seated = [r.name for r in rows if r.interface_id]
+            if seated:
+                raise ValidationError(
+                    {"kind": "Only a transceiver sits in a port. Remove these from "
+                     f"their ports first: {', '.join(sorted(seated)[:5])}."}
+                )
 
 
 class DeviceBayTemplateViewSet(_ComponentTemplateViewSet):

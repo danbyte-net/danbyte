@@ -89,6 +89,7 @@ export type InterfaceColumnId =
   | "device"
   | "name"
   | "type"
+  | "transceiver"
   | "lag"
   | "mac"
   | "learned_macs"
@@ -108,6 +109,7 @@ const CANONICAL_ORDER: InterfaceColumnId[] = [
   "device",
   "name",
   "type",
+  "transceiver",
   "lag",
   "mac",
   "learned_macs",
@@ -131,6 +133,7 @@ const CANONICAL_ORDER: InterfaceColumnId[] = [
 export const DEVICE_INTERFACE_COLUMNS: InterfaceColumnId[] = [
   "name",
   "type",
+  "transceiver",
   "lag",
   "mac",
   "learned_macs",
@@ -443,6 +446,26 @@ export function buildInterfaceColumns<T extends Interface = NestedInterface>(
         ) : (
           dash
         ),
+    }),
+    // The optic recorded in the port, by part ID (docs/dcim/inventory.md →
+    // Transceivers). Hidden until picked in the Columns menu.
+    transceiver: () => ({
+      id: "transceiver",
+      accessorFn: (r) => r.transceiver?.part_id || r.transceiver?.name || "",
+      header: "Transceiver",
+      meta: {
+        label: "Transceiver",
+        defaultHidden: true,
+        field: ["transceiver"],
+      },
+      cell: ({ row }) => {
+        const t = row.original.transceiver
+        return t ? (
+          <span className="font-mono text-xs">{t.part_id || t.name}</span>
+        ) : (
+          dash
+        )
+      },
     }),
     mtu: () => ({
       id: "mtu",

@@ -22,8 +22,9 @@ What it checks:
   keys against the model's ``led:`` nodes (equal on a module type), port
   opening sizes (a warning when missing);
 * accessory types (``accessory-types/``, api.port_plugs): name, kind,
-  ``fits`` and ``model3d.file``, the model valid and within the part
-  budget, and listed under ``types: accessory:``;
+  ``fits``, ``parts`` / ``standard`` / ``wavelength_nm`` and
+  ``model3d.file``, the model valid and within the part budget, listed
+  under ``types: accessory:``, and no part number claimed twice;
 * renders: the files, WebP or PNG, front and rear exactly the type's face
   frame at 2000 px, a transparent background, ``model_sha256`` equal to the
   ``.glb``, and ``modules`` naming real bays and module types in the pack
@@ -297,6 +298,19 @@ class _Checker:
                 self.add("warning", "pack.yaml", f"types.accessory doesn't list {name}.")
 
     # an accessory -----------------------------------------------------
+
+    def accessory_parts(self):
+        """A part number two accessories claim draws whichever sorts first."""
+        from .port_plugs import part_key
+
+        claimed: dict[str, str] = {}
+        for path, doc in sorted(self.accessories.items()):
+            raw = doc.get("parts")
+            for p in raw if isinstance(raw, list) else []:
+                key = part_key(str(p))
+                if key in claimed and claimed[key] != path:
+                    self.add("warning", path, f"parts: {p} is also listed by {claimed[key]}.")
+                claimed.setdefault(key, path)
 
     def accessory(self, path: str, data):
         from .port_plugs import ACCESSORY_TRIANGLES, read_accessory
@@ -577,6 +591,7 @@ class _Checker:
                 self.add("error", p, "Needs manufacturer and model.")
                 continue
             yamls[p] = doc
+        self.accessory_parts()
         self.manifest(yamls)
         module_parts = {str(d.get("part_number") or d.get("model"))
                         for p, d in yamls.items() if p.startswith("module-types/")}

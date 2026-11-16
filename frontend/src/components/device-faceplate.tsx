@@ -1363,6 +1363,12 @@ function facePortPart(fp: FacePort): InventoryItemRow {
     slot: "",
     cores: null,
     status: fp.status,
+    interface: null,
+    standard: "",
+    wavelength_nm: null,
+    reach_m: null,
+    connector: "",
+    accessory_type: null,
     tags: [],
   }
 }

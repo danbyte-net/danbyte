@@ -16,23 +16,36 @@ plug, an SFP with its LC connector, a DAC head, an IEC cord plug - one
 (matched by vendor and name; api.model_pack.import_pack calls it).
 
 ``plugs`` answers, for many devices at once and for one reader, which part
-sits in each of their drawn models' cabled ports: the ``port:`` anchors of
-the chassis and of each installed module (api.model_anchors), resolved to
-the device's interface, console port, power port… (api.anchor_names), the
-ones in use - a cable ends on it, or an interface or patch port is marked
-connected - among those the reader may view. A port takes the accessory
-type whose ``fits`` names its type (``choose``); none, and the port shows
-nothing beyond its hidden cover (api.port_covers). Each plug carries its
-cable's colour when the reader may view the cable.
+sits in each of their drawn models' ports: the ``port:`` anchors of the
+chassis and of each installed module (api.model_anchors), resolved to the
+device's interface, console port, power port… (api.anchor_names), the ones
+in use - a cable ends on it, an interface or patch port is marked
+connected, or an interface holds a transceiver record (an inventory item of
+kind transceiver, ``InventoryItem.interface``) - among those the reader may
+view. Each plug carries its cable's colour when the reader may view the
+cable.
 
-Danbyte has no per-interface transceiver record, so among several parts
-that fit a cage the cable's medium decides: a DAC cable takes a DAC head, a
-fibre cable an optical transceiver, a twisted-pair cable an RJ45 part. A
-known medium no fitting part has shows nothing rather than a wrong part.
+A port picks its part in this order:
+
+1. its transceiver record's ``accessory_type``, set by hand;
+2. the accessory type whose ``parts`` lists the record's part ID
+   (case-insensitive, a trailing ``=`` ignored, ``part_key``);
+3. the accessory type whose ``fits`` names the port's type (``choose``).
+   Among several parts that fit a cage the cable's medium decides: a DAC
+   cable takes a DAC head, a fibre cable an optical transceiver, a
+   twisted-pair cable an RJ45 part. A known medium no fitting part has
+   shows nothing rather than a wrong part.
+
+A port with a record and no cable is listed with ``cabled`` false: the
+viewer draws the transceiver body without its ``plug`` child, and a
+one-piece part (a DAC, a generic plug) not at all (export spec §13). The
+record's facts (part ID, serial) ride along only when the reader may view
+inventory items; a record they may not view counts for nothing.
 
 Query cost: nothing when no device's model names a port; otherwise one
 query for the tenant's accessory types and, when there are any, one
-(UNION ALL over the port kinds in play) for the ports in use.
+(UNION ALL over the port kinds in play, the records as subqueries) for the
+ports in use.
 """
 from __future__ import annotations
 
@@ -48,6 +61,8 @@ KINDS = ("plug", "transceiver", "cord")
 ACCESSORY_TRIANGLES = 2_000
 NAME_MAX = 100
 MAX_FITS = 64
+MAX_PARTS = 64
+PART_MAX = 128
 
 #: Port kinds (api.anchor_names) → (model, rbac slug, CableTermination field,
 #: whether it has ``mark_connected``).
@@ -168,8 +183,44 @@ def read_accessory(path: str, data) -> tuple[dict | None, list[str]]:
     if rel is None:
         return None, ["model3d.file: missing or leaves the pack."]
     connector = str(data.get("connector") or "").strip().lower()[:32]
+    parts, standard, wavelength = _read_part_facts(data, notes)
     return {"vendor": vendor_of(path)[:100], "name": name, "kind": kind,
-            "connector": connector, "fits": fits, "file": rel}, notes
+            "connector": connector, "fits": fits, "parts": parts,
+            "standard": standard, "wavelength_nm": wavelength, "file": rel}, notes
+
+
+def _read_part_facts(data: dict, notes: list[str]):
+    """A real transceiver's ``parts``, ``standard`` and ``wavelength_nm``
+    (all optional; a bad value is noted and left out)."""
+    parts: list[str] = []
+    raw = data.get("parts")
+    if raw is not None and not isinstance(raw, list):
+        notes.append("parts: not a list - ignored.")
+        raw = []
+    seen: set[str] = set()
+    for x in (raw or [])[:MAX_PARTS]:
+        s = str(x).strip() if isinstance(x, (str, int)) else ""
+        if not s or len(s) > PART_MAX:
+            notes.append(f"parts: {x!r} is not a part number - ignored.")
+            continue
+        if part_key(s) not in seen:
+            seen.add(part_key(s))
+            parts.append(s)
+    standard = data.get("standard")
+    standard = str(standard).strip()[:64] if isinstance(standard, (str, int)) else ""
+    wavelength = data.get("wavelength_nm")
+    if wavelength is not None:
+        if isinstance(wavelength, bool) or not isinstance(wavelength, int) or not (
+                0 < wavelength <= 100_000):
+            notes.append(f"wavelength_nm: {wavelength!r} is not a wavelength in nm - ignored.")
+            wavelength = None
+    return parts, standard, wavelength
+
+
+def part_key(part_id: str) -> str:
+    """A part number as matched: case-insensitive, a trailing ``=`` (the
+    spare-part suffix) ignored."""
+    return (part_id or "").strip().rstrip("=").strip().upper()
 
 
 def apply_accessory(tenant, path: str, data, files, *, dry_run: bool = False,
@@ -207,8 +258,12 @@ def apply_accessory(tenant, path: str, data, files, *, dry_run: bool = False,
     if obj is None:
         obj = AccessoryType(tenant=tenant, vendor=fields["vendor"], name=name)
     obj.kind, obj.connector, obj.fits = fields["kind"], fields["connector"], fields["fits"]
+    obj.parts, obj.standard = fields["parts"], fields["standard"]
+    obj.wavelength_nm = fields["wavelength_nm"]
     obj.pack_import = {"pack": {"name": pack_name, "version": pack_version}}
     notes.append(f"{fields['kind']}, fits {', '.join(fields['fits'])}.")
+    if fields["parts"]:
+        notes.append(f"parts: {', '.join(fields['parts'])}.")
     if dry_run:
         return action, name, "", notes
     model_3d.store(obj, glb)
@@ -259,20 +314,34 @@ def accessories_of(tenant) -> list:
 
     return list(AccessoryType.objects.filter(tenant=tenant)
                 .exclude(model_3d="").exclude(model_3d__isnull=True)
-                .only("id", "vendor", "name", "kind", "connector", "fits", "model_3d"))
+                .only("id", "vendor", "name", "kind", "connector", "fits", "parts",
+                      "model_3d"))
 
 
 def in_use(wanted: dict, user, tenant) -> dict:
-    """``{(device id, kind, component name): (type, cable type, colour)}``
-    for the ports of ``wanted`` (``{device id: _wanted rows}``) in use and
-    viewable by the reader. The cable's type and colour only when the
-    reader may view the cable. One query (UNION ALL over the kinds)."""
+    """``{(device id, kind, component name): (type, cable type, colour,
+    cabled, record)}`` for the ports of ``wanted`` (``{device id: _wanted
+    rows}``) the reader may view that are in use: a cable ends on it, it is
+    marked connected (``cabled`` either way), or - an interface - it holds a
+    transceiver record the reader may view. ``record`` is ``(accessory type
+    id, part ID, serial)`` or None. The cable's type and colour only when
+    the reader may view the cable. One query (UNION ALL over the kinds)."""
     from django.apps import apps
-    from django.db.models import CharField, Exists, OuterRef, Q, Subquery, Value
+    from django.db.models import (
+        BooleanField,
+        CharField,
+        Exists,
+        ExpressionWrapper,
+        OuterRef,
+        Q,
+        Subquery,
+        Value,
+    )
+    from django.db.models.functions import Cast
 
     from auth_api import rbac
 
-    from .models import Cable, CableTermination
+    from .models import Cable, CableTermination, InventoryItem
 
     kinds: dict[str, set] = {}
     for dev_id, rows in wanted.items():
@@ -285,6 +354,14 @@ def in_use(wanted: dict, user, tenant) -> dict:
     cables = Cable.objects.filter(tenant=tenant)
     if not superuser:
         cables = rbac.restrict_queryset(cables, user, tenant, "cable", "view")
+    # Transceiver records count only for a reader who may view them.
+    items = None
+    if "interface" in kinds and (
+            superuser or rbac.has_action(user, tenant, "inventoryitem", "view")):
+        items = InventoryItem.objects.filter(device__tenant=tenant, kind="transceiver")
+        if not superuser:
+            items = rbac.restrict_queryset(items, user, tenant, "inventoryitem", "view")
+    text = CharField()
     parts = []
     for kind, dev_ids in sorted(kinds.items()):
         model_name, slug, fk, marks = PORT_KINDS[kind]
@@ -293,21 +370,36 @@ def in_use(wanted: dict, user, tenant) -> dict:
         if not superuser:
             qs = rbac.restrict_queryset(qs, user, tenant, slug, "view")
         terms = CableTermination.objects.filter(**{fk: OuterRef("pk")})
-        used = Q(Exists(terms))
+        cabled = Q(Exists(terms))
         if marks:
-            used |= Q(mark_connected=True)
+            cabled |= Q(mark_connected=True)
+        used = cabled
+        rec = {"_xid": Value(None, output_field=text), "_xacc": Value(None, output_field=text),
+               "_xpart": Value(None, output_field=text),
+               "_xserial": Value(None, output_field=text)}
+        if kind == "interface" and items is not None:
+            mine = items.filter(interface=OuterRef("pk")).order_by()
+            used = used | Q(Exists(mine))
+            rec = {
+                "_xid": Cast(Subquery(mine.values("pk")[:1]), output_field=text),
+                "_xacc": Cast(Subquery(mine.values("accessory_type_id")[:1]), output_field=text),
+                "_xpart": Subquery(mine.values("part_id")[:1], output_field=text),
+                "_xserial": Subquery(mine.values("serial_number")[:1], output_field=text),
+            }
         seen = terms.filter(cable__in=cables).order_by("cable_id")
         parts.append(
             qs.filter(used).order_by()
-            .annotate(_kind=Value(kind, output_field=CharField()),
-                      _ctype=Subquery(seen.values("cable__type")[:1],
-                                      output_field=CharField()),
-                      _color=Subquery(seen.values("cable__color")[:1],
-                                      output_field=CharField()))
-            .values_list("device_id", "_kind", "name", "type", "_ctype", "_color"))
+            .annotate(_kind=Value(kind, output_field=text),
+                      _ctype=Subquery(seen.values("cable__type")[:1], output_field=text),
+                      _color=Subquery(seen.values("cable__color")[:1], output_field=text),
+                      _cabled=ExpressionWrapper(cabled, output_field=BooleanField()),
+                      **rec)
+            .values_list("device_id", "_kind", "name", "type", "_ctype", "_color",
+                         "_cabled", "_xid", "_xacc", "_xpart", "_xserial"))
     rows = parts[0].union(*parts[1:], all=True) if len(parts) > 1 else parts[0]
-    return {(str(d), k, n): (t or "", ct or "", col or "")
-            for d, k, n, t, ct, col in rows}
+    return {(str(d), k, n): (t or "", ct or "", col or "", bool(cab),
+                             (acc or "", part or "", serial or "") if xid else None)
+            for d, k, n, t, ct, col, cab, xid, acc, part, serial in rows}
 
 
 def accessory_url(acc, device, shared: bool) -> str:
@@ -328,13 +420,19 @@ def may_view_types(user, tenant) -> bool:
 
 
 def plugs(devices, owners: dict, user, tenant, accessories=None) -> dict[str, list]:
-    """``{device id: [{port, bay, name, url, color}]}`` - the plugs to seat
-    in each device's drawn model, by its port anchor as drawn (``port``,
-    with ``bay`` the module's bay or null); ``name`` is the device's port
-    (interface, console port, power inlet…) it stands for. ``owners`` maps a device's id to
-    its model's owner (api.model_3d.effective_owner); the devices'
-    ``_installed_parts`` are loaded first (api.model_3d.installed_parts).
-    ``color`` is the cable's ``#rrggbb`` or null (the viewer's grey).
+    """``{device id: [{port, bay, name, url, color, cabled, transceiver}]}``
+    - the parts to seat in each device's drawn model, by its port anchor as
+    drawn (``port``, with ``bay`` the module's bay or null); ``name`` is the
+    device's port (interface, console port, power inlet…) it stands for.
+    ``owners`` maps a device's id to its model's owner
+    (api.model_3d.effective_owner); the devices' ``_installed_parts`` are
+    loaded first (api.model_3d.installed_parts). ``color`` is the cable's
+    ``#rrggbb`` or null (the viewer's grey).
+
+    ``cabled`` says whether a cable is in the port: a port holding only a
+    transceiver record is listed too, and the viewer then hides the part's
+    ``plug`` child - or the whole part when it is one piece (export spec
+    §13). ``transceiver`` is the record's ``{part_id, serial}`` or null.
     Devices with nothing to seat are left out."""
     devices = [d for d in devices if has_ports(d, owners.get(d.id))]
     if not devices:
@@ -348,6 +446,11 @@ def plugs(devices, owners: dict, user, tenant, accessories=None) -> dict[str, li
     if not used:
         return {}
     shared = may_view_types(user, tenant)
+    by_id = {str(a.pk): a for a in accessories}
+    by_part: dict = {}
+    for a in sorted(accessories, key=lambda a: (a.vendor.lower(), a.name.lower())):
+        for p in a.parts or []:
+            by_part.setdefault(part_key(str(p)), a)
     picks: dict = {}
     out: dict[str, list] = {}
     for d in devices:
@@ -357,16 +460,25 @@ def plugs(devices, owners: dict, user, tenant, accessories=None) -> dict[str, li
             hit = used.get((key, kind, comp))
             if hit is None:
                 continue
-            ptype, ctype, color = hit
-            k = (ptype, cable_medium(ctype))
-            if k not in picks:
-                picks[k] = choose(accessories, ptype, ctype)
-            acc = picks[k]
+            ptype, ctype, color, cabled, rec = hit
+            acc = None
+            if rec is not None:
+                # The record's part by hand, else the part its ID names.
+                acc = by_id.get(rec[0]) or (by_part.get(part_key(rec[1]))
+                                            if rec[1] else None)
+            if acc is None:
+                k = (ptype, cable_medium(ctype))
+                if k not in picks:
+                    picks[k] = choose(accessories, ptype, ctype)
+                acc = picks[k]
             if acc is None:
                 continue
             rows.append({"port": drawn, "bay": bay, "name": comp,
                          "url": accessory_url(acc, d, shared),
-                         "color": color.lower() if _HEX.match(color) else None})
+                         "color": color.lower() if _HEX.match(color) else None,
+                         "cabled": cabled,
+                         "transceiver": ({"part_id": rec[1], "serial": rec[2]}
+                                         if rec is not None else None)})
         if rows:
             out[key] = sorted(rows, key=lambda r: (r["bay"] or "", r["port"]))
     return out

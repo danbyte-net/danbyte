@@ -19,6 +19,7 @@ import {
   type Status,
   type StorageUnit,
 } from "@/lib/api"
+import type { Interface } from "@/lib/api"
 import { apiAll } from "@/lib/api-all"
 import type { ColumnDef } from "@tanstack/react-table"
 import { Button } from "@/components/ui/button"
@@ -57,6 +58,14 @@ import {
 import { apiErrorToast } from "@/lib/api-toast"
 import { formatMemory } from "@/lib/memory-size"
 import { usePlanTarget, useSaveObject } from "@/lib/save-object"
+import { useDcimChoices } from "@/lib/use-dcim-choices"
+import {
+  factsOf,
+  factsPayload,
+  NO_FACTS,
+  TransceiverFactFields,
+} from "@/components/transceiver-dialog"
+import type { TransceiverFacts } from "@/components/transceiver-dialog"
 
 /** "CPU1" → "CPU2", "DIMM A1" → "DIMM A2", "Bay 9" → "Bay 10"; a name with no
  * trailing number is left alone. */
@@ -406,6 +415,9 @@ export function InventoryItemDialog({
   const [cores, setCores] = useState("")
   const [description, setDescription] = useState("")
   const [statusId, setStatusId] = useState<string | null>(null)
+  // A transceiver's port and facts (docs/dcim/inventory.md → Transceivers).
+  const [interfaceId, setInterfaceId] = useState<string | null>(null)
+  const [facts, setFacts] = useState<TransceiverFacts>(NO_FACTS)
   // "Add another": save, then stay open with the next name in the sequence
   // and the serial cleared - a rack of identical disks is one dialog.
   const againRef = useRef(false)
@@ -428,6 +440,8 @@ export function InventoryItemDialog({
     setCores(item?.cores != null ? String(item.cores) : "")
     setDescription(item?.description ?? "")
     setStatusId(item?.status?.id ?? null)
+    setInterfaceId(item?.interface?.id ?? null)
+    setFacts(factsOf(item))
     reset()
   }, [open, item, initialName, reset])
 
@@ -444,6 +458,25 @@ export function InventoryItemDialog({
     enabled: open,
     staleTime: 5 * 60_000,
   })
+
+  const isTransceiver = kind === "transceiver"
+  const choices = useDcimChoices()
+  const ports = useQuery({
+    queryKey: ["interfaces-of", deviceId],
+    queryFn: () => apiAll<Interface>(`/api/interfaces/?device=${deviceId}`),
+    enabled: open && isTransceiver,
+    staleTime: 60_000,
+  })
+  const portOptions = useMemo(() => {
+    const pluggable = new Set(choices.pluggable_interface_types)
+    return (ports.data?.results ?? [])
+      .filter(
+        (i) =>
+          pluggable.has(i.type) &&
+          (!i.transceiver || i.transceiver.id === item?.id)
+      )
+      .map((i) => ({ value: i.id, label: i.name }))
+  }, [ports.data, choices.pluggable_interface_types, item?.id])
 
   const editing = !!item
   const mutation = useMutation({
@@ -473,6 +506,9 @@ export function InventoryItemDialog({
           : (item?.cores ?? null),
         description: description.trim(),
         status_id: statusId,
+        // Only a transceiver sits in a port.
+        interface_id: isTransceiver ? interfaceId : null,
+        ...(isTransceiver ? factsPayload(facts) : {}),
       }
       if (editing)
         return saveObject<InventoryItemRow>({
@@ -508,6 +544,8 @@ export function InventoryItemDialog({
       // 3D hardware markers wear the part's status via /face-ports/ - recolour
       // them too, not just the inventory-backed 2D markers.
       qc.invalidateQueries({ queryKey: ["device-face-ports", deviceId] })
+      qc.invalidateQueries({ queryKey: ["interfaces-of", deviceId] })
+      qc.invalidateQueries({ queryKey: ["device-leds"] })
       toast.success(
         editing
           ? "Part updated"
@@ -605,6 +643,27 @@ export function InventoryItemDialog({
             onCores={setCores}
             errors={fieldErrors}
           />
+          {isTransceiver && (
+            <>
+              <FormCombobox
+                label="Port"
+                hint="optional"
+                value={interfaceId}
+                onChange={setInterfaceId}
+                noneLabel="Not in a port"
+                placeholder="Not in a port"
+                searchPlaceholder="Search ports…"
+                emptyText="No free transceiver ports."
+                options={portOptions}
+                error={fieldErrors.interface_id}
+              />
+              <TransceiverFactFields
+                value={facts}
+                onChange={setFacts}
+                errors={fieldErrors}
+              />
+            </>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <FormCombobox
               label="Parent part"

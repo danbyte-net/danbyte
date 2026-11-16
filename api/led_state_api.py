@@ -64,7 +64,8 @@ def device_leds_view(request):
     the chassis' port covers to hide (its ports in use: cabled or marked
     connected, among the interfaces the reader may view) and ``bay_covers``
     each installed module's (api.port_covers). ``plugs`` lists the parts
-    seated in cabled ports - ``{port, bay, name, url, color}`` - when the
+    seated in cabled ports and in ports holding a transceiver record -
+    ``{port, bay, name, url, color, cabled, transceiver}`` - when the
     tenant has accessory types (api.port_plugs)."""
     from .models import Device, Rack
     from .topology_views import _parse_uuid, _uuid_list_param

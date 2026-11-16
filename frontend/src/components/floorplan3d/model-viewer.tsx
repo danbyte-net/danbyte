@@ -28,7 +28,7 @@ import type { FacePort, Model3DEffective } from "@/lib/api"
 import { faceCamera, faceZoom } from "@/lib/face-camera"
 import { plannedParts } from "@/lib/model-assembly"
 import { useDeviceLeds } from "@/lib/use-device-leds"
-import { pluggedNames } from "@/lib/port-plugs"
+import { pluggedNames, portTransceivers } from "@/lib/port-plugs"
 import type { ModelPortsDoc, V3 } from "@/lib/model-ports"
 
 import {
@@ -318,6 +318,7 @@ function Fitted({
             deviceId={props.deviceId}
             size={size}
             plugged={pluggedNames(leds[props.deviceId])}
+            transceivers={portTransceivers(leds[props.deviceId])}
             selectedPort={
               selection?.kind === "port" ? selection.port.marker : null
             }

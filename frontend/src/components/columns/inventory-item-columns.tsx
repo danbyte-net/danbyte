@@ -1,4 +1,5 @@
 import type { ColumnDef } from "@tanstack/react-table"
+import { Link } from "@tanstack/react-router"
 
 import {
   formatBytes,
@@ -51,6 +52,7 @@ export function hardwareSummary(it: InventoryItemRow): string {
 export type InventoryItemColumnId =
   | "name"
   | "slot"
+  | "port"
   | "kind"
   | "hardware"
   | "status"
@@ -63,6 +65,7 @@ export type InventoryItemColumnId =
 export const INVENTORY_ITEM_COLUMNS: InventoryItemColumnId[] = [
   "name",
   "slot",
+  "port",
   "kind",
   "hardware",
   "status",
@@ -118,6 +121,26 @@ export function buildInventoryItemColumns({
       ),
     }),
     slot: () => muted("slot", "Slot"),
+    // A transceiver's port (docs/dcim/inventory.md → Transceivers).
+    port: () => ({
+      id: "port",
+      header: "Port",
+      accessorFn: (r) => r.interface?.name ?? "",
+      cell: ({ row }) => {
+        const i = row.original.interface
+        return i ? (
+          <Link
+            to="/interfaces/$id"
+            params={{ id: i.id }}
+            className="link font-mono text-xs"
+          >
+            {i.name}
+          </Link>
+        ) : (
+          <span className="text-muted-foreground">-</span>
+        )
+      },
+    }),
     kind: () => ({
       id: "kind",
       accessorFn: (r) =>

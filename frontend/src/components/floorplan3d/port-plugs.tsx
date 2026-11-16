@@ -4,10 +4,12 @@ import * as THREE from "three"
 
 import { parseAnchor } from "@/lib/model-assembly"
 import {
+  PLUG_NODE,
   RECOLOURED_MATERIALS,
   plugColor,
-  plugsByUrl,
+  plugGroups,
   plugsKey,
+  shownMeshes,
 } from "@/lib/port-plugs"
 import type { PortPlug } from "@/lib/port-plugs"
 
@@ -28,6 +30,10 @@ import type { ModelEntry } from "./device-model"
  * are cloned once per source material in white and take each plug's cable
  * colour as its instance colour; every other material is the part's own.
  *
+ * A port that holds a recorded transceiver but no cable draws the part
+ * without its child named `plug` (the connector and its stub); a one-piece
+ * part - a DAC, a generic plug - has none and is not drawn there.
+ *
  * Plugs never take the pointer: the port markers reach over them, so a
  * plug hovers and right-clicks as the port it sits in (port-pick).
  */
@@ -38,6 +44,8 @@ interface PartMesh {
   material: THREE.Material | THREE.Material[]
   local: THREE.Matrix4
   recolour: boolean
+  /** Under the part's `plug` child: drawn only while cabled. */
+  inPlug: boolean
 }
 
 /** The white clones of recoloured materials, per source material. Freed
@@ -55,6 +63,16 @@ function whiteOf(mat: THREE.Material): THREE.Material {
 }
 
 const recoloured = (m: THREE.Material) => RECOLOURED_MATERIALS.has(m.name)
+
+/** Whether `o` is, or sits under, the part's `plug` child. */
+function underPlug(o: THREE.Object3D, root: THREE.Object3D): boolean {
+  for (let n: THREE.Object3D | null = o; n && n !== root; n = n.parent) {
+    const name =
+      typeof n.userData.gltfName === "string" ? n.userData.gltfName : n.name
+    if (PLUG_NODE.test(name)) return true
+  }
+  return false
+}
 
 /** The meshes of a loaded part, each with its matrix in the part's frame. */
 export function partMeshes(scene: THREE.Object3D): PartMesh[] {
@@ -74,6 +92,7 @@ export function partMeshes(scene: THREE.Object3D): PartMesh[] {
         : o.material,
       local: new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld),
       recolour,
+      inPlug: underPlug(o, scene),
     })
   })
   return out
@@ -121,13 +140,19 @@ function PartPlugs({
   entry,
   plugs,
   anchors,
+  cabled,
 }: {
   entry: ModelEntry
   plugs: readonly PortPlug[]
   anchors: readonly THREE.Matrix4[]
+  /** The ports are cabled: the whole part, else the body only. */
+  cabled: boolean
 }) {
   const invalidate = useThree((s) => s.invalidate)
-  const meshes = useMemo(() => partMeshes(entry.scene!), [entry.scene])
+  const meshes = useMemo(
+    () => shownMeshes(partMeshes(entry.scene!), cabled),
+    [entry.scene, cabled]
+  )
   const count = anchors.length
   const instanced = useMemo(
     () =>
@@ -181,14 +206,19 @@ export function PortPlugs({
   const key = plugsKey({ plugs: [...plugs] })
   // Keyed on the values: a poll with the same plugs keeps the draws.
   const groups = useMemo(() => {
-    const out: { url: string; plugs: PortPlug[]; anchors: THREE.Matrix4[] }[] =
-      []
-    for (const [url, list] of plugsByUrl(plugs)) {
+    const out: {
+      url: string
+      cabled: boolean
+      plugs: PortPlug[]
+      anchors: THREE.Matrix4[]
+    }[] = []
+    for (const { url, cabled, plugs: list } of plugGroups(plugs)) {
       const mats = anchorMatrices(root, list)
       const kept = list.filter((_, i) => mats[i] !== null)
       if (kept.length)
         out.push({
           url,
+          cabled,
           plugs: kept,
           anchors: mats.filter((m): m is THREE.Matrix4 => m !== null),
         })
@@ -204,10 +234,11 @@ export function PortPlugs({
         if (e?.status !== "ready" || !e.scene) return null
         return (
           <PartPlugs
-            key={g.url}
+            key={`${g.url}:${g.cabled}`}
             entry={e}
             plugs={g.plugs}
             anchors={g.anchors}
+            cabled={g.cabled}
           />
         )
       })}

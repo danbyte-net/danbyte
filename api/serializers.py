@@ -54,6 +54,7 @@ from .models import (
     SensitivityLabel,
     FrontPortTemplate, InterfaceTemplate,
     IPAddress, IPRange, IPRole, Status, Interface, MACAddress, Manufacturer,
+    AccessoryType,
     DeviceBay, DeviceBayTemplate, InventoryItem, InventoryItemTemplate,
     TopologyView,
     Module,
@@ -130,6 +131,38 @@ def _device_profiles(serializer, obj) -> list[dict]:
          "slug": a.profile.slug, "color": a.profile.color, "state": a.state}
         for a in listed(obj, "device_profile_assignments")
     ]
+
+
+def _transceiver_visible(serializer, item) -> bool:
+    """Whether the reader may view the transceiver ``item`` an interface row
+    names: the grant resolved once per request, a site- or constraint-scoped
+    one for the whole page in one query."""
+    ctx = serializer.context
+    request = ctx.get("request")
+    if request is None:
+        return False
+    if "_transceiver_filter" not in ctx:
+        from api.views import _get_active_tenant
+        from auth_api import rbac
+
+        ctx["_transceiver_filter"] = rbac.row_filter(
+            request.user, _get_active_tenant(request), "inventoryitem", "view")
+    filt = ctx["_transceiver_filter"]
+    if filt is None or filt is True:
+        return filt is True
+    seen = ctx.setdefault("_transceiver_seen", {})
+    if item.pk not in seen:
+        parent = getattr(serializer, "parent", None)
+        rows = getattr(parent, "instance", None) if parent is not None else None
+        ids = {item.pk}
+        if rows is not None:
+            for r in rows:
+                t = r._state.fields_cache.get("transceiver")
+                if t is not None:
+                    ids.add(t.pk)
+        ok = set(InventoryItem.objects.filter(filt, pk__in=ids).values_list("pk", flat=True))
+        seen.update({i: i in ok for i in ids})
+    return seen[item.pk]
 
 
 def detail_only(default=None):
@@ -4493,6 +4526,17 @@ class InterfaceSerializer(TableSerializerMixin, StatusSerializerMixin, CustomFie
     tags = TagSerializer(many=True, read_only=True)
     cable = serializers.SerializerMethodField()
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_transceiver(self, obj):
+        try:
+            item = obj.transceiver
+        except InventoryItem.DoesNotExist:
+            return None
+        if item is None or not _transceiver_visible(self, item):
+            return None
+        return {"id": str(item.pk), "name": item.name, "part_id": item.part_id,
+                "serial_number": item.serial_number, "standard": item.standard}
+
     @extend_schema_field(serializers.ListField())
     def get_mac_addresses(self, obj):
         primary = (obj.mac_address or "").lower()
@@ -4502,6 +4546,9 @@ class InterfaceSerializer(TableSerializerMixin, StatusSerializerMixin, CustomFie
             for m in listed(obj, "mac_addresses")
         ]
     cable_count = serializers.SerializerMethodField()
+    # The transceiver recorded in the port (InventoryItem.interface), for a
+    # reader who may view it; else null.
+    transceiver = serializers.SerializerMethodField()
     parent = serializers.SerializerMethodField()
     child_count = serializers.SerializerMethodField()
     lag = serializers.SerializerMethodField()
@@ -4812,7 +4859,7 @@ class InterfaceSerializer(TableSerializerMixin, StatusSerializerMixin, CustomFie
                   "tagged_vlans", "tagged_vlan_ids", "vrf", "vrf_id",
                   "tags", "tag_ids",
                   "cable", "cable_count", "reservation", "link_peer", "hide_label", "label_color",
-                  "ip_addresses", "tunnel_terminations",
+                  "ip_addresses", "tunnel_terminations", "transceiver",
                   "virtual", "parent", "parent_id", "child_count",
                   "lag", "lag_id", "lag_member_count", "bridge", "bridge_id",
                   "lag_protocol", "lag_protocol_display", "lacp_mode", "lacp_rate",
@@ -5968,6 +6015,17 @@ class InventoryItemSerializer(
         source="tags", queryset=Tag.objects.all(),
         write_only=True, required=False, many=True,
     )
+    # A transceiver's port (docs/dcim/inventory.md → Transceivers).
+    interface = serializers.SerializerMethodField()
+    interface_id = TenantScopedPrimaryKeyRelatedField(
+        source="interface", queryset=Interface.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    accessory_type = serializers.SerializerMethodField()
+    accessory_type_id = TenantScopedPrimaryKeyRelatedField(
+        source="accessory_type", queryset=AccessoryType.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_parent(self, obj):
@@ -5977,7 +6035,22 @@ class InventoryItemSerializer(
             else None
         )
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_interface(self, obj):
+        if not obj.interface_id:
+            return None
+        return {"id": str(obj.interface_id), "name": obj.interface.name}
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_accessory_type(self, obj):
+        if not obj.accessory_type_id:
+            return None
+        acc = obj.accessory_type
+        return {"id": str(acc.pk), "vendor": acc.vendor, "name": acc.name}
+
     def validate(self, attrs):
+        from .models import transceiver_link_errors
+
         attrs = super().validate(attrs)
         parent = attrs.get("parent")
         device = attrs.get("device") or (
@@ -5992,6 +6065,21 @@ class InventoryItemSerializer(
                 raise serializers.ValidationError(
                     {"parent_id": "A part can't contain itself."}
                 )
+        # The port and the 3D part, checked on the item as it will be.
+        if {"interface", "accessory_type", "kind", "device"} & attrs.keys():
+            probe = InventoryItem(
+                pk=self.instance.pk if self.instance else None,
+                device=device,
+                kind=attrs.get("kind", self.instance.kind if self.instance else "other"),
+                interface=attrs.get("interface", self.instance.interface
+                                    if self.instance else None),
+                accessory_type=attrs.get("accessory_type", self.instance.accessory_type
+                                         if self.instance else None),
+            )
+            errors = transceiver_link_errors(probe)
+            if errors:
+                raise serializers.ValidationError(
+                    {f"{k}_id": v for k, v in errors.items()})
         return attrs
 
     cf_model = "inventoryitem"
@@ -6003,6 +6091,8 @@ class InventoryItemSerializer(
                   "serial_number", "asset_tag", "description",
                   "kind", "media", "capacity_bytes", "speed", "slot", "cores",
                   "status", "status_id",
+                  "interface", "interface_id", "standard", "wavelength_nm",
+                  "reach_m", "connector", "accessory_type", "accessory_type_id",
                   "tags", "tag_ids", "custom_fields",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]

@@ -439,6 +439,7 @@ INTERFACE_TABLE = TableSpec(
         "lag_miimon": None, "macsec_enabled": None, "macsec_cipher": None,
         "macsec_replay_window": None, "module_id": None, "vrf": None,
         "macsec_keychain": lambda qs: qs.select_related("macsec_keychain"),
+        "transceiver": lambda qs: qs.prefetch_related("transceiver"),
     },
 )
 

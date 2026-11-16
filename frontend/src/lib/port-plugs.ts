@@ -18,6 +18,18 @@ export interface PortPlug {
   name: string
   url: string
   color: string | null
+  /** A cable is in the port. A port listed only for its transceiver record
+   * is not: its part draws without its `plug` child, and a one-piece part
+   * not at all (export spec §13). Absent reads as cabled. */
+  cabled?: boolean
+  /** The transceiver recorded in the port, when the reader may view it. */
+  transceiver?: PortTransceiver | null
+}
+
+/** A port's recorded transceiver, for its hover card. */
+export interface PortTransceiver {
+  part_id: string
+  serial: string
 }
 
 /** The cable colour a plug takes when its cable names none: a neutral
@@ -49,7 +61,8 @@ export function plugsOf(
 export function plugsKey(dev: Pick<DeviceLeds, "plugs"> | null | undefined) {
   return plugsOf(dev)
     .map(
-      (p) => `${p.bay ?? ""}\u0001${p.port}\u0001${p.url}\u0001${p.color ?? ""}`
+      (p) =>
+        `${p.bay ?? ""}\u0001${p.port}\u0001${p.url}\u0001${p.color ?? ""}\u0001${isCabled(p) ? 1 : 0}`
     )
     .sort()
     .join("\u0000")
@@ -73,5 +86,56 @@ export function plugsByUrl(
     if (list) list.push(p)
     else out.set(p.url, [p])
   }
+  return out
+}
+
+/** Whether a plug's port has a cable in it (an older payload says nothing:
+ * cabled). */
+export function isCabled(p: Pick<PortPlug, "cabled">): boolean {
+  return p.cabled !== false
+}
+
+/** The plugs by model URL and cabled-ness - one instanced draw per part's
+ * mesh, the uncabled ones without the part's `plug` child. */
+export function plugGroups(
+  plugs: readonly PortPlug[]
+): { url: string; cabled: boolean; plugs: PortPlug[] }[] {
+  const out = new Map<
+    string,
+    { url: string; cabled: boolean; plugs: PortPlug[] }
+  >()
+  for (const p of plugs) {
+    const cabled = isCabled(p)
+    const key = `${p.url}\u0001${cabled ? 1 : 0}`
+    const g = out.get(key)
+    if (g) g.plugs.push(p)
+    else out.set(key, { url: p.url, cabled, plugs: [p] })
+  }
+  return [...out.values()]
+}
+
+/** A part's node named `plug` (Blender may suffix a copy `plug.001`). */
+export const PLUG_NODE = /^plug(\.?\d+)?$/i
+
+/** The meshes of a part to draw in a port: all of them when cabled; else
+ * the transceiver body without its `plug` child - and nothing for a
+ * one-piece part (a DAC, a generic plug), which has no `plug` child. */
+export function shownMeshes<T extends { inPlug: boolean }>(
+  meshes: readonly T[],
+  cabled: boolean
+): T[] {
+  if (cabled) return [...meshes]
+  if (!meshes.some((m) => m.inPlug)) return []
+  return meshes.filter((m) => !m.inPlug)
+}
+
+/** The recorded transceivers by the device's port name, for the hover
+ * cards. */
+export function portTransceivers(
+  dev: Pick<DeviceLeds, "plugs"> | null | undefined
+): ReadonlyMap<string, PortTransceiver> {
+  const out = new Map<string, PortTransceiver>()
+  for (const p of plugsOf(dev))
+    if (p.transceiver) out.set(p.name, p.transceiver)
   return out
 }

@@ -84,6 +84,7 @@ class ChoiceTests(SimpleTestCase):
         fields, notes = read_accessory("accessory-types/Generic/RJ45-PLUG.yaml", doc)
         self.assertEqual(fields, {"vendor": "Generic", "name": "RJ45-PLUG", "kind": "plug",
                                   "connector": "rj45", "fits": ["1000base-t"],
+                                  "parts": [], "standard": "", "wavelength_nm": None,
                                   "file": "models/Generic/RJ45-PLUG.glb"})
         self.assertEqual(notes, ["fits: 'bad slug' is not a type slug - ignored."])
         for bad, why in (({**doc, "kind": "cable"}, "kind"), ({**doc, "fits": []}, "fits"),
@@ -249,7 +250,8 @@ class PayloadTests(_Base):
         self._cable(console=ConsolePort.objects.get(device=self.dev))
         url = {p["port"]: p for p in self._plugs()}
         self.assertEqual(url["Te1/0/1"], {"port": "Te1/0/1", "bay": None, "name": "Te1/0/1",
-                                          "url": self._url(self.dac), "color": "#ff0000"})
+                                          "url": self._url(self.dac), "color": "#ff0000",
+                                          "cabled": True, "transceiver": None})
         self.assertEqual((url["Te1/0/2"]["url"], url["Te1/0/2"]["color"]),
                          (self._url(self.sr), None))
         self.assertEqual(url["con 0"]["url"], self._url(self.rj45))

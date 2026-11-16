@@ -153,7 +153,8 @@ On the device's **Interfaces** tab, each row shows the name, type, enabled state
 speed, VLAN, cable count, any **IP addresses** attached to it, and the
 description. Sub-interfaces are indented under their parent, and the **LAG**
 column ties a bundle together: members show their aggregate, the aggregate
-shows how many links it bundles. An aggregate is an interface of **type LAG**
+shows how many links it bundles. The optional **Transceiver** column (Columns
+menu) shows the part ID of the transceiver recorded in each port. An aggregate is an interface of **type LAG**
 with its own Bundle settings (protocol, LACP mode, min links) - see
 [Virtual & aggregate interfaces](virtual-interfaces.md).
 
@@ -177,6 +178,11 @@ it, and a cable trace. A port a PRTG traffic sensor measures gets a
 [Where sensors show up](../features/prtg.md#where-sensors-show-up). Its
 sensors and channels can be pinned to the interface's Overview
 ([Pinned sensors](../features/prtg.md#pinned-sensors)).
+
+On a port of a pluggable type (SFP, SFP+, QSFP28…), the **Interface** card
+has a **Transceiver** row: the part ID, serial and standard of the optic in
+it, with **Set**, **Change** and **Remove**. See
+[Transceivers](inventory.md#transceivers).
 
 On the Overview, the **Switching** card has an **Uplink** row: the
 interface's setting and, for Automatic, what the

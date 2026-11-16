@@ -13,6 +13,7 @@ import { useQuery } from "@tanstack/react-query"
 import * as THREE from "three"
 
 import type { FacePort, FacePorts } from "@/lib/api"
+import type { PortTransceiver } from "@/lib/port-plugs"
 import { fetchFacePortsBatched } from "@/lib/face-ports-batch"
 import { modelPortHex, portLocal } from "@/lib/model-ports"
 import {
@@ -105,6 +106,7 @@ export function ModelPortMarkers({
   onMenu,
   outlineAll = false,
   plugged,
+  transceivers,
 }: {
   deviceId: string
   /** The fitted model's upright size (m). */
@@ -112,6 +114,8 @@ export function ModelPortMarkers({
   /** The ports (by name) a plug is seated in: their pick reaches over the
    * plug. */
   plugged?: ReadonlySet<string>
+  /** The transceivers recorded in the ports (by name), for the hover card. */
+  transceivers?: ReadonlyMap<string, PortTransceiver>
   /** The mapped port selected in the room (its marker name), if any. */
   selectedPort: string | null
   onSelect: (pick: MappedPortPick) => void
@@ -193,7 +197,12 @@ export function ModelPortMarkers({
       onSelect={onSelect}
       onFly={onFly}
       onMenu={onMenu}
-      card={(pk) => <ModelPortCard port={pk.port} />}
+      card={(pk) => (
+        <ModelPortCard
+          port={pk.port}
+          transceiver={transceivers?.get(pk.port.name)}
+        />
+      )}
     />
   )
 }
@@ -535,8 +544,14 @@ function OpeningGroup({
   )
 }
 
-/** The hover card: name, state, far end, VLAN. */
-function ModelPortCard({ port }: { port: FacePort }) {
+/** The hover card: name, state, the transceiver in it, far end, VLAN. */
+function ModelPortCard({
+  port,
+  transceiver,
+}: {
+  port: FacePort
+  transceiver?: PortTransceiver
+}) {
   const far = port.peer
     ? `${port.peer.device} · ${port.peer.port}`
     : port.connected
@@ -548,6 +563,13 @@ function ModelPortCard({ port }: { port: FacePort }) {
         <span className="font-mono font-semibold">{port.name}</span>
         <span className="text-muted-foreground">{portStateText(port)}</span>
       </div>
+      {transceiver && (transceiver.part_id || transceiver.serial) && (
+        <div className="font-mono text-muted-foreground">
+          {[transceiver.part_id, transceiver.serial]
+            .filter(Boolean)
+            .join(" · ")}
+        </div>
+      )}
       {far && <div className="font-mono text-muted-foreground">{far}</div>}
       {port.vlan && (
         <div className="text-muted-foreground">

@@ -69,6 +69,7 @@ nav = [
     { "Cabinets"          = "dcim/cabinets.md" },
     { "Rooms"             = "dcim/rooms.md" },
     { "Interfaces"        = "dcim/interfaces.md" },
+    { "Inventory & transceivers" = "dcim/inventory.md" },
     { "Virtual & aggregate interfaces" = "dcim/virtual-interfaces.md" },
     { "Assigning IP addresses" = "dcim/ip-assignment.md" },
     { "Cabling & connections" = "dcim/cabling.md" },

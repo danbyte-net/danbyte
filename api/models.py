@@ -26,9 +26,11 @@ from .dcim_choices import (
     COOLING_METHOD_CHOICES,
     COOLING_SOURCE_TYPE_CHOICES,
     INTERFACE_TYPE_CHOICES,
+    PLUGGABLE_INTERFACE_TYPES,
     POWER_OUTLET_TYPE_CHOICES,
     POWER_PORT_TYPE_CHOICES,
     RF_CONNECTOR_CHOICES,
+    TRANSCEIVER_CONNECTOR_CHOICES,
     VIRTUAL_INTERFACE_TYPES,
 )
 from .fields import HostAddressField, split_host_mask
@@ -4769,6 +4771,30 @@ class InventoryItem(TimestampedModel, CustomFieldsMixin, TaggableMixin):
         "Status", on_delete=models.SET_NULL, null=True, blank=True,
         related_name="inventory_items",
     )
+    # A transceiver's port (docs/dcim/inventory.md → Transceivers): one per
+    # interface, on the item's own device (a module's interface counts).
+    # Deleting the interface - or the module that stamped it - keeps the
+    # item and clears the link: the optic was pulled, it didn't vanish.
+    interface = models.OneToOneField(
+        "Interface", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="transceiver",
+    )
+    standard = models.CharField(
+        max_length=64, blank=True, default="", db_default="",
+        help_text='The IEEE / MSA name: "10GBASE-SR", "100GBASE-SR4".',
+    )
+    wavelength_nm = models.PositiveIntegerField(null=True, blank=True)
+    reach_m = models.PositiveIntegerField(null=True, blank=True)
+    connector = models.CharField(
+        max_length=16, choices=TRANSCEIVER_CONNECTOR_CHOICES, blank=True,
+        default="", db_default="",
+    )
+    # The 3D part to draw in the port, set by hand; else the accessory type
+    # whose ``parts`` names ``part_id`` (api.port_plugs).
+    accessory_type = models.ForeignKey(
+        "AccessoryType", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="inventory_items",
+    )
 
     class Meta:
         unique_together = ("device", "name")
@@ -4776,6 +4802,42 @@ class InventoryItem(TimestampedModel, CustomFieldsMixin, TaggableMixin):
 
     def __str__(self) -> str:
         return f"{self.device.name}:{self.name}"
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+
+        super().clean()
+        errors = transceiver_link_errors(self)
+        if errors:
+            raise ValidationError(errors)
+
+
+def transceiver_link_errors(item) -> dict[str, str]:
+    """Why ``item`` can't sit in its ``interface`` / take its
+    ``accessory_type`` (``{field: message}``, empty when it can). Shared by
+    the API serializer and ``clean()`` (imports)."""
+    errors: dict[str, str] = {}
+    iface = item.interface if item.interface_id else None
+    if iface is not None:
+        if item.kind != "transceiver":
+            errors["interface"] = "Only a transceiver sits in a port."
+        elif item.device_id is None or iface.device_id != item.device_id:
+            errors["interface"] = "Pick a port on the same device."
+        elif iface.type not in PLUGGABLE_INTERFACE_TYPES:
+            errors["interface"] = "This port takes no transceiver."
+        else:
+            held = InventoryItem.objects.filter(interface_id=iface.pk)
+            if item.pk is not None:
+                held = held.exclude(pk=item.pk)
+            other = held.only("name").first()
+            if other is not None:
+                errors["interface"] = f"{other.name} already sits in this port."
+    if item.accessory_type_id:
+        acc = item.accessory_type
+        tenant_id = item.device.tenant_id if item.device_id else None
+        if acc.tenant_id != tenant_id:
+            errors["accessory_type"] = "Pick a part in the current tenant."
+    return errors
 
 
 class DeviceBay(TimestampedModel, CustomFieldsMixin, TaggableMixin):
@@ -6193,6 +6255,15 @@ class AccessoryType(TimestampedModel):
         default=list, blank=True,
         help_text="The interface, console port and power port type slugs it plugs into.",
     )
+    # A real transceiver's vendor part numbers (``parts:`` in the pack), its
+    # standard and wavelength (export spec §13). A recorded transceiver
+    # whose part ID one of these names draws this part (api.port_plugs).
+    parts = models.JSONField(
+        default=list, blank=True, db_default=models.Value([], models.JSONField()),
+        help_text="The vendor part numbers this model stands for.",
+    )
+    standard = models.CharField(max_length=64, blank=True, default="", db_default="")
+    wavelength_nm = models.PositiveIntegerField(null=True, blank=True)
     model_3d = models.FileField(
         upload_to=device_model_path, blank=True, null=True, max_length=255,
         help_text="The part's 3D model (binary glTF, .glb).",

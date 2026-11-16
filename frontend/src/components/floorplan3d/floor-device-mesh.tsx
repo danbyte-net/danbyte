@@ -5,7 +5,7 @@ import * as THREE from "three"
 
 import type { FloorTileCheck } from "@/lib/api"
 import type { DeviceLeds } from "@/lib/led-state"
-import { pluggedNames } from "@/lib/port-plugs"
+import { pluggedNames, portTransceivers } from "@/lib/port-plugs"
 import { budgetLevel, plannedParts, wantsFarModel } from "@/lib/model-assembly"
 import { useDeviceLeds } from "@/lib/use-device-leds"
 import { markersVisible } from "@/lib/model-ports"
@@ -369,6 +369,7 @@ function PlacedDevice({
               deviceId={dev.id}
               size={fit.size}
               plugged={full ? pluggedNames(leds) : undefined}
+              transceivers={full ? portTransceivers(leds) : undefined}
               selectedPort={selectedPort}
               onSelect={(pk) =>
                 onSelect({

@@ -6,6 +6,8 @@ import type { DcimChoice, DcimChoices } from "@/lib/api"
 
 const EMPTY: DcimChoices = {
   interface_types: [],
+  pluggable_interface_types: [],
+  transceiver_connectors: [],
   interface_duplex: [],
   interface_modes: [],
   lag_protocols: [],

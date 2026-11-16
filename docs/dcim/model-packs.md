@@ -525,7 +525,7 @@ render's module part number may then be a module type the tenant has.
 |---|---|---|
 | Archive | A refusal from [the limits above](#security-limits). | |
 | `pack.yaml` | Missing; no `name`, `id`, `version` or `license`; `types` lists a part with no YAML. | No `types`; a YAML it doesn't list. |
-| Accessory types | No `name`; a `kind` other than `plug`, `transceiver` or `cord`; no usable `fits`; `model3d.file` missing, outside the pack or not a valid `.glb`. | A `fits` entry that isn't a type slug; over the 2,000-triangle part budget; a part `types: accessory:` doesn't list. |
+| Accessory types | No `name`; a `kind` other than `plug`, `transceiver` or `cord`; no usable `fits`; `model3d.file` missing, outside the pack or not a valid `.glb`. | A `fits` entry that isn't a type slug; `parts` not a list, or an entry that isn't a part number; a `wavelength_nm` that isn't a whole number of nm; a part number two accessory types list; over the 2,000-triangle part budget; a part `types: accessory:` doesn't list. |
 | Models | Not a valid `.glb`; over the triangle budget (chassis 150,000, far 15,000; module 30,000, far 3,000) or the size budget (8 MB, far 1 MB). | A model no YAML names; no far copy on a chassis or on a module of 5,000 triangles or more. |
 | Names | `bay:` with no module bay in the YAML; `bay:` in a module; `empty:` without its `bay:`; `port:` with no interface or other port (console, power, aux, front or rear port) in the YAML, `led:port:` with no interface (module names with `{module}`, as written); a name twice; an LED not on the `LED` material; the far copy missing a `bay:`, `empty:` or `led:` of the full model. | A module bay without a `bay:`; interfaces without a `port:`. |
 | LEDs | A `leds:` entry that doesn't parse or names no `led:` in the model; on a module type, a `led:` without an entry. | On a chassis, a `led:` without an entry (it stays off); a glob matching nothing. |
@@ -590,14 +590,42 @@ model3d:
 | `connector` | What the cable ends in: `rj45`, `lc`, `mpo`, `dac`, `iec-c13`, `usb-mini-b`… It decides between parts that fit the same cage (below). |
 | `fits` | The interface, console port and power port type slugs it plugs into (`10gbase-x-sfpp`, `rj-45`, `iec-60320-c14`). |
 | `model3d.file` | The part's model. Its origin is where the plug meets the port, +Z out along the cable, +Y up - the same as the `port:` empty, so Danbyte copies the anchor's transform onto it. An empty named `cable` marks the end of its cable stub. |
+| `parts` | Optional. A real transceiver's vendor part numbers - every one this model stands for, as printed on the label (`SFP-10G-SR`, not `SFP-10G-SR=`). |
+| `standard` | Optional. The IEEE / MSA name: `10GBASE-SR`, `100GBASE-SR4`. |
+| `wavelength_nm` | Optional. The nominal wavelength in nm; leave it out for copper. |
+
+A real transceiver, modelled by its part number:
+
+```yaml
+name: SFP-10G-SR
+kind: transceiver
+connector: lc
+fits: [10gbase-x-sfpp]
+parts: [SFP-10G-SR, SFP-10G-SR-S, SFP-10G-SR-X]
+standard: 10GBASE-SR
+wavelength_nm: 850
+model3d:
+  file: models/Cisco/SFP-10G-SR.glb
+```
+
+In a transceiver's model, the connector seated in it (LC, MPO, the RJ45
+plug of an SFP-T) and its cable stub are **one child object named `plug`**,
+with the `cable` empty under it. The body is everything else. A one-piece
+part - a DAC, an AOC, the generic parts - has no `plug` child.
 
 **Which part a port takes.**
 
-- A port shows a part once it has a cable on it, or is marked connected.
-  The part is the one whose `fits` names the port's type: the interface
-  type, the console port type, the power port type.
-- Danbyte has no transceiver record per interface, so when several parts
-  fit a cage the cable's type decides: a DAC cable (`dac-active`,
+- A port shows a part once it has a cable on it, is marked connected, or
+  holds a [transceiver record](inventory.md#transceivers) the reader may
+  view.
+- A port with a transceiver record takes the record's **3D part** when one
+  is set by hand, else the accessory type whose `parts` lists the record's
+  part ID. The match ignores case and a trailing `=` (the spare-part
+  suffix): a record `sfp-10g-sr=` draws `SFP-10G-SR`. When two accessory
+  types list the same part number, the first by vendor and name wins.
+- Otherwise the part is the one whose `fits` names the port's type: the
+  interface type, the console port type, the power port type.
+- When several parts fit a cage the cable's type decides: a DAC cable (`dac-active`,
   `dac-passive`) takes the part whose connector is `dac`, a fibre cable
   (`mmf…`, `smf…`, `aoc`) an optical one (`lc`, `sc`, `mpo`…), a
   twisted-pair cable (`cat…`) an RJ45 one (an SFP-T in an SFP cage). A
@@ -608,6 +636,11 @@ model3d:
 - No part fits: the port shows nothing more than today (its
   [cover](#port-covers) hidden).
 
+**A transceiver without a cable.** A port holding a recorded transceiver
+but no cable shows the transceiver's body without its `plug` child: the
+optic sits in the cage with nothing plugged in. A one-piece part has no
+`plug` child and shows only while the port is cabled.
+
 **How it looks.** The `CABLE` and `FIBRE` materials take the cable's
 colour (grey when it has none, or the reader may not view the cable);
 everything else keeps its own material. Each part loads once for the whole
@@ -617,10 +650,13 @@ viewer and in the 3D room up close, on the floor and in racks. A far copy
 draws none.
 
 **Picking.** A plug hovers, clicks and right-clicks as the port it sits
-in: the port's pick reaches out over its plug.
+in: the port's pick reaches out over its plug. The port's hover card
+names the recorded transceiver's part ID and serial under the port name.
 
 **Scope.** Only the ports the reader may view count, as for covers. The
-cable's colour and type are read only from cables the reader may view.
+cable's colour and type are read only from cables the reader may view, and
+a transceiver record counts only for a reader who may view inventory
+items.
 Accessory types are tenant-wide, like module types. A reader who may view
 module types downloads a part once for the room
 (`/api/accessory-types/{id}/model/`); anyone else gets it through the
@@ -685,7 +721,7 @@ pack.
 | `GET /api/device-types/{id}/studio/` | What the image renderer needs: the model, `frame_mm` (`[width, height]`), the bays with their reference modules' models and `leds`, the components by name (`ports`: `[kind, type]`), the `token` of the model state, `pending`, `generated`, `hand_made` and `sources` (as `images_source` below). View on the type. |
 | `POST /api/device-types/{id}/studio/` | Stores a rendered set (multipart): `front_image`, `rear_image`, `iso_image` (WebP or PNG), `image_ports` and `image_leds` (JSON), `token` (a stale one answers 400) and `overwrite` - the hand-made targets to replace, comma-separated. Answers `written`, `kept` and the type. Change on the type. |
 | `GET /api/devices/{id}/studio/` | The same for a device's own faces: its components, its modules' LED bindings, the port covers to hide (`covers`, `bay_covers`) and the plugs in its cabled ports (`plugs`), as on `/api/device-leds/`. View on the device. |
-| `GET /api/accessory-types/` (and `{id}/`) | The tenant's [accessory types](#accessory-types): `vendor`, `name`, `kind`, `connector`, `fits`, `model_url`. Read only. View on module types. |
+| `GET /api/accessory-types/` (and `{id}/`) | The tenant's [accessory types](#accessory-types): `vendor`, `name`, `kind`, `connector`, `fits`, `parts`, `standard`, `wavelength_nm`, `model_url`. Read only. View on module types. |
 | `GET /api/accessory-types/{id}/model/` | An accessory type's model. View on module types. |
 | `GET /api/devices/{id}/accessory-model/{accessory id}/` | The same through a device, for a reader who may view the device but not module types. |
 | `GET /api/device-leds/?devices=<id>,<id>…` | What the status LEDs show now. Also `?device=<id>` or `?rack=<id>`. POST the same keys as a JSON body for long lists (`{"devices": [...]}`). Any other parameter is a 400. |
@@ -710,10 +746,13 @@ the reader may view has `leds` (the chassis' lit lights by id, such as
 by id, `{module}` resolved to the bay's position) and `locate`. `covers`
 lists the chassis' port covers to hide, by their names in the model, and
 `bay_covers` each bay's installed module's, `{module}` resolved. `plugs`
-lists the [accessory types](#accessory-types) seated in its cabled ports:
-each `{port, bay, name, url, color}` - the `port:` anchor as drawn (in the
-module at `bay`, null for the chassis), the device's port it stands for,
-the part's model URL and the cable's colour (`#rrggbb`, or null). A light left
+lists the [accessory types](#accessory-types) seated in its ports:
+each `{port, bay, name, url, color, cabled, transceiver}` - the `port:`
+anchor as drawn (in the module at `bay`, null for the chassis), the
+device's port it stands for, the part's model URL, the cable's colour
+(`#rrggbb`, or null), whether a cable is in the port (false for a port
+listed only for its transceiver record), and the record's
+`{part_id, serial}` or null. A light left
 out is off. A state is `green`, `amber`, `red`, `blue` or `neutral`, with
 `_blink` added when it blinks. The query count is the same for one device
 as for five hundred.

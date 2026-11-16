@@ -39,6 +39,8 @@ const NO_CHOICES: DcimChoices = {
   poe_modes: [],
   poe_types: [],
   interface_types: [],
+  pluggable_interface_types: [],
+  transceiver_connectors: [],
   cable_types: [],
   front_port_types: [],
   console_port_types: [],
