@@ -229,6 +229,15 @@ describe("cellNote", () => {
     ).toBe("25% used · 10.196.238.128/28 · 4 ranges")
   })
 
+  it("names nothing it was not given", () => {
+    expect(cellNote({ ...partial26, overlap_with: [], overlap_count: 0 })).toBe(
+      "25% used"
+    )
+    expect(cellNote({ ...covered, overlap_with: [], overlap_count: 0 })).toBe(
+      "In a prefix"
+    )
+  })
+
   it("counts children past the listed three", () => {
     expect(
       cellNote({

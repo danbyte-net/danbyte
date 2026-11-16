@@ -208,6 +208,23 @@
       "keywords": ["ssh", "console", "https", "rdp", "vnc", "launch"]
     },
     {
+      "key": "credentials",
+      "label": "Credentials",
+      "description": "Logins shared by many hosts",
+      "to": "/settings/credentials",
+      "group": "devices",
+      "scopes": ["tenant"],
+      "keywords": [
+        "ssh",
+        "password",
+        "key",
+        "login",
+        "shared",
+        "discovery",
+        "credential"
+      ]
+    },
+    {
       "key": "branding",
       "label": "Branding & identity",
       "description": "Name, logo, IDs and faceplates",
@@ -369,6 +386,13 @@
       "keywords": ["oui", "mac", "vendor", "ieee"]
     },
     {
+      "key": "branding.vulnerabilities",
+      "label": "Vulnerability data",
+      "description": "Known vulnerabilities, and where the records come from",
+      "page": "branding",
+      "keywords": ["cve", "nvd", "osv", "kev", "epss", "browser sync"]
+    },
+    {
       "key": "tenant.ui",
       "label": "UI policy",
       "description": "Optional device fields and human-readable numbers",
@@ -408,7 +432,29 @@
       "label": "Report cover",
       "description": "Cover page background, colours and image for PDF reports",
       "page": "tenant-policy",
-      "keywords": ["cover", "report", "pdf", "branding", "image", "waves", "background"]
+      "keywords": [
+        "cover",
+        "report",
+        "pdf",
+        "branding",
+        "image",
+        "waves",
+        "background"
+      ]
+    },
+    {
+      "key": "tenant.vuln-priority",
+      "label": "Vulnerability priority",
+      "description": "When a matched record reads as Fix first, High or Medium",
+      "page": "tenant-policy",
+      "keywords": ["cve", "cvss", "epss", "kev", "fix first", "threshold"]
+    },
+    {
+      "key": "tenant.vuln-notifications",
+      "label": "Vulnerability notifications",
+      "description": "Which new matches go to the notification channels",
+      "page": "tenant-policy",
+      "keywords": ["cve", "kev", "critical", "notify", "webhook"]
     },
     {
       "key": "separation.sites",
@@ -437,6 +483,40 @@
       "description": "The recurring monitoring summary and who gets it",
       "page": "monitoring",
       "keywords": ["digest", "summary", "weekly", "recipients"]
+    },
+    {
+      "key": "monitoring.address-discovery",
+      "label": "Address discovery",
+      "description": "The ping sweep that finds live addresses in prefixes, and cleanup",
+      "page": "monitoring",
+      "keywords": [
+        "discovery",
+        "subnet discovery",
+        "ping sweep",
+        "auto-discover",
+        "icmp",
+        "cleanup",
+        "stale"
+      ]
+    },
+    {
+      "key": "monitoring.host-discovery",
+      "label": "Host discovery",
+      "description": "Package inventory and service scans: transports, nmap, deny subnets",
+      "page": "monitoring",
+      "keywords": [
+        "discovery",
+        "nmap",
+        "winrm",
+        "ssh key",
+        "ssh password",
+        "transports",
+        "deny subnets",
+        "service scan",
+        "package inventory",
+        "open ports",
+        "deployment switch"
+      ]
     },
     {
       "key": "monitoring.mac-tracking",
@@ -490,6 +570,13 @@
       "description": "Publish or lock a table's column layout",
       "page": "table-layouts",
       "keywords": ["columns", "layout", "publish", "lock", "table"]
+    },
+    {
+      "key": "data.layout-presets",
+      "label": "Layout presets",
+      "description": "Share your table layouts with people, groups or everyone",
+      "page": "table-layouts",
+      "keywords": ["columns", "layout", "preset", "share", "default", "group"]
     },
     {
       "key": "data.sidebar-default",
@@ -556,6 +643,13 @@
       "description": "The launch actions on a device's Connect menu",
       "page": "connect-protocols",
       "keywords": ["ssh", "rdp", "vnc", "https", "telnet", "launch"]
+    },
+    {
+      "key": "devices.credentials",
+      "label": "Shared credentials",
+      "description": "One login for every host a scope matches",
+      "page": "credentials",
+      "keywords": ["ssh", "password", "key", "role", "device type", "discovery"]
     },
     {
       "key": "install.version",

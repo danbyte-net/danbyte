@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
 import type { ColumnDef } from "@tanstack/react-table"
-import { ExternalLink, Pencil, Trash2 } from "lucide-react"
+import { ExternalLink } from "lucide-react"
 import { useCallback, useMemo, useState } from "react"
 
 import { api } from "@/lib/api"
@@ -10,8 +10,8 @@ import { apiAll } from "@/lib/api-all"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useMe } from "@/lib/use-me"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
@@ -86,26 +86,15 @@ function Body({ product: p }: { product: EolCustomProduct }) {
       backLabel="End-of-life products"
       title={p.label}
       presence={{ type: "eolproduct", id: p.id }}
-      actions={
-        <>
-          {canDo("eolproduct", "change") && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/eol-products/$id/edit" params={{ id: p.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDo("eolproduct", "delete") && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeleting(p)}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
-        </>
+      edit={
+        canDo("eolproduct", "change") && (
+          <EditButton to="/eol-products/$id/edit" params={{ id: p.id }} />
+        )
+      }
+      remove={
+        canDo("eolproduct", "delete") && (
+          <DeleteButton onClick={() => setDeleting(p)} />
+        )
       }
       hero={
         <DetailHero

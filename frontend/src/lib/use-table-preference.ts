@@ -4,16 +4,21 @@ import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { api, type ColumnPref, type ColumnPrefData } from "@/lib/api"
 
 const prefKey = (tableId: string) => ["col-pref", tableId] as const
+const NO_PINS: string[] = []
 
 export interface TablePreference {
   /** Saved column order (manageable columns only). Empty = no saved order. */
   order: string[]
   /** Saved hidden column ids. */
   hidden: string[]
+  /** Saved pinned column ids, in pin order. Empty = none pinned. */
+  pinned: string[]
   /** Admin lock - when true the layout can't be changed by the user. */
   isForced: boolean
   /** Whether the user has their own saved row (enables Reset). */
   hasUserRow: boolean
+  /** The layout preset that supplies this table's default, if any. */
+  presetName: string | null
   source: ColumnPref["source"]
   /** True once the initial fetch has resolved (or there's no tableId). */
   loaded: boolean
@@ -36,8 +41,10 @@ export function layoutShows(
 const INERT: TablePreference = {
   order: [],
   hidden: [],
+  pinned: [],
   isForced: false,
   hasUserRow: false,
+  presetName: null,
   source: "none",
   loaded: true,
   setLayout: () => {},
@@ -61,6 +68,7 @@ export function useTablePreference(tableId?: string): TablePreference {
 
   const order = q.data?.data?.order ?? []
   const hidden = q.data?.data?.hidden ?? []
+  const pinned = q.data?.data?.pinned ?? NO_PINS
   const isForced = q.data?.is_forced ?? false
 
   const setLayout = useCallback(
@@ -69,9 +77,13 @@ export function useTablePreference(tableId?: string): TablePreference {
       const key = prefKey(tableId)
       const current = qc.getQueryData<ColumnPref>(key)
       if (current?.is_forced) return // locked - ignore writes
+      // Pins ride along untouched when a write does not name them, and an
+      // older layout without any stays without the key.
+      const pins = next.pinned ?? current?.data?.pinned
       const merged: ColumnPrefData = {
         order: next.order ?? current?.data?.order ?? [],
         hidden: next.hidden ?? current?.data?.hidden ?? [],
+        ...(pins ? { pinned: pins } : {}),
       }
       // Optimistic: reflect the change immediately, then debounce the PUT so
       // a flurry of toggles/reorders collapses into one request.
@@ -79,6 +91,7 @@ export function useTablePreference(tableId?: string): TablePreference {
         source: "user",
         is_forced: false,
         data: merged,
+        preset: current?.preset ?? null,
       })
       if (timer.current) clearTimeout(timer.current)
       timer.current = setTimeout(() => {
@@ -109,8 +122,10 @@ export function useTablePreference(tableId?: string): TablePreference {
   return {
     order,
     hidden,
+    pinned,
     isForced,
     hasUserRow: q.data?.source === "user",
+    presetName: q.data?.preset?.name ?? null,
     source: q.data?.source ?? "none",
     loaded: q.isSuccess,
     setLayout,

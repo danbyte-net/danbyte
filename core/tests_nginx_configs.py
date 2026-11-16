@@ -39,9 +39,13 @@ def _http2_for_this_nginx(site: str, modern: bool) -> str:
     return re.sub(r"(listen\s+\S+\s+ssl)(\s*;)", r"\1 http2\2", site)
 
 
+#: A location's optional modifier: exact (=), regex (~, ~*) or ^~.
+_MODIFIER = r"(?:(?:=|~\*?|\^~)\s+)?"
+
+
 def _locations(text: str):
-    """``(path, body)`` of each flat location block."""
-    return re.findall(r"location\s+(\S+)\s*\{([^{}]*)\}", text)
+    """``(path, body)`` of each flat location block, any modifier dropped."""
+    return re.findall(rf"location\s+{_MODIFIER}(\S+)\s*\{{([^{{}}]*)\}}", text)
 
 
 #: Headers Django's middleware sends on its own (SecurityMiddleware and
@@ -58,7 +62,17 @@ DJANGO_SECURITY_HEADERS = (
 
 def _server_level(text: str) -> str:
     text = re.sub(r"(?m)#.*$", "", text)
-    return re.sub(r"location\s+\S+\s*\{[^{}]*\}", "", text)
+    # An `if` inside a location first, so the location around it goes too.
+    text = re.sub(r"""\bif\s*\(.*\)\s*\{(?:[^{}'"]|'[^']*'|"[^"]*")*\}""", "", text)
+    return re.sub(rf"location\s+{_MODIFIER}\S+\s*\{{[^{{}}]*\}}", "", text)
+
+
+def _maintenance_block(text: str) -> str:
+    """The @danbyte_maintenance location, its `if` included."""
+    start = text.index("location @danbyte_maintenance")
+    rest = text[start + 1:]
+    end = rest.find("location ")
+    return rest if end < 0 else rest[:end]
 
 
 def _edge_headers(text: str) -> dict[str, str]:
@@ -78,6 +92,19 @@ def _django_hsts() -> str:
     if re.search(r"SECURE_HSTS_PRELOAD\s*=\s*True", block):
         value += "; preload"
     return value
+
+
+#: The maintenance page's policy: no script, its own inline <style>.
+MAINTENANCE_CSP = ("default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; "
+                   "form-action 'none'; frame-ancestors 'self'")
+
+
+#: Mozilla's "intermediate" TLS 1.2 suites (#497), in its order.
+INTERMEDIATE_CIPHERS = [
+    "ECDHE-ECDSA-AES128-GCM-SHA256", "ECDHE-RSA-AES128-GCM-SHA256",
+    "ECDHE-ECDSA-AES256-GCM-SHA384", "ECDHE-RSA-AES256-GCM-SHA384",
+    "ECDHE-ECDSA-CHACHA20-POLY1305", "ECDHE-RSA-CHACHA20-POLY1305",
+]
 
 
 class ConfigTextTests(SimpleTestCase):
@@ -164,6 +191,68 @@ class ConfigTextTests(SimpleTestCase):
                 if "frame-ancestors" in csp:
                     self.assertIn("frame-ancestors 'self'", csp)
 
+    def test_csp_allows_the_vector_basemap_and_nothing_wider(self):
+        # #467: MapLibre fetches tiles over fetch (connect-src) from the
+        # default vector host only, and runs its bundled worker; its style,
+        # fonts and sprites ship with Danbyte, so no other map host appears.
+        found = re.findall(r'add_header\s+Content-Security-Policy\s+"([^"]*)"',
+                           _server_level(TEMPLATES[1].read_text()))
+        self.assertEqual(len(found), 1)
+        csp = {d.split()[0]: d.split()[1:] for d in found[0].split(";") if d.strip()}
+        self.assertIn("https://vector.openstreetmap.org", csp["connect-src"])
+        self.assertEqual(csp["worker-src"], ["'self'", "blob:"])
+        self.assertNotIn("*", " ".join(csp["connect-src"]))
+        self.assertNotIn("https:", csp["connect-src"])
+        self.assertEqual(csp["script-src"],
+                         ["'self'", "'unsafe-inline'", "'wasm-unsafe-eval'"])
+        self.assertNotIn("'unsafe-eval'", found[0])
+        from api.site_map_views import OSM_VECTOR_URL
+
+        self.assertTrue(OSM_VECTOR_URL.startswith("https://vector.openstreetmap.org/"))
+
+    def test_csp_allows_the_vulnerability_sources(self):
+        # #451 browser mode: the admin's browser reads NVD, FIRST EPSS and OSV
+        # by fetch (connect-src); the hosts are named, never a wildcard. The
+        # Docker config sets no CSP, so it needs nothing.
+        found = re.findall(r'add_header\s+Content-Security-Policy\s+"([^"]*)"',
+                           _server_level(TEMPLATES[1].read_text()))
+        csp = {d.split()[0]: d.split()[1:] for d in found[0].split(";") if d.strip()}
+        from vulnerabilities import fetch
+
+        for base in (fetch.NVD_BASE, fetch.EPSS_BASE, fetch.OSV_BASE):
+            self.assertIn(base, csp["connect-src"])
+        self.assertNotIn("https://www.cisa.gov", csp["connect-src"])
+        self.assertNotIn("Content-Security-Policy", _server_level(DOCKER.read_text()))
+
+    def test_the_page_policy_is_left_to_the_frontend(self):
+        # #498: the frontend server sends each page its nonce policy. nginx
+        # must pass it through (never hide it) and keep its own on top, the
+        # floor DANBYTE_CSP_MODE steps back to.
+        for path in [*TEMPLATES, DOCKER]:
+            text = re.sub(r"(?m)#.*$", "", path.read_text())
+            with self.subTest(path=path.name):
+                self.assertNotRegex(text, r"proxy_hide_header\s+Content-Security-Policy")
+                self.assertNotIn("Content-Security-Policy-Report-Only", text)
+                self.assertNotIn("'nonce-", text)
+                self.assertNotIn("strict-dynamic", text)
+                self.assertNotIn("proxy_cache ", text)
+
+    def test_the_maintenance_page_runs_no_script(self):
+        # Its own add_header drops the server's headers, CSP included, so it
+        # names one: nothing but its inline <style>.
+        snippet = (ROOT / "deploy/nginx-maintenance.conf").read_text()
+        for name, text in [*((p.name, p.read_text()) for p in TEMPLATES),
+                           (DOCKER.name, DOCKER.read_text()),
+                           ("nginx-maintenance.conf", snippet)]:
+            with self.subTest(config=name):
+                block = _maintenance_block(text)
+                found = re.findall(r'add_header\s+Content-Security-Policy\s+"([^"]*)"\s+always;',
+                                   block)
+                self.assertEqual(found, [MAINTENANCE_CSP])
+        page = (ROOT / "deploy/maintenance.html").read_text()
+        self.assertNotIn("<script", page.lower())
+        self.assertNotRegex(page, r"(?i)\son[a-z]+\s*=")
+
     def test_edge_values_match_django(self):
         # Same value at both layers, so the answer does not depend on which
         # one a request went through.
@@ -194,6 +283,68 @@ class ConfigTextTests(SimpleTestCase):
                 with self.subTest(path=path.name, placeholder=name):
                     self.assertIn(f"@@{name}@@", text)
 
+    def test_edge_rate_limits(self):
+        # #499: zones at the http level the site is included in, keyed on
+        # the client address; the sign-in endpoints and the CSP sink limited
+        # before /api/, SSO callbacks never; refusals are JSON.
+        text = re.sub(r"(?m)#.*$", "", TEMPLATES[1].read_text())
+        zones = dict(re.findall(r"limit_req_zone\s+\$binary_remote_addr\s+zone=(\w+):10m\s+"
+                                r"rate=([\w/]+);", text))
+        self.assertEqual(zones, {"danbyte_auth": "1r/s", "danbyte_csp": "2r/s"})
+        self.assertLess(text.index("limit_req_zone"), text.index("server {"))
+        blocks = dict(_locations(text))
+        auth = next(v for k, v in blocks.items() if k.startswith("^/api/auth/"))
+        pattern = next(k for k in blocks if k.startswith("^/api/auth/"))
+        self.assertIn("limit_req zone=danbyte_auth burst=5 nodelay;", auth)
+        for path in ("login", "mfa/verify", "mfa/resend", "password-reset",
+                     "password-reset/confirm", "set-password"):
+            self.assertRegex(f"/api/auth/{path}/", pattern)
+        for path in ("/api/auth/sso/okta/callback/", "/api/auth/sso/okta/acs/",
+                     "/api/auth/login/x/", "/api/auth/logout/", "/api/auth/password/change/"):
+            self.assertNotRegex(path, pattern)
+        self.assertRegex(text, r"location\s+=\s+/api/csp-report/\s*\{")
+        csp = blocks["/api/csp-report/"]
+        self.assertIn("limit_req zone=danbyte_csp burst=20 nodelay;", csp)
+        self.assertIn("client_max_body_size 16k;", csp)
+        api_headers = set(re.findall(r"proxy_set_header[^;]+;", blocks["/api/"]))
+        for body in (auth, csp):
+            self.assertIn("limit_req_status 429;", body)
+            self.assertEqual(set(re.findall(r"proxy_set_header[^;]+;", body)), api_headers)
+            self.assertIn("proxy_pass http://127.0.0.1:8000;", body)
+        self.assertRegex(_server_level(TEMPLATES[1].read_text()),
+                         r"error_page 429 @danbyte_rate_limited;")
+        self.assertRegex(text, r"location @danbyte_rate_limited \{\s+internal;\s+"
+                               r"default_type application/json;\s+return 429 '\{\"detail\":")
+        self.assertNotIn("proxy_intercept_errors", text)   # Django's own 429s pass through
+        # The dev template fronts a dev server; the Docker image keys on
+        # whatever address its port publishing leaves (docs: Hardening).
+        for path in (TEMPLATES[0], DOCKER):
+            self.assertNotIn("limit_req", path.read_text())
+
+    def test_upstream_headers_get_a_little_room(self):
+        # #503: 8k for an upstream's headers, set once for the server and
+        # within what the default proxy_buffers allow (nginx -t checks that).
+        level = _server_level(TEMPLATES[1].read_text())
+        self.assertEqual(re.findall(r"proxy_buffer_size\s+(\S+);", level), ["8k"])
+        self.assertNotIn("proxy_buffers ", TEMPLATES[1].read_text())
+
+    def test_tls_is_mozilla_intermediate(self):
+        # #497: every TLS server says which protocols and suites it takes,
+        # rather than leaving it to the distro's nginx.conf: TLS 1.2 and 1.3,
+        # and on 1.2 only forward-secret AEAD suites, for ECDSA and RSA keys.
+        for path in [*TEMPLATES, DOCKER]:
+            level = _server_level(path.read_text())
+            with self.subTest(path=path.name):
+                self.assertEqual(re.findall(r"ssl_protocols\s+([^;]+);", level), ["TLSv1.2 TLSv1.3"])
+                ciphers = re.findall(r"ssl_ciphers\s+([^;]+);", level)
+                self.assertEqual(len(ciphers), 1)
+                self.assertEqual(ciphers[0].split(":"), INTERMEDIATE_CIPHERS)
+                self.assertEqual(re.findall(r"ssl_prefer_server_ciphers\s+(\w+);", level), ["off"])
+                self.assertEqual(re.findall(r"ssl_session_tickets\s+(\w+);", level), ["off"])
+                self.assertEqual(re.findall(r"ssl_session_timeout\s+(\S+);", level), ["1d"])
+                self.assertEqual(re.findall(r"ssl_session_cache\s+([^;]+);", level),
+                                 ["shared:DanbyteSSL:10m"])
+
     def test_the_build_writes_the_gzip_copies(self):
         import json
 
@@ -203,11 +354,22 @@ class ConfigTextTests(SimpleTestCase):
                          r"(?m)^frontend-build:.*npm run build$")
 
 
-def _render(site: str, t: Path, ports: dict[int, int] | None = None) -> Path:
+#: What a distro's nginx.conf sets for every site, at the http level: the
+#: Debian 12 and Ubuntu 22.04 packages ship these two lines. The site's own
+#: TLS settings must win over them (#497).
+DISTRO_HTTP_TLS = "    ssl_protocols TLSv1 TLSv1.1 TLSv1.2 TLSv1.3;\n    ssl_prefer_server_ciphers on;\n"
+
+
+def _render(site: str, t: Path, ports: dict[int, int] | None = None, key: str = "rsa",
+            http: str = "") -> Path:
     """The site rendered the way the installer does, on unprivileged ports
-    with a fresh certificate, inside a minimal nginx.conf under ``t``."""
+    with a fresh certificate (``key``: rsa or ec, the two kinds the site
+    certificate can be), inside a minimal nginx.conf under ``t`` with
+    ``http`` at the http level."""
+    newkey = ["-newkey", "rsa:2048"] if key == "rsa" else [
+        "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:prime256v1"]
     subprocess.run(
-        ["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1",
+        ["openssl", "req", "-x509", *newkey, "-nodes", "-days", "1",
          "-subj", "/CN=danbyte.test", "-keyout", t / "key.pem", "-out", t / "cert.pem"],
         check=True, capture_output=True,
     )
@@ -234,7 +396,7 @@ def _render(site: str, t: Path, ports: dict[int, int] | None = None) -> Path:
     mime = "    include /etc/nginx/mime.types;\n" if Path("/etc/nginx/mime.types").exists() else ""
     (t / "nginx.conf").write_text(
         f"pid {t}/nginx.pid;\nerror_log {t}/error.log;\nevents {{}}\n"
-        f"http {{\n{mime}    access_log {t}/access.log;\n{temp}\n"
+        f"http {{\n{mime}{http}    access_log {t}/access.log;\n{temp}\n"
         f"    include {t}/site.conf;\n}}\n"
     )
     return t / "nginx.conf"
@@ -411,3 +573,328 @@ class NginxSendsEachHeaderOnceTests(SimpleTestCase):
                                capture_output=True)
 
 
+
+
+class _PageUpstream:
+    """A stand-in frontend: every page carries a fresh nonce in its own
+    policy and on its script, as the frontend server sends them (#498)."""
+
+    def __enter__(self):
+        import secrets
+        import threading
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                nonce = secrets.token_urlsafe(16)
+                body = f'<script nonce="{nonce}">1</script>'.encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Security-Policy",
+                                 f"script-src 'nonce-{nonce}' 'strict-dynamic'")
+                self.send_header("Cache-Control", "private, no-cache")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *args):
+                pass
+
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.port = self.server.server_address[1]
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        return self
+
+    def __exit__(self, *exc):
+        self.server.shutdown()
+        self.server.server_close()
+
+
+def _https_get(port: int, path: str):
+    import http.client
+    import ssl
+
+    ctx = ssl._create_unverified_context()  # this run's own certificate
+    c = http.client.HTTPSConnection("127.0.0.1", port, context=ctx, timeout=10)
+    c.request("GET", path, headers={"Accept": "text/html"})
+    r = c.getresponse()
+    body = r.read()
+    c.close()
+    return r.status, r.msg, body
+
+
+@skipUnless(shutil.which("nginx") and shutil.which("openssl"), "nginx and openssl needed")
+class NginxPagePolicyTests(SimpleTestCase):
+    """The rendered production site in front of a frontend that sends each
+    page its nonce policy (#498)."""
+
+    def _edge_csp(self) -> str:
+        return re.findall(r'add_header\s+Content-Security-Policy\s+"([^"]*)"',
+                          _server_level(TEMPLATES[1].read_text()))[0]
+
+    def test_a_page_gets_its_own_nonce_policy_and_nginx_keeps_its_own(self):
+        with _PageUpstream() as up:
+            site = re.sub(r"127\.0\.0\.1:3000", f"127.0.0.1:{up.port}",
+                          TEMPLATES[1].read_text())
+            with _RunningSite(site) as s:
+                (s.dir / "client/assets/app-abc123.js").write_text("export {}\n")
+                nonces = set()
+                for _ in range(3):
+                    status, h, body = _https_get(s.https, "/devices")
+                    self.assertEqual(status, 200)
+                    policies = h.get_all("Content-Security-Policy")
+                    self.assertEqual(len(policies), 2, policies)
+                    self.assertIn(self._edge_csp(), policies)
+                    page = next(p for p in policies if "'nonce-" in p)
+                    nonce = re.search(r"'nonce-([^']+)'", page).group(1)
+                    self.assertIn(f'nonce="{nonce}"'.encode(), body)
+                    self.assertEqual(h.get_all("Cache-Control"), ["private, no-cache"])
+                    nonces.add(nonce)
+                self.assertEqual(len(nonces), 3)
+
+                # A build file from disk: nginx's policy alone, no nonce.
+                status, h, _ = _https_get(s.https, "/assets/app-abc123.js")
+                self.assertEqual(status, 200)
+                self.assertEqual(h.get_all("Content-Security-Policy"), [self._edge_csp()])
+
+    def test_the_maintenance_page_has_its_own_policy(self):
+        # Nothing listens on the frontend's port: the maintenance page.
+        site = re.sub(r"127\.0\.0\.1:3000", f"127.0.0.1:{_free_port()}",
+                      TEMPLATES[1].read_text())
+        with _RunningSite(site) as s:
+            (s.dir / "maintenance.html").write_text("<p>updating</p>")
+            status, h, body = _https_get(s.https, "/devices")
+            self.assertEqual(status, 502)
+            self.assertEqual(body, b"<p>updating</p>")
+            self.assertEqual(h.get_all("Content-Security-Policy"), [MAINTENANCE_CSP])
+
+
+class _RunningSite:
+    """The rendered production site, running unprivileged on free ports under
+    a scratch prefix; ``https`` is its TLS port."""
+
+    def __init__(self, site: str | None = None, **render):
+        self.site = site if site is not None else TEMPLATES[1].read_text()
+        self.render = render
+
+    def __enter__(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self._tmp.name)
+        (self.dir / "client/assets").mkdir(parents=True)
+        self.https = _free_port()
+        self.conf = _render(self.site, self.dir, {80: _free_port(), 443: self.https},
+                            **self.render)
+        r = subprocess.run(["nginx", "-p", str(self.dir), "-c", str(self.conf)],
+                           capture_output=True, text=True)
+        if r.returncode:
+            self._tmp.cleanup()
+            raise AssertionError(r.stderr)
+        return self
+
+    def __exit__(self, *exc):
+        subprocess.run(["nginx", "-p", str(self.dir), "-c", str(self.conf), "-s", "stop"],
+                       capture_output=True)
+        self._tmp.cleanup()
+
+
+def _handshake(port: int, *, version=None, ciphers: str | None = None):
+    """``(protocol, suite)`` the server agreed to, or None when it refused.
+    Raises SkipTest when this client cannot even offer what is asked."""
+    import socket
+    import ssl
+    from unittest import SkipTest
+
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE  # this run's own certificate
+    try:
+        if version is not None:
+            ctx.minimum_version = ctx.maximum_version = version
+        # Level 0, so the client offers the weak suites the server must refuse.
+        ctx.set_ciphers(f"{ciphers or 'ALL'}:@SECLEVEL=0")
+    except (ValueError, ssl.SSLError) as exc:
+        raise SkipTest(f"this OpenSSL cannot offer {version} {ciphers}: {exc}") from exc
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=10) as raw, \
+                ctx.wrap_socket(raw) as tls:
+            return tls.version(), tls.cipher()[0]
+    except (ssl.SSLError, ConnectionResetError):
+        return None
+
+
+#: Accepted by a v0.19.0 site with the distro's defaults (#497); refused now.
+WEAK_TLS12 = ("AES128-SHA", "AES256-SHA", "AES128-GCM-SHA256", "AES256-SHA256",
+              "ECDHE-RSA-AES128-SHA", "ECDHE-RSA-AES256-SHA", "ECDHE-RSA-CAMELLIA128-SHA256")
+
+
+@skipUnless(shutil.which("nginx") and shutil.which("openssl"), "nginx and openssl needed")
+class NginxTlsTests(SimpleTestCase):
+    """The rendered production site, running behind a distro's http-level TLS
+    defaults: only TLS 1.2 and 1.3, and only AEAD suites with forward
+    secrecy on 1.2, for RSA and ECDSA certificates (#497)."""
+
+    def test_rsa_certificate(self):
+        import ssl
+
+        with _RunningSite(http=DISTRO_HTTP_TLS) as s:
+            self.assertEqual(_handshake(s.https)[0], "TLSv1.3")
+            for suite in ("ECDHE-RSA-AES128-GCM-SHA256", "ECDHE-RSA-AES256-GCM-SHA384",
+                          "ECDHE-RSA-CHACHA20-POLY1305"):
+                with self.subTest(suite=suite):
+                    self.assertEqual(_handshake(s.https, version=ssl.TLSVersion.TLSv1_2,
+                                                ciphers=suite), ("TLSv1.2", suite))
+            for suite in WEAK_TLS12:
+                with self.subTest(suite=suite):
+                    self.assertIsNone(_handshake(s.https, version=ssl.TLSVersion.TLSv1_2,
+                                                 ciphers=suite))
+            for old in (ssl.TLSVersion.TLSv1, ssl.TLSVersion.TLSv1_1):
+                with self.subTest(version=old):
+                    self.assertIsNone(_handshake(s.https, version=old))
+
+    def test_ecdsa_certificate(self):
+        import ssl
+
+        with _RunningSite(http=DISTRO_HTTP_TLS, key="ec") as s:
+            self.assertEqual(_handshake(s.https)[0], "TLSv1.3")
+            for suite in ("ECDHE-ECDSA-AES128-GCM-SHA256", "ECDHE-ECDSA-AES256-GCM-SHA384",
+                          "ECDHE-ECDSA-CHACHA20-POLY1305"):
+                with self.subTest(suite=suite):
+                    self.assertEqual(_handshake(s.https, version=ssl.TLSVersion.TLSv1_2,
+                                                ciphers=suite), ("TLSv1.2", suite))
+            for suite in ("ECDHE-ECDSA-AES128-SHA", "ECDHE-ECDSA-AES256-SHA384"):
+                with self.subTest(suite=suite):
+                    self.assertIsNone(_handshake(s.https, version=ssl.TLSVersion.TLSv1_2,
+                                                 ciphers=suite))
+
+    def test_the_weak_suites_are_offered_by_this_client(self):
+        # Without the site's lines the same server takes a weak suite, so a
+        # refusal above is the site's doing, not this client's.
+        import ssl
+
+        site = re.sub(r"(?m)^\s*ssl_(protocols|ciphers|prefer_server_ciphers)\s.*$", "",
+                      TEMPLATES[1].read_text())
+        with _RunningSite(site, http=DISTRO_HTTP_TLS) as s:
+            self.assertEqual(_handshake(s.https, version=ssl.TLSVersion.TLSv1_2,
+                                        ciphers="ECDHE-RSA-AES128-SHA"),
+                             ("TLSv1.2", "ECDHE-RSA-AES128-SHA"))
+
+
+class _CountingUpstream:
+    """A stand-in backend: 200 for everything it is sent, except a 429 of
+    its own on /api/own-429/, counting the requests that reach it."""
+
+    def __enter__(self):
+        import threading
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+        seen = self.seen = []
+        forwarded = self.forwarded = []
+
+        class Handler(BaseHTTPRequestHandler):
+            def _answer(self):
+                n = int(self.headers.get("Content-Length") or 0)
+                if n:
+                    self.rfile.read(n)
+                seen.append(self.path)
+                forwarded.append(self.headers.get("X-Forwarded-For"))
+                body = b'{"detail":"django says slow down"}' if self.path == "/api/own-429/" \
+                    else b"{}"
+                self.send_response(429 if self.path == "/api/own-429/" else 200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            do_GET = do_POST = _answer
+
+            def log_message(self, *args):
+                pass
+
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.port = self.server.server_address[1]
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        return self
+
+    def __exit__(self, *exc):
+        self.server.shutdown()
+        self.server.server_close()
+
+
+@skipUnless(shutil.which("nginx") and shutil.which("openssl"), "nginx and openssl needed")
+class NginxRateLimitTests(SimpleTestCase):
+    """The rendered production site, running: what one client address gets
+    when it floods the sign-in endpoints and the CSP sink (#499)."""
+
+    def _send(self, port, method, path, body=b"", xff=None):
+        import http.client
+        import json
+        import ssl
+
+        ctx = ssl._create_unverified_context()  # this run's own certificate
+        c = http.client.HTTPSConnection("127.0.0.1", port, context=ctx, timeout=10)
+        headers = {"Content-Type": "application/json", **({"X-Forwarded-For": xff} if xff else {})}
+        c.request(method, path, body=body, headers=headers)
+        r = c.getresponse()
+        raw = r.read()
+        c.close()
+        try:
+            data = json.loads(raw)
+        except ValueError:
+            data = raw
+        return r.status, r.msg, data
+
+    def test_one_address_is_held_to_the_limits(self):
+        with _CountingUpstream() as up:
+            site = re.sub(r"127\.0\.0\.1:(8000|8001|3000)", f"127.0.0.1:{up.port}",
+                          TEMPLATES[1].read_text())
+            with _RunningSite(site) as s:
+                codes = [self._send(s.https, "POST", "/api/auth/login/", b"{}")[0]
+                         for _ in range(10)]
+                # burst=5 nodelay: six straight away, then about one a second
+                self.assertEqual(codes[:6], [200] * 6, codes)
+                self.assertGreaterEqual(codes.count(429), 3, codes)
+                status, headers, data = self._send(s.https, "POST", "/api/auth/password-reset/",
+                                                   b"{}")
+                self.assertEqual(status, 429)       # one budget for every sign-in endpoint
+                self.assertEqual(headers["Content-Type"], "application/json")
+                self.assertIn("Too many attempts", data["detail"])
+                self.assertIsNotNone(headers["Strict-Transport-Security"])
+                # what is not a sign-in endpoint is not held back
+                for path in ("/api/me/", "/api/auth/sso/okta/callback/", "/api/auth/logout/"):
+                    with self.subTest(path=path):
+                        self.assertEqual(self._send(s.https, "GET", path)[0], 200)
+                # Django's own 429 passes through with its own body
+                status, _, data = self._send(s.https, "GET", "/api/own-429/")
+                self.assertEqual((status, data), (429, {"detail": "django says slow down"}))
+                self.assertEqual(up.seen.count("/api/auth/login/"), codes.count(200))
+
+                report = b'{"csp-report":{"blocked-uri":"x"}}'
+                self.assertEqual(self._send(s.https, "POST", "/api/csp-report/",
+                                            b"x" * 20000)[0], 413)
+                codes = [self._send(s.https, "POST", "/api/csp-report/", report)[0]
+                         for _ in range(30)]
+                # the 413 above took one of the 21 (burst=20 nodelay)
+                self.assertEqual(codes[:20], [200] * 20, codes)
+                self.assertIn(429, codes[20:])
+
+    def test_behind_a_proxy_real_ip_keys_on_the_client(self):
+        # The documented http-level real_ip lines, with this test standing in
+        # for the proxy at 127.0.0.1: each client gets its own budget, and
+        # Django sees the client at the right of X-Forwarded-For, so a
+        # DANBYTE_TRUSTED_PROXY_DEPTH of 1 or 2 finds it.
+        real_ip = ("    set_real_ip_from 127.0.0.1;\n    real_ip_header X-Forwarded-For;\n"
+                   "    real_ip_recursive on;\n")
+        with _CountingUpstream() as up:
+            site = re.sub(r"127\.0\.0\.1:(8000|8001|3000)", f"127.0.0.1:{up.port}",
+                          TEMPLATES[1].read_text())
+            with _RunningSite(site, http=real_ip) as s:
+                a = [self._send(s.https, "POST", "/api/auth/login/", b"{}", xff="192.0.2.10")[0]
+                     for _ in range(7)]
+                self.assertEqual(a[:6], [200] * 6, a)
+                self.assertEqual(a[6], 429, a)
+                self.assertEqual(self._send(s.https, "POST", "/api/auth/login/", b"{}",
+                                            xff="192.0.2.20")[0], 200)
+                # a client that forges an address of its own is still itself
+                self.assertEqual(self._send(s.https, "POST", "/api/auth/login/", b"{}",
+                                            xff="198.51.100.1, 192.0.2.10")[0], 429)
+                self.assertEqual(up.forwarded[0], "192.0.2.10, 192.0.2.10")

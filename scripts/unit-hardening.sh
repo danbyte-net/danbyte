@@ -1,0 +1,313 @@
+#!/bin/sh
+# Place (or remove) the sandboxing drop-ins of the app units (#500).
+#
+#   unit-hardening.sh [apply]   link each linked app unit's drop-ins
+#   unit-hardening.sh remove    take Danbyte's drop-ins away again
+#   unit-hardening.sh status    what each unit has now
+#   unit-hardening.sh paths SET the paths drop-in of SET (tree, logs, frontend, docs, data)
+#
+# Run as the service user, from the app tree: `make link-units`,
+# `make install-services` and `make install-prod-services` call it after they
+# link the unit files, so an install, an upgrade and a source checkout all
+# get the same. For every app unit it writes, in
+# ~/.config/systemd/user/<unit>.d/:
+#
+#   10-hardening.conf        a link to services/hardening/<group>.conf
+#   20-hardening-paths.conf  the paths this install writes to, from .env
+#
+# Before it links a group's file it starts a throwaway unit under the same
+# two drop-ins: a file this host's systemd cannot start under drops to
+# base.conf, and base.conf that cannot start to nothing, with a warning.
+# DANBYTE_UNIT_HARDENING (environment, then .env): auto (the default), base
+# (base.conf for every unit) or off (no drop-ins). Drop-ins of your own with
+# other names are never touched; one named later (50-local.conf) wins.
+set -u
+
+APP="$(cd "$(dirname "$0")/.." && pwd)"
+SYSTEMD_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
+HARD="$APP/services/hardening"
+PROBE=danbyte-hardening-probe.service
+MARK="# Written by Danbyte's scripts/unit-hardening.sh"
+
+# Long-running app units; the timers' services come from the Makefile.
+SERVICES="danbyte-web danbyte-ws danbyte-frontend-prod danbyte-docs danbyte-workers danbyte-fastlane"
+# They write the app tree itself, or start what does: the baseline only.
+CODE_UNITS="danbyte-auto-upgrade danbyte-acme-renew"
+
+warn() { printf 'unit hardening: %s\n' "$*" >&2; }
+
+env_value() {  # <key>: the environment's value, else the last one in .env
+  eval "_v=\${$1-}"
+  # shellcheck disable=SC2154  # set by the eval
+  if [ -n "$_v" ]; then printf '%s' "$_v"; return; fi
+  [ -r "$APP/.env" ] || return 0
+  sed -n "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*//p" "$APP/.env" | tail -n 1 \
+    | sed -e 's/[[:space:]]*$//' -e "s/^[\"']//" -e "s/[\"']\$//"
+}
+
+timers() { sed -n 's/^TIMERS[[:space:]]*:=[[:space:]]*//p' "$APP/Makefile" | head -n 1; }
+
+group_of() {  # <unit> -> service | workers | base
+  case " $CODE_UNITS " in *" $1 "*) echo base; return ;; esac
+  case "$1" in
+    danbyte-workers) echo workers ;;
+    *) echo service ;;
+  esac
+}
+
+paths_of() {  # <unit> -> tree | logs | frontend | docs | data
+  case "$1" in
+    danbyte-web|danbyte-prune) echo tree ;;    # upgrade launch, housekeeping
+    danbyte-ws) echo logs ;;
+    danbyte-frontend-prod) echo frontend ;;
+    danbyte-docs) echo docs ;;
+    *) echo data ;;
+  esac
+}
+
+# Every app unit whose unit file is linked here.
+app_units() {
+  for _u in $SERVICES $(timers); do
+    [ -e "$SYSTEMD_DIR/$_u.service" ] || [ -L "$SYSTEMD_DIR/$_u.service" ] || continue
+    printf '%s\n' "$_u"
+  done
+}
+
+ours_link() {  # <file>: a link into some tree's services/hardening/
+  [ -L "$1" ] && case "$(readlink "$1")" in */services/hardening/*.conf) true ;; *) false ;; esac
+}
+
+ours_file() { [ -f "$1" ] && head -n 1 "$1" | grep -qF "$MARK"; }
+
+remove_unit() {  # <unit>
+  _d="$SYSTEMD_DIR/$1.service.d"
+  [ -d "$_d" ] || return 0
+  if ours_link "$_d/10-hardening.conf"; then rm -f "$_d/10-hardening.conf"; fi
+  if ours_file "$_d/20-hardening-paths.conf"; then rm -f "$_d/20-hardening-paths.conf"; fi
+  rmdir "$_d" 2>/dev/null || :
+}
+
+remove_all() {
+  for _d in "$SYSTEMD_DIR"/danbyte-*.service.d; do
+    [ -d "$_d" ] || continue
+    _u=$(basename "$_d" .service.d)
+    [ "$_u.service" = "$PROBE" ] && { rm -rf "$_d"; continue; }
+    remove_unit "$_u"
+  done
+}
+
+# ── the writable paths ───────────────────────────────────────────────────────
+
+LOG_DIR=$(env_value DANBYTE_LOG_DIR)
+BACKUP_DIR=$(env_value DANBYTE_BACKUP_DIR)
+BACKUP_DIR=${BACKUP_DIR:-$(dirname "$APP")/danbyte-backups}
+PLUGIN_DIR=$(env_value DANBYTE_PLUGIN_DIR)
+PLUGIN_DIR=${PLUGIN_DIR:-$APP/plugins_local}
+EXTRA=$(env_value DANBYTE_UNIT_WRITABLE_PATHS | tr ':,' '  ')
+FONTS="$HOME/.cache/fontconfig"
+# What the web unit writes in the app directory itself (core/upgrade.py,
+# core/site_tls.py, core/housekeeping.py); everything else there is code.
+TREE_WRITES=".upgrade-status.json .upgrade.lock .upgrade.lock.guard .upgrade-bundle.tar.gz media plugins_local .danbyte-upgrade"
+
+# Entries with a leading "-": a path that does not exist is skipped, not an error.
+rw() { for _p in "$@"; do [ -n "$_p" ] && printf 'ReadWritePaths="-%s"\n' "$(esc "$_p")"; done; }
+ro() { printf 'ReadOnlyPaths="-%s"\n' "$(esc "$1")"; }
+esc() { printf '%s' "$1" | sed 's/%/%%/g'; }   # a % would be a specifier
+
+paths_conf() {  # <tree|logs|frontend|docs|data>
+  printf '%s on %s.\n' "$MARK" "$(date -u +%Y-%m-%d)"
+  printf '# Regenerated by every upgrade; add a path with DANBYTE_UNIT_WRITABLE_PATHS in\n'
+  printf '# .env and `make -C %s unit-hardening`, or with a drop-in of your own.\n' "$APP"
+  printf '# Filesystem confinement on this host: %s.\n' "$EFFECT"
+  printf '[Service]\n'
+  case "$1" in
+    docs)  # zensical serve builds into site/ and keeps .cache/
+      rw "$LOG_DIR" "$APP/.cache" "$APP/site"
+      ;;
+    logs)
+      rw "$LOG_DIR"
+      ;;
+    frontend)  # vite preview compiles its config into node_modules/.vite-temp
+      rw "$LOG_DIR" "$APP/frontend/node_modules/.vite-temp"
+      ;;
+    data|tree)
+      rw "$APP/media" "$PLUGIN_DIR" "$BACKUP_DIR" "$LOG_DIR" "$FONTS"
+      # shellcheck disable=SC2086  # one path per word
+      rw $EXTRA
+      ;;
+  esac
+  if [ "$1" = tree ]; then
+    rw "$APP" "$(dirname "$APP")/.danbyte-upgrade"
+    for _e in "$APP"/* "$APP"/.[!.]* "$APP"/..?*; do
+      [ -e "$_e" ] || [ -L "$_e" ] || continue
+      _n=$(basename "$_e")
+      case " $TREE_WRITES " in *" $_n "*) continue ;; esac
+      ro "$_e"
+    done
+    rw "$APP/deploy/nginx/certs" "$APP/vendor/wheels"
+  fi
+  # A home outside /home and /root (the installer's /opt/danbyte): the other
+  # accounts' homes are none of the app's business.
+  case "$HOME" in /home|/home/*|/root|/root/*) ;; *)
+    for _h in /home /root; do
+      _skip=0
+      for _p in "$APP" "$BACKUP_DIR" "$PLUGIN_DIR" "$LOG_DIR" $EXTRA; do
+        case "$_p" in "$_h"|"$_h"/*) _skip=1 ;; esac
+      done
+      [ "$_skip" = 1 ] || printf 'InaccessiblePaths=-%s\n' "$_h"
+    done ;;
+  esac
+}
+
+# ── probing ──────────────────────────────────────────────────────────────────
+
+HOST_NS=$(readlink /proc/self/ns/mnt 2>/dev/null)
+PY="$APP/.venv/bin/python"
+[ -x "$PY" ] || PY=""
+
+sc() { timeout 90 systemctl --user "$@"; }
+
+# probe <group> <pathset>: 0 confined, 3 runs but unconfined, 1 refused.
+# The throwaway unit exits 99 when it shares the host's mount namespace: a
+# failed unit keeps its exit status for `show`, a successful oneshot not.
+probe() {
+  _pd="$SYSTEMD_DIR/$PROBE.d"
+  rm -rf "$_pd"
+  mkdir -p "$_pd" || return 1
+  if [ -n "$PY" ]; then
+    _cmd="$PY -I -c \"import os,sys; sys.exit(99 if os.readlink('/proc/self/ns/mnt') == '$HOST_NS' else 0)\""
+  else
+    _cmd="/bin/sh -c '[ \"\$\$(readlink /proc/self/ns/mnt)\" != \"$HOST_NS\" ] || exit 99'"
+  fi
+  cat >"$SYSTEMD_DIR/$PROBE" <<EOF
+$MARK - removed again at once.
+[Unit]
+Description=Danbyte: try the unit sandbox on this host
+
+[Service]
+Type=oneshot
+WorkingDirectory=-$APP
+ExecStart=$_cmd
+EOF
+  ln -sfn "$HARD/$1.conf" "$_pd/10-hardening.conf"
+  EFFECT=probing paths_conf "$2" >"$_pd/20-hardening-paths.conf"
+  sc daemon-reload >/dev/null 2>&1 || { probe_clean; return 1; }
+  sc start "$PROBE" >/dev/null 2>&1
+  _res=$(sc show -p Result --value "$PROBE" 2>/dev/null)
+  _st=$(sc show -p ExecMainStatus --value "$PROBE" 2>/dev/null)
+  probe_clean
+  [ "$_res" = success ] && return 0
+  [ "$_res" = exit-code ] && [ "$_st" = 99 ] && return 3
+  return 1
+}
+
+probe_clean() {
+  sc stop "$PROBE" >/dev/null 2>&1
+  sc reset-failed "$PROBE" >/dev/null 2>&1
+  rm -f "$SYSTEMD_DIR/$PROBE"
+  rm -rf "$SYSTEMD_DIR/$PROBE.d"
+}
+
+# ── apply ────────────────────────────────────────────────────────────────────
+
+apply() {
+  _mode=$(env_value DANBYTE_UNIT_HARDENING | tr 'A-Z' 'a-z')
+  case "${_mode:-auto}" in
+    off|no|false|0)
+      remove_all
+      systemctl --user daemon-reload >/dev/null 2>&1 || :
+      echo "unit hardening: off (DANBYTE_UNIT_HARDENING)"
+      return 0 ;;
+    base) _mode=base ;;
+    *) _mode=auto ;;
+  esac
+  if ! systemctl --user show-environment >/dev/null 2>&1; then
+    warn "no user systemd to try the drop-ins under; the units are left as they were"
+    return 0
+  fi
+  _units=$(app_units)
+  [ -n "$_units" ] || return 0
+  # Writable paths in the user's own tree that nothing has made yet: made
+  # now, so a read-only parent does not stop the app making them later.
+  for _p in "$APP/media" "$PLUGIN_DIR" "$BACKUP_DIR" "$FONTS" "$APP/frontend/node_modules/.vite-temp"; do
+    case "$_p" in "$HOME"/*) mkdir -p "$_p" 2>/dev/null || : ;; esac
+  done
+  # One probe per group and set of paths: "group:paths=tier/effect", where
+  # effect is yes (the filesystem lines apply), no (systemd skips them) or -.
+  _tiers=""
+  for _u in $_units; do
+    _g=$(group_of "$_u"); [ "$_mode" = base ] && _g=base
+    _ps=$(paths_of "$_u")
+    _key="$_g:$_ps"
+    case " $_tiers " in *" $_key="*) continue ;; esac
+    _tier=none _eff=-
+    for _try in $_g base; do
+      probe "$_try" "$_ps"
+      case $? in
+        0) _tier=$_try _eff=yes; break ;;
+        3) _tier=$_try _eff=no; break ;;
+      esac
+      [ "$_try" = base ] && break
+      warn "$_try.conf does not start on this host; $_key falls back to base.conf"
+    done
+    [ "$_tier" = none ] && warn "base.conf does not start on this host; the $_key units run without a sandbox"
+    _tiers="$_tiers $_key=$_tier/$_eff"
+  done
+  _show="" _fs=""
+  for _u in $_units; do
+    _g=$(group_of "$_u"); [ "$_mode" = base ] && _g=base
+    _ps=$(paths_of "$_u")
+    _val=""
+    for _t in $_tiers; do
+      case "$_t" in "$_g:$_ps="*) _val=${_t#*=} ;; esac
+    done
+    _tier=${_val%/*}
+    case "${_val#*/}" in
+      yes) EFFECT=effective ;;
+      no) EFFECT="not available, systemd skips those lines (no user namespace with mount rights)" ;;
+      *) EFFECT="not used" ;;
+    esac
+    case "$_tier" in service|workers) [ -n "$_fs" ] || _fs=$EFFECT ;; esac
+    if [ "${_tier:-none}" = none ]; then remove_unit "$_u"; continue; fi
+    _d="$SYSTEMD_DIR/$_u.service.d"
+    mkdir -p "$_d"
+    # A file of the operator's own under one of these names stays.
+    if [ -e "$_d/10-hardening.conf" ] && ! ours_link "$_d/10-hardening.conf"; then
+      warn "$_d/10-hardening.conf is not Danbyte's; left alone"
+    else
+      ln -sfn "$HARD/$_tier.conf" "$_d/10-hardening.conf"
+    fi
+    if [ -e "$_d/20-hardening-paths.conf" ] && ! ours_file "$_d/20-hardening-paths.conf"; then
+      warn "$_d/20-hardening-paths.conf is not Danbyte's; left alone"
+    elif [ "$_tier" = base ] || [ "$_tier" = workers ]; then   # no filesystem lines
+      rm -f "$_d/20-hardening-paths.conf"
+    else
+      paths_conf "$_ps" >"$_d/20-hardening-paths.conf.tmp" && mv -f "$_d/20-hardening-paths.conf.tmp" "$_d/20-hardening-paths.conf"
+    fi
+    case " $_show " in *" $_tier "*) ;; *) _show="$_show $_tier" ;; esac
+  done
+  sc daemon-reload >/dev/null 2>&1 || :
+  echo "unit hardening:${_show:- none}; filesystem confinement: ${_fs:-not used}"
+}
+
+status() {
+  for _u in $(app_units); do
+    _d="$SYSTEMD_DIR/$_u.service.d"
+    _l=""
+    if ours_link "$_d/10-hardening.conf"; then _l=$(basename "$(readlink "$_d/10-hardening.conf")" .conf); fi
+    _e=""
+    if ours_file "$_d/20-hardening-paths.conf"; then
+      _e=$(sed -n 's/^# Filesystem confinement on this host: \(.*\)\.$/\1/p' "$_d/20-hardening-paths.conf")
+    fi
+    printf '%-36s %-8s %s\n' "$_u" "${_l:-none}" "$_e"
+  done
+}
+
+case "${1:-apply}" in
+  apply) apply ;;
+  remove) remove_all; systemctl --user daemon-reload >/dev/null 2>&1 || : ;;
+  status) status ;;
+  paths)  # paths <tree|logs|frontend|docs|data>: the paths drop-in this install would get
+    EFFECT="not tried" paths_conf "${2:-data}" ;;
+  *) echo "usage: $0 [apply|remove|status|paths SET]" >&2; exit 2 ;;
+esac

@@ -56,6 +56,9 @@ def build_digest(tenant, since) -> dict:
     reachable_pct = round(100 * (by_status.get("up", 0) / total)) if total else None
 
     firing = Alert.objects.filter(tenant=tenant, status="firing")
+    # Explained alerts (#450) are not separate problems: counted apart.
+    explained_total = firing.filter(notify_state="explained").count()
+    firing = firing.exclude(notify_state="explained")
     by_severity = {
         r["severity"]: r["n"]
         for r in firing.values("severity").annotate(n=Count("id"))
@@ -125,6 +128,7 @@ def build_digest(tenant, since) -> dict:
         "down": by_status.get("down", 0) + by_status.get("stale", 0),
         "by_severity": by_severity,
         "firing_total": sum(by_severity.values()),
+        "explained_total": explained_total,
         "top_alerts": top_alerts,
         "transitions": transitions,
         "went_down": tally.get("down", 0),
@@ -198,7 +202,9 @@ def render_text(data: dict) -> str:
         f"Went down: {d['went_down']}   Came up: {d['came_up']}   "
         f"Went stale: {d['went_stale']}",
     ]
-    lines += ["", f"Firing alerts: {d['firing_total']}"]
+    explained = d.get("explained_total") or 0
+    lines += ["", f"Firing alerts: {d['firing_total']}"
+              + (f" (+{explained} explained)" if explained else "")]
     for sev, n in d["by_severity"].items():
         lines.append(f"  {sev}: {n}")
     tasks = d.get("tasks")
@@ -410,6 +416,11 @@ def render_html(data: dict, deployment_name: str) -> str:
             (d["down"], "down / stale", down_accent),
             (d["firing_total"], "firing alerts", fire_accent),
         ]),
+    ]
+    if d.get("explained_total"):
+        parts.append(ek.muted(
+            f"+{d['explained_total']} more explained by a down upstream."))
+    parts += [
         ek.stat_grid([
             (d["went_down"], "went down"),
             (d["came_up"], "came up"),

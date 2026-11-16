@@ -1,0 +1,37 @@
+name: Set up the backend
+description: >-
+  Python 3.13 and a virtualenv with requirements.lock (plus ruff), cached on
+  the lock file's hash so the shards after the first skip the build headers
+  and the install.
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v5
+      id: py
+      with:
+        python-version: '3.13'
+    - uses: actions/cache@v4
+      id: venv
+      with:
+        path: ~/.venv-danbyte
+        key: venv-${{ runner.os }}-py${{ steps.py.outputs.python-version }}-${{ hashFiles('requirements.lock') }}
+    - name: System deps (python-ldap build headers)
+      if: steps.venv.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        # Drop flaky third-party apt sources so their transient "Hash Sum
+        # mismatch" can't fail our update; retry once for good measure.
+        sudo rm -f /etc/apt/sources.list.d/*google* /etc/apt/sources.list.d/*chrome* || true
+        sudo apt-get update || sudo apt-get update
+        sudo apt-get install -y build-essential libldap2-dev libsasl2-dev
+    - name: Install
+      if: steps.venv.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        python -m venv ~/.venv-danbyte
+        ~/.venv-danbyte/bin/python -m pip install --upgrade pip
+        ~/.venv-danbyte/bin/pip install --require-hashes -r requirements.lock
+        ~/.venv-danbyte/bin/pip install ruff
+    - name: Use the virtualenv
+      shell: bash
+      run: echo "$HOME/.venv-danbyte/bin" >> "$GITHUB_PATH"

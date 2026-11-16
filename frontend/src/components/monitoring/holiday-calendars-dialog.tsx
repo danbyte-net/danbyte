@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react"
 import { Link } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { CalendarDays, Plus, Trash2 } from "lucide-react"
+import { Plus, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
@@ -34,10 +34,16 @@ const URL = "/api/monitoring/holiday-calendars/"
 const SHOWN_AGREEMENTS = 3
 
 /** Holiday calendars, shared by every agreement that picks one: a bank
- * holiday is entered once. Opened from the SLAs list. */
-export function HolidayCalendarsButton() {
+ * holiday is entered once. Opened from the SLAs list's Setup menu, which
+ * offers it with `holidaycalendar` view. */
+export function HolidayCalendarsDialog({
+  open,
+  onOpenChange: setOpen,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
   const { canDo } = useMe()
-  const [open, setOpen] = useState(false)
   // Which calendar the editor has open: one, or a new one.
   const [editing, setEditing] = useState<{ calendar?: HolidayCalendar } | null>(
     null
@@ -45,9 +51,6 @@ export function HolidayCalendarsButton() {
   if (!canDo("holidaycalendar", "view")) return null
   return (
     <>
-      <Button size="sm" variant="outline" onClick={() => setOpen(true)}>
-        <CalendarDays className="h-3.5 w-3.5" /> Holidays
-      </Button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent size="xl">
           <DialogHeader>

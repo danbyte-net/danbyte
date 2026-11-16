@@ -1,0 +1,4 @@
+cveID,vendorProject,product,vulnerabilityName,dateAdded,shortDescription,requiredAction,dueDate,knownRansomwareCampaignUse,notes,cwes
+CVE-2023-20198,Cisco,IOS XE Web UI,"Cisco IOS XE Web UI Privilege Escalation Vulnerability",2023-10-16,"Cisco IOS XE Web UI contains a privilege escalation vulnerability.","Verify that instances of Cisco IOS XE Web UI are in compliance with BOD 23-02 and apply mitigations per vendor instructions.",2023-10-20,Known,,CWE-420
+CVE-2021-44228,Apache,Log4j2,"Apache Log4j2 Remote Code Execution Vulnerability",2021-12-10,"Apache Log4j2 contains a vulnerability.","For all affected software assets for which updates exist, apply updates.",2021-12-24,Known,,CWE-20
+not-a-cve,Nobody,Nothing,"Broken row",2021-12-10,"","",2021-12-24,Unknown,,

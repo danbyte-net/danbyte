@@ -97,4 +97,41 @@ describe("Display > Photos", () => {
       state: { show_fov: false, show_photo_outlines: true },
     })
   })
+
+  it("Tile icons is on by default; off goes back to plain tiles", async () => {
+    const mutate = vi.fn()
+    render(<Harness mutate={mutate} />)
+    fireEvent.click(screen.getByRole("button", { name: /Display/ }))
+    const box = await screen.findByLabelText("Tile icons")
+    expect(
+      box.getAttribute("aria-checked") ?? box.getAttribute("data-state")
+    ).toMatch(/true|checked/)
+    fireEvent.click(box)
+    expect(mutate).toHaveBeenCalledWith({
+      state: { show_fov: false, tile_icons: false },
+    })
+  })
+
+  it("Detail is Auto by default; Always full is saved on the plan", async () => {
+    const mutate = vi.fn()
+    render(<Harness mutate={mutate} />)
+    fireEvent.click(screen.getByRole("button", { name: /Display/ }))
+    // Callouts' Auto and Detail's, both chosen.
+    const autos = await screen.findAllByRole("button", { name: "Auto" })
+    expect(autos.map((b) => b.getAttribute("aria-current"))).toEqual([
+      "page",
+      "page",
+    ])
+    const full = screen.getByRole("button", { name: "Always full" })
+    expect(full.getAttribute("aria-current")).toBeNull()
+    fireEvent.click(full)
+    expect(mutate).toHaveBeenCalledWith({
+      state: { show_fov: false, detail: "full" },
+    })
+    expect(
+      screen
+        .getByRole("button", { name: "Always full" })
+        .getAttribute("aria-current")
+    ).toBe("page")
+  })
 })

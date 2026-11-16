@@ -6,26 +6,29 @@ import {
   SoftwareVersionText,
 } from "@/components/cells/software-version-cell"
 import { CatalogCell } from "@/components/cells/catalog-cell"
-import { SpecSheetButton } from "@/components/spec-sheet-button"
+import { SpecSheetMenuItems } from "@/components/spec-sheet-button"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { listRowFromCache } from "@/lib/list-row-cache"
 import { Loading } from "@/components/loading"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   GitCompareArrows,
-  Pencil,
   RefreshCw,
   Target,
-  Trash2,
   TriangleAlert,
 } from "lucide-react"
 import { useCallback, useState } from "react"
 
 import { api, type VirtualMachine } from "@/lib/api"
-import { Button } from "@/components/ui/button"
 import { TagList } from "@/components/cells/tag-list"
 import { CustomFieldValues } from "@/components/custom-field-display"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import { DnsNameLink } from "@/components/cells/dns-name-link"
 import { QueryError } from "@/components/query-error"
 import { VmDeleteDialog } from "@/components/vm-delete-dialog"
@@ -57,6 +60,7 @@ import {
   VmBuildCard,
   VmDisks,
   VmDriftCard,
+  useVmDrift,
   VmProvisionButton,
   hasBuild,
 } from "@/components/vm-build"
@@ -75,6 +79,20 @@ import {
 import { usePrtgEnabled } from "@/components/prtg/group-picker"
 import { RoutingPanel } from "@/components/routing/device-routing-panel"
 import { PinnedSensorsCard } from "@/components/prtg/sensor-pins"
+import {
+  VulnerabilitiesTab,
+  vulnTabSearch,
+} from "@/components/vulnerabilities/vulnerabilities-tab"
+import { useVulnSettings } from "@/components/vulnerabilities/use-vuln-settings"
+import { HostVulnBadge } from "@/components/vulnerabilities/badges"
+import {
+  PackagesTab,
+  usePackagesTab,
+} from "@/components/discovery/packages-tab"
+import { DeviceCredentialsCard } from "@/components/device-credentials-card"
+import { HostConnectMenu } from "@/components/host-connect-menu"
+import { vmConnectHost } from "@/lib/connect-host"
+import { SSHHostKeysPanel } from "@/components/monitoring/ssh-host-keys-panel"
 
 export const Route = createFileRoute("/virtual-machines/$id")({
   component: VmDetail,
@@ -83,7 +101,11 @@ export const Route = createFileRoute("/virtual-machines/$id")({
   // `?sensor=` opens that PRTG sensor's panel on the Sensors tab.
   validateSearch: (
     s: Record<string, unknown>
-  ): { tab?: string; sensor?: string; state?: string } => ({
+  ): { tab?: string; sensor?: string; state?: string } & ReturnType<
+    typeof vulnTabSearch
+  > => ({
+    // The Vulnerabilities tab's filters.
+    ...vulnTabSearch(s),
     ...(typeof s.tab === "string" ? { tab: s.tab } : {}),
     ...(typeof s.sensor === "string" ? { sensor: s.sensor } : {}),
     // The monitoring bar's filter, on the Monitoring and Sensors tabs.
@@ -115,7 +137,13 @@ function VmDetail() {
         <QueryError error={vm.error} />
       </div>
     )
-  return <VmDetailBody vm={vm.data} />
+  // A list row stands in until the detail read lands, and a table row only
+  // carries what its columns asked for: the lists the page walks may be
+  // missing from it.
+  const data = vm.isPlaceholderData
+    ? { ...vm.data, disks: vm.data.disks ?? [], tags: vm.data.tags ?? [] }
+    : vm.data
+  return <VmDetailBody vm={data} />
 }
 
 function VmDetailBody({ vm }: { vm: VirtualMachine }) {
@@ -136,9 +164,14 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
     | "snmp"
     | "certificates"
     | "config"
+    | "packages"
+    | "vulnerabilities"
     | "journal"
     | "history"
   >("overview")
+  const vuln = useVulnSettings()
+  const drift = useVmDrift(vm.id, vm.drift_count > 0)
+  const pkgs = usePackagesTab("virtual_machine", vm.id)
   const nav = useNavigate()
   const [deleting, setDeleting] = useState<VirtualMachine | null>(null)
   const openDelete = useCallback(() => setDeleting(vm), [vm])
@@ -182,31 +215,21 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
       backLabel="Virtual machines"
       title={vm.name}
       presence={{ type: "virtualmachine", id: vm.id }}
+      edit={
+        canEdit && (
+          <EditButton to="/virtual-machines/$id/edit" params={{ id: vm.id }} />
+        )
+      }
+      exports={<SpecSheetMenuItems kind="vm" id={vm.id} />}
       actions={
         <>
-          <SpecSheetButton kind="vm" id={vm.id} />
+          <HostConnectMenu host={vmConnectHost(vm)} />
           {vm.intended && canDo("virtualmachine", "provision") && (
             <VmProvisionButton vm={vm} />
           )}
-          {canEdit && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/virtual-machines/$id/edit" params={{ id: vm.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDelete && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={openDelete}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
         </>
       }
+      remove={canDelete && <DeleteButton onClick={openDelete} />}
       hero={
         <DetailHero
           title={vm.name}
@@ -227,6 +250,11 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
                 </Badge>
               )}
               <MonitoringHeaderBadge target={{ virtual_machine: vm.id }} />
+              <HostVulnBadge
+                summary={vm.vulnerability_summary}
+                kind="virtual_machine"
+                id={vm.id}
+              />
               {vm.synced_from && (
                 <Link
                   to="/virtualization-sources/$id"
@@ -239,10 +267,30 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
                 </Link>
               )}
               {vm.drift_count > 0 && (
-                <Badge variant="warning" className="gap-1 text-[10px]">
-                  <GitCompareArrows className="h-3 w-3" />
-                  {vm.drift_count} drift
-                </Badge>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Badge
+                      variant="warning"
+                      className="gap-1 text-[10px]"
+                      asChild
+                    >
+                      <button
+                        type="button"
+                        onClick={() => setTab("components")}
+                      >
+                        <GitCompareArrows className="h-3 w-3" />
+                        {vm.drift_count} drift
+                      </button>
+                    </Badge>
+                  </TooltipTrigger>
+                  <TooltipContent variant="panel">
+                    {drift.length > 0
+                      ? `Differs from the hypervisor: ${drift
+                          .map((r) => r.field)
+                          .join(", ")}`
+                      : "Differs from the hypervisor"}
+                  </TooltipContent>
+                </Tooltip>
               )}
             </>
           }
@@ -303,6 +351,18 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
           count: vm.certificate_count,
         },
         { value: "config", label: "Config" },
+        ...(pkgs.show
+          ? [{ value: "packages", label: "Packages", count: pkgs.count }]
+          : []),
+        ...(vuln.enabled
+          ? [
+              {
+                value: "vulnerabilities",
+                label: "Vulnerabilities",
+                count: vm.vulnerability_summary?.open || undefined,
+              },
+            ]
+          : []),
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },
       ]}
@@ -326,7 +386,12 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
         />
       </DetailTab>
       <DetailTab value="components">
-        <VMInterfacesPane vmId={vm.id} vmName={vm.name} />
+        <div className="space-y-6">
+          {vm.drift_count > 0 && (
+            <VmDriftCard vmId={vm.id} intended={vm.intended} />
+          )}
+          <VMInterfacesPane vmId={vm.id} vmName={vm.name} />
+        </div>
       </DetailTab>
       <DetailTab value="routing">
         <RoutingPanel owner={{ kind: "vm", id: vm.id, name: vm.name }} />
@@ -372,6 +437,9 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
           </p>
         )}
         <div className="mt-6 empty:hidden">
+          <DeviceCredentialsCard deviceId={vm.id} hostField="virtual_machine" />
+        </div>
+        <div className="mt-6 empty:hidden">
           <PrtgMonitoringRow
             parent={{ virtual_machine: vm.id }}
             prtgSync={vm.prtg_sync}
@@ -401,8 +469,21 @@ function VmDetailBody({ vm }: { vm: VirtualMachine }) {
         <VmSnmpCard vmId={vm.id} />
       </DetailTab>
       <DetailTab value="certificates">
-        <CertificatesPanel objectType="api.virtualmachine" objectId={vm.id} />
+        <div className="space-y-6">
+          <CertificatesPanel objectType="api.virtualmachine" objectId={vm.id} />
+          <SSHHostKeysPanel deviceId={vm.id} hostField="virtual_machine" />
+        </div>
       </DetailTab>
+      {pkgs.show && (
+        <DetailTab value="packages">
+          <PackagesTab kind="virtual_machine" id={vm.id} />
+        </DetailTab>
+      )}
+      {vuln.enabled && (
+        <DetailTab value="vulnerabilities">
+          <VulnerabilitiesTab kind="virtual_machine" id={vm.id} />
+        </DetailTab>
+      )}
       <DetailTab value="journal">
         <JournalPanel objectType="api.virtualmachine" objectId={vm.id} />
       </DetailTab>
@@ -666,7 +747,9 @@ function VmOverview({
           <KvCard title="Management" rows={managementRows} />
         </div>
       </div>
-      {vm.intended && <VmDriftCard vmId={vm.id} />}
+      {vm.drift_count > 0 && (
+        <VmDriftCard vmId={vm.id} intended={vm.intended} />
+      )}
       <VmDisks vm={vm} />
       <VmTopologyCard
         vmId={vm.id}

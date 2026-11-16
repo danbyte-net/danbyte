@@ -19,6 +19,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu"
 import { FormCombobox } from "@/components/forms"
 import { Loading } from "@/components/loading"
 import { QueryError } from "@/components/query-error"
@@ -34,18 +35,22 @@ function moveUrl(rackId: string, dryRun: boolean) {
  * go to another site together, keeping their positions. The dialog shows the
  * server's dry run - what goes along, what is cleared, what blocks - before
  * anything is written. */
-export function RackMoveButton({ rack }: { rack: Rack }) {
+export function useRackMove(rack: Rack) {
   const { canDo } = useMe()
   const [open, setOpen] = useState(false)
-  if (!canDo("rack", "change")) return null
-  return (
-    <>
-      <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
+  const available = canDo("rack", "change")
+  return {
+    /** For the detail header's More menu (#507). */
+    item: available ? (
+      <DropdownMenuItem onSelect={() => setOpen(true)}>
         <MoveRight className="h-3.5 w-3.5" /> Move to site…
-      </Button>
-      {open && <RackMoveDialog rack={rack} onClose={() => setOpen(false)} />}
-    </>
-  )
+      </DropdownMenuItem>
+    ) : null,
+    /** Mount outside the menu. */
+    dialog: open ? (
+      <RackMoveDialog rack={rack} onClose={() => setOpen(false)} />
+    ) : null,
+  }
 }
 
 function RackMoveDialog({

@@ -1,7 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Pencil, Trash2 } from "lucide-react"
 import { useCallback, useState } from "react"
 import { toast } from "sonner"
 
@@ -26,12 +25,14 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { ScrollFrame } from "@/components/table-scroll"
 import { TagList } from "@/components/cells/tag-list"
 import { KvCard, dash, type KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { StatusBadge } from "@/components/status-badge"
 import { L2vpnDeleteDialog } from "@/components/l2vpn-delete-dialog"
 import { L2vpnTerminationDialog } from "@/components/l2vpn-termination-dialog"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
@@ -80,26 +81,15 @@ function Body({ l2vpn: v }: { l2vpn: L2VPN }) {
       backLabel="L2VPNs"
       title={v.name}
       presence={{ type: "l2vpn", id: v.id }}
-      actions={
-        <>
-          {canDo("l2vpn", "change") && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/l2vpns/$id/edit" params={{ id: v.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDo("l2vpn", "delete") && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeleting(v)}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
-        </>
+      edit={
+        canDo("l2vpn", "change") && (
+          <EditButton to="/l2vpns/$id/edit" params={{ id: v.id }} />
+        )
+      }
+      remove={
+        canDo("l2vpn", "delete") && (
+          <DeleteButton onClick={() => setDeleting(v)} />
+        )
       }
       hero={
         <DetailHero
@@ -320,7 +310,7 @@ function TerminationsTab({
           No terminations on this L2VPN yet.
         </p>
       ) : (
-        <div className="overflow-hidden rounded-lg border border-border">
+        <ScrollFrame className="rounded-lg border border-border">
           <Table>
             <TableHeader>
               <TableRow>
@@ -354,7 +344,7 @@ function TerminationsTab({
               ))}
             </TableBody>
           </Table>
-        </div>
+        </ScrollFrame>
       )}
 
       <L2vpnTerminationDialog

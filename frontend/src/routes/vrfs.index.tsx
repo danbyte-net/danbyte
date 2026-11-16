@@ -178,14 +178,16 @@ function VrfsPage() {
         onChange: setQ,
         placeholder: "Filter by name, RD, description…",
       }}
+      add={
+        canAdd && (
+          <Button size="sm" asChild>
+            <Link to="/vrfs/new">Add VRF</Link>
+          </Button>
+        )
+      }
       actions={
         <>
           <TableActions ioType="vrf" />
-          {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/vrfs/new">Add VRF</Link>
-            </Button>
-          )}
         </>
       }
       query={query}

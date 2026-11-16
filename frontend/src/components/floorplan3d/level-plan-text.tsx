@@ -82,6 +82,7 @@ export function LevelPlanText({
         place={placement}
         readable={readable}
         idPrefix={`${id}:`}
+        walls={data.walls}
       />
     </ExplodedGroup>
   )

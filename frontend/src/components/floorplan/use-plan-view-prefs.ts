@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import type { UseMutationResult } from "@tanstack/react-query"
 
-import type { FloorPlan } from "@/lib/api"
+import type { AreaNameStyle, FloorPlan } from "@/lib/api"
 import {
   storeCableLook,
   storeCableScale,
@@ -12,11 +12,19 @@ import {
 } from "@/lib/render-quality"
 import type { CableLook, RenderQualitySetting } from "@/lib/render-quality"
 
+import { readAreaNameStyle } from "./area-name-style"
 import { readCableColorBy } from "./cable-draw"
 import type { CableColorBy } from "./cable-draw"
 import { readFloorHidden } from "./hidden"
-import { readCallouts, readIconTiles, readObjectSize } from "./readable"
+import {
+  readCallouts,
+  readIconTiles,
+  readObjectSize,
+  readTileIcons,
+} from "./readable"
 import type { CalloutMode, ObjectSize } from "./readable"
+import { readDetailMode } from "./plan-detail"
+import type { DetailMode } from "./plan-detail"
 import type { FloorHidden } from "./hidden"
 import { readColorBy } from "./tile-paint"
 import type { ColorBy } from "./tile-paint"
@@ -53,7 +61,9 @@ export type ViewPrefKey =
   | "bundle_cables"
   | "object_size"
   | "icon_tiles"
+  | "tile_icons"
   | "callouts"
+  | "detail"
   | "mute_background"
   | "show_fov_coverage"
   | "fov_racks_block"
@@ -137,9 +147,14 @@ export function usePlanViewPrefs({
   // Icons when zoomed out: a device, rack or cabinet too small to read
   // draws as its icon tile.
   const [iconTilesLocal, setIconTilesLocal] = useState<boolean | null>(null)
+  // Tile icons: tiles solid in their colour with a glyph of what they are.
+  const [tileIconsLocal, setTileIconsLocal] = useState<boolean | null>(null)
   // Callouts: a name that will not sit cleanly by its tile in a box off
   // to the side - Auto unless the plan chose Off.
   const [calloutsLocal, setCalloutsLocal] = useState<CalloutMode | null>(null)
+  // Detail: Auto draws one clear picture per zoom (plan-detail.ts), Always
+  // full everything at every zoom.
+  const [detailLocal, setDetailLocal] = useState<DetailMode | null>(null)
   // 3D effects budget - PER-DEVICE (localStorage), not a plan pref: the
   // workstation's High must not follow the plan onto a weak laptop.
   const [quality3d, setQuality3dState] = useState<RenderQualitySetting>(() =>
@@ -185,6 +200,7 @@ export function usePlanViewPrefs({
     setBundleCablesLocal(null)
     setObjectSizeLocal(null)
     setIconTilesLocal(null)
+    setTileIconsLocal(null)
     setCalloutsLocal(null)
     setMuteBackgroundLocal(null)
   }, [id])
@@ -318,13 +334,33 @@ export function usePlanViewPrefs({
   const objectSize = objectSizeLocal ?? readObjectSize(plan?.state.object_size)
   // On unless the plan turned it off.
   const iconTiles = iconTilesLocal ?? readIconTiles(plan?.state.icon_tiles)
+  const tileIcons = tileIconsLocal ?? readTileIcons(plan?.state.tile_icons)
   const callouts = calloutsLocal ?? readCallouts(plan?.state.callouts)
+  const detail = detailLocal ?? readDetailMode(plan?.state.detail)
   // Muted unless the plan turned it off: a map or a photo at full colour
   // drowns the racks, trays and cables drawn over it.
   const muteBackground =
     muteBackgroundLocal ??
     (plan?.state.mute_background as boolean | undefined) ??
     true
+
+  // The plan's default look for its areas' names (each area may override
+  // it in its inspector) - top left, M, Auto, no plate unless set.
+  const [areaNamesLocal, setAreaNamesLocal] = useState<AreaNameStyle | null>(
+    null
+  )
+  useEffect(() => setAreaNamesLocal(null), [id])
+  const storedAreaNames = plan?.state.area_names
+  const areaNamesStored = useMemo(
+    () => readAreaNameStyle(storedAreaNames),
+    [storedAreaNames]
+  )
+  const areaNames = areaNamesLocal ?? areaNamesStored
+  const setAreaNames = (next: AreaNameStyle) => {
+    setAreaNamesLocal(next)
+    if (canEdit && plan)
+      patchPlan.mutate({ state: { ...plan.state, area_names: next } })
+  }
 
   const setViewPref = (
     key: ViewPrefKey,
@@ -336,10 +372,13 @@ export function usePlanViewPrefs({
       | CableColorBy
       | ObjectSize
       | CalloutMode
+      | DetailMode
   ) => {
     if (key === "object_size") setObjectSizeLocal(value as ObjectSize)
     else if (key === "callouts") setCalloutsLocal(value as CalloutMode)
+    else if (key === "detail") setDetailLocal(value as DetailMode)
     else if (key === "icon_tiles") setIconTilesLocal(value as boolean)
+    else if (key === "tile_icons") setTileIconsLocal(value as boolean)
     else if (key === "label_fit") setLabelFitLocal(value as boolean)
     else if (key === "mute_background") setMuteBackgroundLocal(value as boolean)
     else if (key === "cable_color_by")
@@ -411,7 +450,9 @@ export function usePlanViewPrefs({
     bundleCables,
     objectSize,
     iconTiles,
+    tileIcons,
     callouts,
+    detail,
     muteBackground,
     quality3d,
     setQuality3d,
@@ -419,6 +460,8 @@ export function usePlanViewPrefs({
     setCableScale,
     cableLook,
     setCableLook,
+    areaNames,
+    setAreaNames,
     setViewPref,
   }
 }

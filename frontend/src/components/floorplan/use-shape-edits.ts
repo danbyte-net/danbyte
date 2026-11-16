@@ -77,6 +77,7 @@ export function useShapeEdits({
         fill_opacity: 15,
         border: "solid",
         show_name: true,
+        name_style: {},
         z: topZ("area"),
         locked: false,
         created_at: now,

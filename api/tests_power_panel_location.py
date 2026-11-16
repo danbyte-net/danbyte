@@ -87,7 +87,11 @@ class PanelLocationTests(_LocBase):
 
     def test_cluster_site_is_ignored(self):
         # A VM filter: a panel has no cluster, and the parameter used to 500.
+        # Strict by default (0.20): named as unknown, never a 500.
         r = self.client.get(f"{URL}?cluster_site={self.site.id}")
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertEqual(r.json()["unknown"], ["cluster_site"])
+        r = self.client.get(f"{URL}?cluster_site={self.site.id}&strict=0")
         self.assertEqual(r.status_code, 200, r.content)
         self.assertEqual(r.json()["count"], PowerPanel.objects.filter(tenant=self.tenant).count())
 

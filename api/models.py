@@ -6,7 +6,7 @@ import uuid
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.contrib.postgres.indexes import GinIndex, GistIndex, OpClass
-from django.db.models.functions import Cast, Upper
+from django.db.models.functions import Cast, Greatest, Least, Upper
 from django.db import models, transaction
 from django.utils import timezone
 
@@ -2263,6 +2263,7 @@ SOFTWARE_VERSION_SOURCES = (
     ("virtualization", "Virtualization"),
     ("oxidized", "Oxidized"),
     ("import", "Import"),
+    ("discovery", "Discovery"),
 )
 
 
@@ -2378,6 +2379,12 @@ class Device(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin, Mod
     software_version_source = models.CharField(
         max_length=16, choices=SOFTWARE_VERSION_SOURCES, blank=True, default="",
         db_default="", editable=False,
+    )
+    #: Never contacted by built-in discovery (#451 decision 9), whatever a
+    #: profile's scope says. Deny subnets apply on top.
+    scan_exempt = models.BooleanField(
+        "exempt from discovery", default=False, db_default=False,
+        help_text="Built-in discovery never contacts it.",
     )
     # Hardware warranty of this unit, for coverage without a support contract
     # (#421). The last covered day; blank = no warranty on record.
@@ -3074,6 +3081,12 @@ class Prefix(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         help_text="Opt in to periodic ICMP discovery - responders not yet "
         "recorded are auto-created as IPs (see monitoring settings).",
     )
+    #: Never contacted by built-in discovery (#451 decision 9), for every address
+    #: inside it, whatever a profile's scope says. Deny subnets apply on top.
+    scan_exempt = models.BooleanField(
+        "exempt from discovery", default=False, db_default=False,
+        help_text="Built-in discovery never contacts it.",
+    )
     last_discovered_at = models.DateTimeField(
         null=True, blank=True,
         help_text="Last time discovery swept this prefix. Engine-set; gates the "
@@ -3429,6 +3442,12 @@ class IPAddress(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
     # The NOT NULL columns also carry a database default (api 0184): a
     # process still on the release before 0183 inserts addresses without
     # naming them, and must not fail while an upgrade is in flight.
+    #: Never contacted by built-in discovery (#451 decision 9), whatever a
+    #: profile's scope says. Deny subnets apply on top.
+    scan_exempt = models.BooleanField(
+        "exempt from discovery", default=False, db_default=False,
+        help_text="Built-in discovery never contacts it.",
+    )
     monitoring_excluded = models.BooleanField(
         "excluded from monitoring", default=False, db_default=False,
         help_text=("Every check on this address is parked: nothing runs, no "
@@ -5438,6 +5457,12 @@ class VirtualMachine(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMi
         max_length=16, choices=SOFTWARE_VERSION_SOURCES, blank=True, default="",
         db_default="", editable=False,
     )
+    #: Never contacted by built-in discovery (#451 decision 9), whatever a
+    #: profile's scope says. Deny subnets apply on top.
+    scan_exempt = models.BooleanField(
+        "exempt from discovery", default=False, db_default=False,
+        help_text="Built-in discovery never contacts it.",
+    )
     primary_ip = models.ForeignKey(
         IPAddress,
         on_delete=models.SET_NULL,
@@ -6503,6 +6528,11 @@ class Application(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin
     cpe_template = models.CharField(
         max_length=255, blank=True, default="", db_default="", validators=[validate_cpe],
     )
+    #: Package names discovery links to this application (#451):
+    #: ``"deb:nginx"``, ``"rpm:nginx"``, ``"deb:postgresql-*"``; a bare name
+    #: means every Linux package type. Exact names or a ``*`` glob, never a
+    #: regex (``api.package_names``).
+    package_names = models.JSONField(default=list, blank=True, db_default=[])
     description = models.TextField(blank=True, default="", db_default="")
 
     class Meta:
@@ -6570,6 +6600,11 @@ class InstalledSoftware(NumIdMixin, TimestampedModel, CustomFieldsMixin, Taggabl
     source = models.CharField(max_length=10, choices=SOURCE_CHOICES, default="manual",
                               db_default="manual")
     last_seen = models.DateTimeField(null=True, blank=True)
+    #: The version discovery's package inventory reads for this install
+    #: (#451): kept current on every read, never written over ``version``
+    #: of an install a person made. Blank when no linked package is there.
+    observed_version = models.CharField(max_length=64, blank=True, default="",
+                                        db_default="", editable=False)
     eol_mapping = models.ForeignKey(
         "compliance.EolMapping", on_delete=models.SET_NULL, null=True, blank=True,
         related_name="installs", editable=False,
@@ -7765,27 +7800,29 @@ class SecretBackedPSK(models.Model):
         stamping which provider took it. Fail-closed: raises
         :class:`SecretStoreDisabled` when no store is configured, because the
         alternative is a key sitting in the database in the clear."""
-        from core.models import DeploymentSettings
-        from monitoring.secret_store import require_secret_store
+        from monitoring.secret_store import write_managed
 
-        store = require_secret_store()
         # Always re-derived: a path on the row, however it got there, never
         # decides where the key is written (#315).
-        self.psk_secret_path = f"{self.psk_secret_prefix}/{self.id}"
-        self.psk_secret_provider = (
-            DeploymentSettings.load().secrets_provider or ""
-        ).strip()
-        store.put(self.tenant_id, self.psk_secret_path, {"psk": value})
+        ref = f"{self.psk_secret_prefix}/{self.id}"
+        before = self.psk_secret_provider if self.psk_secret_path == ref else ""
+        self.psk_secret_provider = write_managed(before, self.tenant_id, ref, {"psk": value})
+        self.psk_secret_path = ref
 
     def resolve_psk(self) -> str:
-        """Read the PSK back at use-time. Only the reveal action calls this -
+        """Read the PSK back at use-time, from the store stamped on the row
+        while it is configured (#511). Only the reveal action calls this -
         never list or detail serialization."""
-        from monitoring.secret_store import SecretStoreError, require_secret_store
+        from monitoring.secret_store import (
+            SecretStoreError,
+            read_managed,
+            require_secret_store,
+        )
 
         if not self.psk_secret_path:
             raise SecretStoreError("No PSK is set.")
-        store = require_secret_store()
-        value = store.get(self.tenant_id, self.psk_secret_path)
+        require_secret_store()
+        value = read_managed(self.psk_secret_provider, self.tenant_id, self.psk_secret_path)
         if value is None:
             raise SecretStoreError(
                 f"No secret found at '{self.psk_secret_path}' in the "
@@ -7798,20 +7835,14 @@ class SecretBackedPSK(models.Model):
 
         Best-effort on the store side: if it is unreachable the reference still
         goes, because leaving a row pointing at a key nobody can read is worse
-        than an orphaned entry an operator can prune."""
-        path = self.psk_secret_path
+        than an orphaned entry an operator can prune. An external store's key
+        goes when the transaction commits (``monitoring.secret_refs``)."""
+        path, provider = self.psk_secret_path, self.psk_secret_provider
         self.psk_secret_path = ""
         self.psk_secret_provider = ""
-        if not path:
-            return
-        from monitoring.secret_store import SecretStoreError, active_secret_store
+        from monitoring.secret_refs import discard_secret
 
-        try:
-            store = active_secret_store()
-            if store is not None:
-                store.delete(self.tenant_id, path)
-        except SecretStoreError:
-            pass
+        discard_secret(self.tenant_id, path, provider)
 
 
 # ─── FHRP groups (VRRP / HSRP / GLBP / CARP) ─────────────────────────────────
@@ -9454,6 +9485,17 @@ class ExportTemplate(NumIdMixin, TimestampedModel):
     #: name and extension. Ending in ``/`` makes it a directory: the template
     #: writes one file per ``{% file "name" %}`` block, each at ``<dir><name>``.
     target_path = models.CharField(max_length=255, blank=True, default="", db_default="")
+    #: The CLI check on a render (#465, ``api.cli_lint``): ``""`` picks the
+    #: family from the platforms using this template, ``off`` skips it.
+    lint_family = models.CharField(
+        max_length=16, blank=True, default="", db_default="",
+        choices=[("", "Auto"), ("off", "Off"), ("ios", "Cisco IOS / IOS-XE")],
+    )
+    #: Rendered lines the CLI check leaves alone: ``fnmatch`` patterns, or a
+    #: plain prefix (the commands its vocabulary does not know).
+    ignore_lint_patterns = models.JSONField(
+        default=list, blank=True, db_default=models.Value([], models.JSONField()),
+    )
 
     class Meta:
         ordering = ["name"]
@@ -10654,6 +10696,10 @@ class FloorPlanArea(TimestampedModel):
     )
     border = models.CharField(max_length=8, choices=BORDERS, default="solid")
     show_name = models.BooleanField(default=True)
+    # How the name is drawn, over the plan's default (state.area_names):
+    # {"position", "size", "color", "plate"}, each optional - a key left
+    # out inherits. Validated by the serializer (api.serializers.area_name_style).
+    name_style = models.JSONField(default=dict, blank=True, db_default={})
     z = models.SmallIntegerField(default=0, help_text="Draw order among areas.")
     locked = models.BooleanField(default=False)
     # The floor plan a click on the area opens in View (any floor, snapshot
@@ -11034,3 +11080,124 @@ class PanelLayout(TimestampedModel):
 
     def __str__(self) -> str:
         return f"{self.get_object_kind_display()} panel · {self.get_scope_display()}"
+
+
+# ─── Device dependencies (#450) ─────────────────────────────────────────────
+
+
+class DependencyMedium(_LabeledChoice):
+    """What a dependency runs over - Ethernet, fibre, radio, a VPN (#450).
+
+    An editable per-tenant catalog seeded with six rows
+    (``api.dependency_media_seeds``) so a new tenant can record dependencies
+    straight away; each row can be renamed, recoloured or deleted. ``icon``
+    and ``line_style`` style the dependency on the maps. A medium in use is
+    not deleted (``PROTECT``): the user moves its dependencies first."""
+
+    LINE_STYLE_CHOICES = [
+        ("solid", "Solid"),
+        ("dashed", "Dashed"),
+        ("dotted", "Dotted"),
+    ]
+
+    icon = models.CharField(max_length=64, blank=True, default="", db_default="")
+    line_style = models.CharField(
+        max_length=8, choices=LINE_STYLE_CHOICES, default="solid", db_default="solid",
+    )
+
+    class Meta(_LabeledChoice.Meta):
+        verbose_name = "dependency medium"
+        verbose_name_plural = "dependency media"
+        constraints = [
+            models.UniqueConstraint(fields=["tenant", "slug"],
+                                    name="uniq_dependencymedium_tenant_slug"),
+        ]
+
+
+class DeviceDependency(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
+    """The downstream device depends on the upstream one (#450).
+
+    ``kind="peer"`` records a link between equals instead: drawn and listed,
+    never followed by the impact walk. A peer is stored with the lower UUID
+    as ``upstream`` so the pair reads the same whichever way it was entered.
+
+    Dependencies of one downstream that share a non-empty
+    ``redundancy_group`` back each other: the downstream is down only when
+    the whole group is. An ungrouped dependency is a group of its own.
+
+    The database refuses a self-reference, a second relation between the
+    same two devices in either direction (which also refuses a two-node
+    cycle and a peer beside a dependency), and a grouped peer. Longer cycles
+    are refused by ``api.dependencies.save_dependency``."""
+
+    KIND_DEPENDENCY = "dependency"
+    KIND_PEER = "peer"
+    KIND_CHOICES = [
+        (KIND_DEPENDENCY, "Dependency"),
+        (KIND_PEER, "Peer"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="device_dependencies"
+    )
+    upstream = models.ForeignKey(
+        "Device", on_delete=models.CASCADE, related_name="dependents"
+    )
+    downstream = models.ForeignKey(
+        "Device", on_delete=models.CASCADE, related_name="dependencies"
+    )
+    kind = models.CharField(
+        max_length=16, choices=KIND_CHOICES, default=KIND_DEPENDENCY,
+        db_default=KIND_DEPENDENCY,
+    )
+    medium = models.ForeignKey(
+        DependencyMedium, on_delete=models.PROTECT, null=True, blank=True,
+        related_name="dependencies",
+    )
+    #: Dependencies of one downstream sharing a group back each other.
+    redundancy_group = models.CharField(max_length=64, blank=True, default="", db_default="")
+    description = models.CharField(max_length=200, blank=True, default="", db_default="")
+    comments = models.TextField(blank=True, default="", db_default="")
+
+    class Meta:
+        ordering = ["downstream__name", "upstream__name"]
+        verbose_name = "device dependency"
+        verbose_name_plural = "device dependencies"
+        constraints = [
+            models.CheckConstraint(
+                condition=~models.Q(upstream=models.F("downstream")),
+                name="devdep_no_self",
+            ),
+            models.UniqueConstraint(
+                Least("upstream", "downstream"),
+                Greatest("upstream", "downstream"),
+                "tenant",
+                name="devdep_one_per_pair",
+            ),
+            models.CheckConstraint(
+                condition=~models.Q(kind="peer") | models.Q(redundancy_group=""),
+                name="devdep_peer_no_group",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["tenant", "upstream"], name="devdep_tenant_up_idx"),
+            models.Index(fields=["tenant", "downstream"], name="devdep_tenant_down_idx"),
+            models.Index(fields=["tenant", "kind"], name="devdep_tenant_kind_idx"),
+        ]
+
+    def __str__(self) -> str:
+        arrow = "↔" if self.kind == self.KIND_PEER else "→"
+        up = getattr(self.upstream, "name", "?") if self.upstream_id else "?"
+        down = getattr(self.downstream, "name", "?") if self.downstream_id else "?"
+        return f"{up} {arrow} {down}"
+
+    def normalise(self) -> None:
+        """A peer keeps the lower UUID upstream and no group."""
+        if self.kind != self.KIND_PEER:
+            return
+        self.redundancy_group = ""
+        if (self.upstream_id and self.downstream_id
+                and str(self.upstream_id) > str(self.downstream_id)):
+            up, down = self.upstream, self.downstream
+            self.upstream, self.downstream = down, up

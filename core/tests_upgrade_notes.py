@@ -227,6 +227,210 @@ class RealNotesTests(APITestCase):
                     if re.search(r"\bmake\b", line):     # in the bundle, for the install
                         self.assertIn(" APP=", line)
 
+    def test_the_map_csp_step_turns_the_old_policy_into_the_shipped_one(self):
+        # #467: the step by hand, run on the 0.19 policy, gives the
+        # template's policy; the note hides once the site has worker-src.
+        import re
+        import shlex
+        import shutil
+        import subprocess
+
+        from django.conf import settings
+
+        note = next(n for n in un.NOTES if n.id == "0.20.0-nginx-map-csp")
+        self.assertTrue(note.host)
+        self.assertEqual(note.platforms, ("systemd",))
+        template = (Path(settings.BASE_DIR) / "deploy/nginx/danbyte.prod.conf.template").read_text()
+        new = re.search(r'add_header Content-Security-Policy "[^"]*" always;', template).group(0)
+        old = new.replace(" https://vector.openstreetmap.org", "").replace(
+            " worker-src 'self' blob:;", "")
+        self.assertNotEqual(old, new)
+        with patch("core.upgrade_notes._site_config", return_value=old):
+            self.assertFalse(un._map_csp_allows_vector())
+        with patch("core.upgrade_notes._site_config", return_value=new):
+            self.assertTrue(un._map_csp_allows_vector())
+        with patch("core.upgrade_notes._site_config", return_value=None):
+            self.assertFalse(un._map_csp_allows_vector())
+        if not shutil.which("sed"):
+            return
+        command = note.snippet.replace("\\\n", " ")
+        line = next(ln for ln in command.splitlines() if ln.startswith("sudo sed"))
+        argv = shlex.split(line)[1:]
+        with tempfile.TemporaryDirectory() as d:
+            conf = Path(d) / "danbyte.conf"
+            conf.write_text(old + "\n")
+            argv[-1] = str(conf)
+            subprocess.run(argv, check=True)
+            self.assertEqual(conf.read_text(), new + "\n")
+
+    def test_the_vuln_csp_step_turns_the_old_policy_into_the_shipped_one(self):
+        # #451: the step by hand on the policy before browser sync gives the
+        # template's policy, a second run changes nothing, and the note hides
+        # once the site allows NVD.
+        import re
+        import shlex
+        import shutil
+        import subprocess
+
+        from django.conf import settings
+
+        note = next(n for n in un.NOTES if n.id == "0.20.0-nginx-vuln-csp")
+        self.assertTrue(note.host)
+        self.assertEqual(note.platforms, ("systemd",))
+        template = (Path(settings.BASE_DIR) / "deploy/nginx/danbyte.prod.conf.template").read_text()
+        new = re.search(r'add_header Content-Security-Policy "[^"]*" always;', template).group(0)
+        old = new.replace(" https://services.nvd.nist.gov https://api.first.org"
+                          " https://api.osv.dev", "")
+        self.assertNotEqual(old, new)
+        with patch("core.upgrade_notes._site_config", return_value=old):
+            self.assertFalse(un._vuln_csp_allows_browser_sync())
+        with patch("core.upgrade_notes._site_config", return_value=new):
+            self.assertTrue(un._vuln_csp_allows_browser_sync())
+        with patch("core.upgrade_notes._site_config", return_value=None):
+            self.assertFalse(un._vuln_csp_allows_browser_sync())
+        if not shutil.which("sed") or not shutil.which("sh"):
+            return
+        command = note.snippet.replace("\\\n", " ")
+        line = next(ln for ln in command.splitlines() if "sudo sed" in ln)
+        with tempfile.TemporaryDirectory() as d:
+            conf = Path(d) / "danbyte.conf"
+            conf.write_text(old + "\n")
+            script = line.replace("/etc/nginx/sites-available/danbyte.conf",
+                                  shlex.quote(str(conf))).replace("sudo ", "")
+            for _ in range(2):  # idempotent: the grep guard skips the second
+                subprocess.run(["sh", "-c", script], check=True)
+                self.assertEqual(conf.read_text(), new + "\n")
+
+    def test_the_wasm_csp_step_turns_the_old_policy_into_the_shipped_one(self):
+        # meshopt-compressed 3D models: the step by hand on the policy before
+        # 'wasm-unsafe-eval' gives the template's policy, a second run changes
+        # nothing, and the note hides once the site allows it.
+        import re
+        import shlex
+        import shutil
+        import subprocess
+
+        from django.conf import settings
+
+        note = next(n for n in un.NOTES if n.id == "0.20.0-nginx-wasm-csp")
+        self.assertTrue(note.host)
+        self.assertEqual(note.platforms, ("systemd",))
+        template = (Path(settings.BASE_DIR) / "deploy/nginx/danbyte.prod.conf.template").read_text()
+        new = re.search(r'add_header Content-Security-Policy "[^"]*" always;', template).group(0)
+        old = new.replace(" 'wasm-unsafe-eval'", "")
+        self.assertNotEqual(old, new)
+        with patch("core.upgrade_notes._site_config", return_value=old):
+            self.assertFalse(un._wasm_csp_allows_models())
+        with patch("core.upgrade_notes._site_config", return_value=new):
+            self.assertTrue(un._wasm_csp_allows_models())
+        with patch("core.upgrade_notes._site_config", return_value=None):
+            self.assertFalse(un._wasm_csp_allows_models())
+        if not shutil.which("sed") or not shutil.which("sh"):
+            return
+        command = note.snippet.replace("\\\n", " ")
+        line = next(ln for ln in command.splitlines() if "sudo sed" in ln)
+        with tempfile.TemporaryDirectory() as d:
+            conf = Path(d) / "danbyte.conf"
+            conf.write_text(old + "\n")
+            script = line.replace("/etc/nginx/sites-available/danbyte.conf",
+                                  shlex.quote(str(conf))).replace("sudo ", "")
+            for _ in range(2):  # idempotent: the grep guard skips the second
+                subprocess.run(["sh", "-c", script], check=True)
+                self.assertEqual(conf.read_text(), new + "\n")
+
+    def test_the_tls_step_spells_out_the_templates_lines(self):
+        # #497: the lines by hand are the template's, and the note hides once
+        # the site names its own protocols and suites.
+        from django.conf import settings
+
+        note = next(n for n in un.NOTES if n.id == "0.20.0-nginx-tls")
+        self.assertTrue(note.host)
+        self.assertEqual(note.platforms, ("systemd",))
+        template = (Path(settings.BASE_DIR) / "deploy/nginx/danbyte.prod.conf.template").read_text()
+        self.assertIn(un.NGINX_TLS_LINES + "\n", template)
+        self.assertIn(un.NGINX_TLS_LINES, note.snippet)
+        with patch("core.upgrade_notes._site_config", return_value=template):
+            self.assertTrue(un._tls_pinned())
+        old = template.replace(un.NGINX_TLS_LINES + "\n", "")
+        with patch("core.upgrade_notes._site_config", return_value=old):
+            self.assertFalse(un._tls_pinned())
+        commented = old.replace("server_tokens off;",
+                                "# ssl_protocols TLSv1.2;\n# ssl_ciphers HIGH;\nserver_tokens off;")
+        with patch("core.upgrade_notes._site_config", return_value=commented):
+            self.assertFalse(un._tls_pinned())
+        with patch("core.upgrade_notes._site_config", return_value=None):
+            self.assertFalse(un._tls_pinned())
+
+    def test_the_rate_limit_step_spells_out_the_templates_lines(self):
+        # #499: every line by hand is one of the template's, and the note
+        # hides once the site limits the sign-in endpoints.
+        from django.conf import settings
+
+        note = next(n for n in un.NOTES if n.id == "0.20.0-nginx-rate-limits")
+        self.assertTrue(note.host)
+        self.assertEqual(note.platforms, ("systemd",))
+        template = (Path(settings.BASE_DIR) / "deploy/nginx/danbyte.prod.conf.template").read_text()
+        lines = {ln.strip() for ln in template.splitlines()}
+        for line in note.snippet.splitlines():
+            if line.strip() and not line.lstrip().startswith("#"):
+                with self.subTest(line=line):
+                    self.assertIn(line.strip(), lines)
+        with patch("core.upgrade_notes._site_config", return_value=template):
+            self.assertTrue(un._rate_limited())
+        with patch("core.upgrade_notes._site_config",
+                   return_value=template.replace("limit_req zone=danbyte_auth", "# limit")):
+            self.assertFalse(un._rate_limited())
+        with patch("core.upgrade_notes._site_config", return_value=None):
+            self.assertFalse(un._rate_limited())
+
+    def test_the_maintenance_csp_step_spells_out_the_templates_line(self):
+        # #498: the line by hand is the template's, in its maintenance
+        # location, and the note hides once the site's page has a policy.
+        from django.conf import settings
+
+        note = next(n for n in un.NOTES if n.id == "0.20.0-nginx-maintenance-csp")
+        self.assertTrue(note.host)
+        self.assertEqual(note.platforms, ("systemd",))
+        template = (Path(settings.BASE_DIR) / "deploy/nginx/danbyte.prod.conf.template").read_text()
+        block = template[template.index("location @danbyte_maintenance"):]
+        self.assertIn(un.NGINX_MAINTENANCE_CSP_LINE + "\n", block[:block.index("rewrite ^")])
+        self.assertIn(un.NGINX_MAINTENANCE_CSP_LINE, note.snippet)
+        with patch("core.upgrade_notes._site_config", return_value=template):
+            self.assertTrue(un._maintenance_csp())
+        old = template.replace(un.NGINX_MAINTENANCE_CSP_LINE + "\n", "")
+        with patch("core.upgrade_notes._site_config", return_value=old):
+            # The server-level policy is not the maintenance page's.
+            self.assertIn("add_header Content-Security-Policy", old)
+            self.assertFalse(un._maintenance_csp())
+        commented = old.replace("add_header Retry-After 30 always;",
+                                "add_header Retry-After 30 always;\n"
+                                "        # add_header Content-Security-Policy \"x\" always;")
+        with patch("core.upgrade_notes._site_config", return_value=commented):
+            self.assertFalse(un._maintenance_csp())
+        with patch("core.upgrade_notes._site_config", return_value=None):
+            self.assertFalse(un._maintenance_csp())
+
+    def test_the_redis_step_hides_once_danbyte_authenticates(self):
+        # #502: opt-in, so it is only a step; an install that sends a
+        # password or uses the socket no longer sees it.
+        from django.conf import settings
+        from django.test import override_settings
+
+        from danbyte.redis_conf import from_env
+
+        note = next(n for n in un.NOTES if n.id == "0.20.0-redis-password")
+        self.assertFalse(note.host)
+        self.assertEqual(set(note.platforms), set(un.PLATFORMS))
+        snippet = note.as_dict()["snippet"]
+        self.assertIn(f"{settings.BASE_DIR}/.env", snippet)
+        self.assertNotIn("@@", snippet)
+        # the step's order: Redis first, then every unit, back to back
+        self.assertIn("systemctl restart redis-server && danbyte services restart", snippet)
+        for env, done in (({}, False), ({"REDIS_PASSWORD": "x"}, True),
+                          ({"REDIS_SOCKET": "/run/redis/redis-server.sock"}, True)):
+            with self.subTest(env=env), override_settings(DANBYTE_REDIS=from_env(env)):
+                self.assertEqual(un._redis_auth_on(), done)
+
     def test_the_certificate_unit_alone_comes_from_the_bundle_too(self):
         # The root steps leave the unit out on an install without nginx;
         # make in the same bundle installs it for this install's directory.

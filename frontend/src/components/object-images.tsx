@@ -33,6 +33,7 @@ import {
 } from "@/components/ui/dialog"
 import { Section } from "@/components/ui/section"
 import { SegmentedTabs } from "@/components/segmented-tabs"
+import { HScroll } from "@/components/table-scroll"
 import { TimeCell } from "@/components/cells/time-ago"
 import { useUrlEnum } from "@/lib/use-url-state"
 import { useMe } from "@/lib/use-me"
@@ -219,7 +220,10 @@ export function ObjectImages({
         // image, so a device with fifty photos opens instantly; the pictures
         // load when the grid tab is chosen, and a row's link opens its
         // original.
-        <div className="overflow-x-auto rounded-lg border border-border">
+        <HScroll
+          frameClassName="rounded-lg border border-border"
+          label="Images"
+        >
           <table className="w-full text-[13px]">
             <thead className="border-b border-border bg-muted/40 text-[11px] text-muted-foreground">
               <tr>
@@ -309,7 +313,7 @@ export function ObjectImages({
               ))}
             </tbody>
           </table>
-        </div>
+        </HScroll>
       ) : (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
           {images.map((img) => (

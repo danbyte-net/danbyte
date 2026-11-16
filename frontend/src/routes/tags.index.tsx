@@ -187,14 +187,12 @@ function TagsPage() {
         onChange: setQ,
         placeholder: "Filter by name…",
       }}
-      actions={
-        <>
-          {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/tags/new">Add tag</Link>
-            </Button>
-          )}
-        </>
+      add={
+        canAdd && (
+          <Button size="sm" asChild>
+            <Link to="/tags/new">Add tag</Link>
+          </Button>
+        )
       }
       query={query}
       summary={notice || undefined}

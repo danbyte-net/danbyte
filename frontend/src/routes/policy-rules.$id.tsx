@@ -1,13 +1,11 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
-import { Pencil, Trash2 } from "lucide-react"
 import { useCallback, useState } from "react"
 
 import { api } from "@/lib/api"
 import type { PolicyRule } from "@/lib/api"
 import { useMe } from "@/lib/use-me"
 import { useUrlTab } from "@/lib/use-url-tab"
-import { Button } from "@/components/ui/button"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { TagList } from "@/components/cells/tag-list"
 import { TimeCell } from "@/components/cells/time-ago"
@@ -19,6 +17,7 @@ import { QueryError } from "@/components/query-error"
 import { CustomFieldValues } from "@/components/custom-field-display"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { RoutingDeleteDialog } from "@/components/routing/catalog-page"
 import {
@@ -136,26 +135,15 @@ function Body({ r }: { r: PolicyRule }) {
       backLabel="Policy rules"
       title={title}
       presence={{ type: "policyrule", id: r.id }}
-      actions={
-        <>
-          {canDo("policyrule", "change") && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/policy-rules/$id/edit" params={{ id: r.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDo("policyrule", "delete") && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeleting(r)}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
-        </>
+      edit={
+        canDo("policyrule", "change") && (
+          <EditButton to="/policy-rules/$id/edit" params={{ id: r.id }} />
+        )
+      }
+      remove={
+        canDo("policyrule", "delete") && (
+          <DeleteButton onClick={() => setDeleting(r)} />
+        )
       }
       hero={
         <DetailHero

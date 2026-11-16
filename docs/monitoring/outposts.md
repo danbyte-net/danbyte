@@ -27,7 +27,7 @@ Every check runs on a **monitoring engine**:
   transport or agent version; it shows the system it answers through and a
   **Configure** link to that system's page.
 
-Manage them in **Governance → Monitoring engines** (admin only).
+Manage them in **Monitoring → Engines** (admin only).
 
 !!! note "A driver engine is only chosen when it can answer"
     An engine whose driver is unusable - the tenant switched the integration
@@ -47,7 +47,7 @@ each level **inherits** from the next when it has no engine of its own:
    left on *Inherit* falls through to its parent),
 3. the IP's **Prefix**,
 4. the IP's **Site**,
-5. the tenant **default engine** (set on the Monitoring engines page),
+5. the tenant **default engine** (set on **Monitoring → Engines**),
 6. the built-in **Local** engine.
 
 A level bound to an engine that cannot answer right now is treated as though it
@@ -195,7 +195,7 @@ filters out the switch's own and group addresses, and the read counts as
 complete only when it returned rows, so an empty table from an old agent never
 closes anything. The same goes for ARP without `arp_meta`. Additive - no protocol bump.
 **Outpost 0.9.0** is the first agent that sends all of this, VLANs and
-per-VLAN tables included; upload it under Governance → Monitoring engines →
+per-VLAN tables included; upload it under Monitoring → Engines →
 Outpost versions and roll it out to the sites whose switches it polls.
 
 The core accepts SNMP results only for the devices that Outpost polls - the
@@ -203,6 +203,50 @@ ones its work list hands out (`devices_for_engine`). A result for any other
 device, even one in the same tenant, is ignored rather than written.
 **Refresh MACs** on a device an Outpost polls is queued for that Outpost,
 like Poll now; the agent reads the whole table on its next cycle.
+
+## Discovery on an Outpost {#discovery-on-an-outpost}
+
+A [package inventory or service scan](../features/discovery.md) profile can run
+on an Outpost, for hosts the server cannot reach. What that does, what a
+host row says when its Outpost cannot take the work, how credentials reach
+the agent and why nothing falls back to the server is on [Discovery on an
+Outpost](../features/discovery-outposts.md). This section is the agent side.
+
+**Version.** **Outpost 0.10.0** is the first agent that runs discovery; upload
+it under Monitoring → Engines → Outpost versions and roll it out to
+the sites that need it. Checks, SNMP and sweeps keep working on older agents.
+
+**Capabilities.** This is the first work the core and the agent negotiate. The
+agent's hello carries `capabilities`:
+`{"discovery": {"kinds": ["inventory", "service_scan"], "protocol": 1, "nmap":
+{"version": "7.95"} | null, "nmap_reason": "…"}}`, stored on the engine
+(`agent_capabilities`, read-only in the engine API). The core hands an Outpost
+only the kinds its last hello named, and nmap work only when it named an nmap.
+An older agent sends nothing and gets no discovery work. A newer agent against
+an older core sees no `discovery` in the hello answer and never asks for work.
+From 0.10 the hello (and an SSH `once` answer) also carries `runtime: {"root":
+bool}`, stored beside it; it only drives the **root** badge
+([The service account](#service-account)).
+
+**Channel.** Two endpoints beside the others, with the same Bearer token:
+
+| Endpoint | |
+|---|---|
+| `GET /api/outpost/work/` | adds `discovery_pending` when discovery work waits |
+| `GET /api/outpost/discovery-work/` | claims the next batch (one run's hosts): `{jobs: [...]}`, credentials included, `Cache-Control: no-store` |
+| `POST /api/outpost/discovery-results/` | `{results: [{item_id, result, …}]}` → `{accepted, refused}`; at most 200 per post |
+
+**The agent** runs the shared collectors (`danbyte_checks.inventory`,
+`service_scan`, `nmap`; the Recog data travels in `danbyte_checks/data`),
+applies its own target policy, keeps credentials in memory for the
+connection only, and runs discovery beside its check loop so a long scan
+never delays checks. nmap is optional and never installed by the agent: set
+`OUTPOST_NMAP_BINARY` (or `--nmap`). The agent refuses nmap as root, so an
+Outpost installed before 0.10.0 offers the built-in scan only until it is
+moved to the service account ([below](#service-account)).
+
+SSH-transport Outposts (Danbyte dials in) do not run discovery: their hosts
+say so.
 
 ## Transports - which way traffic flows
 
@@ -232,7 +276,7 @@ when you add the Outpost.
 
 The Danbyte instance is a **version store** for the Outpost, so remote hosts only
 ever pull from Danbyte (never GitHub/PyPI) - which is what makes airgapped
-installs work. On the **Monitoring engines** page an admin adds Outpost builds
+installs work. On **Monitoring → Engines** (`/monitoring-engines`) an admin adds Outpost builds
 four ways:
 
 - **From your repo (dropdown)** - set the agent repo once (**Outpost repo** field,
@@ -267,17 +311,60 @@ starts it. It adapts to the release kind:
 
 File/binary artifacts are served from Danbyte (`/api/outpost/download/<version>/`,
 token or admin auth), so you can pin a version per site, roll out upgrades
-centrally, and stay fully airgapped. Manage versions under **Governance →
-Monitoring engines → Outpost versions**. *(Shipped.)*
+centrally, and stay fully airgapped. Manage versions under **Monitoring →
+Engines → Outpost versions**. *(Shipped.)*
+
+## The service account {#service-account}
+
+From agent **0.10.0** the generated installer runs the agent as the system
+account `danbyte-outpost` (no login shell, no home) with no capabilities. It
+needs none: ICMP uses unprivileged datagram sockets, the agent binds no port,
+and nmap runs with `--unprivileged`.
+
+| | Fresh install (0.10+) | Installed before 0.10 |
+|---|---|---|
+| Unit | `User=danbyte-outpost`, empty capability set, `NoNewPrivileges`, `ProtectSystem=strict` and the rest of the hardening | runs as root |
+| `/opt/danbyte-outpost` | belongs to the account (self-update writes there) | root's |
+| `/etc/danbyte-outpost/env` | root, `0600` - systemd reads it before it drops to the account | the same |
+| nmap | offered when installed | refused |
+| Badge | none | **root** on the Outposts list and the engine dialog |
+
+A self-update swaps only the binary, so an older Outpost keeps its root unit
+when it updates to 0.10 and keeps working. Move it once, on the Outpost host:
+
+```bash
+sudo /opt/danbyte-outpost/danbyte-outpost migrate-service-user --dry-run
+sudo /opt/danbyte-outpost/danbyte-outpost migrate-service-user
+```
+
+or re-run the install one-liner (without `--token` it keeps the token it has).
+Both check first and change nothing when a check fails, create the account,
+save the old unit as `/etc/danbyte-outpost/danbyte-outpost.service.root-backup`,
+restart the service and watch it; if it does not stay up as the account, the
+old unit and ownership come back. A second run does nothing. The command
+refuses to run from a file anyone but root could change, and keeps the
+unit's other lines; the installer writes the whole unit.
+
+After the move the binary's directory belongs to the account, so do not run
+that binary with sudo again; re-run the installer instead. The agent itself
+never changes its unit or asks for privilege.
+
+ICMP needs `net.ipv4.ping_group_range` to cover the account's group. systemd
+sets `0 2147483647` on most distributions; when it does not, the installer
+and the agent say so and ICMP checks report unknown until it is widened.
+
+An SSH-transport Outpost runs `danbyte-outpost once` as the engine's SSH user:
+use an ordinary account, nothing in it needs root.
 
 ## Installing an Outpost - step by step
 
-1. **Upload a build** (once): Governance → Monitoring engines → *Outpost
+1. **Upload a build** (once): Monitoring → Engines → *Outpost
    versions* → upload a wheel/sdist, or add a git repo + ref. Mark one default.
 2. **Add the Outpost** and pick its transport (HTTPS-pull or SSH).
 3. **Enroll** it → copy the one-liner (the token is shown **once**).
-4. On a host *at the site*, run the one-liner as root. It installs + starts the
-   agent, which immediately dials out and begins pulling work.
+4. On a host *at the site*, run the one-liner as root. It installs the agent,
+   starts it as the `danbyte-outpost` account and waits until it stays up; the
+   agent dials out and begins pulling work.
 5. **Assign** it to a device, site or location (on their forms) → everything in that
    scope is now monitored by the Outpost. Watch it go healthy on the engine's
    detail dialog.
@@ -308,7 +395,7 @@ never need GitHub or PyPI. Three ways to get it on a host:
 
 ## Installing an Outpost
 
-1. **Governance → Monitoring engines → Add Outpost**, give it a name.
+1. **Monitoring → Engines → Add Outpost**, give it a name.
 2. It's **enrolled** automatically - copy the one-time `OUTPOST_URL` +
    `OUTPOST_TOKEN` (shown once; **Rotate** issues a new token and revokes the
    old one).

@@ -1,28 +1,24 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { CustomFieldValues } from "@/components/custom-field-display"
 import { useUrlTab } from "@/lib/use-url-tab"
-import {
-  AutoRouteButton,
-  TraceOnMapButton,
-  TraceOnSiteMapButton,
-} from "@/components/trace-on-map-button"
+import { AutoRouteButton, CableShowOn } from "@/components/trace-on-map-button"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { ArrowLeftRight, Network, Pencil, Trash2 } from "lucide-react"
+import { ArrowLeftRight } from "lucide-react"
 import { useCallback, useState } from "react"
 
 import { api } from "@/lib/api"
 import type { Cable, Termination, TraceGraph } from "@/lib/api"
 import { StatusBadge } from "@/components/status-badge"
-import { Button } from "@/components/ui/button"
 import { TagList } from "@/components/cells/tag-list"
 import { KvCard, dash } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { CableDeleteDialog } from "@/components/cable-delete-dialog"
-import { PrintLabelButton } from "@/components/print-label-button"
+import { PrintLabelMenuItem } from "@/components/print-label-button"
 import { CableRoutingCard } from "@/components/cable-routing-card"
 import { CableTracePath, traceUrl } from "@/components/cable-trace-path"
 import { TraceSection } from "@/components/topology/trace-section"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
@@ -156,43 +152,27 @@ function Body({ cable: c }: { cable: Cable }) {
         </span>
       }
       presence={{ type: "cable", id: c.id }}
+      edit={
+        canDo("cable", "change") && (
+          <EditButton to="/cables/$id/edit" params={{ id: c.id }} />
+        )
+      }
       actions={
         <>
+          <CableShowOn
+            cableId={c.id}
+            topology={
+              topoDevices ? { devices: topoDevices, panels: topoPanels } : null
+            }
+          />
           <AutoRouteButton cableId={c.id} />
-          {topoDevices && (
-            <Button variant="outline" size="sm" asChild>
-              <Link
-                to="/topology/map"
-                search={{
-                  devices: topoDevices,
-                  ...(topoPanels ? { panels: true } : {}),
-                }}
-              >
-                <Network className="h-3.5 w-3.5" /> Topology
-              </Link>
-            </Button>
-          )}
-          <TraceOnMapButton cableId={c.id} />
-          <TraceOnSiteMapButton cableId={c.id} />
-          <PrintLabelButton objectType="cable" ids={[c.id]} />
-          {canDo("cable", "change") && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/cables/$id/edit" params={{ id: c.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDo("cable", "delete") && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeleting(c)}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
         </>
+      }
+      exports={<PrintLabelMenuItem objectType="cable" ids={[c.id]} />}
+      remove={
+        canDo("cable", "delete") && (
+          <DeleteButton onClick={() => setDeleting(c)} />
+        )
       }
       hero={
         <DetailHero

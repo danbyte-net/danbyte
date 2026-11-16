@@ -84,7 +84,9 @@ const STEEL_METALNESS = 0.35
 export type ShellMode = "solid" | "cutaway" | "xray"
 
 export interface Sel {
-  kind: "rack" | "cabinet" | "device" | "port"
+  /** "tile": a tile drawn as massing (power, cooling, unlinked, Hidden) -
+   * selected, its popover pinned by the plan. */
+  kind: "rack" | "cabinet" | "device" | "port" | "tile"
   tileId: string
   deviceId?: string
   /** Set when kind === "port": the clicked photo-port marker. */

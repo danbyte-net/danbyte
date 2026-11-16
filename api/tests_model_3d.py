@@ -64,6 +64,31 @@ class ValidateGlbTests(SimpleTestCase):
         with self.assertRaisesMessage(ValidationError, "larger than"):
             validate_glb(glb(bin_data=b"\0" * 200))
 
+    def test_meshopt_fallback_buffer_allowed(self):
+        # gltfpack -c writes a data-less fallback buffer beside the BIN chunk.
+        doc = {"asset": {"version": "2.0"},
+               "extensionsUsed": ["EXT_meshopt_compression"],
+               "extensionsRequired": ["EXT_meshopt_compression"],
+               "buffers": [{"byteLength": 12},
+                           {"byteLength": 4096,
+                            "extensions": {"EXT_meshopt_compression": {"fallback": True}}}]}
+        validate_glb(glb(doc))
+
+    def test_fallback_buffer_needs_meshopt_in_use(self):
+        doc = {"asset": {"version": "2.0"},
+               "buffers": [{"byteLength": 12},
+                           {"byteLength": 4096,
+                            "extensions": {"EXT_meshopt_compression": {"fallback": True}}}]}
+        with self.assertRaisesMessage(ValidationError, "A buffer has no data."):
+            validate_glb(glb(doc))
+
+    def test_dataless_buffer_without_fallback_refused(self):
+        doc = {"asset": {"version": "2.0"},
+               "extensionsUsed": ["EXT_meshopt_compression"],
+               "buffers": [{"byteLength": 12}, {"byteLength": 4096}]}
+        with self.assertRaisesMessage(ValidationError, "A buffer has no data."):
+            validate_glb(glb(doc))
+
     def test_external_buffer(self):
         doc = {"asset": {"version": "2.0"}, "buffers": [{"uri": "https://x/y.bin"}]}
         with self.assertRaisesMessage(ValidationError, "external files"):

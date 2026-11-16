@@ -75,14 +75,16 @@ function AreaTypesPage() {
         filters: { snapshot, restore, activeCount },
       }}
       search={{ value: q, onChange: setQ, placeholder: "Filter…" }}
+      add={
+        canAdd && (
+          <Button size="sm" asChild>
+            <Link to="/area-types/new">Add type</Link>
+          </Button>
+        )
+      }
       actions={
         <>
           <TableActions ioType="areatype" />
-          {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/area-types/new">Add type</Link>
-            </Button>
-          )}
         </>
       }
       query={query}

@@ -12,6 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu"
 import { FormCheckbox } from "@/components/forms"
 import { apiErrorToast } from "@/lib/api-toast"
 
@@ -47,9 +48,10 @@ type BundlePhoto = boolean | { mime: string; filename: string; data: string }
 /**
  * Download this device type's bundle as a file. A type with photos asks
  * first whether to carry them (base64 inside the file); a type without
- * downloads straight away.
+ * downloads straight away. `item` goes in the detail header's Export menu
+ * (#507), `dialog` outside it.
  */
-export function ExportBundleButton({
+export function useExportBundle({
   deviceTypeId,
   name,
   hasPhotos = false,
@@ -101,39 +103,38 @@ export function ExportBundleButton({
       setBusy(false)
     }
   }
-  return (
-    <>
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={() => (hasPhotos ? setAsking(true) : void run(false))}
-        disabled={busy}
-      >
-        <Download className="h-3.5 w-3.5" />
-        {busy && !asking ? "Exporting…" : "Export bundle"}
-      </Button>
-      <Dialog open={asking} onOpenChange={setAsking}>
-        <DialogContent size="sm">
-          <DialogHeader>
-            <DialogTitle>Export bundle</DialogTitle>
-          </DialogHeader>
-          <FormCheckbox
-            label="Include photos"
-            checked={photos}
-            onChange={setPhotos}
-          />
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => setAsking(false)}>
-              Cancel
-            </Button>
-            <Button onClick={() => void run(photos)} disabled={busy}>
-              {busy ? "Exporting…" : "Export"}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-    </>
+  const item = (
+    <DropdownMenuItem
+      onSelect={() => (hasPhotos ? setAsking(true) : void run(false))}
+      disabled={busy}
+    >
+      <Download className="h-3.5 w-3.5" />
+      {busy && !asking ? "Exporting…" : "Bundle"}
+    </DropdownMenuItem>
   )
+  const dialog = (
+    <Dialog open={asking} onOpenChange={setAsking}>
+      <DialogContent size="sm">
+        <DialogHeader>
+          <DialogTitle>Export bundle</DialogTitle>
+        </DialogHeader>
+        <FormCheckbox
+          label="Include photos"
+          checked={photos}
+          onChange={setPhotos}
+        />
+        <div className="flex justify-end gap-2">
+          <Button variant="outline" onClick={() => setAsking(false)}>
+            Cancel
+          </Button>
+          <Button onClick={() => void run(photos)} disabled={busy}>
+            {busy ? "Exporting…" : "Export"}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+  return { item, dialog }
 }
 
 /**

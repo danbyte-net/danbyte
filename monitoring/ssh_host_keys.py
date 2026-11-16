@@ -29,8 +29,28 @@ class HostKeyUploadError(ValueError):
     """The pasted text is not a usable SSH public key (surfaced as a 400)."""
 
 
+def _host_kwargs(host) -> dict:
+    """``{"device": host}`` or ``{"virtual_machine": host}`` - a host key
+    belongs to a device or (#451) a VM."""
+    from api.models import VirtualMachine
+
+    if isinstance(host, VirtualMachine):
+        return {"virtual_machine": host}
+    return {"device": host}
+
+
+def _evaluate(row) -> None:
+    # Drift alerts attach to a device's address; a VM's keys are inventory
+    # only (discovery reads them), so there is nothing to evaluate.
+    if row.device_id:
+        evaluate_mismatch(
+            tenant_id=row.tenant_id, device_id=row.device_id, key_type=row.key_type
+        )
+
+
 def upload_host_key(tenant, device, line, *, now=None):
-    """Declare an expected host key for a device from a pasted OpenSSH line.
+    """Declare an expected host key for a device (or a VM) from a pasted
+    OpenSSH line.
 
     Parses public data only (private keys and PEM certs are refused). Dedupes on
     the fingerprint: if the key already exists (e.g. already observed), it is
@@ -47,7 +67,7 @@ def upload_host_key(tenant, device, line, *, now=None):
     now = now or timezone.now()
     row, created = SSHHostKey.objects.get_or_create(
         tenant=tenant,
-        device=device,
+        **_host_kwargs(device),
         fingerprint_sha256=parsed["fingerprint"],
         defaults={
             "key_type": parsed["key_type"],
@@ -64,9 +84,7 @@ def upload_host_key(tenant, device, line, *, now=None):
         if parsed["comment"] and not row.comment:
             row.comment = parsed["comment"]
         row.save(update_fields=["uploaded", "comment"])
-    evaluate_mismatch(
-        tenant_id=tenant.id, device_id=row.device_id, key_type=row.key_type
-    )
+    _evaluate(row)
     return row, created
 
 
@@ -77,7 +95,7 @@ def dedup_key(device_id, key_type: str) -> str:
 # ─── Reconcile an observation ────────────────────────────────────────────────
 
 def record_host_key(tenant, device, hk: dict, *, now=None) -> SSHHostKey | None:
-    """Upsert the observed host key for a device. Returns the row, or None when
+    """Upsert the observed host key for a device (or a VM). Returns the row, or None when
     the payload is unusable. Marks it ``observed`` and refreshes ``last_seen``;
     never sets ``uploaded`` (that is intent, only a human sets it)."""
     fp = (hk or {}).get("fingerprint")
@@ -88,7 +106,7 @@ def record_host_key(tenant, device, hk: dict, *, now=None) -> SSHHostKey | None:
     now = now or timezone.now()
     row, created = SSHHostKey.objects.get_or_create(
         tenant=tenant,
-        device=device,
+        **_host_kwargs(device),
         fingerprint_sha256=fp,
         defaults={
             "key_type": key_type,
@@ -267,7 +285,5 @@ def accept_observed(key: SSHHostKey) -> SSHHostKey:
     if not key.uploaded:
         key.uploaded = True
         key.save(update_fields=["uploaded"])
-    evaluate_mismatch(
-        tenant_id=key.tenant_id, device_id=key.device_id, key_type=key.key_type
-    )
+    _evaluate(key)
     return key

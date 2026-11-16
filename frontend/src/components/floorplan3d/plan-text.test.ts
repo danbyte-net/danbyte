@@ -25,6 +25,7 @@ import {
   planTextMode,
   planTextPriority,
   planTexts,
+  rowTexts,
   trayName,
   zoneText,
 } from "./plan-text"
@@ -166,6 +167,53 @@ describe("planTexts", () => {
     expect(zoneText(tile({ is_zone: false }), false)).toBeNull()
     expect(zoneText(tile({ label: "" }), false)).toBeNull()
     expect(labelText(label({ text: "  " }), 600, false)).toBeNull()
+  })
+})
+
+describe("rowTexts", () => {
+  // Four racks side by side in a room: one row, named beside it.
+  const rack = (i: number) =>
+    tile({
+      id: `r${i}`,
+      x: 5 + i,
+      y: 3,
+      w: 1,
+      h: 2,
+      label: `DH5-B0${i + 1}`,
+      kind: "rack",
+      is_zone: false,
+    })
+  const racks = [0, 1, 2, 3].map(rack)
+  const room = area({ x: 2, y: 1, width: 12, height: 8 })
+
+  it("names a row once along it, inside its room", () => {
+    const [row, ...more] = rowTexts(racks, [room], false)
+    expect(more).toEqual([])
+    expect(row.kind).toBe("row")
+    expect(row.lines).toEqual(["Row B · B01–B04"])
+    expect(row.rotation).toBe(0)
+    // Beside the row, not over it.
+    expect(row.at[0]).toBeCloseTo(7)
+    expect(Math.abs(row.at[1] - 4)).toBeGreaterThan(1)
+    expect(row.room?.outline).toHaveLength(4)
+  })
+
+  it("needs three of a kind, and no room is no region", () => {
+    expect(rowTexts(racks.slice(0, 2), [room], false)).toEqual([])
+    expect(rowTexts(racks, [], false)[0].room).toBeUndefined()
+  })
+
+  it("shows under Callouts: Auto only", () => {
+    const ids = (rowNames: boolean) =>
+      planTexts({
+        scene: { ...scene, tiles: racks },
+        areas: [],
+        labels: [],
+        show: { ...all, rowNames },
+        dark: false,
+      }).map((i) => i.id)
+    expect(ids(true)).toContain("row:r0")
+    expect(ids(false)).not.toContain("row:r0")
   })
 })
 

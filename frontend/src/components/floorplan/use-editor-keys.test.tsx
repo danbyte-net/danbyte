@@ -62,6 +62,60 @@ function keys(over: {
   return { onPlaceKey, onToggleEdit }
 }
 
+describe("the R key", () => {
+  function press(over: Partial<PlanEditState>, shiftKey = false) {
+    const edits = {
+      rotateTile: vi.fn(),
+      rotateSelectionTurn: vi.fn(),
+    } as unknown as TileEdits
+    const selectTool = vi.fn()
+    renderHook(() =>
+      useEditorKeys({
+        canEdit: true,
+        view3d: false,
+        selectTool,
+        traceParam: undefined,
+        tracedRef: { current: null },
+        plan: { layout_mode: "free" } as FloorPlan,
+        ed: {
+          ...ed,
+          tiles: [{ id: "t1", orientation: 30 }],
+          ...over,
+        } as unknown as PlanEditState,
+        edits,
+        structure: {} as StructureEdits,
+        prefs: {
+          hidden: {},
+          setHiddenPref: vi.fn(),
+        } as unknown as PlanViewPrefs,
+        hiddenTileIds: new Set(),
+        closePopover: vi.fn(),
+      })
+    )
+    fireEvent.keyDown(window, { key: shiftKey ? "R" : "r", shiftKey })
+    return { edits, selectTool }
+  }
+
+  it("turns the selected tile 90°", () => {
+    const { edits, selectTool } = press({ selectedId: "t1" })
+    expect(edits.rotateTile).toHaveBeenCalledWith({ id: "t1", orientation: 30 })
+    expect(selectTool).not.toHaveBeenCalled()
+  })
+
+  it("turns a selection of several as one", () => {
+    const { edits } = press({ multiSel: new Set(["t1", "t2"]) })
+    expect(edits.rotateSelectionTurn).toHaveBeenCalledTimes(1)
+  })
+
+  it("is the Room tool with nothing selected, and Shift+R the polygon", () => {
+    expect(press({}).selectTool).toHaveBeenCalledWith("rect")
+    cleanup()
+    const shifted = press({ selectedId: "t1" }, true)
+    expect(shifted.edits.rotateTile).not.toHaveBeenCalled()
+    expect(shifted.selectTool).toHaveBeenCalledWith("polygon")
+  })
+})
+
 describe("the P key", () => {
   it("opens the picker in Edit", () => {
     const k = keys({ canEdit: true, canToggleEdit: true })

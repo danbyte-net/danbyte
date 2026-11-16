@@ -2,7 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useMemo, useState } from "react"
 import type { ColumnDef } from "@tanstack/react-table"
-import { Pencil, RefreshCw, Trash2 } from "lucide-react"
+import { RefreshCw } from "lucide-react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
@@ -17,6 +17,7 @@ import { DataTable } from "@/components/data-table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ConfirmDialog } from "@/components/confirm-dialog"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { PERIOD_LABEL, fmtSla } from "@/components/monitoring/sla-figure"
@@ -99,7 +100,7 @@ function Body({ t }: { t: SlaTemplate }) {
     onSuccess: () => {
       toast.success(`Deleted ${t.name}`)
       qc.invalidateQueries({ queryKey: ["sla-templates"] })
-      nav({ to: "/monitoring", search: { view: "sla", status: "all" } })
+      nav({ to: "/monitoring/sla" })
     },
     onError: (e) => apiErrorToast(e),
   })
@@ -173,34 +174,22 @@ function Body({ t }: { t: SlaTemplate }) {
 
   return (
     <DetailShell
-      backTo="/monitoring"
-      backSearch={{ view: "sla", status: "all" }}
+      backTo="/monitoring/sla"
       backLabel="SLAs"
       title={t.name}
       presence={{ type: "slatemplate", id: t.id }}
-      actions={
-        <>
-          {canDo("slatemplate", "change") && (
-            <Button size="sm" variant="outline" asChild>
-              <Link
-                to="/monitoring/sla/templates/$id/edit"
-                params={{ id: t.id }}
-              >
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDo("slatemplate", "delete") && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeleting(true)}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
-        </>
+      edit={
+        canDo("slatemplate", "change") && (
+          <EditButton
+            to="/monitoring/sla/templates/$id/edit"
+            params={{ id: t.id }}
+          />
+        )
+      }
+      remove={
+        canDo("slatemplate", "delete") && (
+          <DeleteButton onClick={() => setDeleting(true)} />
+        )
       }
       hero={
         <DetailHero

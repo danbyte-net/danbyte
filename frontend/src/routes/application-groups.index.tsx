@@ -78,14 +78,16 @@ function ApplicationGroupsPage() {
         onChange: setQ,
         placeholder: "Filter by name, description…",
       }}
+      add={
+        canAdd && (
+          <Button size="sm" asChild>
+            <Link to="/application-groups/new">Add group</Link>
+          </Button>
+        )
+      }
       actions={
         <>
           <TableActions ioType="applicationgroup" />
-          {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/application-groups/new">Add group</Link>
-            </Button>
-          )}
         </>
       }
       query={query}

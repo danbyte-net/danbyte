@@ -140,6 +140,7 @@ export function TileInspector({
   onChange,
   onRotate,
   onSetFacing,
+  free = false,
   onFit,
   onDelete,
   onOpenContents,
@@ -153,7 +154,10 @@ export function TileInspector({
   roles: DeviceRole[]
   onChange: (patch: Partial<FloorPlanTile>) => void
   onRotate: () => void
-  onSetFacing: (o: 0 | 90 | 180 | 270) => void
+  /** A facing in degrees: a quarter turn, or any whole degree when `free`. */
+  onSetFacing: (deg: number) => void
+  /** A free plan: the tile turns to any whole degree. */
+  free?: boolean
   /** Size the tile to what it links to, in cells. */
   onFit: (size: { width: number; height: number }) => void
   onDelete: () => void
@@ -297,6 +301,24 @@ export function TileInspector({
               </BarTip>
             ))}
           </div>
+        </Field>
+      )}
+      {free && (
+        <Field label="Rotation" hint="degrees">
+          <Input
+            type="number"
+            min={0}
+            max={359}
+            step={1}
+            value={tile.orientation}
+            onChange={(e) => {
+              const v = Math.round(Number(e.target.value))
+              if (e.target.value !== "" && Number.isFinite(v))
+                onSetFacing(((v % 360) + 360) % 360)
+            }}
+            className="h-8 text-sm"
+            aria-label="Rotation"
+          />
         </Field>
       )}
 

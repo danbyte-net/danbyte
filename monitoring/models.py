@@ -946,6 +946,30 @@ class MonitoringSettings(TimestampedModel):
         help_text="New alerts in one scan batch before they're grouped into a digest.",
     )
 
+    # ─── root-cause alerting (#450) ──────────────────────────────────────
+    # Inert until the tenant records device dependencies. db_default so a
+    # rolling upgrade's old code can still insert a settings row.
+    ROOT_CAUSE_SMART = "smart"
+    ROOT_CAUSE_ALWAYS = "always"
+    root_cause_enabled = models.BooleanField(
+        default=True, db_default=True,
+        help_text="Alerts of a device whose upstream is down are explained by "
+        "it, and one root-cause message goes out instead.",
+    )
+    root_cause_hold_seconds = models.PositiveIntegerField(
+        default=60, db_default=60,
+        validators=[MinValueValidator(0), MaxValueValidator(600)],
+        help_text="How long an alert of a device with upstreams waits for its "
+        "upstreams' checks before it is sent.",
+    )
+    root_cause_hold_mode = models.CharField(
+        max_length=8, default=ROOT_CAUSE_SMART, db_default=ROOT_CAUSE_SMART,
+        choices=[(ROOT_CAUSE_SMART, "While an upstream is unconfirmed"),
+                 (ROOT_CAUSE_ALWAYS, "Always")],
+        help_text="smart holds only while an upstream is failing or not "
+        "recently confirmed up; always holds every such alert.",
+    )
+
     # ─── certificate expiry alerting (X2) ────────────────────────────────
     # Thresholds for the expiry alerts raised over certificate *bindings*
     # (endpoints), not certificate rows - see ``monitoring.cert_expiry``.
@@ -1169,6 +1193,12 @@ class MonitoringEngine(TimestampedModel):
     #: Until it does, its sub-minute checks are handed out on the minute beat
     #: like everything else - an older agent must keep working unchanged.
     agent_fast = models.BooleanField(default=False)
+    #: What the agent says it can do beyond checks, from its last hello:
+    #: ``{"discovery": {"kinds": [...], "nmap": {"version": ...} | None,
+    #: "nmap_reason": ...}, "runtime": {"root": bool}}``. ``{}`` for an agent
+    #: that predates it, which is then handed no such work. ``runtime`` (0.10+,
+    #: also from an SSH ``once``) only drives a warning; absent = unknown.
+    agent_capabilities = models.JSONField(default=dict, blank=True, db_default={})
     # When on, the agent self-updates to the default ("golden") release whenever
     # its version differs - pull-transport binary Outposts only.
     auto_update = models.BooleanField(default=False)
@@ -1811,6 +1841,32 @@ class Alert(TimestampedModel):
         help_text="Bumped to critical after firing unacked past the threshold.",
     )
 
+    # ─── root cause (#450) ───────────────────────────────────────────────
+    #: sent - announced as always (and every row written before this
+    #: existed); held - waiting for its upstreams until ``notify_after``;
+    #: explained - a down upstream accounts for it, never announced on its
+    #: own; withheld - it cleared while held, so nothing was ever sent.
+    NOTIFY_SENT = "sent"
+    NOTIFY_HELD = "held"
+    NOTIFY_EXPLAINED = "explained"
+    NOTIFY_WITHHELD = "withheld"
+    NOTIFY_STATES = [
+        (NOTIFY_SENT, "Sent"),
+        (NOTIFY_HELD, "Held"),
+        (NOTIFY_EXPLAINED, "Explained"),
+        (NOTIFY_WITHHELD, "Withheld"),
+    ]
+    notify_state = models.CharField(
+        max_length=10, choices=NOTIFY_STATES, default=NOTIFY_SENT,
+        db_default=NOTIFY_SENT,
+    )
+    notify_after = models.DateTimeField(null=True, blank=True)
+    root_cause = models.ForeignKey(
+        "RootCauseIncident", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="alerts",
+        help_text="The incident whose root device explains this alert.",
+    )
+
     class Meta:
         ordering = ["-opened_at"]
         indexes = [
@@ -1825,6 +1881,12 @@ class Alert(TimestampedModel):
                 condition=models.Q(resolved_at__isnull=False),
                 name="alert_tenant_resolved_idx",
             ),
+            # The release sweep's read: held alerts that are due.
+            models.Index(
+                fields=["notify_after"],
+                condition=models.Q(notify_state="held"),
+                name="alert_held_due_idx",
+            ),
         ]
         constraints = [
             # At most one firing alert per condition.
@@ -1837,6 +1899,69 @@ class Alert(TimestampedModel):
 
     def __str__(self) -> str:
         return f"{self.severity} {self.target_ip_id} {self.check_status} ({self.status})"
+
+
+class RootCauseIncident(TimestampedModel):
+    """One down device explaining the alerts of the devices behind it (#450).
+
+    Opened when the first alert is explained by ``device``; ``recovering``
+    once the device is no longer down, and resolved when it has stayed up
+    through the hold. At most one open or recovering incident per device.
+    The counts are refreshed by the release sweep; ``detail`` keeps the
+    explained device ids and the delivery notes."""
+
+    OPEN = "open"
+    RECOVERING = "recovering"
+    RESOLVED = "resolved"
+    STATUSES = [(OPEN, "Open"), (RECOVERING, "Recovering"), (RESOLVED, "Resolved")]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="root_cause_incidents"
+    )
+    device = models.ForeignKey(
+        "api.Device", on_delete=models.CASCADE, related_name="root_cause_incidents"
+    )
+    status = models.CharField(max_length=10, choices=STATUSES, default=OPEN)
+    opened_at = models.DateTimeField(default=timezone.now)
+    recovering_since = models.DateTimeField(null=True, blank=True)
+    resolved_at = models.DateTimeField(null=True, blank=True)
+    #: The "opened" message is due at ``announce_at`` (one hold after the
+    #: first explained alert, so the burst is counted) and went out at
+    #: ``announced_at``; ``recovery_announced_at`` the same for "resolved".
+    announce_at = models.DateTimeField(null=True, blank=True)
+    announced_at = models.DateTimeField(null=True, blank=True)
+    recovery_announced_at = models.DateTimeField(null=True, blank=True)
+    explained_count = models.PositiveIntegerField(default=0)
+    already_alerted_count = models.PositiveIntegerField(default=0)
+    reduced_count = models.PositiveIntegerField(default=0)
+    merged_into = models.ForeignKey(
+        "self", on_delete=models.SET_NULL, null=True, blank=True, related_name="merged",
+    )
+    acknowledged_at = models.DateTimeField(null=True, blank=True)
+    acknowledged_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="+",
+    )
+    ack_note = models.CharField(max_length=255, blank=True, default="")
+    detail = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ["-opened_at"]
+        indexes = [
+            models.Index(fields=["tenant", "status"]),
+            models.Index(fields=["tenant", "opened_at"], name="rootcause_tenant_opened_idx"),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "device"],
+                condition=models.Q(status__in=["open", "recovering"]),
+                name="uniq_live_rootcause_per_device",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"root cause {self.device_id} ({self.status})"
 
 
 class Silence(TimestampedModel):
@@ -3024,8 +3149,14 @@ class SSHHostKey(TimestampedModel):
     tenant = models.ForeignKey(
         Tenant, on_delete=models.CASCADE, related_name="ssh_host_keys"
     )
+    #: The host presenting it: a device, or (#451) a VM. Exactly one.
     device = models.ForeignKey(
-        "api.Device", on_delete=models.CASCADE, related_name="ssh_host_keys"
+        "api.Device", on_delete=models.CASCADE, related_name="ssh_host_keys",
+        null=True, blank=True,
+    )
+    virtual_machine = models.ForeignKey(
+        "api.VirtualMachine", on_delete=models.CASCADE, related_name="ssh_host_keys",
+        null=True, blank=True,
     )
     key_type = models.CharField(
         max_length=64,
@@ -3059,7 +3190,19 @@ class SSHHostKey(TimestampedModel):
             models.UniqueConstraint(
                 fields=["tenant", "device", "fingerprint_sha256"],
                 name="uniq_ssh_host_key_device_fp",
-            )
+            ),
+            models.UniqueConstraint(
+                fields=["tenant", "virtual_machine", "fingerprint_sha256"],
+                condition=models.Q(virtual_machine__isnull=False),
+                name="uniq_ssh_host_key_vm_fp",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(device__isnull=False, virtual_machine__isnull=True)
+                    | models.Q(device__isnull=True, virtual_machine__isnull=False)
+                ),
+                name="ssh_host_key_one_host",
+            ),
         ]
         indexes = [
             models.Index(fields=["tenant", "device"]),
@@ -3114,6 +3257,10 @@ class DeviceCredential(TimestampedModel):
         #: ``user@realm!tokenid`` and the token secret as the password.
         PROXMOX = "proxmox", "Proxmox API token"
         VMWARE = "vmware", "VMware login"
+        #: A client certificate and its private key (PEM) for WinRM over
+        #: HTTPS; discovery's third transport (#451). The secret holds
+        #: ``certificate``, ``private_key`` and an optional ``passphrase``.
+        WINRM_CERT = "winrm_cert", "WinRM certificate"
 
     class Provider(models.TextChoices):
         LOCAL = "local", "Local"
@@ -3123,8 +3270,15 @@ class DeviceCredential(TimestampedModel):
     tenant = models.ForeignKey(
         Tenant, on_delete=models.CASCADE, related_name="device_credentials"
     )
+    #: The host it logs in to: a device, or (#451 decision 6) a VM.
+    #: Exactly one of the two.
     device = models.ForeignKey(
-        "api.Device", on_delete=models.CASCADE, related_name="credentials"
+        "api.Device", on_delete=models.CASCADE, related_name="credentials",
+        null=True, blank=True,
+    )
+    virtual_machine = models.ForeignKey(
+        "api.VirtualMachine", on_delete=models.CASCADE, related_name="credentials",
+        null=True, blank=True,
     )
     name = models.CharField(max_length=120)
     kind = models.CharField(max_length=16, choices=Kind.choices)
@@ -3159,7 +3313,19 @@ class DeviceCredential(TimestampedModel):
             models.UniqueConstraint(
                 fields=["tenant", "device", "name"],
                 name="uniq_device_credential_tenant_device_name",
-            )
+            ),
+            models.UniqueConstraint(
+                fields=["tenant", "virtual_machine", "name"],
+                condition=models.Q(virtual_machine__isnull=False),
+                name="uniq_device_credential_tenant_vm_name",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(device__isnull=False, virtual_machine__isnull=True)
+                    | models.Q(device__isnull=True, virtual_machine__isnull=False)
+                ),
+                name="device_credential_one_host",
+            ),
         ]
         indexes = [models.Index(fields=["tenant", "device"])]
 
@@ -3175,7 +3341,8 @@ class DeviceCredential(TimestampedModel):
         return f"{self.MANAGED_REF_PREFIX}/{self.id}"
 
     def resolve_secret(self) -> dict:
-        """Fetch the referenced secret from the active store at use-time.
+        """Fetch the referenced secret at use-time, from the store stamped on
+        the row while it is configured, else the active one (#511).
 
         Fail-closed: raises :class:`SecretStoreDisabled` when no store is
         enabled, :class:`SecretPathError` when ``secret_path`` is malformed or
@@ -3185,21 +3352,22 @@ class DeviceCredential(TimestampedModel):
         call this - never list/detail serialization."""
         from .secret_store import (
             SecretStoreError,
+            read_external,
+            read_managed,
             require_secret_store,
-            validate_external_path,
         )
 
-        store = require_secret_store()
+        require_secret_store()
         if not self.secret_path:
             raise SecretStoreError("No secret has been stored for this credential.")
         # Managed: our own {tenant}/{ref} namespace (get), the store refusing a
         # ref that could leave it. External: the operator's own path
-        # (get_at_path), checked against every tenant's managed namespace.
+        # (get_at_path), checked against every tenant's managed namespace of
+        # each store it is read from.
         if self.secret_managed:
-            value = store.get(self.tenant_id, self.secret_path)
+            value = read_managed(self.secret_provider, self.tenant_id, self.secret_path)
         else:
-            validate_external_path(store, self.secret_path)
-            value = store.get_at_path(self.tenant_id, self.secret_path)
+            value = read_external(self.secret_provider, self.tenant_id, self.secret_path)
         if value is None:
             raise SecretStoreError(
                 f"No secret found at '{self.secret_path}' in the configured store."
@@ -3211,17 +3379,82 @@ class DeviceCredential(TimestampedModel):
         derived ref (``device-credentials/<id>``), stamping the provider. The
         ref is always re-derived here: a path on the row, however it got
         there, never decides where a managed secret is written (#315). Only
-        for managed credentials; external ones reference a path instead."""
-        from core.models import DeploymentSettings
+        for managed credentials; external ones reference a path instead. A
+        copy left in the store it was stamped with before goes (#511)."""
+        from .secret_store import write_managed
 
-        from .secret_store import require_secret_store
+        ref = self.managed_secret_ref()
+        before = self.secret_provider if self.secret_path == ref else ""
+        self.secret_provider = write_managed(before, self.tenant_id, ref, value or {})
+        self.secret_path = ref
 
-        store = require_secret_store()
-        self.secret_path = self.managed_secret_ref()
-        self.secret_provider = (
-            DeploymentSettings.load().secrets_provider or ""
-        ).strip()
-        store.put(self.tenant_id, self.secret_path, value or {})
+
+class SharedCredential(TimestampedModel):
+    """A login shared by many hosts, chosen by scope rather than attached to
+    one host - "the ops account on every Linux VM at HQ".
+
+    The secret is held exactly as a :class:`DeviceCredential`'s: only a
+    reference (``secret_provider`` + ``secret_path``) is on the row, the value
+    lives in the local ``StoredSecret`` store or Vault, and it is read only by
+    :meth:`resolve_secret` at use time. Same write-only API fields, same
+    ``reveal`` verb, same managed/external rules.
+
+    Scope: a host matches when the set is enabled, applies to its kind
+    (devices, VMs), and for every dimension that names something (roles,
+    device types, platforms, sites, tags) the host has one of the named
+    values. With every dimension empty nothing matches unless ``all_hosts``
+    is set - never implicitly. Which set wins for a host:
+    ``monitoring.credentials`` (lowest ``weight``, then the most specific
+    scope, then the name). Audited; tenant-scoped; its own RBAC type."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="shared_credentials"
+    )
+    name = models.CharField(max_length=120)
+    kind = models.CharField(max_length=16, choices=DeviceCredential.Kind.choices)
+    username = models.CharField(max_length=255, blank=True, default="")
+    port = models.PositiveIntegerField(null=True, blank=True)
+    secret_provider = models.CharField(
+        max_length=8, choices=DeviceCredential.Provider.choices, blank=True, default="")
+    secret_managed = models.BooleanField(default=True)
+    secret_path = models.CharField(max_length=200, blank=True, default="")
+    description = models.TextField(blank=True, default="")
+    enabled = models.BooleanField(default=True)
+    #: Lower is tried first.
+    weight = models.PositiveIntegerField(default=100)
+    #: A refused login may go on to the next matching credential. Off by
+    #: default: trying several passwords against one account can lock it.
+    fall_through = models.BooleanField(default=False)
+    applies_to_devices = models.BooleanField(default=True)
+    applies_to_vms = models.BooleanField(default=True)
+    #: Match every host of the kinds above. Never implied by an empty scope.
+    all_hosts = models.BooleanField(default=False)
+    roles = models.ManyToManyField("api.DeviceRole", blank=True, related_name="+")
+    device_types = models.ManyToManyField("api.DeviceType", blank=True, related_name="+")
+    platforms = models.ManyToManyField("api.Platform", blank=True, related_name="+")
+    sites = models.ManyToManyField("api.Site", blank=True, related_name="+")
+    tags = models.ManyToManyField("core.Tag", blank=True, related_name="+")
+
+    MANAGED_REF_PREFIX = "shared-credentials"
+
+    class Meta:
+        ordering = ["weight", "name"]
+        constraints = [
+            models.UniqueConstraint(fields=["tenant", "name"],
+                                    name="uniq_shared_credential_tenant_name"),
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+    def managed_secret_ref(self) -> str:
+        return f"{self.MANAGED_REF_PREFIX}/{self.id}"
+
+    # The secret handling is DeviceCredential's, line for line: both read
+    # only tenant_id, secret_managed, secret_path and secret_provider.
+    resolve_secret = DeviceCredential.resolve_secret
+    store_managed_secret = DeviceCredential.store_managed_secret
 
 
 class ConnectProtocol(TimestampedModel):
@@ -3449,6 +3682,9 @@ class CertificateRequest(TimestampedModel):
     # store at ``key_ref``, never on this row.
     csr_pem = models.TextField(blank=True, default="")
     key_ref = models.CharField(max_length=200, blank=True, default="")
+    #: The store the key was written to; it is read from there (#511).
+    #: Blank on keys written before 0.20: read from the active store first.
+    key_provider = models.CharField(max_length=32, blank=True, default="", db_default="")
     issued_certificate = models.ForeignKey(
         "Certificate",
         on_delete=models.SET_NULL,
@@ -3496,6 +3732,10 @@ class Issuer(TimestampedModel):
     # External Account Binding key id (public); the HMAC lives in ``secrets``.
     eab_kid = models.CharField(max_length=255, blank=True, default="")
     verify_tls = models.BooleanField(default=True)
+    # PEM of the CA certificate(s) that sign the directory's TLS certificate -
+    # a private root like step-ca's. Public, so plain text. Trusted *in
+    # addition to* the server's trust store (monitoring.acme_trust).
+    ca_certificate = models.TextField(blank=True, default="", db_default="")
 
     class DnsProvider(models.TextChoices):
         MANUAL = "", "Manual"
@@ -3517,6 +3757,8 @@ class Issuer(TimestampedModel):
     # store at ``account_ref`` (never on this row).
     account_uri = models.CharField(max_length=512, blank=True, default="")
     account_ref = models.CharField(max_length=200, blank=True, default="")
+    #: The store the account key was written to (#511); blank before 0.20.
+    account_provider = models.CharField(max_length=32, blank=True, default="", db_default="")
     secrets = EncryptedJSONField(default=dict, blank=True)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
@@ -3531,6 +3773,16 @@ class Issuer(TimestampedModel):
 
     def __str__(self) -> str:
         return f"{self.name} ({self.kind})"
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+
+        from .acme_trust import CaCertificateError, normalize
+
+        try:
+            self.ca_certificate = normalize(self.ca_certificate)
+        except CaCertificateError as exc:
+            raise ValidationError({"ca_certificate": str(exc)}) from exc
 
 
 class AcmeOrder(TimestampedModel):

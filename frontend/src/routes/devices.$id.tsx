@@ -7,20 +7,13 @@ import {
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useUrlSubTab, useUrlTab } from "@/lib/use-url-tab"
 import { ShowOnFloorPlan } from "@/components/show-on-floor-plan"
-import { PrintLabelButton } from "@/components/print-label-button"
-import { SpecSheetButton } from "@/components/spec-sheet-button"
-import { ObjectReportButton } from "@/components/object-report"
+import { HScroll } from "@/components/table-scroll"
+import { PrintLabelMenuItem } from "@/components/print-label-button"
+import { SpecSheetMenuItems } from "@/components/spec-sheet-button"
+import { useObjectReportItem } from "@/components/object-report"
 import { ShowOnSiteMap } from "@/components/show-on-site-map"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import {
-  ChevronDown,
-  CopyPlus,
-  Pencil,
-  Plus,
-  RefreshCw,
-  Trash2,
-  Cable as CableIcon,
-} from "lucide-react"
+import { ChevronDown, Plus, RefreshCw, Cable as CableIcon } from "lucide-react"
 import { useCallback, useContext, useEffect, useMemo, useState } from "react"
 import { createPortal } from "react-dom"
 import type { ColumnDef } from "@tanstack/react-table"
@@ -91,6 +84,11 @@ import {
 import { CabledFilterChips } from "@/components/cabled-filter"
 import { cableState } from "@/lib/cable-state"
 import type { KvRow } from "@/components/kv-card"
+import {
+  EditButton,
+  DeleteButton,
+  CloneMenuItem,
+} from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { Section } from "@/components/ui/section"
 import { SegmentedTabs } from "@/components/segmented-tabs"
@@ -187,6 +185,10 @@ import { DeviceRedfishCard } from "@/components/device-redfish-card"
 import { DeviceSensorsCard } from "@/components/device-sensors-card"
 import { DeviceDriftCard } from "@/components/device-drift-card"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
+import {
+  DeviceDependenciesTab,
+  useDeviceDependencyIds,
+} from "@/components/device-dependencies/device-dependencies-tab"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { DeviceConfigBackups } from "@/components/oxidized/device-config-backups"
 import { ServicesPane } from "@/components/services-pane"
@@ -194,6 +196,7 @@ import { InstalledSoftwarePane } from "@/components/installed-software-pane"
 import { ApplicationFlowPane } from "@/components/application-flow-pane"
 import { RoutingPanel } from "@/components/routing/device-routing-panel"
 import { DeviceChecksPanel } from "@/components/monitoring/device-checks-panel"
+import { ExplainedBy } from "@/components/monitoring/explained-by"
 import {
   MonitoringBar,
   MonitoringHeaderBadge,
@@ -204,7 +207,8 @@ import type { AssignIpTarget } from "@/components/assign-ip-dialog"
 import { useMe, objCan } from "@/lib/use-me"
 import { setPortLabelsShown, usePortLabelsShown } from "@/lib/port-labels-pref"
 import { Switch } from "@/components/ui/switch"
-import { DeviceConnectMenu } from "@/components/device-connect-menu"
+import { HostConnectMenu } from "@/components/host-connect-menu"
+import { deviceConnectHost } from "@/lib/connect-host"
 import { DeviceCredentialsCard } from "@/components/device-credentials-card"
 import { ObjectSlaPanel } from "@/components/monitoring/sla-add"
 import {
@@ -215,6 +219,16 @@ import {
 import { usePrtgEnabled } from "@/components/prtg/group-picker"
 import { naturalCompare } from "@/lib/natural-sort"
 import { PinnedSensorsCard } from "@/components/prtg/sensor-pins"
+import {
+  VulnerabilitiesTab,
+  vulnTabSearch,
+} from "@/components/vulnerabilities/vulnerabilities-tab"
+import { useVulnSettings } from "@/components/vulnerabilities/use-vuln-settings"
+import { HostVulnBadge } from "@/components/vulnerabilities/badges"
+import {
+  PackagesTab,
+  usePackagesTab,
+} from "@/components/discovery/packages-tab"
 
 const DEVICE_TABS = [
   "overview",
@@ -226,6 +240,7 @@ const DEVICE_TABS = [
   "sensors",
   "snmp",
   "services",
+  "dependencies",
   "software",
   "flows",
   "routing",
@@ -234,6 +249,8 @@ const DEVICE_TABS = [
   "access",
   "config",
   "documents",
+  "packages",
+  "vulnerabilities",
   "journal",
   "history",
 ] as const
@@ -266,7 +283,9 @@ export const Route = createFileRoute("/devices/$id")({
     cabled?: CableState
     sensor?: string
     state?: string
-  } => ({
+  } & ReturnType<typeof vulnTabSearch> => ({
+    // The Vulnerabilities tab's filters.
+    ...vulnTabSearch(s),
     ...(typeof s.tab === "string" && DEVICE_TABS.includes(s.tab as DeviceTab)
       ? { tab: s.tab as DeviceTab }
       : {}),
@@ -305,7 +324,12 @@ function DeviceDetail() {
         <QueryError error={q.error} />
       </div>
     )
-  return <Body device={q.data} />
+  // A list row stands in until the detail read lands, and a table row only
+  // carries what its columns asked for.
+  const data = q.isPlaceholderData
+    ? { ...q.data, tags: q.data.tags ?? [] }
+    : q.data
+  return <Body device={data} />
 }
 
 function Body({ device: d }: { device: Device }) {
@@ -316,9 +340,17 @@ function Body({ device: d }: { device: Device }) {
   const canDelete = objCan(d, "delete", canDo("device", "delete"))
   const [deleting, setDeleting] = useState<Device | null>(null)
   const [syncingType, setSyncingType] = useState(false)
+  const report = useObjectReportItem("device", d.id, d.name)
   // The hook reads `?tab=` itself; seeding the *default* from the URL made
   // re-clicking the active tab clear the param and bounce you to Overview.
   const [tab, setTab] = useUrlTab<DeviceTab>("overview", "tab", DEVICE_TABS)
+  // The device's Change log also holds its dependencies' (#450).
+  const dependencyIds = useDeviceDependencyIds(
+    d.id,
+    tab === "history" && canDo("devicedependency", "view")
+  )
+  const vuln = useVulnSettings()
+  const pkgs = usePackagesTab("device", d.id)
   // Shared with the header badge and the drift inbox - one request, and the
   // tab markers can never disagree with what the inbox lists.
   const deviceDrift = useDeviceDrift(d.id)
@@ -362,63 +394,51 @@ function Body({ device: d }: { device: Device }) {
       backLabel="Devices"
       title={<span className="font-mono">{d.name}</span>}
       presence={{ type: "device", id: d.id }}
+      edit={
+        canEdit && <EditButton to="/devices/$id/edit" params={{ id: d.id }} />
+      }
       actions={
         <>
-          {" "}
           <ShowOnFloorPlan
             deviceId={d.id}
             rackId={d.rack?.id}
             cabinetId={d.cabinet?.id}
+            siteMap={{
+              deviceId: d.id,
+              hasCoords: d.latitude != null && d.longitude != null,
+            }}
           />
-          <ShowOnSiteMap
-            deviceId={d.id}
-            hasCoords={d.latitude != null && d.longitude != null}
-          />
-          <DeviceConnectMenu device={d} />
-          <PrintLabelButton
+          <HostConnectMenu host={deviceConnectHost(d)} />
+        </>
+      }
+      exports={
+        <>
+          <SpecSheetMenuItems kind="device" id={d.id} />
+          {report.item}
+          <PrintLabelMenuItem
             objectType="device"
             ids={[d.id]}
             deviceTypeId={d.device_type?.id}
             roleId={d.role?.id}
           />
-          <SpecSheetButton kind="device" id={d.id} />
-          <ObjectReportButton kind="device" id={d.id} name={d.name} />
-          {canEdit && d.device_type && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setSyncingType(true)}
-              title="Re-apply the device type's component templates to this device"
-            >
-              <RefreshCw className="h-3.5 w-3.5" /> Sync from type
-            </Button>
-          )}
-          {canDo("device", "add") && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/devices/new" search={{ clone: d.id }}>
-                <CopyPlus className="h-3.5 w-3.5" /> Clone
-              </Link>
-            </Button>
-          )}
-          {canEdit && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/devices/$id/edit" params={{ id: d.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDelete && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeleting(d)}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
         </>
       }
+      more={
+        (canDo("device", "add") || (canEdit && d.device_type)) && (
+          <>
+            {canDo("device", "add") && (
+              <CloneMenuItem to="/devices/new" search={{ clone: d.id }} />
+            )}
+            {canEdit && d.device_type && (
+              // Re-applies the device type's component templates.
+              <DropdownMenuItem onSelect={() => setSyncingType(true)}>
+                <RefreshCw className="h-3.5 w-3.5" /> Sync from type
+              </DropdownMenuItem>
+            )}
+          </>
+        )
+      }
+      remove={canDelete && <DeleteButton onClick={() => setDeleting(d)} />}
       hero={
         <DetailHero
           title={d.name}
@@ -435,6 +455,11 @@ function Body({ device: d }: { device: Device }) {
             <>
               <StatusBadge status={d.status} />
               <MonitoringHeaderBadge target={{ device: d.id }} />
+              <HostVulnBadge
+                summary={d.vulnerability_summary}
+                kind="device"
+                id={d.id}
+              />
               {d.virtual_chassis && (
                 <Badge variant="secondary" asChild>
                   <Link
@@ -506,6 +531,9 @@ function Body({ device: d }: { device: Device }) {
           label: "Services",
           count: d.service_count || undefined,
         },
+        ...(canDo("devicedependency", "view")
+          ? [{ value: "dependencies", label: "Dependencies" }]
+          : []),
         {
           value: "software",
           label: "Software",
@@ -536,6 +564,18 @@ function Body({ device: d }: { device: Device }) {
           label: "Documents",
           count: d.document_count || undefined,
         },
+        ...(pkgs.show
+          ? [{ value: "packages", label: "Packages", count: pkgs.count }]
+          : []),
+        ...(vuln.enabled
+          ? [
+              {
+                value: "vulnerabilities",
+                label: "Vulnerabilities",
+                count: d.vulnerability_summary?.open || undefined,
+              },
+            ]
+          : []),
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },
       ]}
@@ -657,6 +697,9 @@ function Body({ device: d }: { device: Device }) {
           parentHasPrimaryIp={!!d.primary_ip}
         />
       </DetailTab>
+      <DetailTab value="dependencies">
+        <DeviceDependenciesTab device={{ id: d.id, name: d.name }} />
+      </DetailTab>
       <DetailTab value="software">
         <InstalledSoftwarePane parent={{ kind: "device", id: d.id }} />
       </DetailTab>
@@ -690,11 +733,25 @@ function Body({ device: d }: { device: Device }) {
           }
         />
       </DetailTab>
+      {pkgs.show && (
+        <DetailTab value="packages">
+          <PackagesTab kind="device" id={d.id} />
+        </DetailTab>
+      )}
+      {vuln.enabled && (
+        <DetailTab value="vulnerabilities">
+          <VulnerabilitiesTab kind="device" id={d.id} />
+        </DetailTab>
+      )}
       <DetailTab value="journal">
         <JournalPanel objectType="api.device" objectId={d.id} />
       </DetailTab>
       <DetailTab value="history">
-        <ChangeLogPanel objectType="api.device" objectId={d.id} />
+        <ChangeLogPanel
+          objectType="api.device"
+          objectId={d.id}
+          relatedIds={dependencyIds}
+        />
       </DetailTab>
 
       <DeviceDeleteDialog
@@ -711,6 +768,7 @@ function Body({ device: d }: { device: Device }) {
           onOpenChange={setSyncingType}
         />
       )}
+      {report.dialog}
     </DetailShell>
   )
 }
@@ -1437,6 +1495,7 @@ function DeviceOverview({
         notify={{ device: d.id }}
         slot="banner"
       />
+      <ExplainedBy deviceId={d.id} />
       <PinnedSensorsCard
         parent={{ device: d.id }}
         sensorLink={(sensor, children) => (
@@ -1601,7 +1660,7 @@ function DeviceRackCard({ device }: { device: Device }) {
   if (!q.data) return null
   return (
     <Section title={title}>
-      <div className="flex gap-6 overflow-x-auto pb-1">
+      <HScroll className="flex gap-6 pb-1" label="Rack faces">
         {(["front", "rear"] as const).map((face) => (
           <div key={face} className="flex flex-col items-center gap-1.5">
             <span className="text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
@@ -1617,7 +1676,7 @@ function DeviceRackCard({ device }: { device: Device }) {
             />
           </div>
         ))}
-      </div>
+      </HScroll>
     </Section>
   )
 }

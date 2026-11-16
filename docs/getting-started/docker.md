@@ -219,12 +219,14 @@ commented list). The essentials:
 | Variable | Purpose |
 | --- | --- |
 | `DJANGO_SECRET_KEY` | Django secret; unique per deployment. |
-| `MONITORING_SECRET_KEY` | Encrypts stored credentials; **required** with `DEBUG=False`, never change once secrets are stored. |
+| `MONITORING_SECRET_KEY` | Encrypts stored credentials; **required** with `DEBUG=False`. Never just replace it once secrets are stored - [rotate it](../reference/settings.md#rotating-the-monitoring-key) (comma-separated list, newest first). |
 | `DB_PASSWORD` | Postgres password (db + app). |
+| `REDIS_PASSWORD` | Optional. Set, the `redis` service starts with `--requirepass` and every Python service sends it; empty (default), no password. See [Hardening](hardening.md#redis-authentication). |
 | `ALLOWED_HOSTS` | Hosts/IPs served (no scheme/port). |
 | `CSRF_TRUSTED_ORIGINS` | Origins allowed to POST (scheme + host [+ port]). |
 | `DANBYTE_HTTPS` | `True` when TLS terminates in front - enables secure cookies + HSTS. |
 | `DANBYTE_TRUSTED_PROXY_DEPTH` | Proxies appending to `X-Forwarded-For`, counting the stack's own nginx: `1` direct (default), `2` with one proxy in front. Finds the client address for the login lockout. |
+| `DANBYTE_CSP_MODE` | The pages' script policy: `enforce` (default), `report` or `off`. See [Hardening](hardening.md#content-security-policy). |
 | `HTTP_PORT` | Published host port (default `8080`). |
 | `RQ_WORKERS` | Worker pool size. |
 | `DANBYTE_INTERNAL_URL` | Where scripts reach the API (default `http://backend:8000`). See [Scripts and the API](#scripts-and-the-api). |

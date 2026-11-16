@@ -674,3 +674,31 @@ class CallbackLogTests(_Base):
         self.assertTrue(text.endswith(LOG_TRUNCATED + "\n"))
         self.assertEqual(append_log(text, ["more"]), text)
         self.assertEqual(append_log("a\n", ["b"]), "a\nb\n")
+
+
+class NestedListErrorTests(_Base):
+    """A nested list's errors are a dict keyed by the failing items' index
+    (DRF's LIST_SERIALIZER_ERRORS_AS_DICT, on from 0.20)."""
+
+    def test_step_errors_are_keyed_by_index(self):
+        self.login()
+        r = self.client.post("/api/deploy-pipelines/", {
+            "name": "Two steps",
+            "steps": [
+                {"target": str(self.t_script.id)},
+                {"target": str(self.t_apply.id), "timeout_minutes": 0},
+                {"target": str(self.t_push.id)},
+            ],
+        }, format="json")
+        self.assertEqual(r.status_code, 400, r.content)
+        steps = r.json()["steps"]
+        self.assertEqual(list(steps), ["1"])
+        self.assertIn("timeout_minutes", steps["1"])
+
+    def test_a_list_level_error_stays_a_list_of_messages(self):
+        self.login()
+        r = self.client.post("/api/deploy-pipelines/", {"name": "x", "steps": "nope"},
+                             format="json")
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertIsInstance(r.json()["steps"], (list, dict))
+        self.assertNotIn("0", r.json()["steps"])

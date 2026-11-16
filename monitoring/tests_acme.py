@@ -199,7 +199,7 @@ class RegisterAccountTests(TestCase):
         fake_acme = mock.Mock()
         fake_acme.new_account.return_value = SimpleNamespace(uri="https://ca/acct/9")
         with mock.patch.object(eng, "client") as mock_client:
-            mock_client.ClientV2.get_directory.return_value = mock.Mock()
+            mock_client.ClientV2.get_directory.return_value = mock.MagicMock()
             mock_client.ClientV2.return_value = fake_acme
             uri = eng.register_account(self.issuer)
         self.assertEqual(uri, "https://ca/acct/9")

@@ -39,6 +39,15 @@ name). Cable labels also get each end: `{{ a }}` / `{{ b }}` (the devices),
 `{{ a_port_name }}` / `{{ b_port_name }}` (the bare port name, for short
 labels).
 
+## Versions
+
+The clock icon on a template's row opens its **Versions**: every saved HTML
+body from the change log, a diff between any two, and **Restore this
+version**, which saves the old HTML as a new version through a normal edit.
+See [Versions and restore](export-templates.md#versions-and-restore).
+`POST /api/label-templates/validate/` runs the save-time syntax check on a
+draft without saving it.
+
 ## Bulk changes
 
 Tick rows in **Customize → Label templates** - with the `change` or `delete`
@@ -54,8 +63,8 @@ grant - to reveal the bulk bar:
 
 ## Printing
 
-A **Print label** action appears on an object's page (and in the list **bulk
-bar** for a multi-select) whenever a template exists for that type - no
+A **Print label** entry appears in an object page's **Export** menu (and a
+**Print label** button in the list **bulk bar** for a multi-select) whenever a template exists for that type - no
 per-page configuration. Pick a template and Danbyte opens a **PDF** whose page
 is sized exactly to the label (one label per page), rendered server-side. Your
 browser's PDF viewer previews it and prints it to any office or dedicated label

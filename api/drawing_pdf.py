@@ -377,6 +377,11 @@ class PdfUrlFetcher:
     vendored fonts and device-type photos. Anything else - http(s), other
     files, other media - raises, and WeasyPrint leaves it out."""
 
+    #: WeasyPrint 69+ asks its fetcher whether a refused URL stops the
+    #: render; without the attribute the refusal crashed it instead of
+    #: leaving the image out.
+    _fail_on_errors = False
+
     def __init__(self, svg: bytes, drawings: dict[str, bytes] | None = None):
         self.svg = svg
         # More drawings by their URL (:func:`drawing_url`), for a report

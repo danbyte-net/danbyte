@@ -227,6 +227,72 @@ def _in_policy_deny(ip: "IPAddress") -> bool:
     return False
 
 
+def _target_ok(policy, ip, device) -> bool:
+    """Device/type/role policies apply only to the device IPs their target
+    selects (all IPs / interface IPs / primary / OOB).
+
+    Every caller checks ``device`` first, so the guard below is unreachable
+    today - it is here because a scope that matches without a device (a
+    site one, say) would otherwise fail with an AttributeError deep in
+    resolution rather than simply not matching.
+    """
+    t = policy.target
+    if t == MonitoringPolicy.TARGET_INTERFACES:
+        return ip.assigned_interface_id is not None
+    if device is None:
+        # No device means no primary and no OOB to be one of.
+        return t == MonitoringPolicy.TARGET_ALL
+    if t == MonitoringPolicy.TARGET_PRIMARY:
+        return device.primary_ip_id == ip.id
+    if t == MonitoringPolicy.TARGET_OOB:
+        return device.oob_ip_id == ip.id
+    return True  # TARGET_ALL
+
+
+def policy_match(policy, ip, device, enclosing, device_tags=None, device_hardware=None):
+    """Whether ``policy``'s scope and filters take this address:
+    ``(specificity, prefix)`` when they do, ``None`` when not.
+
+    The one answer to "is this address in that scope". The policy resolver
+    below asks it per policy, and discovery asks it for a profile scoped by
+    the same kinds (``discovery.shared_scope``) - so a device-role profile
+    and a device-role policy cannot disagree about which devices hold the
+    role. ``device_tags`` and ``device_hardware`` are zero-argument callables,
+    read only when a filter needs them; ``enclosing`` is the address's
+    prefixes, most specific first (only a prefix scope reads it).
+    """
+    def tags() -> set:
+        return device_tags() if device_tags is not None else (
+            {t.slug for t in device.tags.all()} if device is not None else set())
+
+    def hardware() -> set:
+        return device_hardware() if device_hardware is not None else hardware_names(device)
+
+    scope = scope_for(policy.scope)
+    if scope is None:
+        # A scope the registry no longer knows. Skipping it is the safe
+        # reading - a policy nobody can explain must not quietly apply.
+        return None
+    if scope.rank is None:
+        # Prefix: its rank is the mask length, so it needs the enclosing
+        # list rather than a plain comparison.
+        if not policy.prefix_id or not filters_pass(policy, ip, device, tags(), hardware()):
+            return None
+        pfx = next((p for p in enclosing if p.id == policy.prefix_id), None)
+        if pfx is not None and pfx.network is not None:
+            return pfx.network.prefixlen, pfx
+        return None
+    if scope.requires_device and device is None:
+        return None
+    if scope.honours_target and not _target_ok(policy, ip, device):
+        return None
+    if not filters_pass(policy, ip, device, tags(), hardware()):
+        return None
+    if scope.match is not None and scope.match(policy, ip, device):
+        return scope.rank, None
+    return None
+
+
 def _policy_templates(ip: "IPAddress", enclosing: list["Prefix"]) -> list[_Candidate]:
     if _in_policy_deny(ip):
         return []
@@ -310,52 +376,10 @@ def _policy_templates(ip: "IPAddress", enclosing: list["Prefix"]) -> list[_Candi
                 )
             )
 
-    def target_ok(policy) -> bool:
-        """Device/type/role policies apply only to the device IPs their target
-        selects (all IPs / interface IPs / primary / OOB).
-
-        Every caller checks ``device`` first, so the guard below is unreachable
-        today - it is here because a scope that matches without a device (a
-        site one, say) would otherwise fail with an AttributeError deep in
-        resolution rather than simply not matching.
-        """
-        t = policy.target
-        if t == MonitoringPolicy.TARGET_INTERFACES:
-            return ip.assigned_interface_id is not None
-        if device is None:
-            # No device means no primary and no OOB to be one of.
-            return t == MonitoringPolicy.TARGET_ALL
-        if t == MonitoringPolicy.TARGET_PRIMARY:
-            return device.primary_ip_id == ip.id
-        if t == MonitoringPolicy.TARGET_OOB:
-            return device.oob_ip_id == ip.id
-        return True  # TARGET_ALL
-
     for policy in policies:
-        scope = scope_for(policy.scope)
-        if scope is None:
-            # A scope the registry no longer knows. Skipping it is the safe
-            # reading - a policy nobody can explain must not quietly apply.
-            continue
-        if scope.rank is None:
-            # Prefix: its rank is the mask length, so it needs the enclosing
-            # list rather than a plain comparison.
-            if not policy.prefix_id or not filters_pass(
-                policy, ip, device, device_tags(), device_hardware()
-            ):
-                continue
-            pfx = next((p for p in enclosing if p.id == policy.prefix_id), None)
-            if pfx is not None and pfx.network is not None:
-                add(policy, pfx.network.prefixlen, pfx)
-            continue
-        if scope.requires_device and device is None:
-            continue
-        if scope.honours_target and not target_ok(policy):
-            continue
-        if not filters_pass(policy, ip, device, device_tags(), device_hardware()):
-            continue
-        if scope.match is not None and scope.match(policy, ip, device):
-            add(policy, scope.rank)
+        hit = policy_match(policy, ip, device, enclosing, device_tags, device_hardware)
+        if hit is not None:
+            add(policy, *hit)
 
     # Stamp the winning frequency override onto every policy candidate so the
     # scheduler can persist it per check-state without re-resolving.

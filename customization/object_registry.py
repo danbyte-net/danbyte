@@ -122,6 +122,12 @@ for _e in [
     # A flow has no page of its own; it is read on its application's.
     ReferenceModel("applicationflow", "Application flows", "api.ApplicationFlow",
                    "/api/application-flows/", route=None),
+    # A dependency has no page of its own; it is read on its devices'.
+    ReferenceModel("devicedependency", "Device dependencies", "api.DeviceDependency",
+                   "/api/device-dependencies/", label_field=None, picker=False,
+                   route=None, select_related=("upstream", "downstream")),
+    ReferenceModel("dependencymedium", "Dependency media", "api.DependencyMedium",
+                   "/api/dependency-media/", route="/dependency-media/$id"),
     ReferenceModel("manufacturer", "Manufacturers", "api.Manufacturer",
                    "/api/manufacturers/", route="/manufacturers/$id"),
     ReferenceModel("moduletype", "Module types", "api.ModuleType",

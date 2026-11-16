@@ -1,12 +1,10 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
-import { Pencil, Trash2 } from "lucide-react"
 import { useCallback, useState } from "react"
 
 import { api } from "@/lib/api"
 import type { VirtualMachineGroup } from "@/lib/api"
-import { Button } from "@/components/ui/button"
 import { TagList } from "@/components/cells/tag-list"
 import { TimeCell } from "@/components/cells/time-ago"
 import { CustomFieldValues } from "@/components/custom-field-display"
@@ -14,6 +12,7 @@ import { KvCard, dash } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
 import { Loading } from "@/components/loading"
 import { QueryError } from "@/components/query-error"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { EmbeddedVmTable } from "@/components/embedded-tables"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
@@ -59,27 +58,10 @@ function Body({ group: g }: { group: VirtualMachineGroup }) {
       backLabel="VM groups"
       title={g.name}
       presence={{ type: "virtualmachinegroup", id: g.id }}
-      actions={
-        <>
-          {canEdit && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/vm-groups/$id/edit" params={{ id: g.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDelete && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeleting(g)}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
-        </>
+      edit={
+        canEdit && <EditButton to="/vm-groups/$id/edit" params={{ id: g.id }} />
       }
+      remove={canDelete && <DeleteButton onClick={() => setDeleting(g)} />}
       hero={
         <DetailHero
           title={g.name}

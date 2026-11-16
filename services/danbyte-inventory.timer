@@ -1,0 +1,11 @@
+[Unit]
+Description=Queue due Danbyte package inventory runs every 15 minutes
+
+[Timer]
+OnCalendar=*:0/15
+OnBootSec=300
+Persistent=true
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

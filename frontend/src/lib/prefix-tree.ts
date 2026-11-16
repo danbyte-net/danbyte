@@ -231,9 +231,22 @@ export function annotateNesting(prefixes: Prefix[]): NestedPrefix[] {
     if (arr) arr.push(n)
     else byParent.set(n._parentId, [n])
   }
+  // Siblings in address order (10.0.2.0 before 10.0.10.0), as the server
+  // sorts them; free rows (lib/prefix-free) are laid between them by address.
+  const keyOf = new Map<string, Cidr | null>()
+  for (const n of annotated.values()) keyOf.set(n.id, parseCidr(n.cidr))
   function walk(parentId: string | null) {
     const children = byParent.get(parentId) ?? []
-    children.sort((a, b) => a.cidr.localeCompare(b.cidr))
+    children.sort((a, b) => {
+      const ka = keyOf.get(a.id)
+      const kb = keyOf.get(b.id)
+      if (ka && kb) {
+        if (ka.family !== kb.family) return ka.family - kb.family
+        if (ka.start !== kb.start) return ka.start < kb.start ? -1 : 1
+        return ka.prefixlen - kb.prefixlen
+      }
+      return a.cidr.localeCompare(b.cidr)
+    })
     for (const c of children) {
       result.push(c)
       walk(c.id)
@@ -247,7 +260,11 @@ export function annotateNesting(prefixes: Prefix[]): NestedPrefix[] {
  * `start`–`end` span. False for anything that doesn't parse or mixes
  * families - an IP range is a pool, and a typed address outside it is worth
  * a nudge, never a crash. */
-export function addressInRange(addr: string, start: string, end: string): boolean {
+export function addressInRange(
+  addr: string,
+  start: string,
+  end: string
+): boolean {
   const a = ipToBigInt(addr.trim())
   const s = ipToBigInt(start)
   const e = ipToBigInt(end)
@@ -255,4 +272,3 @@ export function addressInRange(addr: string, start: string, end: string): boolea
   if (addr.includes(":") !== start.includes(":")) return false
   return a >= s && a <= e
 }
-

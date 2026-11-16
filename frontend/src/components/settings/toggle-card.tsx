@@ -29,6 +29,8 @@ export function ToggleCard({
   badges,
   /** Footer control, right-aligned: a link to the connection, an Uninstall. */
   action,
+  /** Extra controls between the description and the footer. */
+  children,
 }: {
   title: string
   info?: React.ReactNode
@@ -41,6 +43,7 @@ export function ToggleCard({
   status?: React.ReactNode
   badges?: React.ReactNode
   action?: React.ReactNode
+  children?: React.ReactNode
 }) {
   return (
     <section
@@ -73,6 +76,8 @@ export function ToggleCard({
       </div>
 
       <p className="text-xs text-muted-foreground">{description}</p>
+
+      {children}
 
       <div className="mt-auto flex items-center gap-2 pt-1">
         {status ?? (

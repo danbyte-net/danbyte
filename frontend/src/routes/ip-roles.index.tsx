@@ -90,14 +90,16 @@ function IpRolesPage() {
         </FilterRail>
       }
       search={{ value: q, onChange: setQ, placeholder: "Filter…" }}
+      add={
+        canAdd && (
+          <Button size="sm" asChild>
+            <Link to="/ip-roles/new">Add role</Link>
+          </Button>
+        )
+      }
       actions={
         <>
           <TableActions ioType="iprole" />
-          {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/ip-roles/new">Add role</Link>
-            </Button>
-          )}
         </>
       }
       query={query}

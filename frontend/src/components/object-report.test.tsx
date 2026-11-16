@@ -21,8 +21,9 @@ import type {
 } from "@/lib/api"
 
 import { BulkExport } from "./bulk-export"
+import { ExportMenu } from "./action-ribbon"
 import {
-  ObjectReportButton,
+  useObjectReportItem,
   ObjectReportDialog,
   coverBackgroundItems,
   coverSubtitle,
@@ -359,6 +360,54 @@ describe("ObjectReportDialog", () => {
     expect(screen.getByText("You may not view interfaces.")).toBeTruthy()
     // One object: no list columns or summary.
     expect(screen.queryByText("List columns")).toBeNull()
+  })
+
+  it("offers Hardware unticked, with no column picker, and sends it once ticked", async () => {
+    const hardware = {
+      key: "hardware",
+      label: "Hardware",
+      kind: "hardware",
+      default: false,
+      available: true,
+      last: false,
+      columns: [],
+      default_columns: [],
+    }
+    const schema: ObjectReportSchema = {
+      ...SCHEMA,
+      sections: [SCHEMA.sections[0], hardware, ...SCHEMA.sections.slice(1)],
+    }
+    apiMock.mockImplementation((path, init) => {
+      if (path.includes("estimate=1")) return answerEstimate(init)
+      if (init?.method === "POST") {
+        posted.push({
+          path,
+          body: JSON.parse(String(init.body)) as ObjectReportRequest,
+        })
+        return Promise.resolve({ url: "/api/devices/report/file/tok/" })
+      }
+      return get(path, schema)
+    })
+    expect(initialPrefs(schema, null).sections).not.toContain("hardware")
+    wrap(
+      <ObjectReportDialog
+        kind="device"
+        target={{ ids: ["d1"], scope: "one", name: "sw-a" }}
+        open
+        onOpenChange={() => {}}
+      />
+    )
+    const box = await screen.findByRole("checkbox", { name: "Hardware" })
+    expect(box.getAttribute("aria-checked")).toBe("false")
+    fireEvent.click(box)
+    expect(box.getAttribute("aria-checked")).toBe("true")
+    expect(
+      screen.queryByRole("button", { name: "Hardware columns" })
+    ).toBeNull()
+    fireEvent.click(screen.getByRole("button", { name: /Download/ }))
+    await waitFor(() => expect(posted).toHaveLength(1))
+    // In the schema's order: after Overview.
+    expect(posted[0].body.sections).toEqual(["overview", "hardware"])
   })
 
   it("refuses more objects than a report lists", async () => {
@@ -716,9 +765,22 @@ describe("background report", () => {
 })
 
 describe("entry points", () => {
-  it("a detail page's button opens the dialog on its object", async () => {
-    wrap(<ObjectReportButton kind="prefix" id="p1" name="10.0.0.0/24" />)
-    fireEvent.click(screen.getByRole("button", { name: /PDF report…/ }))
+  it("a detail page's menu item opens the dialog on its object", async () => {
+    function Page() {
+      const report = useObjectReportItem("prefix", "p1", "10.0.0.0/24")
+      return (
+        <>
+          <ExportMenu>{report.item}</ExportMenu>
+          {report.dialog}
+        </>
+      )
+    }
+    wrap(<Page />)
+    fireEvent.pointerDown(
+      screen.getByRole("button", { name: "Export" }),
+      new PointerEvent("pointerdown", { bubbles: true, button: 0 })
+    )
+    fireEvent.click(screen.getByRole("menuitem", { name: /PDF report…/ }))
     await screen.findByText("10.0.0.0/24")
     expect(apiMock).toHaveBeenCalledWith("/api/prefixes/report/")
   })

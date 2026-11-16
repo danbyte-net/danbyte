@@ -70,14 +70,16 @@ function TunnelsPage() {
         filters: { snapshot, restore, activeCount },
       }}
       search={{ value: q, onChange: setQ, placeholder: "Filter tunnels…" }}
+      add={
+        canAdd && (
+          <Button size="sm" asChild>
+            <Link to="/tunnels/new">Add tunnel</Link>
+          </Button>
+        )
+      }
       actions={
         <>
           <TableActions ioType="tunnel" />
-          {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/tunnels/new">Add tunnel</Link>
-            </Button>
-          )}
         </>
       }
       query={query}

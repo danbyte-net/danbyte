@@ -20,6 +20,7 @@ import type { StatusHistoryConfig } from "./widget-status-history"
 import { AlertsPerDay, LatencyWeek } from "./widget-monitoring-charts"
 import { MyTasksWidget } from "./widget-tasks"
 import { SupportCoverageWidget } from "./widget-support-coverage"
+import { VulnerabilitiesWidget } from "./widget-vulnerabilities"
 import type { SupportCoverageConfig } from "./widget-support-coverage"
 import {
   SensorAlarmsWidget,
@@ -83,6 +84,7 @@ export type WidgetId =
   | "coverage"
   | "upcoming-maintenance"
   | "support-coverage"
+  | "vulnerabilities"
   | "prtg-sensor"
   | "prtg-alarms"
 
@@ -218,6 +220,11 @@ export const LAYOUT_META: Partial<Record<WidgetId, WidgetMeta>> = {
     span: { w: 3, h: 3 },
     min: { w: 2, h: 2 },
     max: { w: 6, h: 5 },
+  },
+  vulnerabilities: {
+    span: { w: 3, h: 2 },
+    min: { w: 2, h: 2 },
+    max: { w: 6, h: 4 },
   },
   "prtg-sensor": {
     span: { w: 2, h: 2 },
@@ -362,7 +369,7 @@ export const CATALOG: WidgetDef[] = [
       <RadialGauge
         value={d.reachable_pct}
         label="reachable"
-        link={{ to: "/monitoring", search: { view: "checks" } }}
+        link={{ to: "/monitoring/checks" }}
       />
     ),
   },
@@ -522,10 +529,8 @@ export const CATALOG: WidgetDef[] = [
         data={d.check_by_status}
         unit="checks"
         link={(x) => ({
-          to: "/monitoring",
-          search: x.key
-            ? { view: "checks", status: x.key }
-            : { view: "checks" },
+          to: "/monitoring/checks",
+          search: x.key ? { status: x.key } : {},
         })}
       />
     ),
@@ -570,7 +575,7 @@ export const CATALOG: WidgetDef[] = [
         value={d.availability_7d}
         label="7-day availability"
         color="var(--color-emerald-500)"
-        link={{ to: "/monitoring", search: { view: "explore" } }}
+        link={{ to: "/monitoring/performance" }}
       />
     ),
   },
@@ -713,6 +718,13 @@ export const CATALOG: WidgetDef[] = [
         setConfig={(c) => ctx?.setConfig({ ...c })}
       />
     ),
+  },
+  {
+    id: "vulnerabilities",
+    fit: "scroll",
+    title: "Vulnerabilities",
+    description: "Open records by priority, known exploited and new this week",
+    render: () => <VulnerabilitiesWidget />,
   },
   {
     id: "prtg-sensor",

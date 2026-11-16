@@ -189,6 +189,8 @@ export interface LevelLook {
   showTrays: boolean
   objectSize: ObjectSize
   iconTiles: boolean
+  /** Display > Tile icons (plan-svg.ts `tileIcons`). */
+  tileIcons?: boolean
   /** Display > Camera FOV cones, and whether racks block them. */
   showFov?: boolean
   fovRacksBlock?: boolean
@@ -239,6 +241,7 @@ export async function drawLevel(
     showTrays: look.showTrays,
     objectSize: look.objectSize,
     iconTiles: look.iconTiles,
+    tileIcons: look.tileIcons ?? false,
     callouts: look.callouts ?? true,
     cameras: look.showFov
       ? { racksBlock: look.fovRacksBlock ?? false }

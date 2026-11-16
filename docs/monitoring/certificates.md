@@ -278,11 +278,12 @@ Two paths, both needed:
 
 ### The monitoring overview at a glance
 
-The **Monitoring → Overview** page carries a **Certificate & key health** card:
-one row of tiles - expired, expiring within the critical window, expiring within
-the warning window, healthy, self-signed, SSH host-key drift, and the tenant's
-firing-alert total. The labels track the tenant's own thresholds. Each tile opens
-the matching list, and the whole card hides on a deployment with no certificates
+The **Monitoring → Status** Overview carries a **Certificates & keys** card:
+one row per bucket - expired, expiring within the critical window, expiring
+within the warning window, healthy, self-signed, SSH host-key drift, and the
+tenant's firing-alert total - with its count, coloured only when there is
+something in it. The labels track the tenant's own thresholds (the (i) beside
+the title gives them). Each row opens the matching list, and the whole card hides on a deployment with no certificates
 and no key drift. The counts come from a single tenant-scoped read,
 `GET /api/monitoring/certificates/health/`, so the client never re-buckets the
 inventory itself.
@@ -298,13 +299,18 @@ enables under **Settings → Security → Secret store**:
   features stay off (fail closed).
 - **Local** - keys live in an encrypted table, at rest under
   `MONITORING_SECRET_KEY`, exactly like every other stored credential. Works out
-  of the box and airgap-friendly.
+  of the box and airgap-friendly. The card shows how many keys are configured
+  (more than one while a
+  [rotation](../reference/settings.md#rotating-the-monitoring-key) is under
+  way), never the keys.
 - **Vault / OpenBao** - keys live in an external HashiCorp Vault / OpenBao and
   Danbyte holds only a reference. Configure the address, KV v2 mount (default
   `danbyte`), TLS verification, and a token in the same settings card; the token
   is stored encrypted and never returned. The Vault address is admin-configured
   and deployment-tier, so it may be an internal/loopback Vault - Danbyte reaches
   it directly (TLS-verified, redirects off), not through the tenant SSRF guard.
+  A plain `http://` address is accepted for a Vault on a trusted network; the
+  card then warns that the token and the secrets cross the network unencrypted.
   A provider selected but not fully configured counts as disabled (fail closed).
 
     Danbyte files each tenant's secrets under `<mount>/data/<tenant id>/<ref>`.
@@ -323,9 +329,15 @@ enables under **Settings → Security → Secret store**:
   host, so Azure Government and Azure Stack work by URL alone - only the
   **sign-in endpoint** needs setting on a sovereign cloud (blank is
   `login.microsoftonline.com`). No Azure SDK is installed: it is three REST
-  calls and a token.
+  calls and a token. Each process keeps the token until five minutes before
+  it expires and reuses it for every read and write, so an operation is one
+  vault request; changing any of these settings signs in again at once, and a
+  token the vault refuses (401) is replaced once. The vault URL and the sign-in endpoint must both be
+  `https://`: the client secret is posted to the one and the token and secret
+  values go to the other. Saving refuses `http://`, and a value saved before
+  that check leaves the store disabled rather than used.
 
-    The app registration needs **Get**, **Set**, **Delete** and **Purge** on
+    The app registration needs **Get**, **Set**, **Delete**, **Purge** and **List** on
     secrets - an access policy, or the *Key Vault Secrets Officer* role on an
     RBAC vault. Deleting drops the secret and then purges it, so a revoked
     request's key really is gone; on a vault with **purge protection** the purge
@@ -345,6 +357,84 @@ enables under **Settings → Security → Secret store**:
 It is a **deployment-tier** choice on purpose - where the organisation's private
 keys live is not a per-tenant decision. Nothing reads a stored secret over the
 API or writes it to the change log. CSR and ACME build on this in later releases.
+
+### What lives in the store
+
+Despite the section title, the store holds every secret Danbyte files itself,
+each under `<folder>/<record id>` in the tenant's namespace:
+
+| Record | Folder |
+|---|---|
+| Device credential (managed) | `device-credentials/` |
+| Shared credential (managed) | `shared-credentials/` |
+| Wireless LAN PSK | `wireless-lans/` |
+| IPsec profile PSK | `ipsec-profiles/` |
+| FHRP group auth key | `fhrp-groups/` |
+| Routing keychain key | `routing-keychains/` |
+| RPKI cache SSH key | `routing-rpki-caches/` |
+| CSR private key | `csr/` |
+| ACME account key | `issuer/<id>/account` |
+
+Deleting a record deletes its secret - a single delete, a bulk delete, or a
+cascade (a device takes its credentials with it, a tenant everything). On the
+local store the row goes in the same transaction; on Vault, Key Vault or a
+plugin store the delete runs once the transaction commits, so a delete that
+fails or is rolled back (a bulk-delete dry run) keeps the secret. An
+unreachable store leaves the secret behind and logs the ref, never the value.
+
+### Switching stores
+
+Every record is stamped with the store its secret was written to
+(`secret_provider`, `psk_secret_provider`, `key_provider`, `account_provider`),
+and a secret is read from that store for as long as it stays configured, with
+the active store as the fallback. Switching the provider therefore moves
+nothing and breaks nothing: new and rewritten secrets go to the new store
+(a rewrite also removes the copy left in the old one), and existing ones keep
+being read from the old store. Only a store whose settings are cleared becomes
+unreadable, with an error naming it. **Disabled** still turns everything off.
+Records written before 0.20 that carry no stamp (CSR and ACME keys) are looked
+for in the active store first, then in every other configured one.
+
+The card shows how many secrets each store holds and asks before a switch
+that leaves some behind. To retire the old store, move them:
+
+```bash
+.venv/bin/python manage.py migrate_secret_store --from local --to azure          # dry run: counts
+.venv/bin/python manage.py migrate_secret_store --from local --to azure --apply  # move
+```
+
+For each record stamped `--from` (or unstamped and present there) it reads
+the secret, writes it to `--to`, reads it back to verify, re-stamps the
+record, and only then deletes it from `--from`. A record whose copy does not
+match is left as it was and the command exits non-zero. It can be stopped and
+run again: moved records are skipped, and an old copy a previous run could not
+delete is removed once the new one is confirmed. `--tenant` limits it to one
+tenant. External credentials point at your own paths and are left alone.
+Values are never printed; each applied run writes one change-log entry per
+tenant with the counts. Both stores must be configured while it runs - switch
+the provider before or after, either works.
+
+### Removing orphaned secrets
+
+Before 0.20 a deleted device or shared credential left its secret in the store,
+and an unreachable store can still leave one behind. `cleanup_secret_store`
+finds every secret under one of the folders above whose record no longer
+exists in the same tenant:
+
+```bash
+.venv/bin/python manage.py cleanup_secret_store                    # list only
+.venv/bin/python manage.py cleanup_secret_store --delete           # remove local ones
+.venv/bin/python manage.py cleanup_secret_store --delete --remote  # and external ones
+```
+
+`--tenant <slug or id>` limits it to one tenant; without it a deleted tenant's
+leftovers are found too. `--store <kind>` limits it to one store; by default
+every configured store is checked. Output names the store, tenant and ref -
+never a value. Removing from Vault, Key Vault or a plugin store needs
+`--remote` as well, since it cannot be undone. Each removal writes one
+change-log entry per tenant and store, with the refs. Listing needs **List**
+on Key Vault secrets and `list` on the Vault mount's `metadata/` paths; a
+plugin store that cannot list is skipped and named.
 
 ## Requesting a certificate (CSR)
 
@@ -384,8 +474,10 @@ On **Governance → Certificate requests**, tick rows - with the `change` or
 
 An **Issuer** is a connector to an external certificate authority - any ACME
 directory, public (Let's Encrypt / ZeroSSL) or internal (step-ca). Configure the
-directory URL, an optional contact e-mail, and - where the CA requires it -
-External Account Binding (a key id plus an HMAC, stored encrypted). The ACME
+directory URL, an optional contact e-mail, for a private CA its root
+certificate (see [Private CAs and trust](#private-cas-and-trust)), and - where
+the CA requires it - External Account Binding (a key id plus an HMAC, stored
+encrypted). The ACME
 account key is generated on first use and kept in the [secret
 store](#the-secret-store-for-issuance-keys); it never lands in the database.
 `GET/POST /api/monitoring/issuers/` manages them.
@@ -431,6 +523,105 @@ drives three steps:
    request **issued**). Because it polls the CA it runs on the worker queue and
    returns `202`; the order moves `processing → valid` (or `invalid` with the
    error recorded on the row).
+
+When an order fails, its error says why, one line per name, from what the
+CA reported on that name's challenge:
+
+```text
+The CA could not validate 2 names:
+db.example.net: http-01 - unauthorized - Invalid response from http://db.example.net/.well-known/acme-challenge/…: 404
+www.example.net: http-01 - dns - no valid A records found for www.example.net
+```
+
+A poll that runs out of time (90 seconds) says what was still pending
+(`Still pending: db.example.net.`) and is left `errored`, so finalizing
+again retries; an order the CA refused to issue carries the CA's reason.
+Each line is the CA's problem type and detail with control characters
+removed and its length capped - it is untrusted remote text and is shown as
+plain text, on the request's order panel and on the site-certificate card.
+
+### Private CAs and trust
+
+An internal CA such as step-ca serves its ACME directory on a TLS
+certificate signed by its own root, which no public trust store contains.
+With **Verify the CA's TLS certificate** on (the default - keep it on),
+an issuer's calls trust:
+
+1. the bundle in `REQUESTS_CA_BUNDLE` (or `CURL_CA_BUNDLE`) when the
+   service environment sets one - an explicit choice wins;
+2. otherwise **the server's own trust store** - what `update-ca-certificates`
+   (Debian, Ubuntu) or `update-ca-trust` (RHEL, Fedora) maintain, found
+   through OpenSSL's default paths and the usual distribution locations;
+3. otherwise the public roots that ship with Python's `certifi`;
+
+**plus** the issuer's **CA certificate**, when one is pasted.
+
+So there are two ways to trust a private root: put it in the server's
+store once (every issuer and every renewal sees it, no Danbyte setting
+needed), or paste it on the issuer - for step-ca, the `root_ca.crt` it
+printed at `step ca init` (`step ca root` prints it again). The issuer's
+certificate is added to the server's trust, never a replacement for it:
+pasting a root cannot silently drop the public ones, and an issuer later
+pointed at a public CA keeps working. (Trusting only the pasted root would
+also refuse a public certificate for the CA's name, but no public CA issues
+one for an internal name, so pinning would buy nothing here.)
+
+The **CA certificate** field takes PEM text - one certificate or a chain of
+up to ten, 64 KB at most. On save each must be a CA certificate
+(basicConstraints `CA:TRUE`, or an old v1 self-signed root) and in date; a
+server's own certificate is refused (trusting it breaks at the CA's next
+renewal), a pasted private key is refused with a field error and never
+stored, and anything that is not a `CERTIFICATE` block is refused. What is
+stored is the certificates alone, re-encoded; it is public, kept as plain
+text and returned by the API (`ca_certificate`, with `ca_certificate_info`
+listing each one's subject, expiry, days left and fingerprint). The issuer
+form shows those under the field.
+
+The same trust applies to every call for that issuer - registering, orders,
+finalize, the background jobs, renewals and the site certificate. Because
+`requests` takes a bundle *file*, the combined bundle is written to
+`<tmp>/danbyte-acme-trust-<uid>/<sha256>.pem`: a `0700` directory owned by
+the service user (a path that is not, or is a link, is never used), a `0600`
+file written under a temporary name and renamed into place, named by its
+content so workers never race, and removed after a day unused.
+
+**Verify TLS off** skips verification entirely (the CA certificate is then
+ignored). Prefer pasting the root: with verification off, anything that can
+answer for the CA's address can issue your certificates.
+
+### When the CA cannot be reached or trusted
+
+Every call Danbyte makes to a CA - the directory, the account, the order,
+the challenge answers, polling, finalize and the certificate download - turns
+a failure into one plain sentence, never a server error. **Register
+account** and **Order** answer it straight away; the background jobs
+(finalize, automatic issue, renewal, the site certificate) store the same
+sentence on the order, where the order's error shows it.
+
+| What went wrong | Answer | Message names |
+|---|---|---|
+| The CA's TLS certificate is not trusted | `502`, `code: acme_tls_untrusted` | the host, OpenSSL's reason, and the fix: the issuer's CA certificate field or the server's store - or, when a CA certificate is set, that it does not cover this CA |
+| The certificate is for a different name | `502`, `acme_tls_hostname` | the host in the directory URL |
+| The certificate has expired or is not valid yet | `502`, `acme_tls_expired` | the host; renew it on the CA or check the clocks |
+| Another TLS handshake failure | `502`, `acme_tls_handshake` | the host and the TLS reason |
+| The name does not resolve | `502`, `acme_dns` | the host |
+| Connection refused | `502`, `acme_refused` | host and port |
+| No answer within 30 seconds | `502`, `acme_timeout` | the host and which request |
+| The CA answered with an ACME error | `502`, `acme_ca_refused` | the CA's problem type and detail |
+| The CA answered HTTP 5xx, or something that is not ACME | `502`, `acme_ca_error` / `acme_not_acme` | the host and the HTTP status |
+| The directory URL is not an ACME directory | `400`, field error on `directory_url` | the URL and what it answered |
+| The stored CA certificate is no longer usable (expired) | `400`, field error on `ca_certificate` | which certificate and why |
+
+A `502` body is `{"detail": "...", "code": "..."}`: the CA's side failed,
+and the detail says what to change. A `400` names the issuer field to fix.
+Text from the CA (problem details) has control characters removed and is
+capped in length; it is shown as plain text.
+
+The directory URL is reached directly, not through the
+[outbound-request guard](../reference/settings.md#outbound-requests-ssrf-guard):
+an internal CA on a private address is the point of an issuer, and only a
+user with the `add` or `change` grant on issuers can set the URL - the
+same rule as the Vault secret store and Redfish.
 
 ### Publishing the challenge
 
@@ -512,6 +703,8 @@ fingerprint - and offers the ways to replace it:
   [renewal](#renewal) beat re-orders it and every renewal is installed the
   same way. A secret store must be on: the site's private key lives there
   between renewals, like every request's.
+  See [HTTP-01 and host names](#http-01-and-host-names) for what the
+  names need.
 - **Self-signed** - one click regenerates a pair for every name the site is
   reached as (what it serves now plus the public host), 825 days like the
   installer's; *Self-signed with other names* takes a list. *Renew
@@ -547,6 +740,44 @@ Private keys pass through the app in memory and into that one 0600 file;
 they are never stored on a row (the inventory refuses key material, above)
 and never returned by the API. From a shell, `manage.py site_certificate
 status|self-signed|upload|acme` drives the same flow.
+
+### HTTP-01 and host names
+
+The CA validates HTTP-01 by fetching
+`http://<name>/.well-known/acme-challenge/<token>` with the certificate's
+name as the `Host` header. Danbyte answers that path for **any** host name:
+a small middleware, first in the stack, serves it before Django checks the
+host against `ALLOWED_HOSTS`. So a name does **not** have to be in
+`ALLOWED_HOSTS` for its certificate to be issued - before 0.20 it did, and
+the CA got a `400` (the order then failed on that name).
+
+The exemption is exactly that path and nothing else:
+
+- `GET` or `HEAD` only (anything else is `405`);
+- a token of 22 to 128 base64url characters (`A-Z a-z 0-9 - _`), the
+  shape RFC 8555 gives tokens; any other shape is not exempt and gets the
+  normal host check;
+- the answer is the key authorization of a **pending** HTTP-01 challenge on
+  an open order, as `text/plain`, `no-store` - no session, no CSRF, no
+  login. An unknown, finished or malformed token is a `404`; nothing can be
+  listed.
+
+Every other path under a host that is not in `ALLOWED_HOSTS` is still
+refused with `400`, exactly as before. Danbyte never adds names to
+`ALLOWED_HOSTS` itself.
+
+What a name still needs:
+
+- **DNS** pointing at this server, and **port 80** reachable from the CA
+  (for Let's Encrypt, from the internet). The installer's nginx site is the
+  only site on port 80, so it receives every host name and hands the
+  challenge path to Danbyte; a hand-managed nginx needs a
+  `location /.well-known/acme-challenge/` that proxies to the app on the
+  server block that receives those names (for a name it has no
+  `server_name` for, that is the `default_server`).
+- **`ALLOWED_HOSTS`**, only so people can *open* the site under that name
+  once it has the certificate. The ACME dialog says when a name you typed
+  is not in `ALLOWED_HOSTS`; it does not stop the order.
 
 ## Certificate authorities and chains
 

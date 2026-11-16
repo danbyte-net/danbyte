@@ -77,7 +77,7 @@ one entry on its change log, listing the rails before and after.
 
 ### Sync from type
 
-**Sync from type**, in a cabinet's header, compares it with its type: the
+**More ▸ Sync from type**, in a cabinet's header, compares it with its type: the
 sizes that differ, the template rails it lacks (*add*), rails with a
 template's label that sit elsewhere or have another profile (*update*), and
 its own rails no template names (*extra*). Applying copies the sizes and adds

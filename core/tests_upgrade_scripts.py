@@ -80,8 +80,15 @@ case "$cmd" in
     for u; do
       case "$u" in
         --now) now=1 ;;
-        *) if [ "$cmd" = enable ]; then echo enabled >"$D/$u.enabled"; [ $now = 1 ] && echo active >"$D/$u.active"
-           else echo disabled >"$D/$u.enabled"; [ $now = 1 ] && echo inactive >"$D/$u.active"; fi ;;
+        *) if [ "$cmd" = enable ]; then
+             loaded "$u" || { echo "Failed to enable unit: Unit file $u does not exist." >&2; exit 1; }
+             echo enabled >"$D/$u.enabled"; [ $now = 1 ] && echo active >"$D/$u.active"
+           else
+             # As systemd does: a unit file that is a symlink to a file
+             # outside the unit path is "linked", and disable deletes it.
+             [ -L "$U/$u" ] && rm -f "$U/$u"
+             echo disabled >"$D/$u.enabled"; [ $now = 1 ] && echo inactive >"$D/$u.active"
+           fi ;;
       esac
     done ;;
   list-unit-files)
@@ -298,6 +305,9 @@ class Host:
             "DANBYTE_UPGRADE_HEALTH_WAIT": "4", "DANBYTE_UPGRADE_FRONTEND_WAIT": "4",
             "DANBYTE_UPGRADE_ONESHOT_WAIT": "2", "DANBYTE_UPGRADE_TRIGGER": "button",
             "DANBYTE_UPGRADE_CGROUP": str(self.root / "cgroup"),
+            # link-units' sandboxing drop-ins (#500): "off" only removes them,
+            # without the fake systemctl having to start a probe unit.
+            "DANBYTE_UNIT_HARDENING": "off",
             "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.test",
             "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@example.test",
         }
@@ -321,6 +331,8 @@ class Host:
         (dest / "app" / "a.py").write_text(f"VERSION = {version!r}\n")
         if v2:
             (dest / "app" / "new.py").write_text("NEW = 1\n")
+            # Releases from 0.20 pin and hash-check their dependencies (#451).
+            (dest / "requirements.lock").write_text("django==5.2 \\\n    --hash=sha256:" + "0" * 64 + "\n")
         else:
             (dest / "app" / "old.py").write_text("OLD = 1\n")
         (dest / "frontend").mkdir(exist_ok=True)
@@ -333,10 +345,12 @@ class Host:
             (dest / "services" / "danbyte-newtimer.timer").write_text("[Timer]\nOnCalendar=daily\n")
         (dest / "Makefile").write_text(makefile)
         (dest / "scripts" / "upgrade").mkdir(parents=True, exist_ok=True)
-        for name in ("danbyte-upgrade.sh", "danbyte-upgrade-bundle.sh"):
+        for name in ("danbyte-upgrade.sh", "danbyte-upgrade-bundle.sh", "unit-hardening.sh"):
             shutil.copy2(REPO / "scripts" / name, dest / "scripts" / name)
         for name in STAGE_FILES:
             shutil.copy2(REPO / "scripts" / "upgrade" / name, dest / "scripts" / "upgrade" / name)
+        (dest / "backups").mkdir(exist_ok=True)
+        shutil.copy2(REPO / "backups" / "pgswap.py", dest / "backups" / "pgswap.py")
         (dest / ".gitignore").write_text(textwrap.dedent("""\
             .venv/
             vendor/
@@ -539,6 +553,16 @@ class StageTestCase(SimpleTestCase):
         self.assertFalse((h.home / ".danbyte-upgrade" / "active").exists())
         self.assertFalse((h.units / "danbyte-upgrade-recover.service").exists())
         self.assertFalse((h.units / "danbyte-newtimer.timer").exists())
+        self.assertLinked(h)
+
+    def assertLinked(self, h: Host) -> None:
+        """Every unit the install linked is still a link to its file."""
+        units = [f"{u}.service" for u in PROD_UNITS]
+        for t in h.timers:
+            units += [f"{t}.service", f"{t}.timer"]
+        for unit in units:
+            self.assertTrue((h.units / unit).is_symlink(), f"{unit} is no longer linked")
+            self.assertEqual(os.readlink(h.units / unit), str(h.app / "services" / unit), unit)
 
 
 class BundleStageTests(StageTestCase):
@@ -686,6 +710,21 @@ class BundleStageTests(StageTestCase):
                 self.assertFalse((h.app / "app" / "new.py").exists())
                 self.assertTrue((h.app / "app" / "old.py").exists())
 
+    def test_a_rollback_puts_the_unit_drop_ins_back(self):
+        # #500: link-units rewrites the drop-in folders (here "off" removes
+        # Danbyte's link); the undo restores them exactly, the admin's too.
+        h = self.host()
+        web = h.home / ".config" / "systemd" / "user" / "danbyte-web.service.d"
+        web.mkdir(parents=True)
+        target = str(h.app / "services" / "hardening" / "service.conf")
+        (web / "10-hardening.conf").symlink_to(target)
+        (web / "50-local.conf").write_text("[Service]\nReadWritePaths=/srv/x\n")
+        r = h.upgrade(env={"DANBYTE_UPGRADE_TEST": "1", "DANBYTE_UPGRADE_FAULT": "swap"})
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("unit hardening: off", (h.app / ".upgrade.log").read_text())
+        self.assertEqual(os.readlink(web / "10-hardening.conf"), target)
+        self.assertEqual((web / "50-local.conf").read_text(), "[Service]\nReadWritePaths=/srv/x\n")
+
     def test_a_migration_that_rolled_back_needs_no_restore(self):
         h = self.host()
         r = h.upgrade(env={"FAKE_MIGRATE_RC": "3"})
@@ -767,6 +806,14 @@ class BundleStageTests(StageTestCase):
         self.assertIn("danbyte-admin upgrade recover", st["error"])
         for unit in PROD_UNITS:
             self.assertEqual(h.state(f"{unit}.service"), ("disabled", "inactive"), unit)
+        # Disabled, but still linked: systemd's disable deletes a linked
+        # unit's link, and the stage makes it again.
+        self.assertLinked(h)
+        # The retry restores with the target release's restore code.
+        recover = h.home / ".danbyte-upgrade" / "recover"
+        self.assertEqual((recover / "pgswap.py").read_text(),
+                         (REPO / "backups" / "pgswap.py").read_text())
+        self.assertTrue(h.called(rf"^py dbtool restore {re.escape(str(h.home))}/.danbyte-upgrade/"))
         # The journal and the recovery stay for the operator.
         self.assertTrue((h.home / ".danbyte-upgrade" / "active").exists())
         self.assertFalse(h.recover().returncode)          # the timer waits for a person
@@ -775,8 +822,55 @@ class BundleStageTests(StageTestCase):
         r = h.recover("--retry")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertEqual(h.db(), "schema=v1")
-        self.assertEqual(h.state("danbyte-web.service")[0], "enabled")
+        for unit in PROD_UNITS:
+            self.assertEqual(h.state(f"{unit}.service"), ("enabled", "active"), unit)
+        self.assertEqual(h.state("danbyte-dispatch.timer"), ("enabled", "active"))
+        self.assertEqual(h.state("danbyte-digest.timer"), ("disabled", "inactive"))
+        self.assertLinked(h)
         self.assertEqual(h.status()["outcome"]["code"], "restored")
+        self.assertFalse((h.home / ".danbyte-upgrade" / "active").exists())
+
+    def test_recovery_links_again_what_an_older_stages_disable_deleted(self):
+        # The journal of a stage before the fix: its disable took the links.
+        h = self.host()
+        h.upgrade(env={"FAKE_VERIFY_RC": "1", "FAKE_RESTORE_FAIL": "1"})
+        for unit in [f"{u}.service" for u in PROD_UNITS] + ["danbyte-dispatch.timer"]:
+            (h.units / unit).unlink()
+        r = h.recover("--retry")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertLinked(h)
+        for unit in PROD_UNITS:
+            self.assertEqual(h.state(f"{unit}.service"), ("enabled", "active"), unit)
+        self.assertEqual(h.state("danbyte-dispatch.timer"), ("enabled", "active"))
+        self.assertIn("linked danbyte-web.service again", (h.app / ".upgrade.log").read_text())
+
+    def test_a_recovery_that_cannot_start_the_previous_release_says_so(self):
+        h = self.host()
+        h.upgrade(env={"FAKE_VERIFY_RC": "1", "FAKE_RESTORE_FAIL": "1"})
+        # A unit whose file is gone from the tree cannot be linked again.
+        (h.units / "danbyte-ws.service").unlink()
+        (h.app / "services" / "danbyte-ws.service").unlink()
+        r = h.recover("--retry")
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        st = h.status()
+        self.assertEqual((st["outcome"]["database"], st["outcome"]["services"]),
+                         ("restored", "stopped"), st)
+        self.assertIn("NOT running", st["error"])
+        self.assertIn("danbyte-ws.service", st["error"])
+        self.assertIn("make install-prod-services", st["error"])
+        self.assertIn("systemctl --user enable --now danbyte-web.service", st["error"])
+        self.assertIn("NOT running", r.stderr)
+        self.assertNotIn("started the previous release", st["error"])
+        # Left open: the next retry restores nothing again, it only starts.
+        self.assertTrue((h.home / ".danbyte-upgrade" / "active").exists())
+        restores = len([c for c in h.calls_list() if c.startswith("py dbtool restore ")])
+        shutil.copy2(REPO / "services" / "danbyte-ws.service", h.app / "services" / "danbyte-ws.service")
+        r = h.recover("--retry")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(len([c for c in h.calls_list() if c.startswith("py dbtool restore ")]),
+                         restores)
+        for unit in PROD_UNITS:
+            self.assertEqual(h.state(f"{unit}.service"), ("enabled", "active"), unit)
         self.assertFalse((h.home / ".danbyte-upgrade" / "active").exists())
 
     def test_a_success_removes_an_earlier_failed_runs_folder(self):
@@ -1019,6 +1113,66 @@ class BundleStageTests(StageTestCase):
         self.assertRolledBack(h, restored_db=False)
 
 
+class AdminUnitSwitchTests(StageTestCase):
+    """danbyte-admin's "e" (on/off) on linked units, and what an upgrade
+    makes of the choice."""
+
+    def switch(self, h: Host, unit: str, on: bool):
+        from core.tests_admin_upgrade import ADMIN
+
+        env = {k: v for k, v in os.environ.items() if k != "XDG_CONFIG_HOME"}
+        with mock.patch.dict(os.environ, {**env, **h.env}, clear=True):
+            return ADMIN.unit_switch(ADMIN.Ctx(app=h.app, shape="systemd"), unit, on)
+
+    def units_off(self, h: Host) -> list[str]:
+        p = h.home / ".config" / "danbyte" / "units-off"
+        return p.read_text().split() if p.exists() else []
+
+    def test_off_keeps_the_link_and_on_brings_it_back(self):
+        h = self.host()
+        r = self.switch(h, "danbyte-dispatch.timer", False)
+        self.assertTrue(r.ok, r.err)
+        self.assertEqual(h.state("danbyte-dispatch.timer"), ("disabled", "inactive"))
+        self.assertLinked(h)
+        self.assertEqual(self.units_off(h), ["danbyte-dispatch.timer"])
+        r = self.switch(h, "danbyte-dispatch.timer", True)
+        self.assertTrue(r.ok, r.err)
+        self.assertEqual(h.state("danbyte-dispatch.timer"), ("enabled", "active"))
+        self.assertEqual(self.units_off(h), [])
+
+    def test_on_links_a_unit_an_older_console_unlinked(self):
+        h = self.host()
+        (h.units / "danbyte-docs.service").unlink()
+        h.set_state("danbyte-docs.service", enabled=False, active=False)
+        r = self.switch(h, "danbyte-docs.service", True)
+        self.assertTrue(r.ok, r.err)
+        self.assertEqual(h.state("danbyte-docs.service"), ("enabled", "active"))
+        self.assertLinked(h)
+
+    def test_a_unit_switched_off_stays_off_through_an_upgrade(self):
+        h = self.host()
+        for unit in ("danbyte-dispatch.timer", "danbyte-docs.service"):
+            self.assertTrue(self.switch(h, unit, False).ok)
+        r = h.upgrade()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        for unit in ("danbyte-dispatch.timer", "danbyte-docs.service"):
+            self.assertEqual(h.state(unit), ("disabled", "inactive"), unit)
+            self.assertFalse(h.called(rf"^systemctl --user (enable|start) .*{re.escape(unit)}"),
+                             unit)
+        self.assertLinked(h)
+
+    def test_an_upgrade_does_not_enable_a_switched_off_unit_it_links_again(self):
+        h = self.host()
+        self.assertTrue(self.switch(h, "danbyte-dispatch.timer", False).ok)
+        (h.units / "danbyte-dispatch.timer").unlink()  # lost by hand, or by an older console
+        r = h.upgrade()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(h.state("danbyte-dispatch.timer"), ("disabled", "inactive"))
+        self.assertLinked(h)
+        # A release's new timer is still switched on.
+        self.assertEqual(h.state("danbyte-newtimer.timer"), ("enabled", "active"))
+
+
 class GitStageTests(StageTestCase):
     kind = "git"
 
@@ -1033,9 +1187,9 @@ class GitStageTests(StageTestCase):
             r"^py manage.py backup_now",
             r"^npm ci",
             r"^npm run build",
-            r"^uv pip install -q --python .*/depcheck/bin/python",
+            r"^uv pip install -q --python .*/depcheck/bin/python --require-hashes -r .*/requirements\.lock$",
             r"^systemctl --user stop .*danbyte-web\.service",
-            r"^uv pip install -q --python .*/danbyte/\.venv/bin/python",
+            r"^uv pip install -q --python .*/danbyte/\.venv/bin/python --require-hashes -r .*/requirements\.lock$",
             r"^py manage.py upgrade_migrate$",
             r"^systemctl --user start .*danbyte-web\.service",
         )

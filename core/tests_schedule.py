@@ -98,6 +98,23 @@ class ScheduleParityTests(SimpleTestCase):
 
         self.assertIn("update-check", {t["name"] for t in SCHEDULED_TASKS})
 
+    def test_the_vulnerability_refresh_is_scheduled_and_listed(self):
+        """Server-mode vulnerability fetch (#451): a daily unit, run in
+        containers too, with a Jobs page row named as ``vuln_refresh``
+        records its runs."""
+        from jobs.views import SCHEDULED_TASKS
+
+        task = next(t for t in SCHEDULE if t.unit == "danbyte-vuln-refresh")
+        self.assertEqual(task.commands, ("vuln_refresh", "vuln_maintenance"))
+        self.assertEqual(task.at, ("05:50",))
+        self.assertTrue(task.in_container)
+        self.assertIn("vuln-refresh", {t["name"] for t in SCHEDULED_TASKS})
+        # Exception expiry and the match purge (#451) ride the same unit,
+        # with their own Jobs row, and run even when the fetch fails.
+        self.assertIn("vuln-maintenance", {t["name"] for t in SCHEDULED_TASKS})
+        unit = (SERVICES / "danbyte-vuln-refresh.service").read_text()
+        self.assertIn("ExecStart=-%h/danbyte/.venv/bin/python manage.py vuln_refresh", unit)
+
     def test_containers_skip_only_the_upgrade_beat(self):
         """A container upgrades by replacing its image, so it must not run the
         upgrader - but it has to run everything else the timers do."""

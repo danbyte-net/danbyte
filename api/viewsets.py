@@ -41,6 +41,7 @@ from routing.models import RoutingKeychain
 from .catalog_slug import check_name_and_slug
 from .bulk_delete import MAX_IDS, SafeBulkDeleteMixin, bulk_ids
 from .bulk_edit import BulkEditMixin, BulkEditSpec
+from .text_versions import TemplateCheckMixin, TextVersionsMixin
 # Re-exported: these lived here before api.bulk_update.
 from .bulk_update import (  # noqa: F401
     BulkUpdateMixin,
@@ -53,6 +54,7 @@ from .list_table import TableListMixin
 from .filters import apply_tag_filter
 from .floor_plan_from_map import FromMapRequestSerializer
 from .natural import natural, natural_key
+from .prefix_space_views import PrefixSpaceMixin
 from .pagination import StandardResultsSetPagination
 from .visible_counts import (
     path_count_expr,
@@ -317,6 +319,7 @@ from .serializers import (
     VRFPickerSerializer,
     VRFSerializer,
 )
+from .dependency_actions import DeviceDependencyActionsMixin
 from .visible_ips import assigned_ips_prefetch, forget_visible, outside_ip_prefetch
 from .vlan_bulk import check_vlan_moves, resolve_fenced, resolve_group
 
@@ -456,6 +459,24 @@ def _apply_lifecycle_filter(qs, value: str):
     return qs
 
 
+def _within_prefix(request, pk):
+    """The prefix ``?within=`` names, when the reader may view it in the
+    active tenant and its CIDR parses; else None."""
+    from auth_api import rbac
+
+    tenant = _get_active_tenant(request)
+    if tenant is None:
+        return None
+    try:
+        qs = Prefix.objects.filter(tenant=tenant, pk=pk)
+        holder = rbac.restrict_queryset(qs, request.user, tenant, "prefix", "view").first()
+    except (ValueError, DjangoValidationError):
+        return None
+    if holder is None or holder.network is None:
+        return None
+    return holder
+
+
 def _apply_custom_field_scope(request, qs, model_slug: str):
     field_id = request.query_params.get("custom_field") or request.query_params.get("cf")
     if not field_id:
@@ -517,7 +538,7 @@ SOFTWARE_VERSION_PARAMETERS = [
         name="software_version_source",
         type=OpenApiTypes.STR,
         location=OpenApiParameter.QUERY,
-        enum=["manual", "snmp", "virtualization", "oxidized", "import", "none"],
+        enum=["manual", "snmp", "virtualization", "oxidized", "discovery", "import", "none"],
         description="Where the software version came from; `none` for no source.",
     ),
 ]
@@ -1139,7 +1160,7 @@ def _tag_params_filter(qs, params):
     return qs
 
 
-class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
+class PrefixViewSet(PrefixSpaceMixin, FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
     # Mirrors what this viewset's own bulk_update action already accepts, so
     # api.editable_fields can describe prefixes without a second list. The
     # bespoke action stays the enforcer; a test asserts the two agree.
@@ -1155,7 +1176,10 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
         .all()
     )
     serializer_class = PrefixSerializer
-    rbac_action_map = {"bulk_delete": "delete", **object_report.RBAC_ACTIONS}
+    rbac_action_map = {
+        "bulk_delete": "delete", **object_report.RBAC_ACTIONS,
+        **PrefixSpaceMixin.space_rbac_actions, "tree": "view",
+    }
     # Clone carries the routing/classification context; the CIDR is the unique
     # identifier and is left blank for the user to fill.
     clone_fields = (
@@ -1171,14 +1195,43 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
         reparent_ips_out_of(instance)
         instance.delete()
 
+    @action(detail=False, methods=["get"], url_path="tree")
+    def tree(self, request):
+        """One level of the prefix tree, a search in it, or the path to one
+        prefix (api.prefix_tree). Built over the prefixes the reader may
+        view: the tenant/site/RBAC-scoped queryset without the list's
+        per-row annotations."""
+        from . import prefix_tree
+
+        qs = TenantScopedViewSet.get_queryset(self)
+        p = request.query_params
+        if p.get("reveal"):
+            return Response(prefix_tree.reveal(qs, p))
+        if p.get("q") is not None and p.get("q").strip():
+            return Response(prefix_tree.search(qs, p))
+        return Response(prefix_tree.children(qs, p))
+
     @action(detail=True, methods=["get"], url_path="delete-impact")
     def delete_impact(self, request, pk=None):
         """What deleting this prefix does to the addresses on it: how many
         move to a containing prefix (and which one takes most), how many have
         no container and are removed."""
+        from auth_api import rbac
+
         from .views import reparent_ips_out_of
 
-        return Response(reparent_ips_out_of(self.get_object(), dry_run=True))
+        prefix = self.get_object()
+        out = reparent_ips_out_of(prefix, dry_run=True)
+        # The landing prefix is named only when the caller may view it: the
+        # counts are of this prefix's own addresses, its container may be
+        # another site's (#504).
+        if out["parent"] and not self.request.user.is_superuser:
+            landing = Prefix.objects.filter(
+                tenant_id=prefix.tenant_id, vrf_id=prefix.vrf_id, cidr=out["parent"])
+            if not rbac.restrict_queryset(landing, self.request.user, self._tenant_or_403(),
+                                          "prefix", "view").exists():
+                out["parent"] = None
+        return Response(out)
 
     @action(detail=True, methods=["post"], url_path="renumber")
     def renumber(self, request, pk=None):
@@ -1198,7 +1251,8 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
         tenant = self._tenant_or_403()
         try:
             if dry_run:
-                plan = rn.build_plan(prefix, body.get("new_prefix"))
+                plan = rn.build_plan(prefix, body.get("new_prefix"),
+                                     viewer=rn.Viewer(request.user, tenant))
                 blocked = rn.blockers(plan, request.user, tenant)
                 if blocked:
                     raise rn.RenumberError(
@@ -1209,7 +1263,8 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
             if exc.status == 403:
                 raise PermissionDenied(exc.message) from None
             raise ValidationError({exc.field_name: [exc.message]}) from None
-        return Response(rn.describe(plan, dry_run=dry_run, applied=not dry_run))
+        return Response(rn.describe(plan, dry_run=dry_run, applied=not dry_run,
+                                    user=request.user, tenant=tenant))
 
     @object_report.describe_schema(object_report.PREFIX)
     @object_report.report_schema(object_report.PREFIX)
@@ -1236,6 +1291,56 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
             url_path=r"report/job/(?P<token>[A-Za-z0-9_-]+)/file")
     def report_job_file(self, request, token=None):
         return object_report.job_file(request, object_report.PREFIX, token)
+
+    def create(self, request, *args, **kwargs):
+        """A manual create takes the allocation lock (lock_holders) on the
+        prefixes holding the new CIDR before it is validated, so it cannot
+        race allocate, plan or another create into the same block."""
+        import ipaddress
+        import uuid
+
+        from .prefix_space_views import lock_holders
+
+        body = request.data if isinstance(request.data, dict) else {}
+        try:
+            net = ipaddress.ip_network(str(body.get("cidr") or "").strip(), strict=False)
+            raw_vrf = body.get("vrf_id")
+            vrf_id = uuid.UUID(str(raw_vrf)) if raw_vrf else None
+        except (TypeError, ValueError):
+            net = None
+        tenant = _get_active_tenant(request)
+        if net is None or tenant is None:
+            return super().create(request, *args, **kwargs)
+        with transaction.atomic():
+            lock_holders(tenant.pk, vrf_id, net)
+            return super().create(request, *args, **kwargs)
+
+    def update(self, request, *args, **kwargs):
+        """A PUT or PATCH that moves the prefix (a new CIDR or VRF) takes the
+        allocation lock on the prefixes holding where it lands, as a create
+        does, before it is validated. Any other edit takes none."""
+        import uuid
+
+        from .prefix_space_views import lock_holders, parse_cidr
+
+        body = request.data if isinstance(request.data, dict) else {}
+        if "cidr" not in body and "vrf_id" not in body:
+            return super().update(request, *args, **kwargs)
+        current = self.get_object()
+        net = parse_cidr(body["cidr"]) if "cidr" in body else parse_cidr(current.cidr)
+        try:
+            raw_vrf = body.get("vrf_id") if "vrf_id" in body else current.vrf_id
+            vrf_id = uuid.UUID(str(raw_vrf)) if raw_vrf else None
+        except (TypeError, ValueError):
+            net = None
+        moved = net is not None and (
+            str(net) != str(parse_cidr(current.cidr)) or vrf_id != current.vrf_id
+        )
+        if not moved:
+            return super().update(request, *args, **kwargs)
+        with transaction.atomic():
+            lock_holders(current.tenant_id, vrf_id, net)
+            return super().update(request, *args, **kwargs)
 
     def perform_create(self, serializer):
         prefix = serializer.save(
@@ -1381,6 +1486,9 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
             # live there (#152).
             if key == "site" and self.request.query_params.get("include_shared"):
                 qs = qs.filter(Q(site_id=v) | Q(site__isnull=True))
+            elif key == "vrf" and v == "global":
+                # The global table (no VRF) - the prefix tree's root.
+                qs = qs.filter(vrf__isnull=True)
             else:
                 qs = qs.filter(**{field: v})
         qs = _tag_params_filter(qs, self.request.query_params)
@@ -1404,6 +1512,25 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
                     output_field=BooleanField(),
                 )
             ).filter(_inside=True)
+        # `within=<prefix id>`: that prefix and every prefix inside it, in its
+        # VRF - the prefix tree's selection. The prefix must be one the
+        # reader may view; any other id answers an empty list. List-level
+        # only: the space map's own ``within`` is its zoom window, and a detail
+        # lookup must not be narrowed by it.
+        within = None if getattr(self, "detail", None) else self.request.query_params.get("within")
+        if within:
+            holder = _within_prefix(self.request, within)
+            if holder is None:
+                return qs.none()
+            from django.db.models import BooleanField
+            from django.db.models.expressions import RawSQL
+
+            qs = qs.filter(
+                Q(vrf__isnull=True) if holder.vrf_id is None else Q(vrf_id=holder.vrf_id)
+            ).annotate(
+                _within=RawSQL("cidr::inet <<= %s::inet", (str(holder.network),),
+                               output_field=BooleanField())
+            ).filter(_within=True)
         qs = _apply_custom_field_scope(self.request, qs, "prefix")
         # Numeric address order, not the lexicographic CharField sort (which
         # puts 10.0.0.10 before 10.0.0.2). Postgres `inet` sorts by address
@@ -1423,9 +1550,6 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
         ``details=0`` skips the details (the map tab only wants the rows).
         """
         import ipaddress
-
-        from django.db.models import BooleanField
-        from django.db.models.expressions import RawSQL
 
         def _int_param(name):
             try:
@@ -1487,40 +1611,48 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
         # view - the prefix its free blocks belong to.
         from auth_api import rbac
 
+        from . import prefix_space as fs
+
         child_nets = []
+        hidden_nets = set()
         cidr_to_pk: dict[str, str] = {}
         context = None
         zoomed = map_net != net
-        # Only sibling prefixes the caller may view feed the space map - a
-        # site-scoped user must not learn another site's child prefixes.
-        # Postgres narrows them to the ones inside this prefix.
-        for sib in (
-            rbac.restrict_queryset(
-                Prefix.objects.filter(tenant=prefix.tenant, vrf=prefix.vrf)
-                .exclude(pk=prefix.pk),
-                request.user, prefix.tenant, "prefix", "view",
-            )
-            .annotate(_inside=RawSQL(
-                "cidr::inet <<= %s::inet", (str(net),),
-                output_field=BooleanField(),
-            ))
-            .filter(_inside=True)
-            .only("id", "cidr")
-        ):
+        # Every prefix inside this one takes space, as in the list's free
+        # rows (prefix_space.prefixes_inside), so a block drawn free is
+        # really free. Only the ones the caller may view are named, linked
+        # or used as the zoom's context: a site-scoped user must not learn
+        # another site's child prefixes.
+        inside = fs.prefixes_inside(prefix.tenant_id, {prefix.vrf_id}, [str(net)])
+        visible = set(
+            rbac.restrict_queryset(inside, request.user, prefix.tenant, "prefix", "view")
+            .values_list("pk", flat=True)
+        )
+        for sib in inside.only("id", "cidr"):
             sn = sib.network
             if sn is None:
                 continue
+            seen = sib.pk in visible
             try:
-                if sn.subnet_of(map_net):
+                if not seen and map_net.subnet_of(sn):
+                    # A hidden prefix holding (or being) the zoomed block
+                    # takes all of it: drawn as its two halves, both taken,
+                    # unnamed.
+                    for half in map_net.subnets(prefixlen_diff=1):
+                        child_nets.append(half)
+                        hidden_nets.add(half)
+                elif sn.subnet_of(map_net):
                     child_nets.append(sn)
-                    cidr_to_pk[str(sn)] = str(sib.id)
-                if zoomed and map_net.subnet_of(sn) and (
+                    if seen:
+                        cidr_to_pk[str(sn)] = str(sib.id)
+                    else:
+                        hidden_nets.add(sn)
+                if seen and zoomed and map_net.subnet_of(sn) and (
                     context is None or sn.prefixlen > context[0]
                 ):
                     context = (sn.prefixlen, str(sib.id), str(sn))
             except (TypeError, ValueError):
                 continue
-
         # The depth preference trims the overview. Once a zoom has gone past
         # it, it has nothing left to trim, so the zoomed view draws its full
         # window instead of a single row per click.
@@ -1529,9 +1661,11 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
             if cap is not None and map_net.prefixlen >= cap:
                 max_v4 = max_v6 = None
 
+        hidden_nets -= {n for n in child_nets if str(n) in cidr_to_pk}
         rows = _build_space_map(
             map_net, child_nets=child_nets, tenant=prefix.tenant,
             vrf=prefix.vrf, max_v4=max_v4, max_v6=max_v6, deeper=deeper,
+            hidden=hidden_nets,
         )
         # Stamp prefix_id onto every "used" cell so the React map can link
         # the right cell to the right detail page.
@@ -1791,6 +1925,13 @@ class PrefixViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
         qs = self.get_queryset().filter(pk__in=ids)
 
         with transaction.atomic():
+            if "vrf_id" in updates:
+                # A VRF move lands each prefix in the new VRF: the allocation
+                # lock on what holds them there first, as a single move does.
+                from .prefix_space_views import lock_holders
+
+                lock_holders(getattr(tenant, "pk", None), updates["vrf_id"],
+                             *qs.values_list("cidr", flat=True))
             _rows = list(qs)
             updated_count = qs.update(**updates) if updates else qs.count()
             if "vrf_id" in updates:
@@ -1901,7 +2042,29 @@ class IPAddressViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet)
         if prefix := p.get("prefix"):
             qs = qs.filter(prefix_id=prefix)
         if vrf := p.get("vrf"):
-            qs = qs.filter(prefix__vrf_id=vrf)
+            if vrf == "global":
+                qs = qs.filter(prefix__vrf__isnull=True)
+            else:
+                qs = qs.filter(prefix__vrf_id=vrf)
+        if not getattr(self, "detail", None) and (within := p.get("within")):
+            # The prefix tree's selection: addresses on that prefix or on any
+            # prefix inside it (hidden ones too - the addresses are still
+            # filtered by their own visibility above). List-level only.
+            holder = _within_prefix(self.request, within)
+            if holder is None:
+                return qs.none()
+            from django.db.models import BooleanField
+            from django.db.models.expressions import RawSQL
+
+            inside = Prefix.objects.filter(
+                tenant_id=holder.tenant_id,
+            ).filter(
+                Q(vrf__isnull=True) if holder.vrf_id is None else Q(vrf_id=holder.vrf_id)
+            ).annotate(
+                _within=RawSQL("cidr::inet <<= %s::inet", (str(holder.network),),
+                               output_field=BooleanField())
+            ).filter(_within=True).values("pk")
+            qs = qs.filter(prefix_id__in=inside)
         if site := p.get("site"):
             # With include_shared the site-less shared space rides along -
             # the transit networks an IP picker must still offer (#152).
@@ -2842,6 +3005,10 @@ class TenantViewSet(viewsets.ModelViewSet):
         # pre-existing tenants, so seed them here too (needed for the gateway
         # role + site gateway-policy autospawn).
         seed_builtin_roles(tenant)
+        # The starter dependency media (#450), editable like the roles.
+        from .dependency_media_seeds import seed_builtin_media
+
+        seed_builtin_media(tenant)
         # Editable Connect-protocol catalog (SSH/Telnet/RDP/HTTP-S) so the
         # device Connect menu works out of the box for a new tenant.
         from monitoring.connect_protocol_seeds import seed_builtin_connect_protocols
@@ -3982,7 +4149,7 @@ def _device_rows(*, one: bool = False, counts: bool = False):
 )
 class DeviceViewSet(
     TableListMixin, PrtgCleanupDeleteMixin, FieldWriteAllowList, CloneableMixin,
-    ImageAttachmentMixin, TenantScopedViewSet,
+    ImageAttachmentMixin, DeviceDependencyActionsMixin, TenantScopedViewSet,
 ):
     queryset = _device_rows()
     detail_queryset = _device_rows(one=True, counts=True)
@@ -4800,6 +4967,19 @@ class DeviceViewSet(
                 v = self.request.query_params.get(key)
                 if v:
                     qs = qs.filter(**{field: v})
+            # ?cluster=<id>: the cluster's hosts (the cluster page, #515) -
+            # the devices whose cluster it is, plus the hosts its VMs run on.
+            # A hypervisor sync links a VM to an existing host Device by node
+            # name without touching that Device's cluster, so the FK alone
+            # would miss hosts the operator modelled before the first sync.
+            cluster = _uuid_param(self.request.query_params, "cluster")
+            if cluster:
+                qs = qs.filter(
+                    Q(cluster_id=cluster)
+                    | Q(id__in=VirtualMachine.objects.filter(
+                        cluster_id=cluster, device__isnull=False,
+                    ).values("device_id"))
+                )
             # ?rack=<id>, or comma-separated ids: the elevations wall reads
             # every rack's devices in one request, not one per rack (#431).
             racks = _uuid_list_param(self.request.query_params, "rack", limit=1000)
@@ -4853,6 +5033,15 @@ class DeviceViewSet(
             if tag_slugs:
                 qs = qs.distinct()
             qs = _apply_custom_field_scope(self.request, qs, "device")
+            # Vulnerabilities (#451): ?vuln_priority= / ?vuln_kev= /
+            # ?cve_severity=, and the table's column.
+            from vulnerabilities import host_columns
+
+            qs = host_columns.apply_filters(qs, self.request, "device")
+            if self.is_table_view():
+                qs = host_columns.annotate(qs, self.request, "device")
+            if self.is_table_view() or self.action == "retrieve":
+                qs = host_columns.annotate_summary(qs, self.request, "device")
         return qs
 
     def _cooling_filters(self, qs):
@@ -5799,6 +5988,15 @@ class CableViewSet(TableListMixin, TenantScopedViewSet):
             vnet = self.request.query_params.get("pve_vnet")
             if vnet is not None and vnet != "":
                 qs = qs.filter(pve_vnet=vnet.strip())
+            # ?fiber=1: the fibre cables only (an smf*/mmf* type), the
+            # Fibre cables page.
+            if self.request.query_params.get("fiber") in ("1", "true"):
+                from .fiber_colors import _FIBER_PREFIXES
+
+                fibre = Q()
+                for prefix in _FIBER_PREFIXES:
+                    fibre |= Q(type__startswith=prefix)
+                qs = qs.filter(fibre)
         return qs.distinct()
 
     def _assert_write_in_site_scope(self, response, action):
@@ -7487,6 +7685,14 @@ class VirtualMachineViewSet(
             qs = software_target.apply_filter(qs, self.request)
             # ?software_version= / ?software_version_source= (#451).
             qs = software_versions.apply_list_filters(qs, self.request)
+            # Vulnerabilities (#451), as on the device list.
+            from vulnerabilities import host_columns
+
+            qs = host_columns.apply_filters(qs, self.request, "virtual_machine")
+            if self.is_table_view():
+                qs = host_columns.annotate(qs, self.request, "virtual_machine")
+            if self.is_table_view() or self.action == "retrieve":
+                qs = host_columns.annotate_summary(qs, self.request, "virtual_machine")
         return qs
 
 
@@ -8976,12 +9182,6 @@ class SecretPSKViewSetMixin:
             super().perform_update(serializer)
             self._apply_psk(serializer.instance, value)
 
-    def perform_destroy(self, instance):
-        # Take the key with the record: a profile nobody documents any more
-        # has no business leaving its key in the store.
-        instance.clear_psk()
-        super().perform_destroy(instance)
-
     @action(detail=True, methods=["post"], url_path="reveal-psk")
     def reveal_psk(self, request, pk=None):
         """Return the PSK. Requires the ``reveal`` verb (type and row gates),
@@ -10012,9 +10212,8 @@ class WirelessLANViewSet(SafeBulkDeleteMixin, SecretPSKViewSetMixin, TenantScope
         return qs
 
     def bulk_destroy(self, rows):
-        # As perform_destroy: each key leaves the secret store with its record.
-        for obj in rows:
-            obj.clear_psk()
+        # Each key leaves the secret store with its record (post_delete,
+        # monitoring.secret_refs).
         self.delete_together(rows)
 
 
@@ -10916,12 +11115,50 @@ class ConfigBundleViewSet(BulkEditMixin, TenantScopedViewSet):
         return qs.distinct()
 
 
-class ExportTemplateViewSet(BulkEditMixin, TenantScopedViewSet):
+class ExportTemplateViewSet(
+    TextVersionsMixin, TemplateCheckMixin, BulkEditMixin, TenantScopedViewSet
+):
     queryset = ExportTemplate.objects.all().order_by(NATURAL_NAME)
     serializer_class = ExportTemplateSerializer
     pagination_class = StandardPagination
+    versions_field = "template_code"
+    check_field = "template_code"
+    rbac_action_map = {
+        **BulkEditMixin.rbac_action_map, "validate_template": "view", "lint": "view",
+    }
     # The code, type and file name belong to one template: not bulk edits.
     bulk_edit = BulkEditSpec(fields=("as_attachment", "description"), tags=False)
+
+    def check_environment(self):
+        from .export_templates import _env
+
+        return _env()
+
+    @extend_schema(request=dict, responses={200: dict})
+    @action(detail=True, methods=["post"])
+    def lint(self, request, pk=None):
+        """The CLI check on a rendered ``output`` (#465): warnings for
+        top-level commands the platform's vocabulary does not know. Reads
+        only configs of this tenant the caller may view; never blocks."""
+        from .cli_lint import lint_render
+        from .text_versions import CHECK_MAX_CHARS, check_rate_limited
+        from .views import _get_active_tenant
+
+        tmpl = self.get_object()
+        data = request.data if hasattr(request.data, "get") else {}
+        output = data.get("output", "")
+        if not isinstance(output, str):
+            return Response({"output": ["A string."]}, status=drf_status.HTTP_400_BAD_REQUEST)
+        if len(output) > CHECK_MAX_CHARS:
+            return Response(
+                {"output": ["Too long to check."]}, status=drf_status.HTTP_400_BAD_REQUEST
+            )
+        if check_rate_limited(request.user, "template-lint"):
+            return Response(
+                {"detail": "Too many checks. Try again in a minute."},
+                status=drf_status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+        return Response(lint_render(tmpl, _get_active_tenant(request), request.user, output))
 
     def bulk_notes(self, rows):
         """A template in a config bundle leaves it, as its single delete does:
@@ -11042,7 +11279,9 @@ class ExportTemplateViewSet(BulkEditMixin, TenantScopedViewSet):
         return resp
 
 
-class LabelTemplateViewSet(BulkEditMixin, TenantScopedViewSet):
+class LabelTemplateViewSet(
+    TextVersionsMixin, TemplateCheckMixin, BulkEditMixin, TenantScopedViewSet
+):
     """Printable per-object label templates (Jinja2 HTML + QR, sized in mm).
 
     CRUD, plus ``fields`` (token reference for the editor), ``preview`` (render an
@@ -11056,6 +11295,15 @@ class LabelTemplateViewSet(BulkEditMixin, TenantScopedViewSet):
     pagination_class = StandardPagination
     # Size, markup and the default flag belong to one template: not bulk edits.
     bulk_edit = BulkEditSpec(fields=("qr_enabled", "description"), tags=False)
+    versions_field = "template_html"
+    check_field = "template_html"
+    rbac_action_map = {**BulkEditMixin.rbac_action_map, "validate_template": "view"}
+
+    def check_environment(self):
+        # The environment LabelTemplateSerializer checks a body with.
+        from jinja2.sandbox import SandboxedEnvironment
+
+        return SandboxedEnvironment(autoescape=True)
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -11674,12 +11922,19 @@ TILE_RELATED = (
     "floor_plan__stack", "tile_type", "role_type", "rack__room", "rack__role",
     "cabinet__room", "cabinet__role", "device__room", "device__role",
     "device__device_type", "power_panel", "power_feed", "cooling_source",
-    "linked_floor_plan",
+    "linked_floor_plan", "rack__rack_type", "cabinet__cabinet_type",
+    "device__status", "rack__status", "cabinet__status",
 )
+#: The linked object's tags (the plan's filter reads them).
+TILE_PREFETCH = ("device__tags", "rack__tags", "cabinet__tags")
 
 
 def _plan_tiles(plan):
-    return plan.tiles.select_related(*TILE_RELATED).order_by("y", "x", "id")
+    return (
+        plan.tiles.select_related(*TILE_RELATED)
+        .prefetch_related(*TILE_PREFETCH)
+        .order_by("y", "x", "id")
+    )
 
 
 def _plan_areas(plan):
@@ -11708,7 +11963,7 @@ def plan_contents(request, tenant, src, crop=None, view=None) -> dict:
 
     rows = {
         "tiles": (visible(
-            src.tiles.select_related(*TILE_RELATED).order_by("y", "x", "id"),
+            _plan_tiles(src),
             "floorplantile",
         ), FloorPlanTileSerializer),
         "trays": (visible(
@@ -14728,7 +14983,7 @@ class FloorPlanViewSet(TenantScopedViewSet):
                 )
                 ser.is_valid(raise_exception=True)
                 ser.save(floor_plan=plan)
-        tiles = plan.tiles.select_related(*TILE_RELATED).order_by("y", "x")
+        tiles = _plan_tiles(plan)
         return Response(
             FloorPlanTileSerializer(tiles, many=True, context={"request": request}).data
         )
@@ -15971,7 +16226,10 @@ class FloorPlanTileViewSet(_ViaViewMixin, _VersionCheckMixin, TenantScopedViewSe
     themselves) - same shape as ModuleInterfaceTemplateViewSet."""
 
     snapshot_kind = "tiles"
-    queryset = FloorPlanTile.objects.select_related(*TILE_RELATED).order_by("y", "x")
+    queryset = (
+        FloorPlanTile.objects.select_related(*TILE_RELATED)
+        .prefetch_related(*TILE_PREFETCH).order_by("y", "x")
+    )
     serializer_class = FloorPlanTileSerializer
     pagination_class = StandardPagination
     tenant_field = None

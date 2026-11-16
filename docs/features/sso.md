@@ -211,7 +211,8 @@ LDAP, so AD accounts sign in via Keycloak:
 - **MFA is the identity provider's job.** An SSO sign-in doesn't ask for
   Danbyte's own second factor, even when the account has an authenticator or
   requires two-factor - enforce MFA at the IdP.
-- The OIDC flow uses `state` + `nonce` and validates the ID token against the
+- The OIDC flow uses `state`, `nonce` and PKCE with S256 (RFC 7636), so an
+  IdP client that requires PKCE works, and validates the ID token against the
   provider's JWKS (issuer, audience, `azp` when multi-audience, nonce, expiry).
 - **SAML is SP-initiated and replay-safe:** every login is started from Danbyte,
   and each response must carry an `InResponseTo` for a request Danbyte issued and

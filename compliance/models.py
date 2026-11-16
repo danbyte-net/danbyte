@@ -30,6 +30,7 @@ class CheckType(models.TextChoices):
     COVERAGE = "coverage", "Support coverage"
     SOFTWARE_TARGET = "software_target", "Software target"
     EXPRESSION = "expression", "Conditions"
+    VULNERABILITIES = "vulnerabilities", "Known vulnerabilities"
 
 
 #: The single-field checks from before conditions. They keep working; the
@@ -50,6 +51,16 @@ class CoverageFailOn(models.TextChoices):
 
     EXPIRED = "expired", "Expired or not covered"
     EXPIRING = "expiring", "Expiring, expired or not covered"
+
+
+class VulnFailOn(models.TextChoices):
+    """What a ``vulnerabilities`` rule fails on (#451): an open match no
+    exception covers, of a record that meets this."""
+
+    KEV = "kev", "In CISA KEV"
+    FIX_FIRST = "fix_first", "Priority fix first"
+    HIGH = "high", "Priority high or fix first"
+    CVSS = "cvss", "CVSS score at or over"
 
 
 class Severity(models.TextChoices):
@@ -80,6 +91,10 @@ COVERAGE_OBJECT_TYPES = ("device",)
 # Object types a ``software_target`` rule can target: the ones that carry a
 # software version and a platform (#395).
 SOFTWARE_TARGET_OBJECT_TYPES = ("device", "virtualmachine")
+
+# Object types a ``vulnerabilities`` rule can target: the hosts matches are
+# kept for (#451).
+VULN_OBJECT_TYPES = ("device", "virtualmachine")
 
 
 class ComplianceRule(TimestampedModel):
@@ -143,6 +158,12 @@ class ComplianceRule(TimestampedModel):
     #                                    or VM also fails on its installed
     #                                    software (#436)
     include_software = models.BooleanField(default=False, db_default=False)
+    #   vulnerabilities               → {"vuln_fail_on": "cvss", "cvss_min": 9.0}
+    vuln_fail_on = models.CharField(
+        max_length=12, choices=VulnFailOn.choices, blank=True, default="",
+        db_default="",
+    )
+    cvss_min = models.DecimalField(max_digits=3, decimal_places=1, null=True, blank=True)
 
     class Meta:
         ordering = ["object_type", "name"]

@@ -19,6 +19,8 @@ describe("overridesView", () => {
     // The Diagram's stacking, and a hand-picked map's placed chassis.
     expect(overridesView({ view: "v1", stack: "h" })).toBe(true)
     expect(overridesView({ view: "v1", chassis: "c1" })).toBe(true)
+    // Display ▸ Group clusters (#517).
+    expect(overridesView({ view: "v1", clusters: "on" })).toBe(true)
   })
 
   it("still clears the search when a view is applied", () => {

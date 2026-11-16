@@ -64,14 +64,16 @@ function VlanGroupsPage() {
         filters: { snapshot, restore, activeCount },
       }}
       search={{ value: q, onChange: setQ, placeholder: "Filter…" }}
+      add={
+        canAdd && (
+          <Button size="sm" asChild>
+            <Link to="/vlan-groups/new">Add group</Link>
+          </Button>
+        )
+      }
       actions={
         <>
           <TableActions ioType="vlangroup" />
-          {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/vlan-groups/new">Add group</Link>
-            </Button>
-          )}
         </>
       }
       query={query}

@@ -45,6 +45,21 @@ so the interactive docs work on **airgapped** installs with no CDN access.
 - **Session** - when you are logged into the SPA, the same session cookie
   authorizes API calls from the browser.
 
+Passwords are not an API-token concern. The sign-in and password endpoints
+below are plain JSON views for the browser: they take the session cookie and
+a CSRF token, are not in the OpenAPI schema, and never accept a token.
+
+| Endpoint | Who | Body | Answer |
+|---|---|---|---|
+| `POST /api/auth/password/change/` | Signed-in session with a local password. A request with an `Authorization` header is refused with 403. | `current_password`, `new_password` | 200 `{ok, sessions_ended}`; 400 with `current_password` or `new_password` messages, or `detail` for a directory/SSO account; 429 when the sign-in lockout is reached. |
+| `POST /api/auth/password-reset/` | Anyone, when [reset by email](../features/permissions.md#forgot-password-reset-by-email) is on; 404 otherwise. | `identifier` (username or email) | Always the same 200 `{detail}`; 429 past the sign-in limits. |
+| `POST /api/auth/password-reset/confirm/` | Anyone with a link from the mail; 404 when reset is off. | `uid`, `token`, `password` | 200 `{ok}`; 400 `detail` for a bad or used link, `password` messages for a weak one. Ends every session and signs nobody in. |
+
+`GET /api/me/` says whether the sign-in page offers the reset
+(`password_reset_available`, anonymous answer) and where the signed-in
+account's password lives (`password_source`: `local`, `ldap`, `sso` or
+`none`).
+
 Every request is scoped to your active tenant and enforced by RBAC - the schema
 describes the shape of each endpoint, but access is always checked server-side.
 
@@ -169,15 +184,21 @@ curl -s -H "Authorization: Token $TOKEN" \
 
 A list endpoint names every query parameter it did not use. Before 0.19.1 it
 ignored them silently: `GET /api/ips/?device_id=<id>` answered every
-address in the tenant, because the filter is called `device`. Now the
-response carries
+address in the tenant, because the filter is called `device`. From 0.20
+such a request is a `400` (strict mode, below). With strict mode off
+(`?strict=0`, or `API_STRICT_QUERY_PARAMS=0`) the response carries
 
 ```
 X-Danbyte-Unknown-Params: device_id
 Warning: 299 - "Unknown query parameters ignored: device_id"
 ```
 
-and the rows are the same as without the parameter. A list knows the
+and the rows are the same as without the parameter. Names are
+percent-encoded (`%0D%0A` for a CR/LF). The headers stay small whatever the
+request holds: each name is cut at 64 bytes, ending in an encoded `…`
+(`%E2%80%A6`), each header value stays within 512 bytes and lists at most 20
+names, and the rest are counted as `+N more`. Strict mode's `400` lists every
+name in full. A list knows the
 parameters its filters, sorting, facets, search and paging read on that
 request, plus `page`, `page_size`, `format`, `strict` and the `_`
 cache-buster on every list. A parameter that only counts with another one
@@ -185,21 +206,34 @@ cache-buster on every list. A parameter that only counts with another one
 when it was ignored. Details, writes and actions (`facets/`, `table-ids/`,
 `report/`) are not checked, and neither is an error response.
 
-**Strict mode** turns an unknown parameter into a `400`:
+**Strict mode**, the default from 0.20, turns an unknown parameter into a
+`400`:
 
 ```json
-{"detail": "Unknown query parameters", "unknown": ["device_id"], "hint": {"device_id": "device"}}
+{
+  "detail": "Unknown query parameter: device_id (did you mean device?). This list takes: device, format, page, page_size, search, …. Send strict=0 to ignore unknown parameters.",
+  "unknown": ["device_id"],
+  "hint": {"device_id": "device"},
+  "allowed": ["device", "format", "page", "page_size", "search", "strict", "…"]
+}
 ```
 
 `hint` names the parameter you probably meant: `<x>` for `<x>_id` when the
-list takes `<x>`, else the closest name the list knows. Turn it on per
-request with `?strict=1` or the `X-Danbyte-Strict: 1` header, or for the
-whole deployment with `API_STRICT_QUERY_PARAMS`
-([settings](settings.md)). `?strict=0` (or `X-Danbyte-Strict: 0`) turns it
-off for one request. The setting is off in 0.19; **from 0.20 it defaults to
-on**, so a client that sends extra parameters should send `strict=0` or
-stop sending them. API clients, the [scripts SDK](scripts-sdk.md) among them,
-can send `X-Danbyte-Strict: 1` today.
+list takes `<x>`, else the closest name the list knows. `allowed` is what
+the list read on that request, so a parameter that only counts with another
+one (`include` without `view=table`) is not in it. `?strict=0` (or
+`X-Danbyte-Strict: 0`) turns strict mode off for one request: the list
+answers as if the parameter were absent and names it in the headers above.
+`API_STRICT_QUERY_PARAMS=0` ([settings](settings.md)) turns it off for the
+whole install, and `?strict=1` (or `X-Danbyte-Strict: 1`) then turns it on
+for one request.
+
+**Changed in 0.20:** the setting was off in 0.19, so a client that sent a
+parameter a list ignores got the whole list and now gets a `400`. Fix the
+parameter (the `hint` usually names it), send `strict=0`, or set
+`API_STRICT_QUERY_PARAMS=0` until your clients are fixed. The web app's own
+requests are checked against the lists in the test suite
+(`api/tests_frontend_query_params.py`).
 
 Some lists also take `<x>_id` as an alias of an id filter `<x>`. Sending
 both with different values is a `400`.
@@ -349,6 +383,26 @@ many, as the web UI does with a big selection (see
 A value a field cannot take answers `400` too - `{"non_field_errors":
 [...]}` when no serializer named the field - never a server error.
 
+**Errors in a nested list** (a pipeline's `steps`, a cabinet's `rails`, an
+SLA group's `items`, a report's `sheets`) are an object keyed by the
+position of each item that failed, counting from 0; the items that passed
+are left out:
+
+```json
+{"steps": {"1": {"timeout_minutes": ["Ensure this value is greater than or equal to 1."]}}}
+```
+
+An error about the list as a whole (not a list, empty, too long) stays a
+list of messages under the field. **Changed in 0.20:** before, the field
+held a list with one entry per item sent, `{}` for those that passed
+(`{"steps": [{}, {"timeout_minutes": [...]}]}`). This is Django REST
+framework's own format from 3.18 (`LIST_SERIALIZER_ERRORS_AS_DICT`), and
+the only one from 3.20. A cabinet's own rail checks (on the plate, no
+overlap, room for its devices) answer `rails` and `rail_templates` in the
+same keyed form. The per-row answers of a whole call (a cable
+`bulk-create/`'s `cables`, a cabinet arrange's `placements`) keep their
+list form.
+
 `bulk-update/` checks each value in `fields` exactly as a `PATCH` of that
 type checks it: choices, text length, number range, and that a related id
 is in the active tenant (and behind the site fence). Where the type has
@@ -413,7 +467,8 @@ Both answer:
   "unchanged_total": 1,
   "unchanged": [{"kind": "dhcpscope", "id": "…", "label": "…", "value": "…",
                  "reason": "On a DHCP server: change it there, the next sync follows."}],
-  "linked": [{"kind": "fhrpgroup", "label": "Fhrp groups", "count": 2}]
+  "linked": [{"kind": "fhrpgroup", "label": "Fhrp groups", "count": 2}],
+  "hidden_total": 0
 }
 ```
 
@@ -424,6 +479,126 @@ current network, a `vrf_id`, or a prefix, address or range already in the
 new network answers `400` under `new_prefix`. A kind the caller may not
 change, or a row outside their sites, answers `403` naming it - for the
 preview too. Nothing is written by a refusal.
+
+Every row in `changes`, `unchanged` and `linked` is one the caller may view,
+by the same rule as that object's own API (an ARP sighting through its device
+or VM and `macaddress` view, a BMC endpoint or SNMP binding through its
+target). The others are only counted, all kinds together, in `hidden_total`:
+no address, label or id. A row the renumber would rewrite that the caller
+can't view refuses it with `403` ("N objects you can't view"), and a
+conflicting prefix, address or range they can't view is not named in the
+`400`. Rows counted in `hidden_total` on a successful renumber are references
+left unchanged, which the apply answer counts too.
+
+## Free space in prefixes
+
+Four calls find and fill the free space inside prefixes (see
+[Prefixes](../features/prefix-crud.md#free-space-in-the-list)). Free space is
+computed against every prefix of the tenant and VRF, so a block offered is
+really free; blocks are offered only inside prefixes the caller may view,
+and space a prefix the caller may not view takes is not offered, named or
+counted. IPv6 space under a `/64` or shorter is offered in whole `/64`s
+unless a longer length is asked for.
+
+**The list.** `GET /api/prefixes/?free=1` adds, beside `results`, the free
+blocks of the parents on that page (containers and prefixes with children):
+
+```json
+{
+  "count": 4, "next": null, "previous": null, "results": [ … ],
+  "free": [{"kind": "free", "cidr": "10.20.2.0/23", "prefixlen": 23,
+            "family": 4, "parent": "<prefix id>", "vrf": null}],
+  "free_totals": {"<prefix id>": 6}
+}
+```
+
+`length=29` lists free blocks of exactly that size instead of the largest
+aligned ones; `scope=<cidr>` keeps to a block; `strategy=first|best` orders
+them (lowest address, or smallest free block first); `limit` is per parent
+(8 without a length, 16 with, at most 256). `free_totals` counts every free
+block of each parent, and only parents that have one. `count` and paging are
+unchanged. Without `free=1` these parameters are unknown (see
+[Unknown query parameters](#unknown-query-parameters)).
+
+**Available.** `GET /api/prefixes/available/?length=29` answers free blocks
+as a list:
+
+```json
+[{"cidr": "10.0.0.16/29", "prefixlen": 29, "family": 4,
+  "parent": {"id": "…", "cidr": "10.0.0.0/24"},
+  "vrf": {"id": "…", "name": "CUST"}}]
+```
+
+| Parameter | Meaning |
+|---|---|
+| `length` | The size; without it, the largest aligned free blocks. |
+| `within` | One parent: its id, or its CIDR in `vrf` (the global table without `vrf`). Without it, every container or parent the caller may view. |
+| `scope` | A CIDR the blocks must sit in. |
+| `vrf`, `site` | Narrow the parents (`vrf=global` for the global table). |
+| `strategy` | `first` (default, lowest address) or `best` (the smallest free block that holds one). |
+| `limit` | Default 16, at most 256. |
+
+A `within` the caller can't see, a scope outside it or a length larger than
+it answers `400`.
+
+**Allocate.** `POST /api/prefixes/<id>/allocate/` with `{"length": 29}` and
+any prefix fields (`description`, `status_id`, `vlan_id`, `site_id`,
+`tag_ids`, `custom_fields` …; the site defaults to the parent's) creates the
+next free child and answers `201` with the prefix, like a create. `scope`
+and `strategy` work as above; `cidr` and `vrf_id` are refused. It holds a
+row lock on the parent and every prefix above it while it picks and creates,
+so two callers never get the same block. No room answers `409` under
+`length`, naming the largest free block. It needs add on prefixes and view
+on the parent (else `404`); a site-limited caller may create only in their
+own site's space (`403`). The change log's cause is *Allocated in
+&lt;parent&gt;*. A plain `POST /api/prefixes/` takes the same lock on the
+prefixes holding its `cidr` before it is validated, so it waits for an
+allocation in that space and is then refused as a duplicate, or the
+allocation picks the next block. A `PUT` or `PATCH` that changes `cidr` or
+`vrf_id`, a `bulk-update/` that sets `vrf_id`, and an import row
+(`/api/io/prefix/import/`) that creates a prefix or changes its CIDR or VRF
+take it too, on the prefixes holding where the prefix lands.
+
+Each prefix's `permissions` carries `add_child` next to `change` and
+`delete`: whether the caller may create a prefix inside it. It is `false`
+for a site-limited caller when the prefix, or one holding it, is shared or
+another site's - the creates above would be refused.
+
+**Plan.** `POST /api/prefixes/<id>/plan/`:
+
+```json
+{"requests": [{"count": 2, "length": 24, "description": "servers-{n}"},
+              {"count": 5, "length": 29, "keep_together": true}],
+ "scope": "10.0.0.0/22", "strategy": "first", "reserve_growth": false,
+ "dry_run": true}
+```
+
+Each request takes `count`, `length` and optionally `description` (`{n}`
+numbers it), `status_id`, `vlan_id`, `site_id`, `location_id`, `tag_ids` and
+`keep_together`. Requests are placed largest first, aligned; at most 1,024
+subnets. It answers:
+
+```json
+{"parent": {"id": "…", "cidr": "10.0.0.0/22"}, "scope": "10.0.0.0/22",
+ "strategy": "first", "dry_run": true, "applied": false, "fits": false,
+ "items": [{"request": 0, "n": 1, "length": 24, "cidr": "10.0.1.0/24",
+            "description": "servers-1", "reason": null},
+           {"request": 0, "n": 2, "length": 24, "cidr": null, "description": "servers-2",
+            "reason": "No free /24 left in 10.0.0.0/22; largest free block is /25."}],
+ "reserved": [],
+ "strip": {"root": "10.0.0.0/22", "used": [[0.0, 0.125]],
+           "planned": [[0.25, 0.5]], "reserved": []},
+ "created": []}
+```
+
+`strip` holds fractions of the scope for drawing. `dry_run` defaults to
+`true`; `false` creates every item in one transaction under the same lock as
+allocate, or nothing: a request that doesn't fit, or a field error on any
+item, answers `400`. Send the preview's CIDRs as `cidrs` and the apply
+answers `409` if the free space changed in between. The answer then has
+`applied: true` and `created: [{id, cidr}]`; each change-log entry has the
+cause *Planned in &lt;parent&gt;*. Permissions are those of allocate, and a
+site-limited caller is refused (`403`) on the preview too.
 
 ## Generating the schema offline
 

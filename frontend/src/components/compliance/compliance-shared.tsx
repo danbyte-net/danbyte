@@ -1,4 +1,5 @@
 import type { QueryClient } from "@tanstack/react-query"
+import { Link } from "@tanstack/react-router"
 
 import { Badge } from "@/components/ui/badge"
 import type {
@@ -186,6 +187,8 @@ export function ruleSummary(
     eol_fail_on?: string
     coverage_fail_on?: string
     fail_on_unknown?: boolean
+    vuln_fail_on?: string
+    cvss_min?: string | number | null
     check_type: string
     check_type_display?: string
     scope?: ComplianceExpr | null
@@ -227,9 +230,53 @@ function checkSummary(r: Parameters<typeof ruleSummary>[0]): string {
       return r.fail_on_unknown
         ? "version must be the platform target, and known"
         : "version must be the platform target"
+    case "vulnerabilities":
+      return r.vuln_fail_on === "fix_first"
+        ? "no open vulnerability to fix first"
+        : r.vuln_fail_on === "high"
+          ? "no open vulnerability of high priority or above"
+          : r.vuln_fail_on === "cvss"
+            ? `no open vulnerability of CVSS ${Number(r.cvss_min ?? 0).toFixed(1)} or over`
+            : "no open vulnerability in CISA KEV"
     default:
       return r.check_type_display ?? r.check_type
   }
+}
+
+/** An SPA path the server hands over ("/devices/<id>?tab=vulnerabilities")
+ * as a router path and its search; null for anything not a local path. */
+export function splitSpaPath(
+  href: string | undefined | null
+): { to: string; search: Record<string, string> } | null {
+  if (!href || !href.startsWith("/") || href.startsWith("//")) return null
+  const [path, qs = ""] = href.split("?", 2)
+  return { to: path, search: Object.fromEntries(new URLSearchParams(qs)) }
+}
+
+/** A violation's detail, linked to where it is fixed when the check says
+ * (a known vulnerabilities rule links to the object's vulnerabilities). */
+export function ViolationDetail({
+  detail,
+  link,
+  className,
+}: {
+  detail?: string
+  link?: string
+  className?: string
+}) {
+  const target = splitSpaPath(link)
+  if (!detail && !target) return null
+  const text = detail || "Details"
+  if (!target) return <span className={className}>{text}</span>
+  return (
+    <Link
+      to={target.to as never}
+      search={target.search as never}
+      className={cn("link", className)}
+    >
+      {text}
+    </Link>
+  )
 }
 
 /** Every query that shows a violation's state or a rule's counts. */

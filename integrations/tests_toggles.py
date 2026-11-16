@@ -8,6 +8,7 @@ the registry and the API shape together so it cannot happen to the next one.
 from __future__ import annotations
 
 from django.contrib.auth import get_user_model
+from django.test import override_settings
 from rest_framework.test import APITestCase
 
 from core.models import Organization, Tenant
@@ -48,6 +49,7 @@ class ToggleApiTests(APITestCase):
         sess["current_tenant_id"] = str(self.tenant.id)
         sess.save()
 
+    @override_settings(DISCOVERY_ENABLED=True)
     def test_each_toggle_round_trips(self):
         for key, field in KEYS.items():
             with self.subTest(key=key):
@@ -60,6 +62,15 @@ class ToggleApiTests(APITestCase):
                     )
                 )
                 self.client.put(self.URL, {field: False}, format="json")
+
+    def test_a_deployment_gate_wins_over_the_tenant_toggle(self):
+        """Discovery needs DANBYTE_DISCOVERY_ENABLED as well (#451)."""
+        IntegrationSettings.objects.update_or_create(
+            tenant=self.tenant, defaults={"discovery_enabled": True})
+        with override_settings(DISCOVERY_ENABLED=False):
+            self.assertFalse(integration_enabled(self.tenant, "discovery"))
+        with override_settings(DISCOVERY_ENABLED=True):
+            self.assertTrue(integration_enabled(self.tenant, "discovery"))
 
     def test_a_toggle_starts_off(self):
         r = self.client.get(self.URL)

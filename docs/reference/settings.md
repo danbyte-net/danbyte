@@ -137,6 +137,57 @@ The extension is optional: no migration creates or needs it. Its cost is
 small (a few percent of CPU on a busy server); turn it off again by removing
 it from `shared_preload_libraries`.
 
+## Redis (`REDIS_URL`, `REDIS_PASSWORD`, `REDIS_SOCKET`)
+
+Redis holds the cache, the job queues and the WebSocket layer. All three -
+and every queue, `discovery` included - are built from one connection, read
+from these variables (`danbyte/redis_conf.py`):
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `REDIS_URL` | - | The server: `redis://host:port/db`, `rediss://…` for TLS, or `unix:///path/to/redis.sock?db=0`. May carry `user:password@`. |
+| `REDIS_SOCKET` | - | A unix socket path, instead of `REDIS_URL`. |
+| `REDIS_HOST` / `REDIS_PORT` | `localhost` / `6379` | The server when neither of the above is set. |
+| `REDIS_USERNAME` | - | An ACL user (Redis 6+). Without it the password is the `default` user's (`requirepass`). |
+| `REDIS_PASSWORD` | - | The password. Unset: no `AUTH`, as before. |
+| `RQ_REDIS_DB` | `0` | The database the job queues use; a second install on the same Redis picks a spare one. |
+
+**Which wins.** The server comes from `REDIS_URL`, else `REDIS_SOCKET`, else
+`REDIS_HOST`/`REDIS_PORT`. The credentials come from the URL or from
+`REDIS_USERNAME`/`REDIS_PASSWORD`; setting both is fine when they agree. The
+cache uses the URL's database, the queues `RQ_REDIS_DB`, the WebSocket layer
+database 0.
+
+**Refused at startup**, with a message that names no password: `REDIS_URL`
+together with `REDIS_SOCKET`; `REDIS_URL` and a `REDIS_HOST`/`REDIS_PORT`
+that name another server (`localhost`, `127.0.0.1` and `::1` count as one);
+`REDIS_SOCKET` with `REDIS_HOST`/`REDIS_PORT`; a URL password or user that
+differs from `REDIS_PASSWORD`/`REDIS_USERNAME`; an unknown scheme or URL
+option. Before 0.20 the cache read `REDIS_URL` while the queues and the
+WebSocket layer read `REDIS_HOST`/`REDIS_PORT`, so a split like that sent
+them to different servers.
+
+**TLS.** A `rediss://` URL verifies the server's certificate against the
+system CAs. Options in the URL: `ssl_ca_certs=/path/ca.pem` (a private CA),
+`ssl_certfile` / `ssl_keyfile` (a client certificate), `ssl_ca_path`,
+`ssl_check_hostname`, and `ssl_cert_reqs=none` to turn verification off.
+
+**Secrets.** The password never goes into a URL Danbyte builds: each
+consumer gets it as a separate setting, which Django's error reports mask,
+and messages name the server as `redis://user:***@host`. Percent-encode a
+password inside `REDIS_URL` (`@` → `%40`); `REDIS_PASSWORD` takes it as it
+is. Turning a password on: [Hardening → Redis
+authentication](../getting-started/hardening.md#redis-authentication).
+
+```ini
+# a password (requirepass)
+REDIS_PASSWORD=…
+# an ACL user over the local socket
+REDIS_URL=unix:///run/redis/redis-server.sock?db=0
+REDIS_USERNAME=danbyte
+REDIS_PASSWORD=…
+```
+
 ## CORS
 
 ```python
@@ -201,7 +252,7 @@ through rather than refusing them.
 | `API_LARGE_PAGE_THRESHOLD` | `API_LARGE_PAGE_THRESHOLD` | `1000` | A request whose `page_size` is above this is a large page. A positive whole number between `API_PAGE_SIZE` and `API_MAX_PAGE_SIZE`; unset, it is 1,000 kept within those two. |
 | `API_LARGE_PAGE_CONCURRENCY` | `API_LARGE_PAGE_CONCURRENCY` | `2` | Large pages one user, all of their tokens together, may have in flight at once. A positive whole number. |
 | `API_MAX_TOKENS_PER_USER` | `API_MAX_TOKENS_PER_USER` | `25` | Unexpired API tokens one user may hold. Creating one more answers 400 until one is revoked or expires; tokens a script run mints don't count. A positive whole number. |
-| `API_STRICT_QUERY_PARAMS` | `API_STRICT_QUERY_PARAMS` | off | A query parameter a list does not understand answers `400` instead of an `X-Danbyte-Unknown-Params` header. `1`/`true`/`yes`/`on` turns it on; a request can still send `?strict=0`. Off in 0.19; the default becomes on in 0.20 ([REST API](api.md#unknown-query-parameters)). |
+| `API_STRICT_QUERY_PARAMS` | `API_STRICT_QUERY_PARAMS` | on | A query parameter a list does not understand answers `400`, naming it and the parameters the list takes. `0`/`false`/`no`/`off` turns it off for the install: the list then answers as if the parameter were absent and names it in an `X-Danbyte-Unknown-Params` header. A request can still send `?strict=0` (or `?strict=1` when it is off). On since 0.20, off in 0.19 ([REST API](api.md#unknown-query-parameters)). |
 
 A value that is not a positive whole number, a cap below the default page,
 or a threshold outside the default page and the cap stops the service at start with an error naming the setting, rather than
@@ -278,12 +329,19 @@ by `_shell.html`.
 
 ## Hosts
 
-`ALLOWED_HOSTS` should be set in the systemd service env (already done for
-local + Netbird in `services/danbyte-backend.service`):
+`ALLOWED_HOSTS` and `CSRF_TRUSTED_ORIGINS` are set in `.env` (see
+`.env.example`), never in a unit file in the repo. The dev unit
+`services/danbyte-backend.service` carries no hosts or credentials and
+listens on `127.0.0.1:8000`; Vite on `:3000` proxies to it.
 
 ```text
-Environment=ALLOWED_HOSTS=localhost,127.0.0.1,<your-vpn-fqdn>,<your-vpn-ip>
+ALLOWED_HOSTS=localhost,127.0.0.1,<your-vpn-fqdn>,<your-vpn-ip>
 ```
+
+One path is answered for any host: `/.well-known/acme-challenge/<token>`,
+so a CA can validate a name for the site certificate before that name is
+added here. Everything else under an unlisted host is a `400`. See
+[HTTP-01 and host names](../monitoring/certificates.md#http-01-and-host-names).
 
 ## Backups (`DANBYTE_BACKUP_DIR`, `DANBYTE_SKIP_BACKUP`)
 
@@ -329,6 +387,28 @@ the `ALLOWED_HOSTS` you set. The Docker stack sets it to `http://backend:8000`.
 takes, in bytes. The default is `26214400` (25 MB); a larger upload is
 refused with the limit in the message. Keep it under the web server's
 `client_max_body_size` (512 MB in the shipped nginx templates).
+
+## Vulnerability data uploads (`DANBYTE_VULN_IMPORT_MAX_BYTES`)
+
+`DANBYTE_VULN_IMPORT_MAX_BYTES` is the largest file a deployment admin may
+upload as [vulnerability data](../features/vulnerabilities.md#upload-airgapped-installs)
+(NVD feeds, OSV archives, Microsoft's monthly CVRF documents, KEV, EPSS), in bytes. The default is `536870912`
+(512 MB), which is also the shipped nginx `client_max_body_size`; raise both
+together. The unpacked-content, record and archive limits are fixed and listed
+on the feature page. Uploads wait in `MEDIA_ROOT/vuln-imports/` until their
+job has parsed them, then are deleted; the folder is not served under
+`/media/`.
+
+## Microsoft data window (`DANBYTE_VULN_MSRC_MONTHS`)
+
+`DANBYTE_VULN_MSRC_MONTHS` is how many months of Microsoft's monthly
+security update documents the [server fetch](../features/vulnerabilities.md#windows-hosts-microsoft-data)
+reads, counting the current month. The default is `12`; values are held to
+`1`-`36`, and a value that is not a number stops the server at start. Each
+month is 4 to 30 MB and Microsoft revises old months often, so most of the
+window is read again on a weekly refresh: a longer window costs bandwidth
+and time on every run. Windows builds are cumulative, so twelve months find
+every fix a host that is patched at least once a year is missing.
 
 ## PDF reports (`DANBYTE_REPORT_JOB_TIMEOUT`)
 
@@ -413,7 +493,9 @@ sandbox.
 User-configured outbound URLs - webhooks, notification channels, automation
 targets, device-type import URLs, virtualization sources (Proxmox, vCenter,
 Cloud Director), Windows server connections, a public assistant provider, the
-[end-of-life data](../features/end-of-life-data.md) source, and
+[end-of-life data](../features/end-of-life-data.md) source, the
+[vulnerability data](../features/vulnerabilities.md#server-mode) services and
+mirrors (NVD, OSV, Microsoft's MSRC CVRF API, CISA KEV, FIRST EPSS), and
 **per-tenant** SMTP/LDAP hosts - are
 validated before each request: the host is resolved and rejected if it points at
 a loopback / RFC1918 / link-local / `169.254.0.0/16` (cloud metadata) / ULA /
@@ -447,6 +529,33 @@ Environment=DANBYTE_SSRF_ALLOWLIST=192.168.0.0/24,10.1.2.3
 Comma-separated CIDRs/IPs whose resolved addresses are permitted. Empty by
 default (all internal addresses blocked).
 
+ACME issuers are not behind this guard: an internal CA on a private address
+is what an issuer is for, and only a user with the issuer `add`/`change`
+grant can set its directory URL
+(see [Certificates](../monitoring/certificates.md#when-the-ca-cannot-be-reached-or-trusted)).
+
+### CA trust for ACME issuers (`REQUESTS_CA_BUNDLE`)
+
+An ACME issuer with *Verify TLS* on trusts, in this order, the bundle in
+`REQUESTS_CA_BUNDLE` (or `CURL_CA_BUNDLE`) when the service environment
+sets it to a file, else the operating system's trust store
+(`/etc/ssl/certs/ca-certificates.crt` and the other distribution paths
+OpenSSL reports), else Python's `certifi` roots - **plus** the issuer's own
+*CA certificate* field. Before 0.20 only `certifi` was used, so a private
+root added with `update-ca-certificates` was ignored and
+`REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt` in `.env` was the
+workaround. That line still works - it replaces the system store as the
+base, and an issuer's CA certificate is still added on top - but it is no
+longer needed. Details:
+[Private CAs and trust](../monitoring/certificates.md#private-cas-and-trust).
+
+```text
+REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt   # optional now
+```
+
+`REQUESTS_CA_BUNDLE` is read by every `requests` call in the process, not
+just ACME; set it only when you want that.
+
 ### Check-engine targets (central-runner SSRF)
 
 The monitoring check engine runs both on remote **outpost agents** (deployed
@@ -464,6 +573,28 @@ Environment=DANBYTE_CHECK_BLOCK_INTERNAL=True
 Default `False`, so a self-hosted deployment that monitors its own LAN from the
 central box is unaffected. `DANBYTE_SSRF_ALLOWLIST` (above) also exempts its
 CIDRs from this block. Outpost agents keep the permissive default regardless.
+
+## Discovery
+
+[Discovery](../features/discovery.md) - package inventory and service scans -
+is off unless the deployment allows it **and** a tenant admin turns it on.
+Every variable that changes it, with defaults, accepted values and effect, is
+on [Discovery: settings](../features/discovery-settings.md#environment-variables):
+
+| Variable | Default |
+|---|---|
+| `DANBYTE_DISCOVERY_ENABLED` | unset (the stored deployment switch decides) |
+| `DANBYTE_DISCOVERY_WINRM_ALLOWED` | `True` |
+| `DANBYTE_DISCOVERY_WINRM_CA_BUNDLE` | the system CA bundle |
+| `DANBYTE_DISCOVERY_ALLOW_FIRST_USE_KEYS` | `True` |
+| `DANBYTE_DISCOVERY_SCAN_MAX_RATE` | `200` (held to 1-2000) |
+| `DANBYTE_DISCOVERY_NMAP_ALLOWED` | `True` |
+| `NMAP_BINARY` | unset (`nmap` on the service user's PATH) |
+
+Runs go to the RQ queue `discovery`; the `danbyte-inventory` timer queues
+scheduled ones ([queue and timer](../features/discovery-settings.md#queue-and-timer)).
+The check-engine target policy above applies to every address Discovery
+contacts from the server.
 
 ## Security headers
 
@@ -483,13 +614,21 @@ uniformly and survives an app restart:
   `Cross-Origin-Opener-Policy` / `Cross-Origin-Resource-Policy: same-origin`.
 - An **enforced Content-Security-Policy** with `report-uri /api/csp-report/`.
   `connect-src` allows `raw.githubusercontent.com` and `api.github.com` so the
-  device-type import's *Fetch with my browser* option works; everything else
-  stays same-origin.
+  device-type import's *Fetch with my browser* option works, and
+  `vector.openstreetmap.org` for the Site map's default vector tiles
+  (a different vector source in **Settings → Site map → Basemap** needs its
+  host added here by hand). `worker-src 'self' blob:` lets MapLibre run its
+  bundled tile worker. Everything else stays same-origin.
   The SPA loads only same-origin bundled assets (no external scripts/styles/
-  fonts, no `eval`, no web workers; the presence WebSocket is same-origin), so
-  the policy doesn't block anything it serves. `'unsafe-inline'` is still
-  permitted for the SSR hydration + chart `<style>` injection - the next
-  hardening step is a nonce-based `script-src` (needs SSR nonce plumbing). Any
+  fonts, no `eval`, bundled web workers; the presence WebSocket is same-origin), so
+  the policy doesn't block anything it serves. Its `script-src 'self'
+  'unsafe-inline' 'wasm-unsafe-eval'` is the floor (`'wasm-unsafe-eval'`
+  lets the bundled WebAssembly for 3D models and STEP/IGES compile, and
+  allows no `eval`): every page also carries the frontend
+  server's own policy with a fresh nonce and `'strict-dynamic'`, which the
+  browser enforces as well, so an injected script does not run
+  ([`DANBYTE_CSP_MODE`](#page-script-policy-danbyte_csp_mode)).
+  `style-src 'unsafe-inline'` stays for the charts' `<style>` blocks. Any
   real-browser violation is POSTed to `/api/csp-report/` and logged to the
   `danbyte.csp` logger, so tightening the policy later is observable rather than
   a silent breakage. The report endpoint is unauthenticated + CSRF-exempt (the
@@ -526,10 +665,43 @@ their own. Anonymous API responses, `/media/`, `/static/` and the hashed
     level, repeated in any location that has its own `proxy_hide_header`).
     Otherwise every Django response carries two copies.
 
+### Page script policy (`DANBYTE_CSP_MODE`)
+
+The frontend server sends each HTML page a Content-Security-Policy of its
+own, with a script nonce drawn for that page:
+`script-src 'nonce-…' 'strict-dynamic' 'self' 'unsafe-inline'; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; report-uri /api/csp-report/`.
+
+| Variable | Default | Values |
+|---|---|---|
+| `DANBYTE_CSP_MODE` | `enforce` | `enforce`, `report` (sent as `Content-Security-Policy-Report-Only`), `off` |
+
+Read from the environment, else from `.env`, when the frontend starts;
+restart `danbyte-frontend-prod` after changing it. Anything else enforces.
+The Vite dev server defaults to `off`. Details and how to report a
+violation: [Hardening → Content-Security-Policy](../getting-started/hardening.md#content-security-policy).
+
 ## Logging
 
 Console logging is on by default (`django` at INFO, `rq.worker` at INFO).
 Suitable for `journalctl --user -fu danbyte-backend`.
+
+## Password reset (`PASSWORD_RESET_ENABLED`)
+
+`PASSWORD_RESET_ENABLED=true` turns on self-service
+[Forgot password?](../features/permissions.md#forgot-password-reset-by-email)
+by email. Default: off. Even when on, it is offered only while deployment
+email is enabled, the deployment has a mail server of its own (an SMTP host,
+or a delivering `EMAIL_BACKEND`) and the public base URL is set: the link is
+built from that URL, never from the request's `Host` header.
+
+`PASSWORD_RESET_LINK_TIMEOUT` is how long a reset link works, in seconds
+(default `3600`). Invite and administrator-sent links keep Django's
+`PASSWORD_RESET_TIMEOUT` (three days); the two kinds of link are not
+interchangeable.
+
+The mail is sent by the RQ `default` queue, so it needs `danbyte-workers`
+running. Changing your own password (Preferences → Password) needs no
+setting.
 
 ## Secrets
 
@@ -546,6 +718,84 @@ deployment-wide singleton `core.DeploymentSettings`; the SMTP password is
 Fernet-encrypted at rest. See
 [Notifications](../features/monitoring.md#notifications).
 
+### The secret store
+
+**Settings → Security → Secret store** (`secrets_provider` on
+`DeploymentSettings`) picks where Danbyte files the secrets it manages -
+credentials, PSKs and keys, CSR and ACME keys - see
+[The secret store](../monitoring/certificates.md#the-secret-store-for-issuance-keys).
+Blank disables every feature that needs one. The Key Vault URL and sign-in
+endpoint must be `https://`; a Vault address may be `http://` (with a
+warning). Switching stores moves nothing: each secret is read from the store
+it was written to while that stays configured, and the card asks before a
+switch that leaves secrets behind. `manage.py migrate_secret_store --from X
+--to Y [--apply]` moves them ([details](../monitoring/certificates.md#switching-stores));
+`manage.py cleanup_secret_store` lists and removes secrets whose record is
+gone ([details](../monitoring/certificates.md#removing-orphaned-secrets)).
+
+### What the monitoring key protects
+
+`MONITORING_SECRET_KEY` encrypts every `EncryptedJSONField` column - every
+credential Danbyte keeps in its own database:
+
+- monitoring: check-template and SNMP-profile secrets, Redfish endpoint
+  credentials, monitoring-engine tokens and SSH credentials, the Outpost
+  repository token, notification-channel secrets, certificate-issuer secrets,
+  and the local secret store (device credentials, CSR/ACME private keys,
+  FHRP auth keys);
+- integrations: webhook signing secrets, automation-target tokens, NetBox
+  import tokens, Windows Server and virtualization-source credentials;
+- Zabbix, PRTG and Oxidized connection credentials, and PRTG credentials;
+- backup-target credentials;
+- the NVD API key for [vulnerability data](../features/vulnerabilities.md#rate-limits-and-retries);
+- SSO and LDAP secrets (identity providers, user profiles), and the SMTP and
+  LDAP passwords in deployment, tenant and site settings.
+
+It is also the secret [backup archives](../getting-started/backup-restore.md#the-key-rule)
+are encrypted under. `DJANGO_SECRET_KEY` (sessions, signed tokens) is separate.
+
+### Rotating the monitoring key
+
+`MONITORING_SECRET_KEY` takes a comma-separated list, newest first. New values
+are always encrypted under the first key; every key in the list is tried on
+read. To replace a key without losing a stored secret:
+
+1. **Add the new key first** on every process that reads the database - the
+   web service, the WebSocket service and every worker
+   (`MONITORING_SECRET_KEY=<new>,<old>` in `.env` or the unit's
+   `Environment=`) - and restart them all. A process without the new key
+   cannot read values written under it, so do all of them before step 2.
+2. **Re-encrypt** the stored values under the new key:
+
+    ```bash
+    .venv/bin/python manage.py rotate_monitoring_key --dry-run   # counts only
+    .venv/bin/python manage.py rotate_monitoring_key
+    ```
+
+    `--dry-run` prints, per model and field, how many values would be
+    re-encrypted and how many are already current. The real run works in
+    batches (`--batch-size`, default 500), one transaction per batch, and
+    skips values already under the new key, so it can be stopped and run
+    again. It writes one change-log entry for the run (who, when, counts)
+    rather than one per row, and never prints a value. A value no configured
+    key can open is left as it is and named by model and primary key; the
+    command then exits non-zero.
+3. **Verify** nothing is left under an older key:
+
+    ```bash
+    .venv/bin/python manage.py rotate_monitoring_key --check
+    ```
+
+    It exits non-zero while any value still needs an older key.
+4. **Remove the old key** from the list on every process and restart them
+   again.
+
+Backups made before the rotation are encrypted under the old key: keep a copy
+of it for as long as you keep those archives, and put it back in the list
+(after the current key) to restore one. **Settings → Security** shows how many
+keys are configured, never the keys themselves. A custom
+`MONITORING_SECRETS_BACKEND` without rotate support is refused by the command.
+
 ## Monitoring
 
 Settings for the [Monitoring / check engine](../features/monitoring.md). All
@@ -553,7 +803,7 @@ have working defaults, so the feature runs with none of them set.
 
 | Setting | Default | Purpose |
 |---|---|---|
-| `MONITORING_SECRET_KEY` | derived from `SECRET_KEY` in DEBUG; **required when `DEBUG=False`** | Encryption key for SNMP/SSH/SMTP/LDAP credentials at rest (Fernet). A dedicated key gives credential encryption an independent lifecycle: rotating `SECRET_KEY` doesn't void stored secrets, and a `SECRET_KEY` leak can't decrypt them. The app refuses to start in production without it. `scripts/install.sh` generates one (and backfills older installs *from* the existing `SECRET_KEY` so already-stored secrets stay decryptable). **Never change it once secrets are stored** - old ciphertext becomes unreadable. |
+| `MONITORING_SECRET_KEY` | derived from `SECRET_KEY` in DEBUG; **required when `DEBUG=False`** | Encryption key for stored credentials at rest (Fernet) - see [What the monitoring key protects](#what-the-monitoring-key-protects). A dedicated key gives credential encryption an independent lifecycle: rotating `SECRET_KEY` doesn't void stored secrets, and a `SECRET_KEY` leak can't decrypt them. The app refuses to start in production without it. `scripts/install.sh` generates one (and backfills older installs *from* the existing `SECRET_KEY` so already-stored secrets stay decryptable). May be a **comma-separated list, newest first**: the first key encrypts, every key decrypts. An empty entry (a stray comma) or a key listed twice stops the service at start. **Never just replace it once secrets are stored** - old ciphertext becomes unreadable; [rotate it](#rotating-the-monitoring-key) instead. |
 | `MONITORING_SECRETS_BACKEND` | empty (Fernet) | Dotted path to a factory returning a `SecretsBackend`. Swap in an external store (OpenBao/Vault) without touching models. |
 | `MONITORING_CONCURRENCY` | `100` | Max concurrent check attempts in one worker job's asyncio loop. Raising it needs a matching `LimitNOFILE` bump on the worker unit. |
 | `MONITORING_GLOBAL_INTERVAL_SECONDS` | `300` | Default schedule (seconds) for assignments in `follow_global` mode. |

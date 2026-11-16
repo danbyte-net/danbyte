@@ -26,6 +26,7 @@ Manufacturer  →  Device type  →  Device  →  Interfaces  →  Cables
 | Track VMs, clusters and virtual switches | **Virtual machines** | [Virtual machines](../features/virtual-machines.md) |
 | Put an IP on an interface | **IP assignment** | [Assigning IP addresses](ip-assignment.md) |
 | Connect two ports with a cable | **Cabling** | [Cabling & connections](cabling.md) |
+| Record which device depends on which, and see what fails with it | **Dependencies** | [Device dependencies](dependencies.md) |
 | Draw the room and place the racks | **Maps → Floor plans** | [Floor plans](../features/floor-plans.md) |
 | See sites and links on a world map | **Maps → Site map** | [Site map](../features/site-map.md) |
 | See what connects to what | **Maps → Topology** | [Topology](../features/topology.md) |

@@ -39,6 +39,7 @@ import {
   boxCenter,
   byZ,
   labelBox,
+  labelPlateBox,
   labelFontCells,
   labelPlate,
   opensName,
@@ -49,6 +50,8 @@ import {
 } from "./shapes"
 import type { AreaShape, LabelShape, PlanShape } from "./shapes"
 import { facingBarRect, figureBarRect, figureLift } from "./tile-marks"
+import { SOLID_MARK_OPACITY, tileFace } from "./tile-face"
+import { GLYPH_STROKE } from "./tile-glyph"
 import { planTilePose, residualTransform } from "./tile-pose"
 import {
   CABLE_LINE,
@@ -69,6 +72,14 @@ import {
 } from "./cable-draw"
 import type { CableColorBy, CableRoute, CableStub } from "./cable-draw"
 import type { Pt } from "./cable-route"
+import {
+  DEFAULT_AREA_NAME_LOOK,
+  areaNameFallback,
+  areaNameFontPx,
+  areaNameSize,
+  resolveAreaNameLook,
+} from "./area-name-style"
+import type { AreaNameLook } from "./area-name-style"
 import { layoutPlanLabels } from "./plan-label-pass"
 import {
   CALLOUT_FONT_PX,
@@ -128,7 +139,7 @@ import type { ClusterFace, IconCluster, IconLayout } from "./icon-layout"
 import { outlinePath, raisedRegions } from "./raised-floor-shape"
 import { CHECK_COLOR, rackFigures, tileFill, tilePaint } from "./tile-paint"
 import { cameraViews, polygonPath } from "./camera-view"
-import type { ColorBy, RackFigures } from "./tile-paint"
+import type { ColorBy, RackFigures, TilePaint } from "./tile-paint"
 
 // The 2D plan as a standalone, light-themed SVG for the PDF export
 // (api/floor_plan_pdf.py): raised floors, zones, tiles with their labels and
@@ -148,9 +159,14 @@ const TRAY_DEFAULT = "#71717a"
 const MUTED_INK = "#71717a"
 const AREA_DEFAULT = "#71717a"
 
+/** A tile the plan's filter leaves out, on paper. */
+const RECEDE_OPACITY = 0.25
+
 export interface PlanSvgInput {
+  /** The plan's filter: the tiles it leaves out, printed faded. */
+  dimTileIds?: ReadonlySet<string>
   plan: Pick<FloorPlan, "grid_width" | "grid_height" | "cell_mm"> &
-    Partial<Pick<FloorPlan, "layout_mode">>
+    Partial<Pick<FloorPlan, "layout_mode" | "state">>
   /** The tiles as shown - hidden ones already left out. */
   tiles: FloorPlanTile[]
   walls?: FloorPlanWall[]
@@ -190,6 +206,9 @@ export interface PlanSvgInput {
   /** Icons when zoomed out: a device, rack or cabinet under ICON_TILE_MM
    * on its long side prints as its icon tile, READABLE_SYMBOL_MM square. */
   iconTiles?: boolean
+  /** Display > Tile icons: tiles print solid in their colour with a glyph
+   * of what they are, as the canvas draws them (tile-face.ts). */
+  tileIcons?: boolean
   /** Paper mm per plan px of the sheet (planPaperScale) when the drawing
    * is not framed to its content; A3 landscape otherwise. */
   mmPerPx?: number
@@ -476,6 +495,16 @@ function iconMarkup(
 ): string {
   const Icon = name ? getLucideIcon(name) : null
   if (!Icon) return ""
+  // Tile icons: each icon once on the sheet, every use of it a <use>.
+  if (sheetIcons) {
+    const key = `${name}|${color}`
+    let id = sheetIcons.get(key)
+    if (!id) {
+      id = `pg${sheetIcons.size}`
+      sheetIcons.set(key, id)
+    }
+    return el("use", { href: `#${id}`, x, y, width: size, height: size })
+  }
   // Lucide's own classes mean nothing on paper (no theme classes here).
   return renderToStaticMarkup(
     createElement(Icon, {
@@ -484,9 +513,34 @@ function iconMarkup(
       width: size,
       height: size,
       color,
-      strokeWidth: 2.25,
+      strokeWidth: GLYPH_STROKE,
     })
   ).replace(/\sclass="[^"]*"/g, "")
+}
+
+/** The icons one sheet draws with Tile icons on - "name|colour" to its
+ * symbol's id - while planSvg builds it; null otherwise (inline icons). */
+let sheetIcons: Map<string, string> | null = null
+
+/** The sheet's icons as symbols, each drawn once in its colour - the PDF
+ * sanitiser keeps a <symbol> that a <use> points at. */
+function sheetIconDefs(icons: ReadonlyMap<string, string>): string {
+  let out = ""
+  for (const [key, id] of icons) {
+    const cut = key.lastIndexOf("|")
+    const Icon = getLucideIcon(key.slice(0, cut))
+    if (!Icon) continue
+    const svg = renderToStaticMarkup(
+      createElement(Icon, {
+        width: 24,
+        height: 24,
+        color: key.slice(cut + 1),
+        strokeWidth: GLYPH_STROKE,
+      })
+    ).replace(/\sclass="[^"]*"/g, "")
+    out += `<symbol id="${id}" viewBox="0 0 24 24">${svg}</symbol>`
+  }
+  return out ? `<defs>${out}</defs>` : ""
 }
 
 /** An area type's pattern as strokes clipped to the area (`clip`: its
@@ -522,35 +576,64 @@ function patternMarkup(
   )
 }
 
+/** A plate behind text on paper, as the canvas draws one: white (or
+ * `fill`) with a hairline, its corners rounding with the text's size. */
+function textPlateMarkup(
+  b: { x: number; y: number; w: number; h: number },
+  font: number,
+  fill?: string | null
+): string {
+  return el("rect", {
+    x: b.x,
+    y: b.y,
+    width: b.w,
+    height: b.h,
+    rx: Math.min(6, font * 0.2),
+    fill: fill ?? "#ffffff",
+    stroke: "#e4e4e7",
+    "stroke-width": 1,
+  })
+}
+
 /** An area's name with its type's icon before it, as the canvas draws it:
- * from its top left (`start`, y the baseline) or centred on x. A patterned
- * area's name sits on a white halo (a stroked copy under it). */
+ * in its box (`x`, `y` the top left) at its look's size and colour, on a
+ * plate when its look has one. A patterned area's name sits on a white
+ * halo (a stroked copy under it). */
 function areaNameMarkup(
   a: AreaShape,
   name: string,
   x: number,
   y: number,
-  anchor: "start" | "middle",
   ink: string,
+  look: AreaNameLook,
   grow = 1
 ): string {
   const icon = getLucideIcon(areaIcon(a)) ? areaIcon(a) : ""
-  const shift = icon ? 16 * grow : 0
+  const size = areaNameFontPx(look, grow)
+  const box = areaNameSize(name, size, !!icon, look.plate)
+  // A chosen colour as it is; on a plate, the area's own (as over a light
+  // fill, mixed toward the ink).
+  const fill = look.color
+    ? look.color
+    : look.plate
+      ? mix(areaColor(a), PAPER_INK, AREA_INK_SHARE)
+      : ink
   // A black or white name (a strong fill) is haloed in the other one.
-  const halo = areaNameHalo(a) ? "#ffffff" : areaNameHaloColor(ink)
-  const textW = name.length * 12 * grow * 0.6
-  const tx = anchor === "middle" ? x + shift / 2 : x + shift
-  const ix = anchor === "middle" ? x - (shift + textW) / 2 : x
+  const halo =
+    look.color || areaNameHalo(a) ? "#ffffff" : areaNameHaloColor(ink)
+  const baseline = y + box.baseline
   const font = {
-    x: tx,
-    y,
-    "text-anchor": anchor === "middle" ? "middle" : undefined,
-    "font-size": 12 * grow,
+    x: x + box.pad + box.shift,
+    y: baseline,
+    "font-size": size,
     "font-weight": 600,
   }
   return (
-    (icon ? iconMarkup(icon, ix, y - 10.5 * grow, 12 * grow, ink) : "") +
-    (areaNameHalo(a) || grow > 1
+    (look.plate ? textPlateMarkup({ x, y, w: box.w, h: box.h }, size) : "") +
+    (icon
+      ? iconMarkup(icon, x + box.pad, baseline - size * 0.875, size, fill)
+      : "") +
+    (!look.plate && (look.color || areaNameHalo(a) || grow > 1)
       ? text(name, {
           ...font,
           fill: halo,
@@ -559,7 +642,7 @@ function areaNameMarkup(
           "stroke-linejoin": "round",
         })
       : "") +
-    text(name, { ...font, fill: ink })
+    text(name, { ...font, fill })
   )
 }
 
@@ -578,9 +661,17 @@ function areaMarkup(
   a: AreaShape,
   pat: PatternScale = DEFAULT_PATTERN,
   grow = 1,
-  nameAt?: Pt | null
+  nameAt?: Pt | null,
+  look: AreaNameLook = DEFAULT_AREA_NAME_LOOK
 ): string {
   const color = areaColor(a)
+  const nameBox = () =>
+    areaNameSize(
+      areaName(a),
+      areaNameFontPx(look, grow),
+      !!getLucideIcon(areaIcon(a)),
+      look.plate
+    )
   // In the area's own colour, a name keeps some of the page's ink (as
   // shape-layer.tsx draws it on screen).
   const own = areaLabelColor(a)
@@ -620,10 +711,10 @@ function areaMarkup(
         ? areaNameMarkup(
             a,
             name,
-            cx * CELL,
-            cy * CELL + 4 * grow,
-            "middle",
+            cx * CELL - nameBox().w / 2,
+            cy * CELL - nameBox().h / 2,
             ink,
+            look,
             grow
           )
         : "")
@@ -654,15 +745,12 @@ function areaMarkup(
       pat
     ) +
     (name
-      ? areaNameMarkup(
-          a,
-          name,
-          nameAt ? nameAt[0] * CELL : box.x + 6 * grow,
-          nameAt ? nameAt[1] * CELL + 12 * grow * 0.8 : box.y + 15 * grow,
-          "start",
-          ink,
-          grow
-        )
+      ? (() => {
+          const at = nameAt
+            ? { x: nameAt[0] * CELL, y: nameAt[1] * CELL }
+            : areaNameFallback(a, look, nameBox(), grow)
+          return areaNameMarkup(a, name, at.x, at.y, ink, look, grow)
+        })()
       : "") +
     "</g>"
   )
@@ -709,7 +797,7 @@ function labelMarkup(
       : l.align === "right"
         ? (box.x + box.width) * CELL - size * 0.3
         : box.x * CELL + size * 0.3
-  const plate = labelPlate(l)
+  const plate = { ...labelPlate(l), box: labelPlateBox(l, cellMm) }
   const ink = plate.ink ?? labelColor(l.color).paper
   const lines = l.text
     .split("\n")
@@ -727,16 +815,16 @@ function labelMarkup(
   return (
     `<g${turns ? ` transform="${turns}"` : ""}>` +
     (l.plate
-      ? el("rect", {
-          x: box.x * CELL,
-          y: box.y * CELL,
-          width: box.width * CELL,
-          height: box.height * CELL,
-          rx: Math.min(6, size * 0.2),
-          fill: plate.fill ?? "#ffffff",
-          stroke: "#e4e4e7",
-          "stroke-width": 1,
-        })
+      ? textPlateMarkup(
+          {
+            x: plate.box.x * CELL,
+            y: plate.box.y * CELL,
+            w: plate.box.width * CELL,
+            h: plate.box.height * CELL,
+          },
+          size,
+          plate.fill
+        )
       : "") +
     lines +
     "</g>"
@@ -786,17 +874,23 @@ function tileMarkup(
   colorBy: ColorBy,
   figures: RackFigures | undefined,
   live: FloorPlanLiveState["tiles"][string] | undefined,
-  hideName = false
+  hideName = false,
+  icons = false
 ): string {
   const w = t.width * CELL
   const h = t.height * CELL
   const rackLive = live?.kind === "rack" ? live : null
+  // Tile icons: solid on paper as on a light screen (tile-face.ts).
+  const solid = icons && !(t.display === "photo" && t.photo)
   const paint = tilePaint({
     tile: t,
     colorBy,
     rack: figures ?? rackFigures(null, rackLive),
     check: live?.check ?? null,
+    solid,
+    theme: "light",
   })
+  const ink = paint.ink
   const dashed = t.status === "planned" || t.status === "reserved"
   const iw = w - GUTTER * 2
   const ih = h - GUTTER * 2
@@ -825,8 +919,8 @@ function tileMarkup(
       width: bar.width,
       height: bar.height,
       rx: 1.5,
-      fill: paint.fill,
-      opacity: 0.9,
+      fill: ink ?? paint.fill,
+      opacity: ink ? SOLID_MARK_OPACITY : 0.9,
     })
   )
   const figure = paint.figure
@@ -835,17 +929,36 @@ function tileMarkup(
   const stacked = !!figureText && (!wide || (!!figure?.always && h < CELL * 2))
   const lift = figure ? figureLift(t.orientation) : 0
   const name = hideName ? "" : tileName(t)
-  if (name) {
-    const room = stacked ? h - 14 : h
-    const size = stacked ? Math.min(11, room * 0.45) : 11
+  const size = stacked ? Math.min(11, (h - 14) * 0.45) : 11
+  const shown = name ? clip(name, w - 8, size) : ""
+  // The glyph, as TileShape places it: what the marks leave free.
+  const glyphName = icons ? tileIcon(t) : ""
+  const face = glyphName
+    ? tileFace({
+        w,
+        h,
+        orientation: t.orientation,
+        figure: figure ? { text: !!figureText } : null,
+        count: live?.kind === "cabinet",
+        riser: t.riser ? Math.min(14, (h - GUTTER * 2) * 0.32) : 0,
+        name: shown ? { text: shown, fontSize: size } : null,
+      })
+    : null
+  if (face?.glyph) {
+    const g = face.glyph
+    const icon = iconMarkup(glyphName, g.x, g.y, g.size, ink ?? paint.fill)
+    parts.push(ink ? icon : `<g opacity="0.55">${icon}</g>`)
+  }
+  if (shown) {
+    const at = face?.glyph && face.label ? face.label : null
     const y = stacked ? (h - 14 - lift) / 2 + size / 3 : h / 2 + size / 3
     parts.push(
-      text(clip(name, w - 8, size), {
-        x: w / 2,
-        y,
+      text(shown, {
+        x: at?.x ?? w / 2,
+        y: at?.y ?? y,
         "text-anchor": "middle",
         "font-size": size,
-        fill: PAPER_INK,
+        fill: ink ?? PAPER_INK,
         opacity: paint.muted ? 0.6 : 1,
       })
     )
@@ -860,8 +973,8 @@ function tileMarkup(
         width: bw,
         height: fb.height,
         rx: 2,
-        fill: PAPER_INK,
-        "fill-opacity": 0.1,
+        fill: ink ?? PAPER_INK,
+        "fill-opacity": ink ? 0.28 : 0.1,
       })
     )
     if (figure.ratio != null)
@@ -872,7 +985,7 @@ function tileMarkup(
           width: Math.max(2, bw * Math.min(1, figure.ratio)),
           height: fb.height,
           rx: 2,
-          fill: figure.color,
+          fill: paint.barColor ?? figure.color,
         })
       )
     if (figureText)
@@ -882,7 +995,7 @@ function tileMarkup(
           y: h - GUTTER - 10 - lift,
           "text-anchor": wide ? "end" : "middle",
           "font-size": 8,
-          fill: PAPER_INK,
+          fill: ink ?? PAPER_INK,
           opacity: figure.always ? 0.85 : 0.7,
         })
       )
@@ -1382,7 +1495,10 @@ function symbolMarkup(
   t: FloorPlanTile,
   box: CellBox,
   iconTile = false,
-  rotation = 0
+  rotation = 0,
+  /** Tile icons: the solid tile's paint, so the symbol is the tile from
+   * afar - its colour by the plan's Color by, its ink. */
+  solid: TilePaint | null = null
 ): string {
   const r = (n: number) => +n.toFixed(2)
   const w = box.w * CELL
@@ -1400,9 +1516,9 @@ function symbolMarkup(
       width: r(w),
       height: r(h),
       rx: r(Math.min(w, h) * 0.2),
-      fill: tileFill(t),
-      "fill-opacity": 0.9,
-      stroke: tileFill(t),
+      fill: solid?.ink ? solid.fill : tileFill(t),
+      "fill-opacity": solid?.ink ? 1 : 0.9,
+      stroke: solid?.ink ? solid.stroke : tileFill(t),
       "data-symbol": t.id,
       ...(iconTile ? { "data-icon-tile": t.id } : {}),
     }) +
@@ -1411,7 +1527,7 @@ function symbolMarkup(
       r(box.x * CELL + w / 2 - side / 2),
       r(box.y * CELL + h / 2 - side / 2),
       r(side),
-      "#ffffff"
+      solid?.ink ?? "#ffffff"
     )
   )
 }
@@ -1515,8 +1631,25 @@ function clusterMarkup(
   )
 }
 
-/** The plan as SVG markup, `viewBox="0 0 W H"` in plan pixels. */
-export function planSvg({
+/** The plan as SVG markup, `viewBox="0 0 W H"` in plan pixels. With Tile
+ * icons on, its icons are a sprite: one symbol each, a <use> per tile. */
+export function planSvg(input: PlanSvgInput): string {
+  const prev = sheetIcons
+  sheetIcons = input.tileIcons ? new Map() : null
+  try {
+    const svg = planSvgBody(input)
+    if (!sheetIcons?.size) return svg
+    const head = svg.indexOf(">", svg.indexOf("<svg"))
+    if (head < 0) return svg
+    return (
+      svg.slice(0, head + 1) + sheetIconDefs(sheetIcons) + svg.slice(head + 1)
+    )
+  } finally {
+    sheetIcons = prev
+  }
+}
+
+function planSvgBody({
   plan,
   tiles,
   walls = [],
@@ -1532,9 +1665,11 @@ export function planSvg({
   fitContent,
   objectSize = "real",
   iconTiles = false,
+  tileIcons = false,
   mmPerPx: sheetMmPerPx,
   cameras,
   callouts = false,
+  dimTileIds,
 }: PlanSvgInput): string {
   const w = plan.grid_width * CELL
   const h = plan.grid_height * CELL
@@ -1778,6 +1913,8 @@ export function planSvg({
         : 10 * paperMmPerPx) * toPx,
     areas: areaShapes,
     areaFontPx: 12 * areaGrow,
+    areaNameDefault: plan.state?.area_names,
+    walls,
     planLabels: shapes.filter((x): x is LabelShape => x.kind === "label"),
     cellMm: plan.cell_mm,
     cables:
@@ -1827,7 +1964,15 @@ export function planSvg({
     }
   // Rooms and areas: over the zones, under the tiles.
   for (const s of shapes.filter((x) => x.kind === "area").sort(byZ))
-    body.push(areaMarkup(s, pat, areaGrow, labels.areas.get(s.id)))
+    body.push(
+      areaMarkup(
+        s,
+        pat,
+        areaGrow,
+        labels.areas.get(s.id),
+        resolveAreaNameLook(plan.state?.area_names, s.name_style)
+      )
+    )
   // Readable: the grown symbols over the rest.
   const solid = tiles.filter((t) => !isZone(t))
   const ordered = anyShape
@@ -1852,13 +1997,35 @@ export function planSvg({
   for (const t of ordered) {
     // Folded into a cluster: the cluster prints it.
     if (icons.clusterOf.has(t.id)) continue
+    // What the plan's filter leaves out prints faded, as on screen.
+    const recede = (m: string) =>
+      dimTileIds?.has(t.id) ? `<g opacity="${RECEDE_OPACITY}">${m}</g>` : m
     // A free plan's tile turned past its quarter turn (shapes.ts).
     const r = free ? tileBox(t).rotation : 0
     // Too thin to read: its symbol at the drawn size.
     const shape = shapeOf(t)
     if (shape?.symbol) {
+      const live = liveState?.tiles[t.id]
       body.push(
-        symbolMarkup(t, shape.box, iconIds.has(t.id), iconIds.has(t.id) ? 0 : r)
+        recede(
+          symbolMarkup(
+            t,
+            shape.box,
+            iconIds.has(t.id),
+            iconIds.has(t.id) ? 0 : r,
+            tileIcons
+              ? tilePaint({
+                  tile: t,
+                  colorBy,
+                  rack:
+                    figures?.get(t.id) ??
+                    rackFigures(null, live?.kind === "rack" ? live : null),
+                  check: live?.check ?? null,
+                  solid: true,
+                })
+              : null
+          )
+        )
       )
       continue
     }
@@ -1868,7 +2035,8 @@ export function planSvg({
       colorBy,
       figures?.get(t.id),
       liveState?.tiles[t.id],
-      labels.tileNamesHere.has(t.id)
+      labels.tileNamesHere.has(t.id),
+      tileIcons
     )
     const ccx = (t.x + t.width / 2) * CELL
     const ccy = (t.y + t.height / 2) * CELL
@@ -1880,7 +2048,7 @@ export function planSvg({
     ]
       .filter(Boolean)
       .join(" ")
-    body.push(turns ? `<g transform="${turns}">${markup}</g>` : markup)
+    body.push(recede(turns ? `<g transform="${turns}">${markup}</g>` : markup))
   }
   for (const c of icons.clusters) {
     const face = faces.get(c.id)!

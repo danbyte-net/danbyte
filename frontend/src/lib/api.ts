@@ -187,8 +187,8 @@ export function apiErrorMessage(
       const rec = body as Record<string, unknown>
       if (typeof rec.detail === "string" && rec.detail) return rec.detail
       for (const [key, val] of Object.entries(rec)) {
-        const first = Array.isArray(val) ? val[0] : val
-        if (typeof first === "string" && first)
+        const first = firstErrorText(val)
+        if (first)
           return key === "non_field_errors" ? first : `${key}: ${first}`
       }
     }
@@ -197,6 +197,66 @@ export function apiErrorMessage(
   }
   if (err instanceof Error && err.message) return err.message
   return fallback
+}
+
+const INDEX_KEY = /^\d+$/
+
+/** True for a dict of per-item errors keyed by the item's index, the shape
+ * DRF gives a nested list (`{"1": {"name": ["…"]}}`). */
+function isIndexDict(value: unknown): value is Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false
+  const keys = Object.keys(value)
+  return keys.length > 0 && keys.every((k) => INDEX_KEY.test(k))
+}
+
+/**
+ * The per-item errors of a list field, by the position each item was sent
+ * at, or null when `value` is not a per-item answer. DRF answers a nested
+ * list as a dict keyed by index holding the failing items only
+ * (`{"1": {...}}`); a hand-built answer (or one from before 0.20) is a list
+ * with `{}` for the items that passed. Both read the same here. A list of
+ * plain messages is about the list as a whole, not its items: null.
+ */
+export function itemErrors(value: unknown): unknown[] | null {
+  if (Array.isArray(value)) {
+    return value.some((v) => v && typeof v === "object") ? value : null
+  }
+  if (!isIndexDict(value)) return null
+  const out: unknown[] = []
+  for (const [k, v] of Object.entries(value)) out[Number(k)] = v
+  for (let i = 0; i < out.length; i++) if (out[i] === undefined) out[i] = {}
+  return out
+}
+
+/**
+ * The first message in a DRF error value of any shape: a string, a list of
+ * messages, a field dict, or per-item errors (either shape), which name the
+ * item ("row 2, name: …").
+ */
+export function firstErrorText(value: unknown): string | null {
+  if (typeof value === "string") return value || null
+  const items = itemErrors(value)
+  if (items) {
+    for (let i = 0; i < items.length; i++) {
+      const text = firstErrorText(items[i])
+      if (text) return `row ${i + 1}, ${text}`
+    }
+    return null
+  }
+  if (Array.isArray(value)) {
+    for (const v of value) {
+      const text = firstErrorText(v)
+      if (text) return text
+    }
+    return null
+  }
+  if (value && typeof value === "object") {
+    for (const [k, v] of Object.entries(value)) {
+      const text = firstErrorText(v)
+      if (text) return k === "non_field_errors" ? text : `${k}: ${text}`
+    }
+  }
+  return null
 }
 
 // ─── Domain types ──────────────────────────────────────────────────────
@@ -258,6 +318,9 @@ export interface TagUsage {
 export interface ObjectPerms {
   change: boolean
   delete: boolean
+  /** Prefixes only: may a prefix be created inside this one? False for a
+   * site-limited creator under shared or another site's space. */
+  add_child?: boolean
   /** Only present on types that report extra verbs (scripts). */
   run?: boolean
   trust?: boolean
@@ -278,6 +341,9 @@ export interface Prefix {
   id: string
   numid: number | null
   cidr: string
+  /** Built-in discovery never contacts it (#451). Read-only here - set with
+   * POST /api/discovery/exempt/. */
+  scan_exempt?: boolean
   /** Backs a DHCP scope. */
   dhcp?: boolean
   status: StatusMini | null
@@ -404,6 +470,12 @@ export interface Me {
   /** Hide the local username/password form when SSO providers exist (#119).
    * Cosmetic de-emphasis - the API keeps accepting local credentials. */
   hide_local_login?: boolean
+  /** Login page: offer "Forgot password?" (reset by email is on and mail
+   * can be sent). Anonymous answer only. */
+  password_reset_available?: boolean
+  /** Where this account's password lives; only "local" can change it here.
+   * "none" is a local account with no password yet. */
+  password_source?: "local" | "ldap" | "sso" | "none"
   /** Whether to surface per-tenant human-readable numbers (numid) in the UI. */
   human_ids_enabled?: boolean
   /** Faceplates / photo ports draw "marked connected" ports lit like cabled. */
@@ -482,6 +554,23 @@ export const auth = {
       method: "POST",
       body: JSON.stringify({ uid, token, password }),
     }),
+  /** Session only: an API token can't change a password. */
+  changePassword: (current_password: string, new_password: string) =>
+    api<{ ok: boolean; sessions_ended: number }>("/api/auth/password/change/", {
+      method: "POST",
+      body: JSON.stringify({ current_password, new_password }),
+    }),
+  /** Always the same answer, whether or not the account exists. */
+  requestPasswordReset: (identifier: string) =>
+    api<{ detail: string }>("/api/auth/password-reset/", {
+      method: "POST",
+      body: JSON.stringify({ identifier }),
+    }),
+  confirmPasswordReset: (uid: string, token: string, password: string) =>
+    api<{ ok: boolean }>("/api/auth/password-reset/confirm/", {
+      method: "POST",
+      body: JSON.stringify({ uid, token, password }),
+    }),
   totpSetup: () =>
     api<TotpSetup>("/api/auth/mfa/totp/setup/", { method: "POST" }),
   totpConfirm: (code: string) =>
@@ -515,6 +604,7 @@ export type RBACAction =
   | "view_config"
   | "view_cost"
   | "provision"
+  | "scan"
 
 export interface RBACUser {
   id: number
@@ -630,13 +720,20 @@ export interface ColumnPrefData {
   order: string[]
   /** Column ids the user has hidden. */
   hidden: string[]
+  /** Column ids pinned to the left edge, in pin order. Absent on layouts
+   * saved before pins existed - read as none. */
+  pinned?: string[]
 }
 
 export interface ColumnPref {
-  /** Where the effective layout came from. `tenant_forced` = admin lock. */
-  source: "user" | "default" | "tenant_forced" | "none"
+  /** Where the effective layout came from. `tenant_forced` = admin lock,
+   * `preset` = a layout preset assigned to you, a group or everyone. */
+  source: "user" | "preset" | "default" | "tenant_forced" | "none"
   data: ColumnPrefData | null
   is_forced: boolean
+  /** The layout preset that supplies your default for this table - what
+   * Reset returns to - even while your own layout wins. */
+  preset?: { id: string; name: string } | null
 }
 
 /** One row of the bulk summary (GET /api/prefs/columns/) - table_id → this. */
@@ -644,6 +741,8 @@ export interface ColumnPrefSummary {
   source: ColumnPref["source"]
   is_forced: boolean
   has_user_row: boolean
+  /** The layout preset that supplies your default for the table. */
+  preset?: { id: string; name: string } | null
 }
 
 // ─── Space map ─────────────────────────────────────────────────────────
@@ -994,6 +1093,12 @@ export interface IPAddress {
   /** Every check parked: nothing runs, nothing counts. Read-only here - set
    * with POST /api/monitoring/ips/<id>/exclude/. */
   monitoring_excluded?: boolean
+  /** Built-in discovery never contacts it (#451). Read-only here - set with
+   * POST /api/discovery/exempt/. */
+  scan_exempt?: boolean
+  /** The exempt prefix that covers it (detail only); ids null when the
+   * prefix is not visible to the caller. */
+  scan_exempt_via?: { id: string | null; cidr: string | null } | null
   /** Availability counts from here (a reset); null = all history counts. */
   availability_since?: string | null
   is_primary_for_device: boolean
@@ -1315,7 +1420,46 @@ export interface SiteMapProviderNetwork {
 export interface SiteMapConnections {
   connections: SiteMapConnection[]
   provider_networks?: SiteMapProviderNetwork[]
+  /** `?include=dependencies` (#450). */
+  dependencies?: SiteMapDependencyLine[]
 }
+
+/** One end of a device-to-device dependency line on the site map. */
+export interface SiteMapDependencyEnd {
+  lat: number
+  lng: number
+  device_id: string
+  device_name: string
+  site_id: string | null
+}
+
+/** A dependency line on the site map (#450): between two devices with
+ * their own coordinates (upstream at `a`), or the dependencies between two
+ * placed sites aggregated per medium and kind (upstreams at `site_a`). */
+export type SiteMapDependencyLine =
+  | {
+      id: string
+      kind: "devices"
+      dependency_kind: DependencyKind
+      medium: DependencyMediumRef | null
+      redundancy_group: string
+      a: SiteMapDependencyEnd
+      z: SiteMapDependencyEnd
+    }
+  | {
+      id: string
+      kind: "sites"
+      dependency_kind: DependencyKind
+      medium: DependencyMediumRef | null
+      site_a: SiteMapConnection["site_a"]
+      site_z: SiteMapConnection["site_z"]
+      count: number
+      pairs: {
+        upstream: { id: string; name: string }
+        downstream: { id: string; name: string }
+        redundancy_group: string
+      }[]
+    }
 
 /** Where a site map line's speed comes from (#246): a circuit's `commit`
  * rate, its terminations' `port` / upstream speeds, the `interface`s cabled
@@ -1388,12 +1532,24 @@ export interface SiteMapLineCapacity {
   link_count: number
 }
 
+/** The vector basemap's label language (core DeploymentSettings
+ * MAP_LABEL_CHOICES). */
+export type MapLabelLanguage =
+  "en" | "en_local" | "browser" | "browser_local" | "local"
+
 export interface SiteMapPayload {
   tiles: {
     url: string
     attribution: string
     osm_default: boolean
     satellite: { url: string; attribution: string }
+    /** The street basemap kind (#467). `url` above stays the raster
+     * fallback for a browser without WebGL. */
+    basemap?: "raster" | "vector"
+    vector?: { url: string; attribution: string; osm_default: boolean }
+    /** The label language for this user (their preference, else the
+     * deployment default). */
+    labels?: MapLabelLanguage
   }
   sites: SiteMapSite[]
   devices: SiteMapDevice[]
@@ -1803,6 +1959,9 @@ export interface Device {
   id: string
   numid: number | null
   name: string
+  /** Built-in discovery never contacts it (#451). Read-only here - set with
+   * POST /api/discovery/exempt/. */
+  scan_exempt?: boolean
   /** Download URL of the device's own 3D model, or null (inherits). */
   model_3d?: string | null
   model_3d_fit?: Model3DFit
@@ -1872,6 +2031,11 @@ export interface Device {
   coverage?: DeviceCoverageBrief
   /** The soonest end across hardware, OS and coverage (#436). */
   lifecycle_next?: LifecycleNext | null
+  /** Open vulnerability records (#451): on table rows while the feature
+   * is on, else null. */
+  vulnerabilities?: HostVulnerabilities | null
+  /** Open-match summary (#451): table rows and the detail read. */
+  vulnerability_summary?: HostVulnerabilitySummary | null
   description: string
   // ─── Promoted built-in fields (visibility is admin-controlled) ──────────
   comments: string
@@ -2279,6 +2443,9 @@ export interface Application extends ApplicationMini {
   purl_template?: string
   /** CPE 2.3 template for the SBOM ({version}, {os_version}). */
   cpe_template?: string
+  /** Package names discovery links to it (#451): `deb:nginx`,
+   * `rpm:httpd`, `deb:postgresql-*`; a bare name = every Linux type. */
+  package_names?: string[]
   description: string
   tags: Tag[]
   custom_fields: Record<string, unknown>
@@ -2312,6 +2479,9 @@ export interface InstalledSoftware extends EffectiveOsDates {
   eol: EolInfo | null
   source: InstalledSoftwareSource
   last_seen: string | null
+  /** The version discovery's package inventory reads (#451); "" when no
+   * linked package is there. Differs from `version` on a person's row. */
+  observed_version?: string
   /** The application group that made the install, while it is its. */
   group: { id: string; name: string; slug: string } | null
   /** This install's own SPDX licence expression; "" = the application's. */
@@ -4557,7 +4727,36 @@ export interface TopoNode {
     service_id?: string
     circuit_count?: number
     circuits?: TopoCircuitRef[]
+    /** `group_clusters` only (#517): the cluster this device hosts. */
+    cluster?: { id: string; name: string }
+    /** A cluster drawn as one card (components/topology/clusters.ts). */
+    cluster_card?: TopoClusterCard
   }
+}
+
+/** A cluster on the topology (`group_clusters`, #517): its hosts on the
+ * map and its cables to each other node, counted per far node. */
+export interface TopoCluster {
+  id: string
+  name: string
+  /** Its frame or card node id (`cl:<id>`). */
+  frame: string
+  /** Host node ids, by name. */
+  members: string[]
+  member_count: number
+  /** Cables between its hosts. */
+  inner: number
+  links: { node: string; cable_count: number; edges: string[] }[]
+}
+
+/** What a cluster drawn as one card carries. */
+export interface TopoClusterCard {
+  id: string
+  name: string
+  member_count: number
+  /** Its hosts' names, by name. */
+  members: string[]
+  inner: number
 }
 
 /** A circuit as the topology's provider network nodes and lines name it. */
@@ -4792,11 +4991,20 @@ export interface TopoEdge {
     remote_port?: string
     /** BGP edges: the sessions between the two devices (both directions). */
     sessions?: string[]
-    kind?: "ibgp" | "ebgp" | null
+    /** BGP edges: the session kind; dependency edges: dependency or peer. */
+    kind?: "ibgp" | "ebgp" | DependencyKind | null
     vrf?: string | null
     address_families?: string[]
     a_asn?: number | null
     b_asn?: number | null
+    /** Dependency edges (`type: "dependency"`, #450): source is the
+     * upstream card, target the downstream one. */
+    dependency_id?: string
+    medium?: DependencyMediumRef | null
+    redundancy_group?: string
+    description?: string
+    upstream?: string
+    downstream?: string
   }
 }
 
@@ -4998,6 +5206,8 @@ export interface TopologyGraph {
   edges: TopoEdge[]
   /** Present only when the query asked for an `include`. */
   meta?: TopologyGraphMeta
+  /** `group_clusters` only (#517). */
+  clusters?: TopoCluster[]
 }
 
 export type TopologyInclude = "card" | "link_ips" | "photo"
@@ -5017,6 +5227,9 @@ export interface TopologyQuery {
   tag?: string
   /** Walk patch panels end to end (the server default is on). */
   collapse_panels?: boolean
+  /** Hosts of a cluster carry `cluster`, and the graph `clusters` (#517).
+   * Off by default; ignored with `group_by`. */
+  group_clusters?: boolean
   group_by?: "site" | "location"
   /** Opt-in enrichment; ignored with `group_by`. */
   include?: TopologyInclude[]
@@ -5042,6 +5255,7 @@ function topologyParams(q: TopologyQuery): URLSearchParams {
   if (q.depth !== undefined) p.set("depth", String(q.depth))
   if (q.collapse_panels !== undefined)
     p.set("collapse_panels", q.collapse_panels ? "1" : "0")
+  if (q.group_clusters) p.set("group_clusters", "1")
   if (q.include?.length) p.set("include", q.include.join(","))
   if (q.card_fields) p.set("card_fields", q.card_fields.join(","))
   return p
@@ -6560,6 +6774,9 @@ export interface VirtualMachine {
   id: string
   numid: number | null
   name: string
+  /** Built-in discovery never contacts it (#451). Read-only here - set with
+   * POST /api/discovery/exempt/. */
+  scan_exempt?: boolean
   /** This VM's own config-context data, merged last; null = none. */
   local_context_data?: Record<string, unknown> | null
   /** PRTG registration: follow policies, always, or never. */
@@ -6595,6 +6812,9 @@ export interface VirtualMachine {
     | null
   /** The platform's effective end of life (#436). */
   lifecycle_next?: LifecycleNext | null
+  /** Open vulnerability records (#451), as on a device row. */
+  vulnerabilities?: HostVulnerabilities | null
+  vulnerability_summary?: HostVulnerabilitySummary | null
   status: StatusMini | null
   /** The software version running (#395). */
   software_version?: string
@@ -8557,6 +8777,10 @@ export interface MonitoringSettings {
   fast_lane_max_checks: number
   group_notifications: boolean
   group_threshold: number
+  /** Root-cause alerting (#450): explain alerts behind a down upstream. */
+  root_cause_enabled: boolean
+  root_cause_hold_seconds: number
+  root_cause_hold_mode: "smart" | "always"
   discovery_enabled: boolean
   discovery_min_prefix_length: number
   discovery_interval_minutes: number
@@ -8676,6 +8900,17 @@ export interface MonitoringEngine {
   agent_version: string
   agent_hostname: string
   agent_ip: string
+  /** What the agent said it can do in its last hello (read-only). `runtime`
+   * (agent 0.10+) says whether it runs as root; absent = unknown. */
+  agent_capabilities?: {
+    discovery?: {
+      kinds: string[]
+      nmap: { version: string } | null
+      nmap_reason: string
+      protocol: number
+    }
+    runtime?: { root: boolean }
+  }
   binding_count: number
   check_count: number
   created_at: string
@@ -9447,12 +9682,26 @@ export interface Issuer {
   eab_kid: string
   eab_hmac_set: boolean
   verify_tls: boolean
+  /** PEM of the private CA's root(s), trusted on top of the server's store. */
+  ca_certificate: string
+  /** What is stored in `ca_certificate`, one entry per certificate. */
+  ca_certificate_info: IssuerCaCertificate[]
   dns_provider: DnsProvider
   dns_settings: Record<string, string | number>
   tsig_secret_set: boolean
   account_registered: boolean
   created_at: string
   updated_at: string
+}
+
+export interface IssuerCaCertificate {
+  subject: string
+  subject_cn: string
+  issuer: string
+  not_after: string
+  days_left: number
+  fingerprint_sha256: string
+  self_signed: boolean
 }
 
 export type AcmeOrderStatus =
@@ -9597,13 +9846,68 @@ export interface MonitoringAlert {
   flapping: boolean
   escalated: boolean
   notify_count: number
+  /** #450: sent as usual, held for its upstreams, explained by a down
+   * upstream, or withheld (cleared while held). */
+  notify_state: AlertNotifyState
+  notify_after: string | null
+  root_cause: AlertRootCause | null
+}
+
+export type AlertNotifyState = "sent" | "held" | "explained" | "withheld"
+
+export interface AlertRootCause {
+  id: string
+  status: RootCauseStatus
+  device: { id: string; name: string }
 }
 
 export interface AlertsResponse {
   counts: Partial<
-    Record<AlertSeverity | AlertLifecycle | "acknowledged", number>
+    Record<
+      AlertSeverity | AlertLifecycle | "acknowledged" | "explained" | "held",
+      number
+    >
   >
   results: MonitoringAlert[]
+}
+
+export type RootCauseStatus = "open" | "recovering" | "resolved"
+
+/** One down device explaining the alerts behind it (#450). */
+export interface RootCauseIncident {
+  id: string
+  device: { id: string; name: string }
+  status: RootCauseStatus
+  opened_at: string
+  recovering_since: string | null
+  resolved_at: string | null
+  announced_at: string | null
+  recovery_announced_at: string | null
+  explained_count: number
+  already_alerted_count: number
+  reduced_count: number
+  merged_into: { id: string; device: { id: string; name: string } } | null
+  acknowledged: boolean
+  acknowledged_at: string | null
+  acknowledged_by_name: string | null
+  ack_note: string
+  detail: {
+    silenced?: boolean
+    recovered?: number
+    total?: number
+    still_down?: number
+  } & Record<string, unknown>
+}
+
+export interface RootCausesResponse {
+  counts: Partial<Record<"open" | "resolved", number>>
+  results: RootCauseIncident[]
+}
+
+export interface RootCauseDetail {
+  incident: RootCauseIncident
+  alerts: MonitoringAlert[]
+  root_alerts: MonitoringAlert[]
 }
 
 export interface Silence {
@@ -9727,6 +10031,8 @@ export interface DashboardData {
   device_by_manufacturer: DashDist[]
   check_by_status: DashDist[]
   alerts_by_severity: DashDist[]
+  /** Firing alerts a down upstream explains (#450), not in the above. */
+  alerts_explained?: number
   reachable_pct: number | null
   /** Checks currently flagged as flapping, noisiest first (top 8). */
   flapping: FlappingRow[]
@@ -9746,6 +10052,7 @@ export type ComplianceCheck =
   | "eol_status"
   | "coverage"
   | "software_target"
+  | "vulnerabilities"
   | "expression"
 export type ComplianceSeverity = "critical" | "warning" | "info"
 
@@ -9827,9 +10134,14 @@ export interface ComplianceRule {
   fail_on_unknown?: boolean
   /** eol_status checks (#436): installed software counts too. */
   include_software?: boolean
+  /** vulnerabilities checks (#451): kev | fix_first | high | cvss. */
+  vuln_fail_on?: VulnFailOn
+  /** vulnerabilities checks failing on cvss: the score, 0.1 - 10. */
+  cvss_min?: DecimalValue | null
   created_at: string
   updated_at: string
 }
+export type VulnFailOn = "" | "kev" | "fix_first" | "high" | "cvss"
 export interface ComplianceViolation {
   rule_id: string
   rule_name: string
@@ -9841,6 +10153,8 @@ export interface ComplianceViolation {
   object_repr: string
   /** Why it fails, where the check says (software_target). */
   detail?: string
+  /** Where the fix is looked up, an SPA path (vulnerabilities checks). */
+  link?: string
   /** The object's site (a site's own id), or null. */
   site_id?: string | null
   site_name?: string
@@ -9991,6 +10305,10 @@ export interface DeviceComplianceViolation {
   condition?: ComplianceExpr | null
   refs?: Record<string, ComplianceRef>
   detail?: string
+  vuln_fail_on?: string
+  cvss_min?: DecimalValue | null
+  /** Where the fix is looked up, an SPA path (vulnerabilities checks). */
+  link?: string
 }
 
 /** Response of GET /api/compliance/devices/<id>/ - one device's compliance
@@ -10639,6 +10957,10 @@ export interface DeploymentSettings {
   map_tile_attribution: string
   map_satellite_url: string
   map_satellite_attribution: string
+  map_basemap: "raster" | "vector"
+  map_vector_url: string
+  map_vector_attribution: string
+  map_label_language: MapLabelLanguage
   enhanced_site_separation: boolean
   allow_site_settings: boolean
   allow_site_editor_delegation: boolean
@@ -11551,7 +11873,13 @@ export interface LifecycleOverview {
 
 /** Where a device's or VM's software version came from (#451). */
 export type SoftwareVersionSource =
-  "" | "manual" | "snmp" | "virtualization" | "oxidized" | "import"
+  | ""
+  | "manual"
+  | "snmp"
+  | "virtualization"
+  | "oxidized"
+  | "import"
+  | "discovery"
 
 /** One row of GET /api/lifecycle/versions/ (#451): a platform and version
  * with its device and VM counts. */
@@ -12183,8 +12511,68 @@ export interface ExportTemplate {
   bundle_path: string
   /** Read-only: `target_path` ends in `/` - one file per `{% file %}` block. */
   is_directory: boolean
+  /** CLI check on a render (#465): `""` = from the platform, `off`, `ios`. */
+  lint_family: ExportTemplateLintFamily
+  /** Rendered lines the CLI check skips: fnmatch patterns or plain prefixes. */
+  ignore_lint_patterns: string[]
   created_at: string
   updated_at: string
+}
+
+export type ExportTemplateLintFamily = "" | "off" | "ios"
+
+/** One CLI-check warning on a rendered line. */
+export interface CliLintWarning {
+  line: number
+  keyword: string
+  message: string
+  suggestion: string | null
+}
+
+/** `POST /api/export-templates/{id}/lint/` - `family` is `""` when the
+ * template's platform has no known command list (no check ran). */
+export interface CliLintResult {
+  family: string
+  family_label: string
+  warnings: CliLintWarning[]
+  /** Commands learned from this tenant's stored configs. */
+  learned: number
+}
+
+/** One saved version of a template or script body, read back from the change
+ * log (#465). `id` is the change-log entry, or `"current"` for the live text. */
+export interface TextVersion {
+  id: string
+  at: string | null
+  by: string
+  action: "create" | "update" | "current"
+  cause: string
+  /** False when the change log holds no text for this entry. */
+  text_kept: boolean
+  sha256: string | null
+  size: number | null
+  lines: number | null
+}
+
+export interface TextVersionList extends Paginated<TextVersion> {
+  current: TextVersion
+  /** The live text matches the newest logged version. */
+  current_logged: boolean
+  /** The first version is still in the change log (nothing pruned). */
+  history_complete: boolean
+}
+
+export interface TextVersionDetail extends TextVersion {
+  text: string | null
+  /** Unified diff from `against` to this version, with `?against=`. */
+  diff?: string | null
+  against?: TextVersion
+}
+
+/** `POST …/validate/`: the save-time Jinja syntax check on a draft. */
+export interface TemplateCheck {
+  ok: boolean
+  error: { message: string; line: number | null } | null
 }
 
 export interface ExportTemplateWritePayload {
@@ -12196,6 +12584,8 @@ export interface ExportTemplateWritePayload {
   file_extension?: string
   as_attachment?: boolean
   target_path?: string
+  lint_family?: ExportTemplateLintFamily
+  ignore_lint_patterns?: string[]
 }
 
 // ─── Config bundles ────────────────────────────────────────────────────
@@ -12360,13 +12750,17 @@ export interface SbomFilter {
   role?: string[]
   device?: string[]
   virtual_machine?: string[]
+  /** Add the CycloneDX `vulnerabilities` section (#451). */
+  vex?: boolean
 }
 
 /** The CycloneDX SBOM URL for a GET download (a site's, a few hosts'). */
 export function sbomUrl(filter: SbomFilter = {}): string {
   const p = new URLSearchParams()
   for (const [k, ids] of Object.entries(filter)) {
-    if (ids?.length) p.set(k, ids.join(","))
+    if (typeof ids === "boolean") {
+      if (ids) p.set(k, "1")
+    } else if (ids?.length) p.set(k, ids.join(","))
   }
   const q = p.toString()
   return q ? `/api/sbom/?${q}` : "/api/sbom/"
@@ -12448,6 +12842,8 @@ export interface SecretStoreField {
   default?: string | boolean
   /** Password fields: the deployment-settings boolean saying one is stored. */
   set_flag?: string
+  /** Text fields: shown in place of the hint while the value is http://. */
+  warn_http?: string
 }
 
 export interface SecretStoreProvider {
@@ -13203,6 +13599,12 @@ export interface FloorPlanTile {
     icon?: string
     /** A device's measured size - what "Fit to size" resizes to. */
     size_mm?: FloorObjectSize | null
+    /** A device's, rack's or cabinet's type (the plan's filter). */
+    type?: { id: string; name: string } | null
+    /** A device's, rack's or cabinet's status. */
+    status?: { id: string; name: string; color: string } | null
+    /** A device's, rack's or cabinet's tags. */
+    tags?: { id: number; name: string; slug: string; color: string }[]
   } | null
   fov_deg: number | null
   fov_distance: number | null
@@ -14094,10 +14496,34 @@ export interface FloorPlanArea extends FloorPlanOpensFields {
   fill_opacity: number
   border: FloorPlanAreaBorder
   show_name: boolean
+  /** How the name is drawn, over the plan's default (`state.area_names`);
+   * a key left out inherits. Absent from older payloads. */
+  name_style?: AreaNameStyle
   z: number
   locked: boolean
   created_at: string
   updated_at: string
+}
+
+/** Where an area's name sits in its box (inside its walls). */
+export type AreaNamePosition =
+  | "top-left"
+  | "top"
+  | "top-right"
+  | "left"
+  | "center"
+  | "right"
+  | "bottom-left"
+  | "bottom"
+  | "bottom-right"
+
+/** An area name's look: each key optional, one left out inherits. `color`
+ * "" is Auto (the theme-aware ink). */
+export interface AreaNameStyle {
+  position?: AreaNamePosition
+  size?: "s" | "m" | "l"
+  color?: string
+  plate?: boolean
 }
 
 export interface FloorPlanAreaWritePayload {
@@ -14121,6 +14547,7 @@ export interface FloorPlanAreaWritePayload {
   fill_opacity?: number
   border?: FloorPlanAreaBorder
   show_name?: boolean
+  name_style?: AreaNameStyle
   z?: number
   locked?: boolean
 }
@@ -17634,4 +18061,1124 @@ export interface NetworkPlan {
   }[]
   cables_skipped: { cable: NetworkPlanCable; reason: string }[]
   notes: string[]
+}
+
+// ─── Known vulnerabilities (#451) ────────────────────────────────────────
+
+export type VulnUpdateSource = "upload" | "server" | "browser"
+export type VulnImportKind = "nvd" | "osv" | "msrc" | "kev" | "epss"
+export type VulnPriority = "fix_first" | "high" | "medium" | "low"
+export type VulnSeverity = "critical" | "high" | "medium" | "low" | "none" | ""
+export type VulnConfidence = "exact" | "range" | "partial"
+export type VulnRunStatus = "running" | "ok" | "failed" | "abandoned"
+/** DRF sends decimals as strings. */
+export type DecimalValue = string | number
+
+export interface VulnSyncRun {
+  id: string
+  via: VulnUpdateSource
+  status: VulnRunStatus
+  started_at: string
+  finished_at: string | null
+  started_by: string | null
+  plan: Record<string, unknown> | null
+  counts: Record<string, unknown> | null
+  error: string
+}
+
+/** GET /api/vulnerabilities/settings/ - everyone reads `enabled`; the rest
+ * is there for a deployment admin only (`can_manage`). */
+export interface VulnSettings {
+  enabled: boolean
+  can_manage?: boolean
+  update_source?: VulnUpdateSource
+  update_sources?: VulnUpdateSource[]
+  nvd_url?: string
+  epss_url?: string
+  kev_url?: string
+  osv_url?: string
+  sync_epss?: boolean
+  sync_kev?: boolean
+  /** Microsoft's monthly documents (server and upload modes only). */
+  sync_msrc?: boolean
+  msrc_url?: string
+  msrc?: { months: number; newest: string | null; last_read_at: string | null }
+  nvd_api_key_set?: boolean
+  last_sync_at?: string | null
+  last_sync_status?: string
+  last_sync_error?: string
+  last_sync_via?: string
+  last_run?: VulnSyncRun | null
+  records?: number
+  records_by_kind?: { cpe: number; purl: number; msrc?: number }
+  import_kinds?: VulnImportKind[]
+  import_max_bytes?: number
+}
+
+export interface VulnSettingsPatch {
+  enabled?: boolean
+  update_source?: VulnUpdateSource
+  nvd_url?: string
+  epss_url?: string
+  kev_url?: string
+  osv_url?: string
+  sync_epss?: boolean
+  sync_kev?: boolean
+  sync_msrc?: boolean
+  msrc_url?: string
+  nvd_api_key?: string
+  nvd_api_key_clear?: boolean
+}
+
+export interface VulnRecordBrief {
+  vuln_id: string
+  aliases: string[]
+  summary: string
+  published: string | null
+  cvss_version: string
+  cvss_score: DecimalValue | null
+  cvss_severity: VulnSeverity
+  attack_vector: string
+  kev: boolean
+  kev_added: string | null
+  kev_due: string | null
+  epss: DecimalValue | null
+  epss_percentile: DecimalValue | null
+  analysed: boolean
+}
+
+export interface VulnRef {
+  id: string
+  name: string
+}
+
+export interface VulnMatch {
+  id: string
+  cve: VulnRecordBrief
+  priority: VulnPriority
+  confidence: VulnConfidence
+  /** `os_build`: the host's Windows build against Microsoft's fixed builds
+   * (no mapping, no package; `version` is the build). */
+  via: "platform" | "application" | "package" | "os_build"
+  version: string
+  device: VulnRef | null
+  virtual_machine: VulnRef | null
+  installed_software: {
+    id: string
+    version: string
+    application: VulnRef | null
+  } | null
+  /** Null for a match through an inventoried package (`via: "package"`). */
+  mapping: { id: string; identifier: string; platform?: VulnRef | null } | null
+  /** The package discovery read from the host (`via: "package"`). */
+  host_package?: {
+    id: string
+    name: string
+    version: string
+    arch: string
+    source_name: string
+    ecosystem: string
+    purl: string
+  } | null
+  /** The exception that covers it, if one does. */
+  exception: VulnExceptionBrief | null
+  first_seen_at: string
+  last_seen_at: string
+  resolved_at: string | null
+}
+
+export type VulnExceptionStatus = "not_applicable" | "risk_accepted"
+export type VulnExceptionScope =
+  "device" | "virtual_machine" | "platform" | "application" | "tenant"
+
+export interface VulnExceptionBrief {
+  id: string
+  numid: number | null
+  status: VulnExceptionStatus
+  scope: VulnExceptionScope
+  expires_on: string | null
+  owner_name: string
+}
+
+export type VulnVersionScheme =
+  | "auto"
+  | "cisco_ios"
+  | "cisco_iosxe"
+  | "cisco_nxos"
+  | "junos"
+  | "arista_eos"
+  | "semver"
+  | "pep440"
+  | "dpkg"
+  | "apk"
+  | "rpm"
+  | "generic"
+
+export interface ProductMapping {
+  id: string
+  numid: number | null
+  subject_type: "platform" | "devicetype" | "application"
+  platform: VulnRef | null
+  device_type: VulnRef | null
+  application: VulnRef | null
+  kind: "cpe" | "purl"
+  part: "" | "o" | "a" | "h"
+  vendor: string
+  product: string
+  identifier: string
+  version_scheme: VulnVersionScheme
+  /** The scheme in force (`auto` resolved). */
+  scheme: VulnVersionScheme
+  enabled: boolean
+  coverage: Record<string, number>
+  matched_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface ProductMappingWrite {
+  platform?: string
+  device_type?: string
+  application?: string
+  identifier?: string
+  version_scheme?: VulnVersionScheme
+  enabled?: boolean
+}
+
+export interface VulnCoverageRow {
+  mapping: ProductMapping
+  objects: number
+  matched: number
+  blank_version: number
+  version_not_understood: number
+  records: Record<string, number>
+}
+
+export interface CpeSearchRow {
+  part: string
+  vendor: string
+  product: string
+  cpe: string
+  /** Local: records in the store naming it. */
+  cves?: number
+  /** Remote: an example title and how many CPE names NVD has for it. */
+  example_title?: string
+  names?: number
+  deprecated?: boolean
+}
+
+export interface CpeSearchResult {
+  query: string
+  typed: CpeSearchRow | null
+  local: CpeSearchRow[]
+  remote: CpeSearchRow[]
+  remote_status: "ok" | "cached" | "off" | "limited" | "error"
+  remote_error: string
+  retry_after?: number
+  /** Where the store's records come from; NVD is asked only for `server`. */
+  update_source?: VulnUpdateSource
+}
+
+/** A device's or VM's open vulnerability records (the list column). */
+export interface HostVulnerabilities {
+  open: number
+  /** The worst priority among them; "" when none is open. */
+  priority: VulnPriority | ""
+  kev: boolean
+}
+
+/** `vulnerability_summary` on device and VM table rows and detail reads
+ * (#451): the open matches no exception covers - what the host's
+ * Vulnerabilities tab lists by default. Null while the feature is off and
+ * on the plain list. */
+export interface HostVulnerabilitySummary {
+  open: number
+  /** The worst CVSS severity among them; "" when none is open or scored. */
+  worst_severity: VulnSeverity
+  max_cvss: number | null
+  fix_first: number
+  kev: number
+}
+
+/** GET /api/vulnerabilities/ - one row per record matched in the tenant. */
+export interface VulnRecordRow extends VulnRecordBrief {
+  /** The record id again, as every list row's key. */
+  id: string
+  priority: VulnPriority | ""
+  devices: number
+  virtual_machines: number
+  installs: number
+  matches: number
+  /** Its matches an exception covers (not in the other counts). */
+  excepted: number
+  first_seen_at: string
+}
+
+/** GET /api/vulnerabilities/<id>/ - the record with its open matches. */
+export interface VulnRecordDetail extends VulnRecordBrief {
+  last_modified: string | null
+  vuln_status: string
+  rejected: boolean
+  cvss_vector: string
+  cvss_verified: boolean
+  cwes: string[]
+  references: { url: string; tags?: string[] }[]
+  fixed_in: {
+    part?: string
+    vendor?: string
+    product?: string
+    version: string
+  }[]
+  osv_fixed_in: { ecosystem: string; name: string; version: string }[]
+  /** Microsoft's fixed builds per Windows product. */
+  msrc_fixed_in?: {
+    product: string
+    month: string
+    fixed: string[]
+    kbs: string[]
+  }[]
+  kev_action: string
+  kev_ransomware: string
+  epss_date: string | null
+  source: string
+  fetched_at: string | null
+  priority: VulnPriority
+  affected_count: number
+  excepted_count: number
+  affected: VulnMatch[]
+}
+
+/** GET /api/vulnerabilities/summary/ - the dashboard widget's numbers. */
+export interface VulnSummary {
+  records: number
+  devices: number
+  virtual_machines: number
+  matches: number
+  kev: number
+  critical: number
+  new_this_week: number
+  excepted: number
+  excepted_records: number
+  by_priority: Record<VulnPriority, number>
+}
+
+export type VulnAnalysisState =
+  "not_affected" | "false_positive" | "exploitable"
+export type VulnAnalysisJustification =
+  | ""
+  | "code_not_present"
+  | "code_not_reachable"
+  | "requires_configuration"
+  | "requires_dependency"
+  | "requires_environment"
+  | "protected_by_compiler"
+  | "protected_at_runtime"
+  | "protected_at_perimeter"
+  | "protected_by_mitigating_control"
+export type VulnAnalysisResponse =
+  | "can_not_fix"
+  | "will_not_fix"
+  | "update"
+  | "rollback"
+  | "workaround_available"
+
+/** GET /api/vulnerability-exceptions/ - a decision about one record. */
+export interface VulnException {
+  id: string
+  numid: number | null
+  cve: {
+    id: string
+    vuln_id: string
+    aliases: string[]
+    cvss_score: DecimalValue | null
+    cvss_severity: VulnSeverity
+    kev: boolean
+    summary: string
+  }
+  scope: VulnExceptionScope
+  device: VulnRef | null
+  virtual_machine: VulnRef | null
+  platform: VulnRef | null
+  application: VulnRef | null
+  status: VulnExceptionStatus
+  reason: string
+  owner: { id: number; username: string; display_name: string } | null
+  owner_name: string
+  expires_on: string | null
+  active: boolean
+  analysis_state: VulnAnalysisState
+  analysis_justification: VulnAnalysisJustification
+  analysis_response: VulnAnalysisResponse[]
+  cyclonedx: Record<string, unknown>
+  /** Open matches it covers that you may see. */
+  matches: number
+  created_by: { id: number; username: string; display_name: string } | null
+  expiry_notified_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+/** POST/PATCH /api/vulnerability-exceptions/. Record and scope only on
+ * create. */
+export interface VulnExceptionWrite {
+  vuln_id?: string
+  status?: VulnExceptionStatus
+  reason?: string
+  owner_id?: number | null
+  expires_on?: string | null
+  device_id?: string
+  virtual_machine_id?: string
+  platform_id?: string
+  application_id?: string
+  analysis_state?: VulnAnalysisState
+  analysis_justification?: VulnAnalysisJustification
+  analysis_response?: VulnAnalysisResponse[]
+}
+
+/** GET /api/vulnerability-exceptions/scopes/ - what the caller may create. */
+export interface VulnExceptionScopes {
+  scopes: VulnExceptionScope[]
+  site_limited: boolean
+  /** May name another owner (the people picker's rule); else it is `you`. */
+  can_pick_owner: boolean
+  you: { id: number; username: string; display_name: string }
+}
+
+export type VulnNotifyOn = "fix_first" | "critical" | "kev"
+
+export interface VulnPolicy {
+  kev_is_fix_first: boolean
+  fix_first_epss: DecimalValue
+  fix_first_cvss: DecimalValue
+  high_cvss: DecimalValue
+  high_epss: DecimalValue
+  high_epss_cvss: DecimalValue
+  medium_cvss: DecimalValue
+  notify_on: VulnNotifyOn[]
+  notify_enabled: boolean
+  updated_at: string
+  can_change: boolean
+}
+
+// ─── Discovery (#451 B2) ─────────────────────────────────────────────────
+
+export interface DiscoveryStatus {
+  /** The deployment switch, whichever way it is set. */
+  deployment_enabled: boolean
+  deployment: {
+    enabled: boolean
+    /** `env`: DANBYTE_DISCOVERY_ENABLED locks it; `setting`: stored, changed
+     * on the Discovery card by deployment admins. */
+    source: "env" | "setting"
+    changed_by: string
+    changed_at: string | null
+    can_change: boolean
+  }
+  /** The tenant's Discovery integration toggle. */
+  enabled: boolean
+  /** Both on. */
+  active: boolean
+  can_manage: boolean
+  /** Run now may offer "Accept new host keys" on this deployment. */
+  first_use_keys_allowed: boolean
+}
+
+export interface DiscoverySettings {
+  deny_subnets: string[]
+  /** The transports discovery may log in with, tried in this order. */
+  transports: { ssh_key: boolean; ssh_password: boolean; winrm: boolean }
+  winrm: {
+    /** WinRM can be switched on: built in and not forbidden. */
+    available: boolean
+    /** Badge text when it cannot: "Not available in this build", … */
+    label: string
+    reason: string
+  }
+  /** Service scans may use an nmap the admin installed (#451 B4). */
+  nmap: {
+    /** Found, runnable and not forbidden by the deployment. */
+    available: boolean
+    enabled: boolean
+    path: string
+    version: string
+    /** "nmap 7.95 at /usr/bin/nmap", "Not found", … */
+    label: string
+    reason: string
+    /** Outposts whose agent found an nmap it may run. */
+    outposts?: string[]
+  }
+  can_change: boolean
+  updated_at: string
+}
+
+export type InventoryRunStatus =
+  | "queued"
+  | "running"
+  | "ok"
+  | "partial"
+  | "failed"
+  | "skipped"
+  | "nothing_read"
+
+export type InventoryHostStatus =
+  | "ok"
+  | "auth_failed"
+  | "host_key_refused"
+  | "tls_refused"
+  | "unreachable"
+  | "timeout"
+  | "unsupported"
+  | "failed"
+  | "no_credential"
+  | "no_address"
+  | "exempt"
+  | "denied"
+  | "maintenance"
+  | "blocked"
+  /** A run on Outposts: why a host was not handed to one. */
+  | "no_outpost"
+  | "outpost_offline"
+  | "outpost_unsupported"
+
+export interface InventoryRunCounts {
+  hosts?: number
+  ok?: number
+  packages?: number
+  changed?: number
+  [status: string]: number | undefined
+}
+
+/** `inventory` reads packages; `service_scan` scans TCP ports (#451 B3). */
+export type DiscoveryProfileKind = "inventory" | "service_scan"
+
+/** Where a profile runs: the server, one Outpost, or each host's Outpost. */
+export type DiscoveryRunsOn = "server" | "outpost" | "host"
+
+export interface DiscoveryOutpostAbility {
+  ok: boolean
+  /** The host status a run would record when it cannot ("" when it can). */
+  status: "" | "no_outpost" | "outpost_offline" | "outpost_unsupported"
+  reason: string
+}
+
+/** An Outpost as the Runs on picker shows it (`/api/discovery/outposts/`). */
+export interface DiscoveryOutpost {
+  id: string
+  name: string
+  enabled: boolean
+  transport: "pull" | "ssh"
+  online: boolean
+  last_seen_at: string | null
+  agent_version: string
+  /** The discovery kinds its agent advertised; empty for an older agent. */
+  kinds: DiscoveryProfileKind[]
+  nmap_version: string
+  can: {
+    inventory: DiscoveryOutpostAbility
+    service_scan: DiscoveryOutpostAbility
+    nmap: DiscoveryOutpostAbility
+  }
+}
+
+export interface InventoryProfile {
+  id: string
+  numid: number | null
+  name: string
+  description: string
+  enabled: boolean
+  kind: DiscoveryProfileKind
+  /** Service scan: ports and "a-b" ranges; empty = the default list. */
+  ports: (number | string)[]
+  /** Service scan: new connections per second across a run. */
+  connects_per_second: number
+  /** The deployment's ceiling on connects_per_second. */
+  rate_cap: number
+  /** Service scan engine (#451 B4). */
+  scan_engine: "builtin" | "nmap"
+  /** nmap only: --version-intensity 0-5 and the timing template -T2..-T4. */
+  nmap_version_intensity: number
+  nmap_timing: number
+  /** Where it runs; a run on Outposts never falls back to the server. */
+  runs_on: DiscoveryRunsOn
+  outpost_id: string | null
+  outpost: DiscoveryOutpost | null
+  site_ids: string[]
+  prefix_ids: string[]
+  device_ids: string[]
+  virtual_machine_ids: string[]
+  /** The monitoring policy scope kinds, resolved by the monitoring resolver. */
+  region_ids: string[]
+  vrf_ids: string[]
+  platform_ids: string[]
+  device_type_ids: string[]
+  device_role_ids: string[]
+  /** Everything in the tenant; set only with `confirm_global: true`. */
+  scope_global: boolean
+  scope: {
+    sites: { id: string; name: string }[]
+    prefixes: { id: string; name: string }[]
+    devices: { id: string; name: string }[]
+    virtual_machines: { id: string; name: string }[]
+    regions: { id: string; name: string }[]
+    vrfs: { id: string; name: string }[]
+    platforms: { id: string; name: string }[]
+    device_types: { id: string; name: string }[]
+    device_roles: { id: string; name: string }[]
+    global: boolean
+  }
+  interval_hours: number
+  window_start: string | null
+  window_end: string | null
+  max_concurrency: number
+  timeout_seconds: number
+  authorisation: string
+  authorised: boolean
+  authorised_by_name: string
+  authorised_at: string | null
+  /** A shared credential tried right after each host's own. */
+  shared_credential_id: string | null
+  shared_credential: { id: string; name: string; kind: string } | null
+  /** Why it cannot run now; "" when it can. */
+  blocked_reason: string
+  /** The caller's change/delete rights on this profile. */
+  permissions?: ObjectPerms
+  last_run_at: string | null
+  last_run: {
+    id: string
+    status: InventoryRunStatus
+    created_at: string
+    finished_at: string | null
+    counts: InventoryRunCounts
+  } | null
+  created_at: string
+  updated_at: string
+}
+
+/** A monitoring policy's scope as profile fields, for the profile dialog's
+ * copy (`/api/discovery/policy-scope/<id>/`). A copy, not a link. */
+export interface DiscoveryPolicyScope {
+  id: string
+  scope: string
+  scope_label: string
+  target: { id: string; name: string } | null
+  global: boolean
+  /** The profile field the target lands in, e.g. "device_role_ids". */
+  field: string | null
+  /** The policy narrows its scope with filters or a target, not copied. */
+  filters: boolean
+  copyable: boolean
+  reason: string
+}
+
+export interface InventoryRun {
+  id: string
+  profile: { id: string; name: string }
+  trigger: "manual" | "schedule"
+  kind: DiscoveryProfileKind
+  started_by_name: string
+  /** The profile's authorisation when the run was queued, and who
+   * recorded it; blank on runs from before it was kept. */
+  authorisation?: string
+  authorised_by_name?: string
+  engine: string
+  status: InventoryRunStatus
+  created_at: string
+  started_at: string | null
+  finished_at: string | null
+  counts: InventoryRunCounts
+  /** One line by reason: "61 without a credential". */
+  summary: string
+  /** Run now with "Accept new host keys" ticked. */
+  accept_new_host_keys: boolean
+  errors: string[]
+  /** A run on Outposts: hosts still waiting for or with their Outpost. */
+  outstanding?: number
+  /** Detail only: whether the store has advisory data for the packages
+   * this run brought; null when that does not apply. */
+  advisories?: PackageAdvisoryState | null
+}
+
+/** Whether the vulnerability store holds advisory data for packages read
+ * after its last fetch (#451, `discovery.advisories`). */
+export interface PackageAdvisoryState {
+  mode: "upload" | "server" | "browser" | ""
+  /** `no_source`: OSV publishes no advisories for the host's distribution,
+   * so its packages are never matched. */
+  state: "fetched" | "not_fetched" | "queued" | "running" | "no_source"
+  last_fetch: string | null
+  /** With `no_source`: the distribution, "Fedora". */
+  distribution?: string
+  /** The caller may sync or import (deployment admin). */
+  can_sync?: boolean
+}
+
+/** How discovery read a host, most secure first; `ssh` is an older run. */
+export type InventoryTransport = "ssh_key" | "ssh_password" | "winrm" | "ssh"
+
+export interface InventoryHostResult {
+  id: string
+  device: { id: string; name: string } | null
+  virtual_machine: { id: string; name: string } | null
+  address: string
+  status: InventoryHostStatus
+  transport: InventoryTransport | ""
+  /** Each transport considered, in order: skipped (and why) or what it
+   * answered. */
+  attempts: { transport: InventoryTransport; outcome: string; reason: string }[]
+  /** "host", "shared: <name>", or "" when nothing was tried. */
+  credential_source: string
+  /** The host's key was accepted on first use by this run. */
+  key_first_use: boolean
+  message: string
+  packages: number
+  added: number
+  removed: number
+  updated: number
+  finished_at: string | null
+  /** Service scan: the address scanned, open ports, connections made. */
+  ip_address?: string | null
+  services?: number
+  connects?: number
+  /** What read it: "server", or "outpost: <name>"; "" when nothing did. */
+  engine?: string
+}
+
+export type ServiceConfidence = "high" | "medium" | "low"
+
+/** An open TCP port a service scan found (`/api/discovery/services/`). */
+export interface ObservedService {
+  id: string
+  address: string
+  port: number
+  protocol: string
+  ip_address: string
+  device: { id: string; name: string } | null
+  virtual_machine: { id: string; name: string } | null
+  service_name: string
+  banner: string
+  product: string
+  vendor: string
+  version: string
+  cpe: string
+  os_guess: string
+  source: "danbyte" | "recog" | "nmap" | "banner" | "port"
+  rule: string
+  confidence: ServiceConfidence
+  http: {
+    status?: number
+    server?: string
+    powered_by?: string
+    location?: string
+    title?: string
+  }
+  tls: {
+    subject_cn?: string
+    issuer_cn?: string
+    not_after?: string
+    fingerprint_sha256?: string
+    self_signed?: boolean
+  }
+  certificate: string | null
+  first_seen: string
+  last_seen: string
+  gone_at: string | null
+  run: string | null
+}
+
+export type FindingKind =
+  | "service"
+  | "software"
+  | "cpe"
+  // From the package inventory (#451).
+  | "platform"
+  | "application"
+  | "link"
+
+/** A host and the package that put it in an `application`/`link` finding. */
+export interface FindingPackageEvidence {
+  kind: "device" | "virtual_machine"
+  id: string
+  name: string
+  package: string
+  version: string
+}
+
+export interface FindingEvidence {
+  observed_id: string
+  address: string
+  port: number
+  protocol: string
+  service_name: string
+  banner: string
+  source: ObservedService["source"]
+  rule: string
+  confidence: ServiceConfidence
+  product: string
+  vendor: string
+  version: string
+  cpe: string
+  last_seen: string
+}
+
+/** A proposal in the review queue (`/api/discovery/findings/`). */
+export interface DiscoveryFinding {
+  id: string
+  kind: FindingKind
+  host: { kind: "device" | "virtual_machine"; id: string; name: string } | null
+  title: string
+  proposal: {
+    name?: string
+    protocol?: string
+    port?: number
+    application?: { id: string; name: string } | null
+    application_name?: string
+    version?: string
+    identifier?: string
+    /** `platform`: the tenant's platform (null: create one), its name, the
+     * host's platform now and the end-of-life cycle it gets. */
+    platform?: { id: string; name: string } | null
+    platform_name?: string
+    current?: { id: string; name: string } | null
+    eol?: { product: string; cycle: string } | null
+    /** `application` / `link`. */
+    software?: string
+    package_names?: string[]
+    hosts?: number
+  }
+  /** `platform`: what the read found. */
+  os?: {
+    os_id: string
+    version_id: string
+    pretty_name: string
+    collected_at: string
+  }
+  /** `application` / `link`: up to 20 hosts with the package. */
+  packages?: FindingPackageEvidence[]
+  confidence: ServiceConfidence
+  ignored: boolean
+  evidence: FindingEvidence[]
+}
+
+export interface FindingsPage extends Paginated<DiscoveryFinding> {
+  totals: Record<FindingKind, number>
+}
+
+/** A host as a profile's scope resolves now (`.../hosts/`). */
+export interface InventoryScopeHost {
+  kind: "device" | "virtual_machine" | "ipaddress"
+  ip_address?: { id: string; address: string }
+  id: string
+  name: string
+  address: string
+  status: InventoryHostStatus | "ready"
+  message: string
+  credential: { id: string; name: string } | null
+  credential_source: string
+  scan_exempt: boolean
+  /** "server", or the "outpost: <name>" that would read it. */
+  engine?: string
+  /** Whether the caller may set its scan_exempt. */
+  permissions?: { change: boolean }
+}
+
+/** `POST /api/discovery/exempt/` with `objects`. */
+export interface ScanExemptManyResult {
+  updated: { kind: string; id: string }[]
+  scan_exempt: boolean
+  not_found: number
+}
+
+/** An observed SSH host key nobody has accepted yet (`…/host-keys/`). */
+export interface PendingHostKey {
+  id: string
+  device: { id: string; name: string } | null
+  virtual_machine: { id: string; name: string } | null
+  address: string
+  key_type: string
+  fingerprint: string
+  first_seen: string | null
+  last_seen: string | null
+  /** The host has an accepted key of this type and this one differs. */
+  mismatch: boolean
+  can_accept: boolean
+}
+
+export interface HostKeyAcceptResult {
+  accepted: string[]
+  refused: { id: string; reason: string }[]
+  not_found: number
+}
+
+export type SharedCredentialKind =
+  | "ssh_password"
+  | "ssh_key"
+  | "https_login"
+  | "windows_login"
+  | "proxmox"
+  | "vmware"
+  | "winrm_cert"
+
+/** A login shared by every host its scope matches (Settings → Credentials). */
+export interface SharedCredential {
+  id: string
+  name: string
+  kind: SharedCredentialKind
+  username: string
+  port: number | null
+  secret_managed: boolean
+  secret_provider: string
+  secret_path: string
+  secret_set: boolean
+  description: string
+  enabled: boolean
+  weight: number
+  fall_through: boolean
+  applies_to_devices: boolean
+  applies_to_vms: boolean
+  all_hosts: boolean
+  role_ids: string[]
+  device_type_ids: string[]
+  platform_ids: string[]
+  site_ids: string[]
+  tag_ids: string[]
+  scope: {
+    roles: { id: string; name: string; color: string }[]
+    device_types: { id: string; name: string }[]
+    platforms: { id: string; name: string }[]
+    sites: { id: string; name: string }[]
+    tags: { id: string; name: string; color: string }[]
+  }
+  created_at: string
+  updated_at: string
+}
+
+export interface SharedCredentialMatches {
+  count: number
+  sample: { kind: "device" | "virtual_machine"; id: string; name: string }[]
+}
+
+export interface HostPackage {
+  id: string
+  name: string
+  version: string
+  arch: string
+  source_name: string
+  source_version: string
+  /** `generic`: a Windows program - inventory only, never matched. */
+  type: "deb" | "rpm" | "apk" | "generic"
+  ecosystem: string
+  purl: string
+  publisher: string
+  first_seen: string
+  last_seen: string
+  /** The application whose package names take it (#451); null when none,
+   * or without application view. */
+  application?: { id: string; name: string } | null
+  /** Open matches through this package no exception covers, with the
+   * worst CVSS severity; null while vulnerability data is off. */
+  cves?: { count: number; severity: VulnSeverity | "" } | null
+}
+
+export interface HostOsFact {
+  os_id: string
+  version_id: string
+  codename: string
+  pretty_name: string
+  ecosystem: string
+  package_manager: string
+  /** Windows: build and UBR (`version_id` holds 10.0.<build>.<ubr>). */
+  build: string
+  ubr: number | null
+  edition: string
+  display_version: string
+  /** Windows: registry InstallationType (`Server` = Desktop Experience,
+   * `Server Core`, `Client`) and the OS architecture (`x64`, `arm64`, `x86`). */
+  installation_type: string
+  architecture: string
+  hotfixes: { id: string; description: string; installed_on: string }[]
+  features: string[]
+  transport: InventoryTransport | ""
+  collected_at: string
+}
+
+export interface HostPackagePage extends Paginated<HostPackage> {
+  os: HostOsFact | null
+  /** Windows: the Microsoft product it matches as (blank with a `flag`
+   * when it cannot be placed) and its open OS-build CVEs. */
+  os_build?: {
+    product: string
+    build: string
+    flag: "" | "product_unknown" | "ubr_unknown"
+    open: number
+  } | null
+  /** Whether the store holds advisory data for these packages yet; null
+   * while vulnerability data is off or nothing is matched. */
+  advisories?: PackageAdvisoryState | null
+}
+
+// ─── Device dependencies (#450) ─────────────────────────────────────────────
+
+export type DependencyLineStyle = "solid" | "dashed" | "dotted"
+
+/** /api/dependency-media/ - what a dependency runs over (editable catalog). */
+export interface DependencyMedium {
+  id: string
+  name: string
+  slug: string
+  /** #rrggbb or "" for none. */
+  color: string
+  text_color: string
+  /** Lucide icon name, or "". */
+  icon: string
+  line_style: DependencyLineStyle
+  description: string
+  weight: number
+  usage_count: number
+  owning_site: { id: string; name: string } | null
+  permissions?: ObjectPerms
+  created_at: string
+  updated_at: string
+}
+
+/** `?picker=1` on /api/dependency-media/, and a dependency's `medium`. */
+export type DependencyMediumRef = Pick<
+  DependencyMedium,
+  "id" | "name" | "slug" | "color" | "text_color" | "icon" | "line_style"
+>
+
+export interface DependencyMediumWritePayload {
+  name: string
+  slug?: string
+  color: string
+  icon: string
+  line_style: DependencyLineStyle
+  weight: number
+  description: string
+}
+
+export type DependencyKind = "dependency" | "peer"
+
+/** One end of a dependency; null when the caller may not view the device. */
+export interface DependencyEnd {
+  id: string
+  name: string
+  site: { id: string; name: string } | null
+}
+
+/** /api/device-dependencies/ - the downstream depends on the upstream. */
+export interface DeviceDependency {
+  id: string
+  numid: number | null
+  upstream: DependencyEnd | null
+  downstream: DependencyEnd | null
+  kind: DependencyKind
+  kind_display: string
+  medium: DependencyMediumRef | null
+  redundancy_group: string
+  description: string
+  comments: string
+  tags: Tag[]
+  custom_fields: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+export interface DeviceDependencyWritePayload {
+  upstream_id?: string
+  downstream_id?: string
+  kind?: DependencyKind
+  medium_id?: string | null
+  redundancy_group?: string
+  description?: string
+}
+
+export type ImpactLevel = "outage" | "reduced_redundancy"
+
+/** GET /api/devices/<id>/impact/ and /api/device-dependencies/impact/. */
+export interface DependencyImpact {
+  root: { id: string; name: string }[]
+  devices: {
+    id: string
+    name: string
+    level: ImpactLevel
+    depth: number
+    via: { id: string; name: string }[]
+    site: { id: string; name: string } | null
+    rack: { id: string; name: string } | null
+  }[]
+  counts: Record<ImpactLevel, number>
+  truncated: boolean
+  impacts: { object_type: string; object_id: string; level: string }[]
+}
+
+export interface DependencyTreeNode {
+  /** The device id, or `hidden-N` for a device the caller may not view. */
+  id: string
+  name: string
+  hidden: boolean
+  site: { id: string; name: string } | null
+  role: { id: string; name: string; color: string } | null
+  status: StatusMini | null
+  /** Worst live check status of the device's addresses. */
+  check: string | null
+}
+
+export interface DependencyTreeEdge {
+  id: string
+  upstream: string
+  downstream: string
+  kind: DependencyKind
+  medium: DependencyMediumRef | null
+  redundancy_group: string
+  description: string
+}
+
+/** One proposal of POST /api/device-dependencies/suggest/. */
+export interface DependencyProposal {
+  /** `<upstream id>:<downstream id>`. */
+  key: string
+  upstream: DependencyEnd
+  downstream: DependencyEnd
+  /** Hops from the core to the downstream. */
+  distance: number
+  /** How the direction was read: one hop closer to the core, or an uplink
+   * port on one side of two devices at one distance. */
+  direction: "distance" | "uplink"
+  evidence: "cable" | "lldp"
+  medium_guess: string
+  medium: DependencyMediumRef | null
+  redundancy_group: string
+  ports: { downstream: string; upstream: string; evidence: "cable" | "lldp" }[]
+}
+
+export interface DependencySuggestion {
+  core: DependencyEnd
+  max_depth: number
+  /** Devices the walk reached, the core included. */
+  reached: number
+  skipped_existing: number
+  truncated: boolean
+  proposals: DependencyProposal[]
+}
+
+/** POST /api/device-dependencies/suggest/confirm/ - one result per row. */
+export interface DependencyConfirmResult {
+  created: number
+  results: (
+    | { index: number; ok: true; id: string }
+    | { index: number; ok: false; errors: Record<string, unknown> }
+  )[]
+}
+
+/** GET /api/devices/<id>/dependencies/. */
+export interface DependencyTree {
+  root: DependencyTreeNode
+  nodes: DependencyTreeNode[]
+  edges: DependencyTreeEdge[]
+  depth: number
+  truncated: { up: boolean; down: boolean }
+  /** The root-cause hold (#450); null with root-cause alerting off. */
+  hold_seconds?: number | null
+  /** Upstreams whose fastest check runs less often than the hold. */
+  slow_upstreams?: { id: string; name: string; interval_seconds: number }[]
 }

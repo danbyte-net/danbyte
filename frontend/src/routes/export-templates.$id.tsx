@@ -1,6 +1,6 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { useMutation, useQuery } from "@tanstack/react-query"
-import { Download, Pencil, Trash2 } from "lucide-react"
+import { Download } from "lucide-react"
 import { useCallback, useState } from "react"
 import { toast } from "sonner"
 
@@ -16,20 +16,23 @@ import { KvCard, dash } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { ExportTemplateDeleteDialog } from "@/components/export-template-delete-dialog"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { FileViewer } from "@/components/file-viewer"
+import { TextVersionsPanel } from "@/components/text-versions-panel"
 import { Loading } from "@/components/loading"
 
 const OBJECT_TYPE = "api.exporttemplate"
 
 // An export template has no reverse relations: nothing in the model points back
 // at it, and a render is produced on demand rather than stored. So the honest
-// page is Overview + Journal + History - with the template body treated as the
-// content, not as one more attribute row.
-type Tab = "overview" | "journal" | "history"
-const TABS: readonly Tab[] = ["overview", "journal", "history"]
+// page is Overview + Versions (#465, every saved body from the change log) +
+// Journal + History - with the template body treated as the content, not as
+// one more attribute row.
+type Tab = "overview" | "versions" | "journal" | "history"
+const TABS: readonly Tab[] = ["overview", "versions", "journal", "history"]
 
 export const Route = createFileRoute("/export-templates/$id")({
   component: ExportTemplateDetail,
@@ -106,27 +109,20 @@ function Body({ template: t }: { template: ExportTemplate }) {
       backLabel="Export templates"
       title={t.name}
       presence={{ type: "exporttemplate", id: t.id }}
+      edit={
+        canDo("exporttemplate", "change") && (
+          <EditButton to="/export-templates/$id/edit" params={{ id: t.id }} />
+        )
+      }
       actions={
         <>
           <RenderButton template={t} />
-          {canDo("exporttemplate", "change") && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/export-templates/$id/edit" params={{ id: t.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDo("exporttemplate", "delete") && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeleting(t)}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
         </>
+      }
+      remove={
+        canDo("exporttemplate", "delete") && (
+          <DeleteButton onClick={() => setDeleting(t)} />
+        )
       }
       hero={
         <DetailHero
@@ -146,6 +142,7 @@ function Body({ template: t }: { template: ExportTemplate }) {
       }
       tabs={[
         { value: "overview", label: "Overview" },
+        { value: "versions", label: "Versions" },
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },
       ]}
@@ -154,6 +151,14 @@ function Body({ template: t }: { template: ExportTemplate }) {
     >
       <DetailTab value="overview">
         <TemplateOverview template={t} />
+      </DetailTab>
+      <DetailTab value="versions">
+        <TextVersionsPanel
+          endpoint={`/api/export-templates/${t.id}`}
+          filename={`${t.name}.j2`}
+          canRestore={canDo("exporttemplate", "change")}
+          invalidate={[["export-template", t.id], ["export-templates"]]}
+        />
       </DetailTab>
       <DetailTab value="journal">
         <JournalPanel objectType={OBJECT_TYPE} objectId={t.id} />

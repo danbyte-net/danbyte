@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { Pencil, Plus, Trash2, X } from "lucide-react"
+import { Plus, X } from "lucide-react"
 import { useCallback, useMemo, useState } from "react"
 
 import { api } from "@/lib/api"
@@ -13,12 +13,16 @@ import type {
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useUrlText } from "@/lib/use-url-state"
 import { useMe } from "@/lib/use-me"
+import { VulnerabilityMappingCard } from "@/components/vulnerabilities/mapping-card"
+import { VulnerabilitiesTab } from "@/components/vulnerabilities/vulnerabilities-tab"
+import { useVulnSettings } from "@/components/vulnerabilities/use-vuln-settings"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { QueryError } from "@/components/query-error"
 import { Loading } from "@/components/loading"
 import { EmptyState } from "@/components/empty-state"
 import { DataTable } from "@/components/data-table"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { KvCard } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
@@ -66,6 +70,7 @@ function Body({ app }: { app: Application }) {
     | "diagram"
     | "children"
     | "groups"
+    | "vulnerabilities"
     | "journal"
     | "history"
   >("overview")
@@ -73,6 +78,7 @@ function Body({ app }: { app: Application }) {
   const [deleting, setDeleting] = useState<Application | null>(null)
   const goBack = useCallback(() => nav({ to: "/applications" }), [nav])
   const { canDo, humanIds } = useMe()
+  const vuln = useVulnSettings()
   const [cycle, setCycle] = useUrlText("cycle")
 
   const rows: KvRow[] = [
@@ -124,6 +130,16 @@ function Body({ app }: { app: Application }) {
       ),
     },
     {
+      label: "Package names",
+      value: app.package_names?.length ? (
+        <span className="font-mono break-all">
+          {app.package_names.join(", ")}
+        </span>
+      ) : (
+        dash
+      ),
+    },
+    {
       label: "Installs",
       value:
         app.install_count > 0 ? (
@@ -158,26 +174,15 @@ function Body({ app }: { app: Application }) {
       backLabel="Applications"
       title={app.name}
       presence={{ type: "application", id: app.id }}
-      actions={
-        <>
-          {canDo("application", "change") && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/applications/$id/edit" params={{ id: app.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDo("application", "delete") && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeleting(app)}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
-        </>
+      edit={
+        canDo("application", "change") && (
+          <EditButton to="/applications/$id/edit" params={{ id: app.id }} />
+        )
+      }
+      remove={
+        canDo("application", "delete") && (
+          <DeleteButton onClick={() => setDeleting(app)} />
+        )
       }
       hero={
         <DetailHero
@@ -220,6 +225,9 @@ function Body({ app }: { app: Application }) {
           count: app.child_count,
         },
         { value: "groups", label: "Groups" },
+        ...(vuln.enabled
+          ? [{ value: "vulnerabilities", label: "Vulnerabilities" }]
+          : []),
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },
       ]}
@@ -236,6 +244,13 @@ function Body({ app }: { app: Application }) {
             application={app}
             canEdit={canDo("application", "change")}
           />
+          <div className="max-w-xl">
+            <VulnerabilityMappingCard
+              subject="application"
+              object={app}
+              canEdit={canDo("application", "change")}
+            />
+          </div>
         </div>
       </DetailTab>
       <DetailTab value="installs">
@@ -260,6 +275,11 @@ function Body({ app }: { app: Application }) {
       <DetailTab value="groups">
         <ApplicationGroupsOfApp applicationId={app.id} />
       </DetailTab>
+      {vuln.enabled && (
+        <DetailTab value="vulnerabilities">
+          <VulnerabilitiesTab kind="application" id={app.id} />
+        </DetailTab>
+      )}
       <DetailTab value="journal">
         <JournalPanel objectType="api.application" objectId={app.id} />
       </DetailTab>

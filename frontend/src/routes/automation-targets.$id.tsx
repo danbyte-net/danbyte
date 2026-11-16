@@ -1,19 +1,19 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
-import { ExternalLink, Pencil, Trash2 } from "lucide-react"
+import { ExternalLink } from "lucide-react"
 import { useCallback, useMemo, useState } from "react"
 
 import { useUrlTab } from "@/lib/use-url-tab"
 import { api } from "@/lib/api"
 import type { AutomationTarget, DeployRun, Paginated } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { EmptyState } from "@/components/empty-state"
 import { TimeCell } from "@/components/cells/time-ago"
 import { KvCard, dash } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
@@ -68,27 +68,20 @@ function Body({ target: t }: { target: AutomationTarget }) {
       backLabel="Automation targets"
       title={t.name}
       presence={{ type: "automationtarget", id: t.id }}
+      edit={
+        canDo("automationtarget", "change") && (
+          <EditButton to="/automation-targets/$id/edit" params={{ id: t.id }} />
+        )
+      }
       actions={
         <>
           <AutomationTargetTestButton target={t} variant="button" />
-          {canDo("automationtarget", "change") && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/automation-targets/$id/edit" params={{ id: t.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDo("automationtarget", "delete") && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeleting(t)}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
         </>
+      }
+      remove={
+        canDo("automationtarget", "delete") && (
+          <DeleteButton onClick={() => setDeleting(t)} />
+        )
       }
       hero={
         <DetailHero

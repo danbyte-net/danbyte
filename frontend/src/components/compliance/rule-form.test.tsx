@@ -11,7 +11,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import type * as Api from "@/lib/api"
 import type { ComplianceField, ComplianceRule } from "@/lib/api"
-import { ComplianceRuleForm } from "./rule-form"
+import { ComplianceRuleForm, suits, vulnFields } from "./rule-form"
+import { splitSpaPath, ruleSummary } from "./compliance-shared"
 
 // The rule form: object-type toggles re-read the fields and mark the rows a
 // chosen type lacks, the preview counts per type, and an error the server
@@ -41,6 +42,8 @@ class ResizeObserverStub {
   disconnect() {}
 }
 vi.stubGlobal("ResizeObserver", ResizeObserverStub)
+// A field error is scrolled into view; jsdom has no layout.
+Element.prototype.scrollIntoView = () => {}
 
 const ROLE_ID = "11111111-1111-1111-1111-111111111111"
 const TAG_ID = "7"
@@ -131,6 +134,53 @@ function renderForm(rule?: ComplianceRule) {
 
 afterEach(cleanup)
 
+describe("known vulnerabilities check", () => {
+  it("suits devices and VMs only", () => {
+    expect(suits("vulnerabilities", ["device", "virtualmachine"])).toBe(true)
+    expect(suits("vulnerabilities", ["device", "prefix"])).toBe(false)
+  })
+
+  it("sends the score only when it fails on CVSS", () => {
+    expect(vulnFields("vulnerabilities", "cvss", "9.8")).toEqual({
+      vuln_fail_on: "cvss",
+      cvss_min: 9.8,
+    })
+    expect(vulnFields("vulnerabilities", "kev", "9.8")).toEqual({
+      vuln_fail_on: "kev",
+      cvss_min: null,
+    })
+    expect(vulnFields("expression", "kev", "9")).toEqual({
+      vuln_fail_on: "",
+      cvss_min: null,
+    })
+  })
+
+  it("reads as words and links its violations", () => {
+    const base = { field: "", pattern: "", tag: "", cf_key: "" }
+    expect(
+      ruleSummary({
+        ...base,
+        check_type: "vulnerabilities",
+        vuln_fail_on: "cvss",
+        cvss_min: "9.0",
+      })
+    ).toBe("no open vulnerability of CVSS 9.0 or over")
+    expect(
+      ruleSummary({
+        ...base,
+        check_type: "vulnerabilities",
+        vuln_fail_on: "kev",
+      })
+    ).toBe("no open vulnerability in CISA KEV")
+    expect(splitSpaPath("/devices/d1?tab=vulnerabilities")).toEqual({
+      to: "/devices/d1",
+      search: { tab: "vulnerabilities" },
+    })
+    expect(splitSpaPath("https://evil.example/")).toBeNull()
+    expect(splitSpaPath("//evil.example/")).toBeNull()
+  })
+})
+
 describe("compliance rule form", () => {
   beforeEach(() => {
     apiMock.mockReset()
@@ -185,6 +235,43 @@ describe("compliance rule form", () => {
     const sent = JSON.parse(String(init!.body))
     expect(sent.object_types).toEqual(["device"])
     expect(sent.scope).toEqual(RULE.scope)
+  })
+
+  it("sends a known vulnerabilities check with its CVSS score", async () => {
+    let sent: Record<string, unknown> | null = null
+    const { ApiError } = await vi.importActual<typeof Api>("@/lib/api")
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path.startsWith("/api/compliance/fields/"))
+        return { fields: fieldsFor(["device"]) }
+      if (path === "/api/compliance-rules/preview/")
+        return { by_type: {}, error: null }
+      if (path === "/api/compliance-rules/r1/" && init?.method === "PATCH") {
+        sent = JSON.parse(String(init.body))
+        throw new ApiError(400, { cvss_min: ["A CVSS score from 0.1 to 10."] })
+      }
+      throw new Error(`unexpected ${path}`)
+    })
+    renderForm({
+      ...RULE,
+      check_type: "vulnerabilities",
+      condition: null,
+      vuln_fail_on: "cvss",
+      cvss_min: "9.0",
+    })
+    expect(
+      (await screen.findAllByText("CVSS at or over")).length
+    ).toBeGreaterThan(0)
+    const score = screen.getByRole("spinbutton") as HTMLInputElement
+    expect(score.value).toBe("9")
+    fireEvent.change(score, { target: { value: "7.5" } })
+    fireEvent.click(screen.getByRole("button", { name: "Save rule" }))
+    expect(await screen.findByText("A CVSS score from 0.1 to 10.")).toBeTruthy()
+    expect(sent).toMatchObject({
+      check_type: "vulnerabilities",
+      vuln_fail_on: "cvss",
+      cvss_min: 7.5,
+      condition: null,
+    })
   })
 
   it("puts a server error on the row its path names", async () => {

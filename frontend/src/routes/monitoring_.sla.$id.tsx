@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import {
   keepPreviousData,
   useMutation,
@@ -44,6 +44,7 @@ import { Button } from "@/components/ui/button"
 import { TimeCell } from "@/components/cells/time-ago"
 import { ConfirmDialog } from "@/components/confirm-dialog"
 import { SlaEmailReport } from "@/components/monitoring/sla-email-report"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import {
   DetailHero,
   DetailShell,
@@ -166,7 +167,7 @@ function Body({ a }: { a: SlaAgreement }) {
     onSuccess: () => {
       toast.success(`Deleted ${a.name}`)
       qc.invalidateQueries({ queryKey: ["sla-agreements"] })
-      nav({ to: "/monitoring", search: { view: "sla", status: "all" } })
+      nav({ to: "/monitoring/sla" })
     },
     onError: (e) => apiErrorToast(e),
   })
@@ -192,11 +193,15 @@ function Body({ a }: { a: SlaAgreement }) {
 
   return (
     <DetailShell
-      backTo="/monitoring"
-      backSearch={{ view: "sla", status: "all" }}
+      backTo="/monitoring/sla"
       backLabel="SLAs"
       title={a.name}
       presence={{ type: "slaagreement", id: a.id }}
+      edit={
+        canDo("slaagreement", "change") && (
+          <EditButton to="/monitoring/sla/$id/edit" params={{ id: a.id }} />
+        )
+      }
       actions={
         <>
           {canDo("slaagreement", "change") && a.status === "active" && (
@@ -210,24 +215,12 @@ function Body({ a }: { a: SlaAgreement }) {
               {recompute.isPending ? "Recomputing…" : "Recompute"}
             </Button>
           )}
-          {canDo("slaagreement", "change") && (
-            <Button size="sm" variant="outline" asChild>
-              <Link to="/monitoring/sla/$id/edit" params={{ id: a.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDo("slaagreement", "delete") && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeleting(true)}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
         </>
+      }
+      remove={
+        canDo("slaagreement", "delete") && (
+          <DeleteButton onClick={() => setDeleting(true)} />
+        )
       }
       hero={
         <DetailHero

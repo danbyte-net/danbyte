@@ -1,17 +1,16 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
-import { Pencil, Trash2 } from "lucide-react"
 import { useCallback, useState } from "react"
 
 import { api, type Paginated, type Region, type Site } from "@/lib/api"
-import { Button } from "@/components/ui/button"
 import { SimpleTable } from "@/components/ui/simple-table"
 import { TimeCell } from "@/components/cells/time-ago"
 import { KvCard, dash } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { RegionDeleteDialog } from "@/components/region-delete-dialog"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
@@ -55,26 +54,15 @@ function Body({ region: r }: { region: Region }) {
       backLabel="Regions"
       title={r.name}
       presence={{ type: "region", id: r.id }}
-      actions={
-        <>
-          {canDo("region", "change") && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/regions/$id/edit" params={{ id: r.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDo("region", "delete") && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeleting(r)}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
-        </>
+      edit={
+        canDo("region", "change") && (
+          <EditButton to="/regions/$id/edit" params={{ id: r.id }} />
+        )
+      }
+      remove={
+        canDo("region", "delete") && (
+          <DeleteButton onClick={() => setDeleting(r)} />
+        )
       }
       hero={
         <DetailHero

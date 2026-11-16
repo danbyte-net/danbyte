@@ -5,6 +5,7 @@ import {
   AppWindow,
   ArrowDownUp,
   BellRing,
+  CircleCheck,
   BookOpen,
   Bookmark,
   Boxes,
@@ -72,8 +73,10 @@ import {
   Settings as SettingsIcon,
   Share2,
   Shield,
+  ShieldAlert,
   ShieldCheck,
   SlidersHorizontal,
+  Target,
   Snowflake,
   Split,
   SquareKanban,
@@ -91,6 +94,7 @@ import {
   Waypoints,
   Bot,
   FileCode,
+  ScanSearch,
   Webhook,
   Workflow,
   Wrench,
@@ -154,6 +158,7 @@ import { apiAll } from "@/lib/api-all"
 import { cn } from "@/lib/utils"
 import { docsUrl } from "@/lib/docs"
 import { useMe } from "@/lib/use-me"
+import { useVulnSettings } from "@/components/vulnerabilities/use-vuln-settings"
 import { useBookmarks } from "@/lib/use-bookmarks"
 import { usePluginUi } from "@/lib/plugins"
 import { useUserPrefs } from "@/lib/use-user-prefs"
@@ -190,8 +195,17 @@ type NavItem = {
   perm?: string
   /** Also require one of these Settings → Integrations toggles to be on. */
   integration?: Array<
-    "dhcp" | "dns" | "virtualization" | "ai" | "zabbix" | "prtg" | "oxidized"
+    | "dhcp"
+    | "dns"
+    | "virtualization"
+    | "ai"
+    | "zabbix"
+    | "prtg"
+    | "oxidized"
+    | "discovery"
   >
+  /** Also require this deployment-wide feature to be on. */
+  feature?: "vulnerabilities"
 }
 // A cluster is a labelled run of items inside a section (rendered as a small
 // sub-heading). `label` is optional - a single unlabelled cluster renders as a
@@ -254,7 +268,10 @@ export function useSidebarModel(): SidebarSection[] {
     queryFn: () => api<Record<string, boolean>>("/api/integrations/enabled/"),
     staleTime: 5 * 60_000,
   })
+  // Vulnerability data is deployment-wide and off by default (#451).
+  const vulns = useVulnSettings()
   const itemVisible = (item: NavItem): boolean => {
+    if (item.feature === "vulnerabilities" && !vulns.enabled) return false
     if (
       item.integration &&
       !item.integration.some((k) => integrations.data?.[k])
@@ -670,6 +687,12 @@ export const sections: NavSection[] = [
             objectType: "devicerole",
           },
           {
+            title: "Dependency media",
+            url: "/dependency-media",
+            icon: Waypoints,
+            objectType: "dependencymedium",
+          },
+          {
             title: "Device profiles",
             url: "/device-profiles",
             icon: Layers3,
@@ -769,6 +792,12 @@ export const sections: NavSection[] = [
             objectType: "cable",
           },
           {
+            title: "Dependencies",
+            url: "/device-dependencies",
+            icon: GitFork,
+            objectType: "devicedependency",
+          },
+          {
             title: "Port reservations",
             url: "/port-reservations",
             icon: Bookmark,
@@ -810,6 +839,13 @@ export const sections: NavSection[] = [
             url: "/lifecycle",
             icon: CalendarClock,
             anyOf: ["device", "virtualmachine"],
+          },
+          {
+            title: "Vulnerabilities",
+            url: "/vulnerabilities",
+            icon: ShieldAlert,
+            anyOf: ["device", "virtualmachine"],
+            feature: "vulnerabilities",
           },
           {
             title: "End-of-life products",
@@ -1216,23 +1252,27 @@ export const sections: NavSection[] = [
     ],
   },
   {
-    id: "governance",
-    label: "Governance",
-    icon: ShieldCheck,
+    // One entry per Monitoring page (it was one entry with eleven tabs): the
+    // pages operators work in first, then the ones that set it up. Each page
+    // keeps the gate its tab had - the Monitoring gate, Settings and Engines
+    // users.manage, Discovery its own.
+    id: "monitoring",
+    label: "Monitoring",
+    icon: Activity,
     clusters: [
       {
         items: [
           {
-            title: "Monitoring",
+            title: "Status",
             url: "/monitoring",
             icon: Activity,
             anyOf: ["checktemplate", "checkassignment", "silence"],
           },
           {
-            title: "Monitoring engines",
-            url: "/monitoring-engines",
-            icon: Radio,
-            perm: "users.manage",
+            title: "Checks",
+            url: "/monitoring/checks",
+            icon: CircleCheck,
+            anyOf: ["checktemplate", "checkassignment", "silence"],
           },
           {
             title: "Alerts",
@@ -1240,7 +1280,59 @@ export const sections: NavSection[] = [
             icon: BellRing,
             anyOf: ["alertrule", "notificationchannel", "silence"],
           },
-
+          {
+            title: "SLAs",
+            url: "/monitoring/sla",
+            icon: Target,
+            anyOf: ["checktemplate", "checkassignment", "silence"],
+          },
+          {
+            title: "Performance",
+            url: "/monitoring/performance",
+            icon: Gauge,
+            anyOf: ["checktemplate", "checkassignment", "silence"],
+          },
+          {
+            title: "Discovery",
+            url: "/discovery",
+            icon: ScanSearch,
+            objectType: "inventoryprofile",
+            integration: ["discovery"],
+          },
+        ],
+      },
+      {
+        label: "Setup",
+        items: [
+          {
+            title: "Policies",
+            url: "/monitoring/policies",
+            icon: SlidersHorizontal,
+            anyOf: ["checktemplate", "checkassignment", "silence"],
+          },
+          {
+            title: "Settings",
+            url: "/monitoring/settings",
+            icon: SettingsIcon,
+            perm: "users.manage",
+          },
+          {
+            title: "Engines",
+            url: "/monitoring-engines",
+            icon: Radio,
+            perm: "users.manage",
+          },
+        ],
+      },
+    ],
+  },
+  {
+    id: "governance",
+    label: "Governance",
+    icon: ShieldCheck,
+    clusters: [
+      {
+        items: [
           {
             title: "Certificates",
             url: "/certificates",

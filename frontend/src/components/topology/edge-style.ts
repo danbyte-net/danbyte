@@ -22,6 +22,7 @@ export type EdgeSem =
   | "through"
   | "membership"
   | "groupedge"
+  | "dependency"
 
 /** The cable fields the colour modes read. `status_mini` is the cable's
  * status record; payloads that predate it carry only the slug. */
@@ -92,6 +93,27 @@ export function edgeStroke(
   return undefined
 }
 
+/** A dependency's dash per its medium's line style (#450): solid draws
+ * none. Apart from the LLDP ghost's, the BGP session's and the tunnel's. */
+export const DEPENDENCY_DASH: Record<string, string | undefined> = {
+  solid: undefined,
+  dashed: "9 4",
+  dotted: "1.5 4",
+}
+
+/** A dependency line's colour and dash: its medium's, else the muted
+ * foreground drawn solid. */
+export function dependencyStroke(
+  medium:
+    { color?: string | null; line_style?: string | null } | null | undefined
+): { stroke: string; dash?: string } {
+  const dash = DEPENDENCY_DASH[medium?.line_style ?? "solid"]
+  return {
+    stroke: cssColor(medium?.color) ?? "var(--muted-foreground)",
+    ...(dash ? { dash } : {}),
+  }
+}
+
 /** A bundle's stroke: the members' shared colour under the mode, or
  * undefined when they disagree - a mixed bundle stays neutral rather than
  * lying. */
@@ -127,6 +149,8 @@ export interface EdgeLookContext {
   /** A circuit between two of your sites: a provider's service, not a
    * cable - drawn in its own dash. */
   circuit?: boolean
+  /** A dependency's dash (its medium's line style, `dependencyStroke`). */
+  dash?: string
 }
 
 /** A tunnel's dash: dash-dot, apart from the LLDP ghost's, the BGP
@@ -198,6 +222,15 @@ export function edgeLook(sem: EdgeSem, ctx: EdgeLookContext = {}): EdgeLook {
       }
     case "membership":
       return { width: 1, stroke: "var(--border)", opacity: 0.6 }
+    case "dependency":
+      // Not wiring: the medium's colour and line style, centre to centre
+      // with an arrow at the downstream card (overlay-edge.tsx).
+      return {
+        width: 1.75,
+        stroke: ctx.stroke ?? "var(--muted-foreground)",
+        ...(ctx.dash ? { dash: ctx.dash } : {}),
+        opacity: 0.85,
+      }
     case "groupedge": {
       // Width scales gently with the number of cables folded in.
       const n = ctx.count ?? 1

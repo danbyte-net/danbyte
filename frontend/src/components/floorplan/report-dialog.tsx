@@ -26,8 +26,11 @@ import { PAPERS, PAPER_LABELS } from "@/lib/diagram/sheet"
 import type { Orientation, Paper, PaperChoice } from "@/lib/diagram/sheet"
 import { downloadBlob, toCsv, toXlsx } from "@/lib/table-export"
 
+import { scheduleDrawings, useScheduleRows } from "./cable-schedule"
+import type { ScheduleCables, SchedulePlanSvg } from "./cable-schedule"
 import type { PlanBox } from "./plan-svg"
 import { reportBody, reportScopeBody, reportTable } from "./report"
+import { MAX_TRACES, TracePicker } from "./trace-picker"
 import type {
   ReportInclude,
   ReportOptions,
@@ -63,6 +66,8 @@ export type DrawSheet = (req: {
   paper: PaperChoice
   floor?: string
   area?: string
+  /** False: without the cables (the server draws them as bundles). */
+  cables?: boolean
 }) => Promise<ReportSheet | null>
 
 const SCOPE_LABELS: Record<ReportScope, string> = {
@@ -86,6 +91,10 @@ const PAPER_ITEMS = (Object.keys(PAPERS) as Paper[]).map((p) => ({
   value: p,
   label: PAPER_LABELS[p],
 }))
+const CABLE_ITEMS: { value: ScheduleCables; label: string }[] = [
+  { value: "lines", label: "As on screen" },
+  { value: "bundles", label: "Bundles" },
+]
 const ORIENTATION_ITEMS: { value: Orientation; label: string }[] = [
   { value: "portrait", label: "Portrait" },
   { value: "landscape", label: "Landscape" },
@@ -122,6 +131,8 @@ export function ReportDialog({
   screenBox,
   hiddenTiles,
   draw,
+  planSvg,
+  selectedCables,
 }: {
   planId: string
   /** The files' name before the day. */
@@ -137,6 +148,11 @@ export function ReportDialog({
   /** Tiles hidden on screen: left out of the inventory. */
   hiddenTiles: readonly string[]
   draw: DrawSheet
+  /** This floor for a trace page: framed to its box at its scale, without
+   * cables. Absent: no trace pages. */
+  planSvg?: SchedulePlanSvg
+  /** Cables selected on the plan: the trace pages to start with. */
+  selectedCables?: readonly string[]
 }) {
   const [scopePick, setScope] = useState<ReportScope>("floor")
   const [area, setArea] = useState<string | null>(null)
@@ -147,7 +163,19 @@ export function ReportDialog({
     () => new Set<ReportInclude>(["plan"])
   )
   const [format, setFormat] = useState<ReportFormat>("pdf")
+  const [cables, setCables] = useState<ScheduleCables>("lines")
+  const [tracePages, setTracePages] = useState(false)
+  const [trace, setTrace] = useState<string[]>([])
   const [busy, setBusy] = useState(false)
+  // Opened with cables selected on the plan: those are the trace pages.
+  const [wasOpen, setWasOpen] = useState(false)
+  if (open !== wasOpen) {
+    setWasOpen(open)
+    if (open && selectedCables?.length) {
+      setTrace(selectedCables.slice(0, MAX_TRACES))
+      setTracePages(true)
+    }
+  }
 
   const scopes = (Object.keys(SCOPE_LABELS) as ReportScope[])
     .filter((s) => (s === "area" ? areas.length > 0 : true))
@@ -162,6 +190,13 @@ export function ReportDialog({
       : INCLUDE_ITEMS.filter((i) => i.value !== "plan")
   const chosen = includes.filter((i) => include.has(i.value))
   const ready = chosen.length > 0 && (scope !== "area" || !!areaId)
+  const pdf = format === "pdf"
+  const traceable = pdf && !!planSvg && include.has("cables")
+  const schedule = useScheduleRows(planId, open && traceable && tracePages)
+  const listed = schedule.data
+    ? new Set(schedule.data.rows.map((r) => r.id))
+    : null
+  const traced = listed ? trace.filter((id) => listed.has(id)) : trace
 
   const toggle = (v: ReportInclude, on: boolean) => {
     const next = new Set(include)
@@ -217,6 +252,7 @@ export function ReportDialog({
         onOpenChange(false)
         return
       }
+      const bundles = cables === "bundles"
       const sheets: ReportSheet[] = []
       if (options.include.includes("plan")) {
         const wanted =
@@ -229,13 +265,54 @@ export function ReportDialog({
             paper,
             floor,
             area: areaId ?? undefined,
+            cables: !bundles,
           })
           if (sheet) sheets.push(sheet)
         }
       }
+      // Trace pages: the cables the report lists of those picked.
+      let wanted = traceable && tracePages ? traced : []
+      if (wanted.length && scope !== "floor") {
+        const t = await api<FloorPlanReportTables>(
+          `/api/floor-plans/${planId}/export/report/tables/`,
+          {
+            method: "POST",
+            body: JSON.stringify(
+              reportScopeBody({ ...options, include: ["cables"] })
+            ),
+          }
+        )
+        const inScope = new Set(t.cables?.rows.map((r) => r.id) ?? [])
+        const left = wanted.filter((id) => !inScope.has(id)).length
+        wanted = wanted.filter((id) => inScope.has(id))
+        if (left)
+          toast.info(
+            left === 1
+              ? "1 traced cable is outside this scope"
+              : `${left} traced cables are outside this scope`
+          )
+      }
+      const drawn =
+        wanted.length && planSvg
+          ? await scheduleDrawings(
+              planId,
+              paper,
+              null,
+              { closeups: false, trace: wanted, cables: false },
+              planSvg
+            )
+          : { traces: null }
+      const body = {
+        ...reportBody(options, sheets),
+        ...(bundles && options.include.includes("plan")
+          ? { cables: "bundles" }
+          : {}),
+        ...(wanted.length ? { trace: wanted } : {}),
+        ...(drawn.traces ? { trace_svgs: drawn.traces } : {}),
+      }
       const { url } = await api<{ url: string }>(
         `/api/floor-plans/${planId}/export/report/?print=1`,
-        { method: "POST", body: JSON.stringify(reportBody(options, sheets)) }
+        { method: "POST", body: JSON.stringify(body) }
       )
       printing = sendPdf(url, {
         print,
@@ -322,6 +399,30 @@ export function ReportDialog({
               ))}
             </div>
           </Field>
+          {pdf && include.has("plan") && (
+            <Field label="Cables">
+              <SegmentedTabs<ScheduleCables>
+                items={CABLE_ITEMS}
+                value={cables}
+                onValueChange={setCables}
+              />
+            </Field>
+          )}
+          {traceable && (
+            <FormCheckbox
+              label="Trace pages"
+              checked={tracePages}
+              onChange={setTracePages}
+              className="items-center text-[13px]"
+            />
+          )}
+          {traceable && tracePages && (
+            <TracePicker
+              rows={schedule.data?.rows}
+              value={traced}
+              onChange={setTrace}
+            />
+          )}
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>

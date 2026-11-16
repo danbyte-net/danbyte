@@ -6,7 +6,7 @@ import { CustomFieldValues } from "@/components/custom-field-display"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
-import { CopyPlus, Pencil, Plus, Trash2 } from "lucide-react"
+import { Plus } from "lucide-react"
 import { useCallback, useMemo, useState } from "react"
 
 import { api, type Paginated, type Prefix, type VLAN } from "@/lib/api"
@@ -16,6 +16,11 @@ import { TimeCell } from "@/components/cells/time-ago"
 import { buildPrefixColumns } from "@/components/columns/prefix-columns"
 import { DataTable } from "@/components/data-table"
 import { EmptyState } from "@/components/empty-state"
+import {
+  EditButton,
+  DeleteButton,
+  CloneMenuItem,
+} from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { Button } from "@/components/ui/button"
 import { VlanAssignPrefixDialog } from "@/components/vlan-assign-prefix-dialog"
@@ -75,34 +80,15 @@ function VlanDetailBody({ vlan: v }: { vlan: VLAN }) {
         </span>
       }
       presence={{ type: "vlan", id: v.id }}
-      actions={
-        <>
-          {canEdit && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/vlans/$id/edit" params={{ id: v.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDo("vlan", "add") && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/vlans/new" search={{ clone: v.id }}>
-                <CopyPlus className="h-3.5 w-3.5" /> Clone
-              </Link>
-            </Button>
-          )}
-          {canDelete && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={openDelete}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
-        </>
+      edit={
+        canEdit && <EditButton to="/vlans/$id/edit" params={{ id: v.id }} />
       }
+      more={
+        canDo("vlan", "add") && (
+          <CloneMenuItem to="/vlans/new" search={{ clone: v.id }} />
+        )
+      }
+      remove={canDelete && <DeleteButton onClick={openDelete} />}
       hero={
         <DetailHero
           // Coloured catalog object → the ColorBadge is the title (design

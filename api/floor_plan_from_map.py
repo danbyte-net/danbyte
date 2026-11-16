@@ -329,7 +329,7 @@ def create_from_map(view, request):
 
     from .floor_plan_geo import add_outline_areas, set_anchor
     from .serializers import FloorPlanSerializer
-    from .site_map_views import effective_tiles
+    from .site_map_views import effective_tiles, street_attribution
     from .topology_views import _uuid_param
 
     tenant = view._tenant_or_403()
@@ -367,7 +367,8 @@ def create_from_map(view, request):
     if upload is not None:
         tiles = effective_tiles()
         attribution = plain_attribution(
-            tiles["satellite"]["attribution"] if basemap == "sat" else tiles["attribution"]
+            tiles["satellite"]["attribution"] if basemap == "sat"
+            else street_attribution(tiles)
         )
 
     description = "Made from the Site map."

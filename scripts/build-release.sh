@@ -102,18 +102,25 @@ PYBIN="$STAGE/vendor/python/bin/python3"
 # Built with the bundled python so wheels match the runtime; libldap2-dev must be
 # present in CI for python-ldap to compile its wheel. That Python's sysconfig
 # names clang as the compiler; a builder with only gcc uses gcc.
+# From requirements.lock in hash-checking mode (#451): exactly the pinned
+# versions, and every downloaded wheel or sdist must match a recorded sha256.
+# A wheel built here from a checked sdist has a hash of its own, so the
+# installs below go from this wheelhouse by name, not by hash.
 log "Building wheelhouse"
 if ! command -v clang >/dev/null 2>&1; then
   export CC="${CC:-gcc}" CXX="${CXX:-g++}"
 fi
 "$PYBIN" -m pip install --upgrade pip wheel >/dev/null
-"$PYBIN" -m pip wheel -r "$STAGE/requirements.txt" -w "$STAGE/vendor/wheels"
+"$PYBIN" -m pip wheel --require-hashes -r "$STAGE/requirements.lock" -w "$STAGE/vendor/wheels"
 
 # ── 6. collectstatic (offline - validates the wheelhouse too) ─────────────────
 log "Collecting static"
 BUILD_VENV="$(mktemp -d)/venv"
 "$PYBIN" -m venv "$BUILD_VENV"
 "$BUILD_VENV/bin/pip" install --no-index --find-links "$STAGE/vendor/wheels" -r "$STAGE/requirements.txt" >/dev/null
+# What an install of this wheelhouse gets is the lock, no more and no less.
+"$BUILD_VENV/bin/python" "$STAGE/scripts/release/lockcheck.py" --installed \
+  "$STAGE/requirements.txt" "$STAGE/requirements.lock"
 ( cd "$STAGE" && DJANGO_SECRET_KEY=build-only DEBUG=True \
     "$BUILD_VENV/bin/python" manage.py collectstatic --noinput >/dev/null )
 # nginx reads these from disk as another user; the tarball keeps the modes.

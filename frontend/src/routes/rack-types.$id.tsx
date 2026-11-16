@@ -30,6 +30,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { ScrollFrame } from "@/components/table-scroll"
 import {
   FormCombobox,
   FormFooter,
@@ -39,6 +40,7 @@ import {
 } from "@/components/forms"
 import { KvCard, dash } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
@@ -160,26 +162,15 @@ function Body({ rackType: rt }: { rackType: RackType }) {
       backTo="/rack-types"
       backLabel="Rack types"
       title={rt.name}
-      actions={
-        <>
-          {canDo("racktype", "change") && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/rack-types/$id/edit" params={{ id: rt.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDo("racktype", "delete") && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeleting(rt)}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
-        </>
+      edit={
+        canDo("racktype", "change") && (
+          <EditButton to="/rack-types/$id/edit" params={{ id: rt.id }} />
+        )
+      }
+      remove={
+        canDo("racktype", "delete") && (
+          <DeleteButton onClick={() => setDeleting(rt)} />
+        )
       }
       hero={<DetailHero title={rt.name} description={rt.description} />}
       tabs={[
@@ -268,7 +259,7 @@ function AccessoriesPane({ rackTypeId }: { rackTypeId: string }) {
           side-mounted devices automatically.
         </p>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-border">
+        <ScrollFrame className="rounded-lg border border-border">
           <Table>
             <TableHeader>
               <TableRow>
@@ -334,7 +325,7 @@ function AccessoriesPane({ rackTypeId }: { rackTypeId: string }) {
               ))}
             </TableBody>
           </Table>
-        </div>
+        </ScrollFrame>
       )}
 
       <AccessoryDialog

@@ -114,14 +114,16 @@ function ExportTemplatesPage() {
         onChange: setQ,
         placeholder: "Filter templates…",
       }}
+      add={
+        canAdd && (
+          <Button size="sm" asChild>
+            <Link to="/export-templates/new">Add template</Link>
+          </Button>
+        )
+      }
       actions={
         <>
           <TableActions ioType="exporttemplate" />
-          {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/export-templates/new">Add template</Link>
-            </Button>
-          )}
         </>
       }
       query={query}

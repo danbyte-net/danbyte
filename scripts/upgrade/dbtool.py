@@ -12,8 +12,9 @@ the app directory, so each one uses that release's own code and ``.env``::
     python3 dbtool.py mail FILE SUBJECT TEXT         # stdlib SMTP, no Django
 
 The folder this file lives in is dropped from the import path and the current
-directory put first: a restore after a rollback runs the previous release's
-``replace_database`` against the previous release's settings. Everything the
+directory put first: a restore after a rollback runs against the previous
+release's settings, with this release's ``backups/pgswap.py`` (the stage
+copies it here). Everything the
 probe asks is wrapped, so an older release that lacks a piece answers "no"
 instead of failing.
 """
@@ -203,10 +204,26 @@ def snapshot(path: str) -> int:
 
 
 def restore(path: str) -> int:
+    """With the stage's own pgswap.py (copied beside this file), so a
+    rollback to an older release restores the way this release does; a
+    copy without it falls back to the release on disk."""
     _setup()
-    from backups.restore import replace_database
+    import importlib.util
 
-    replace_database(path)
+    here = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pgswap.py")
+    if not os.path.isfile(here):
+        from backups.restore import replace_database
+
+        replace_database(path)
+        return 0
+    spec = importlib.util.spec_from_file_location("danbyte_stage_pgswap", here)
+    pgswap = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(pgswap)
+    from django.db import connection
+
+    connection.close()
+    pgswap.replace_public(path, connection, say=lambda msg: print(msg, flush=True))
+    connection.close()
     return 0
 
 

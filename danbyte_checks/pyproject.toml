@@ -21,3 +21,8 @@ build-backend = "setuptools.build_meta"
 py-modules = []
 packages = ["danbyte_checks"]
 package-dir = { "danbyte_checks" = "." }
+
+[tool.setuptools.package-data]
+# The service scan's fingerprint data (converted Recog, BSD-2-Clause) and
+# its notice.
+danbyte_checks = ["data/recog.json", "data/RECOG-NOTICE"]

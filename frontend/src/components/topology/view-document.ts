@@ -165,7 +165,9 @@ function readLooks(raw: unknown): Record<string, ChassisLook> {
     if (v.orient === "v" || v.orient === "h") look.orient = v.orient
     if (v.off === true) look.off = true
     if (STRIP_SIDES.includes(v.side as Side)) look.side = v.side as Side
-    if (look.orient || look.off || look.side) out[id] = look
+    // A cluster opened into a frame round its hosts (#517).
+    if (v.open === true) look.open = true
+    if (look.orient || look.off || look.side || look.open) out[id] = look
   }
   return out
 }

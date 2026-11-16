@@ -16,7 +16,7 @@ with it:
 | You start from… | The new prefix inherits… |
 |---|---|
 | The **Add prefix** button on the prefix list | Nothing - it starts as a top-level block. |
-| The **Add child prefix** button on a prefix's detail page | The **site**, **VLAN**, and **VRF** of the parent prefix. |
+| **More ▸ Add child prefix** on a prefix's detail page | The **site**, **VLAN**, and **VRF** of the parent prefix. |
 | A free slot in the **Children** tab, or a free chip in the [Space map](space-map.md) | The **site**, **VLAN**, and **VRF** of the smallest existing prefix that contains the new block. |
 
 When inheritance applies, the form shows a small green chip confirming what's
@@ -74,7 +74,7 @@ would have put it.
 
 When a block you don't control changes - a provider's DHCPv6-PD `/60`, a
 re-issued `/29` - everything under it has to move by the same offset. Open the
-prefix and click **Renumber…**, type the new network, and press **Preview**.
+prefix and pick **More ▸ Renumber…**, type the new network, and press **Preview**.
 The new prefix must be the same family and length, written as a network
 address; the dialog says so as you type. Renumbering stays in the prefix's VRF.
 
@@ -117,10 +117,208 @@ editors may not move into another site's or the shared space. You need
 change on every kind the preview lists, within your sites; the refusal names
 what is missing.
 
+The preview shows only what you may view, each row by the rule of its own
+page: an ARP entry or BMC address of a device at another site is not listed.
+Those rows are counted together under **Not shown**, with nothing else about
+them; they stay as they are. When something the renumber would have to
+rewrite is one you can't view, it is refused and says how many such objects
+there are, so another site's records are never changed on your behalf.
+
 Every changed object gets a change-log entry with the cause *Renumbered X to
 Y*, and the prefix's journal records *Renumbered from X to Y.* The API is
 `POST /api/prefixes/<id>/renumber/` - see
 [REST API](../reference/api.md#renumbering-a-prefix).
+
+## Browse by tree
+
+The left rail of the prefix list shows either **Filters** (the facets) or a
+**Tree** - switch at the top of the rail. The choice is remembered per user
+for this list and kept in the URL (`?rail=tree`), so a link opens the same
+rail. On a narrow window the rail opens from the **Filters** / **Tree**
+button in the header.
+
+The tree shows one VRF at a time: pick **Global** or a VRF at the top. Below
+it, the VRF's top-level prefixes; a chevron opens a prefix to its direct
+children, and the number beside a prefix is how many direct children it has.
+Each level loads when you open it, 200 prefixes at a time - a `/16` with
+2,000 `/29`s shows the first 200 and **Show 200 more**.
+
+Type in **Filter prefixes** to search the VRF on the server: the start of a
+CIDR (`10.1` finds `10.1.0.0/16`, `10.10.0.0/16`, …) or a whole address or
+network (`10.1.0.0/16`, `10.1.2.7`), which finds what is inside it, or else
+the smallest prefix holding it. The tree then shows only the matches and the
+prefixes above them; open a match to see its children.
+
+Click a prefix (or press ++enter++) to select it. The table then lists that
+prefix and everything inside it, in its VRF; with nothing selected and the
+tree open, the table lists the whole VRF. The selection is `?within=<id>`
+and works with the other filters. Switch back to **Filters** and it stays,
+as a **Within 10.1.0.0/16** chip over the table; its ✕ (or **clear** in the
+tree) goes back to the whole list.
+
+The tree is a keyboard tree: ++arrow-up++ / ++arrow-down++ move, ++home++ /
+++end++ jump, ++arrow-right++ opens a prefix or steps into it,
+++arrow-left++ closes it or steps out to its parent, ++enter++ or ++space++
+selects.
+
+### On a prefix's page
+
+A prefix's **IPs** and **Child prefixes** tabs have the same **Filters** /
+**Tree** switch. There the tree is for getting around: it shows the branch
+the prefix sits in, from the top prefix above it in its VRF, opened down to
+the prefix. Its parent's other children - its siblings - sit around it, the
+prefix itself is marked **This prefix** and opens to its own children. A
+prefix with nothing above it is the top of its tree. There is no VRF picker
+(the prefix's own VRF applies), and **Filter prefixes** searches the whole
+branch.
+
+When the prefix is deep in a long list (a `/16` with 2,000 `/29`s), its
+level opens at the 200 that hold it, with **Show 200 earlier** above and
+**Show 200 more** below.
+
+Click a prefix in the tree (or press ++enter++ on it) to open its page, on
+the same tab with the tree still open - where the tree centres on that
+prefix. That goes for every prefix shown: one above, a sibling, a sibling's
+child, one inside this prefix, or a search match. Clicking this prefix does
+nothing. The tabs always list this prefix's own rows: the tree does not
+scope them, and a `?within=` in a prefix page's link is ignored.
+
+The mode is `?rail=tree`, beside the tab's `?tab=`, so a link opens the
+same view; both tabs share it. Tree or Filters is remembered per user for
+prefix pages, apart from the two lists - a tree you browse the lists by
+doesn't change how a prefix page opens. On a narrow window the rail opens
+from the **Filters** / **Tree** button beside the row count.
+
+### On a VRF's page
+
+A VRF's **Prefixes** and **IPs** tabs have the same switch. **Filters**
+shows the list pages' facets for the VRF's rows (the prefix list's, less
+VRF, and the IP list's). **Tree** is the VRF's own tree: its top-level
+prefixes on top, opening and paging as above, with no VRF picker, and
+**Filter prefixes** searches the VRF.
+
+Click a prefix to scope the tab to it, on the server: **Prefixes** lists it
+and everything inside it, **IPs** the addresses on it or on any prefix
+below it. A pick from another VRF scopes nothing (the chip reads **unknown
+prefix**). The pick (`?within=`) and the mode (`?rail=tree`) sit beside
+`?tab=` and are shared by both tabs, with the **Within …** chip and
+**clear** as above. Tree or Filters is remembered per user for VRF pages,
+apart from the lists and prefix pages. On a narrow window the rail opens
+from the button beside the row count.
+
+### Hidden prefixes
+
+The tree holds only prefixes you may view. A prefix whose parent you can't
+view hangs from the nearest prefix above it that you can - or sits at the
+top of the VRF - so a hidden prefix is never named, shown or counted; on a
+prefix's page the branch starts at the top prefix you can view. A
+selection naming a prefix you can't view lists nothing.
+
+## Free space in the list
+
+Tick **Show free space** at the top of the prefix list's filter sidebar. Each
+container, and each prefix that holds child prefixes, then gets free rows
+between its children: the gaps, as the largest aligned blocks. A `/16`
+holding `10.20.0.0/24`, `10.20.1.0/24` and `10.20.4.0/22` shows
+`10.20.2.0/23`, `10.20.8.0/21`, `10.20.16.0/20` and so on.
+
+A free row shows its block, a dashed **Free** badge and its size
+(`512 addresses`; IPv6 counts `/64`s). **Create** opens the prefix form with
+the block, the parent's VRF and the parent's site filled in; the form's
+**Size** picker carves a smaller block at the same start, so a `/23` gap can
+become a `/24`, `/25` and so on. A parent with more than 8 free blocks shows
+the first 8 and **+ N more free**, which loads the rest (up to 256; past
+that it opens the prefix, whose [Space map](space-map.md) shows them all).
+
+Free rows are never selected, exported or counted: the row count, the VRF
+group counts, Download and the bulk bar see only real prefixes. The switch
+lives in the URL (`?free=1`), so a link or a saved view keeps it, along
+with the size, Next available and scope below.
+
+IPv6 free space is offered in whole `/64`s under a `/64` or shorter: a `/64`
+holding a `/127` link is not free, and blocks start on `/64` boundaries.
+Under a longer parent (a `/120`), any size is shown.
+
+Only prefixes count as used. Stray addresses and IP ranges don't take space
+here, as on the Space map: a new prefix over them adopts them.
+
+### Find a size
+
+With free space on, type a length into **Free size** (`/29`, or pick one of
+the sizes that fit). The list then shows only the parents that have a free
+block of that size, each followed by its first 16, lowest address first,
+and **+ N more free** for the rest.
+
+Tick **Next available** to see just one: the lowest free block of that size
+among the listed parents (the first VRF in the list that has one),
+highlighted, with **Create**. The sidebar's other filters (VRF, site, tags,
+status, search) narrow which parents are looked in.
+
+### Scope
+
+**Scope** limits every search to a block inside the parent: type any CIDR
+(`10.20.0.0/19` out of a `/15`) or pick one of the listed parents. Free
+rows, Free size, Next available and the planner then offer only space inside
+it.
+
+### Who sees what
+
+Free space is worked out on the server against every prefix in the VRF,
+including ones you may not view, so a free row is always really free. Space
+a prefix you can't see takes is simply not offered - it is never named and
+never counted in the totals. Free rows appear only under prefixes you can
+view. Create, allocate and the planner check again on the server: they need
+add on prefixes, and with site-limited access the new prefix must sit in
+your own site's space, as for any new prefix.
+
+With site-limited access, a prefix that is shared (no site) or another
+site's - or sits inside one - takes no children from you, so its **Add child
+prefix** and **Plan subnets…** buttons, the Space map's **New child prefix
+here** and its free rows' **Create** are not shown. Each prefix in the API
+says so in `permissions.add_child`.
+
+A manual create takes the same lock as allocate and the planner: a row lock
+on every prefix holding the new block, taken before it is checked. So does
+every other write that puts a prefix somewhere new: a row of a CSV or JSON
+import that creates one or changes its CIDR or VRF, an edit that changes a
+prefix's CIDR or VRF, and a bulk edit that moves prefixes to another VRF
+(the lock on what holds each of them there). Two such writes running at
+once wait for each other, so they never land on the same block. An edit
+that leaves the CIDR and VRF alone takes no lock.
+
+## Plan subnets
+
+**Plan subnets…** on a container or parent prefix (and in the list toolbar
+when free space is on and one parent is in scope) places a set of subnets at
+once. Each row is a count and a size - `2 × /24`, `5 × /29` - with an
+optional description pattern (`servers-{n}` numbers them), status, VLAN and
+site (the parent's site by default). **Keep together** places a row's
+subnets side by side in one block.
+
+The planner places the largest first, each aligned to its size, inside the
+parent or the **Scope**:
+
+- **Lowest address first** fills from the bottom of the free space;
+- **Best fit** uses the smallest free block that holds each subnet, which
+  keeps big blocks whole;
+- **Leave room to grow** keeps the next block of the same size free after
+  each one (not created, just left alone).
+
+**Preview** shows the proposed prefixes in a table and on a strip of the
+parent in the Space map's colours, with the proposed blocks outlined. A row
+that doesn't fit says why: *No free /24 left in 10.0.0.0/22; largest free
+block is /25.* **Create all** is offered only when everything fits, asks
+once more, and creates the lot in one change - all or nothing. If the free
+space changed since the preview, it refuses and asks for a new preview.
+Every new prefix gets a change-log entry with the cause *Planned in
+&lt;parent&gt;*.
+
+Moving existing prefixes to make room is not part of planning; use
+[Renumber](#renumbering-a-prefix) for that.
+
+The API: `GET /api/prefixes/?free=1`, `GET /api/prefixes/available/`,
+`POST /api/prefixes/<id>/allocate/` and `POST /api/prefixes/<id>/plan/` -
+see [REST API](../reference/api.md#free-space-in-prefixes).
 
 ## What gets validated
 

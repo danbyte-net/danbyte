@@ -21,7 +21,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
 from .models import IdentityProvider
-from .sso import SsoError, build_authorize_url, exchange_code, resolve_user
+from .sso import SsoError, build_authorize_url, exchange_code, new_pkce_pair, resolve_user
 
 MODEL_BACKEND = "django.contrib.auth.backends.ModelBackend"
 # How long a SP-initiated SAML AuthnRequest stays valid for its response.
@@ -98,11 +98,15 @@ def sso_login(request, slug):
 
     state = pysecrets.token_urlsafe(24)
     nonce = pysecrets.token_urlsafe(24)
+    verifier, challenge = new_pkce_pair()
     request.session["sso_state"] = state
     request.session["sso_nonce"] = nonce
+    request.session["sso_verifier"] = verifier
     request.session["sso_slug"] = slug
     try:
-        url = build_authorize_url(provider, _callback_uri(request, slug), state, nonce)
+        url = build_authorize_url(
+            provider, _callback_uri(request, slug), state, nonce, challenge
+        )
     except SsoError as exc:
         return _login_redirect(str(exc))
     return HttpResponseRedirect(url)
@@ -194,17 +198,21 @@ def sso_callback(request, slug):
         or not state
         or state != request.session.get("sso_state")
         or slug != request.session.get("sso_slug")
+        or not request.session.get("sso_verifier")
     ):
         return _login_redirect("SSO state check failed - please try again.")
     nonce = request.session.get("sso_nonce")
+    verifier = request.session["sso_verifier"]
 
     try:
-        claims = exchange_code(provider, code, _callback_uri(request, slug), nonce)
+        claims = exchange_code(
+            provider, code, _callback_uri(request, slug), nonce, verifier
+        )
         user = resolve_user(provider, claims)
     except SsoError as exc:
         return _login_redirect(str(exc))
 
-    for key in ("sso_state", "sso_nonce", "sso_slug"):
+    for key in ("sso_state", "sso_nonce", "sso_verifier", "sso_slug"):
         request.session.pop(key, None)
 
     if not user.is_active:

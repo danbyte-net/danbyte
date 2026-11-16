@@ -49,14 +49,16 @@ const ACTION_ORDER: RBACAction[] = [
   "set_default",
   "view_config",
   "provision",
+  "scan",
 ]
 const ACTION_HINT: Partial<Record<RBACAction, string>> = {
   view_credits: "See the service credits an agreement owes",
   view_cost: "See and set what a support contract costs",
   set_default: "Choose the view Topology opens with",
   view_config: "Read configuration backups from Oxidized",
-  connect: "Open an interactive session to the device",
+  connect: "Open an SSH session to the device or VM",
   provision: "Send an intended VM to an automation runner to be built",
+  scan: "Start a discovery run that logs in to the profile's hosts",
   reveal: "Read the referenced secret value",
   subscribe: "Opt in or out of this notification channel",
   grant_superuser:

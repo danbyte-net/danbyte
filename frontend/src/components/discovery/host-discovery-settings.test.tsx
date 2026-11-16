@@ -1,0 +1,251 @@
+// @vitest-environment jsdom
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+
+import type { DiscoverySettings, DiscoveryStatus } from "@/lib/api"
+import { TooltipProvider } from "@/components/ui/tooltip"
+import { HostDiscoveryBody } from "./host-discovery-settings"
+
+// Host discovery settings (#451, Monitoring → Settings): the deployment
+// switch in its three states, the tenant switch read-only, the transport
+// switches most secure first, nmap and the deny subnets.
+
+const { apiMock } = vi.hoisted(() => ({
+  apiMock: vi.fn<(path: string, init?: RequestInit) => Promise<unknown>>(),
+}))
+vi.mock("@/lib/api", async (orig) => ({
+  ...(await orig<object>()),
+  api: apiMock,
+}))
+vi.mock("@tanstack/react-router", async (orig) => ({
+  ...(await orig<object>()),
+  Link: ({ children, to }: { children: React.ReactNode; to: string }) => (
+    <a href={to}>{children}</a>
+  ),
+}))
+
+function status(
+  over: Partial<DiscoveryStatus["deployment"]> = {},
+  tenantOn = true
+): DiscoveryStatus {
+  const deployment = {
+    enabled: false,
+    source: "setting" as const,
+    changed_by: "",
+    changed_at: null,
+    can_change: true,
+    ...over,
+  }
+  return {
+    deployment_enabled: deployment.enabled,
+    deployment,
+    enabled: tenantOn,
+    active: deployment.enabled && tenantOn,
+    can_manage: true,
+    first_use_keys_allowed: true,
+  }
+}
+
+const SETTINGS: DiscoverySettings = {
+  deny_subnets: [],
+  transports: { ssh_key: true, ssh_password: true, winrm: false },
+  winrm: { available: true, label: "", reason: "" },
+  nmap: {
+    available: true,
+    enabled: false,
+    path: "/usr/bin/nmap",
+    version: "7.98",
+    label: "nmap 7.98 at /usr/bin/nmap",
+    reason: "",
+  },
+  can_change: true,
+  updated_at: "2026-11-11T00:00:00Z",
+}
+
+function wrap(s: DiscoveryStatus) {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return render(
+    <QueryClientProvider client={qc}>
+      <TooltipProvider>
+        <HostDiscoveryBody status={s} />
+      </TooltipProvider>
+    </QueryClientProvider>
+  )
+}
+
+const sw = (name: string) => screen.getByRole("switch", { name })
+
+beforeEach(() => apiMock.mockReset())
+afterEach(cleanup)
+
+describe("the deployment switch", () => {
+  it("is a switch for a deployment admin when the env is unset", async () => {
+    apiMock.mockResolvedValue(status({ enabled: true }))
+    wrap(status())
+    const s = sw("This deployment")
+    expect(s.hasAttribute("disabled")).toBe(false)
+    fireEvent.click(s)
+    await waitFor(() =>
+      expect(apiMock).toHaveBeenCalledWith(
+        "/api/discovery/deployment/",
+        expect.objectContaining({
+          method: "PATCH",
+          body: JSON.stringify({ enabled: true }),
+        })
+      )
+    )
+  })
+
+  it("is disabled for a tenant admin", () => {
+    wrap(status({ can_change: false }))
+    expect(sw("This deployment").hasAttribute("disabled")).toBe(true)
+  })
+
+  it("shows locked off and locked on", () => {
+    const { unmount } = wrap(status({ source: "env", can_change: false }))
+    expect(screen.getByText("Locked off by the deployment")).toBeTruthy()
+    expect(sw("This deployment").hasAttribute("disabled")).toBe(true)
+    unmount()
+    wrap(status({ source: "env", enabled: true, can_change: false }))
+    expect(screen.getByText("Locked on by the deployment")).toBeTruthy()
+    expect(sw("This deployment").getAttribute("data-state")).toBe("checked")
+  })
+})
+
+describe("the transports", () => {
+  it("lists them most secure first and saves a switch", async () => {
+    apiMock.mockImplementation((_path, init) =>
+      Promise.resolve(
+        init?.method === "PATCH"
+          ? {
+              ...SETTINGS,
+              transports: { ...SETTINGS.transports, ssh_password: false },
+            }
+          : SETTINGS
+      )
+    )
+    wrap(status({ enabled: true }))
+    await waitFor(() => expect(sw("SSH key login")).toBeTruthy())
+    const names = screen
+      .getAllByRole("switch")
+      .map((s) => s.getAttribute("aria-label"))
+    expect(names).toEqual([
+      "This deployment",
+      "SSH key login",
+      "SSH password login",
+      "WinRM over HTTPS",
+      "nmap",
+    ])
+    expect(sw("WinRM over HTTPS").getAttribute("data-state")).toBe("unchecked")
+    fireEvent.click(sw("SSH password login"))
+    await waitFor(() =>
+      expect(apiMock).toHaveBeenCalledWith(
+        "/api/discovery/settings/",
+        expect.objectContaining({
+          body: JSON.stringify({ transports: { ssh_password: false } }),
+        })
+      )
+    )
+  })
+
+  it("cannot switch on WinRM where it is not available", async () => {
+    apiMock.mockResolvedValue({
+      ...SETTINGS,
+      winrm: {
+        available: false,
+        label: "Forbidden by the deployment",
+        reason: "Off for this deployment.",
+      },
+    })
+    wrap(status({ enabled: true }))
+    await waitFor(() =>
+      expect(screen.getByText("Forbidden by the deployment")).toBeTruthy()
+    )
+    expect(sw("WinRM over HTTPS").hasAttribute("disabled")).toBe(true)
+  })
+})
+
+describe("the nmap switch", () => {
+  it("shows what was found and saves", async () => {
+    apiMock.mockImplementation((_path, init) =>
+      Promise.resolve(
+        init?.method === "PATCH"
+          ? { ...SETTINGS, nmap: { ...SETTINGS.nmap, enabled: true } }
+          : SETTINGS
+      )
+    )
+    wrap(status({ enabled: true }))
+    await waitFor(() =>
+      expect(screen.getByText("nmap 7.98 at /usr/bin/nmap")).toBeTruthy()
+    )
+    fireEvent.click(sw("nmap"))
+    await waitFor(() =>
+      expect(apiMock).toHaveBeenCalledWith(
+        "/api/discovery/settings/",
+        expect.objectContaining({ body: JSON.stringify({ nmap: true }) })
+      )
+    )
+  })
+
+  it("is disabled when nmap is not found", async () => {
+    apiMock.mockResolvedValue({
+      ...SETTINGS,
+      nmap: {
+        available: false,
+        enabled: false,
+        path: "",
+        version: "",
+        label: "Not found",
+        reason: "No nmap the service user can run.",
+      },
+    })
+    wrap(status({ enabled: true }))
+    await waitFor(() => expect(screen.getByText("Not found")).toBeTruthy())
+    expect(sw("nmap").hasAttribute("disabled")).toBe(true)
+  })
+})
+
+describe("with the tenant switch off", () => {
+  it("still lets a deployment admin switch the deployment", () => {
+    wrap(status({}, false))
+    expect(sw("This deployment").hasAttribute("disabled")).toBe(false)
+    expect(screen.getByText("Off")).toBeTruthy()
+    expect(screen.getByText("Off for this deployment.")).toBeTruthy()
+    expect(screen.queryByRole("switch", { name: "SSH key login" })).toBeNull()
+    expect(
+      screen.getByRole("link", { name: "Integrations" }).getAttribute("href")
+    ).toBe("/settings/integrations")
+    expect(apiMock).not.toHaveBeenCalled()
+  })
+})
+
+describe("the deny subnets", () => {
+  it("save from the section", async () => {
+    apiMock.mockImplementation((_path, init) =>
+      Promise.resolve(
+        init?.method === "PATCH"
+          ? { ...SETTINGS, deny_subnets: ["10.20.0.0/16"] }
+          : SETTINGS
+      )
+    )
+    wrap(status({ enabled: true }))
+    const box = await screen.findByRole("textbox", { name: "Deny subnets" })
+    fireEvent.change(box, { target: { value: "10.20.0.0/16" } })
+    fireEvent.click(screen.getByRole("button", { name: "Save subnets" }))
+    await waitFor(() =>
+      expect(apiMock).toHaveBeenCalledWith(
+        "/api/discovery/settings/",
+        expect.objectContaining({
+          body: JSON.stringify({ deny_subnets: ["10.20.0.0/16"] }),
+        })
+      )
+    )
+  })
+})

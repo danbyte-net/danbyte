@@ -10,6 +10,7 @@ import { cardContent } from "./card-fields"
 import { CARD, NUB, nubRect, PILL } from "./card-layout"
 import { captionWith, PHOTO } from "./photo-anchors"
 import type { DiagramCardData } from "./types"
+import { IMPACT_RING } from "../what-if"
 
 // A device drawn as its front photo (photo-anchors.ts): the image to
 // scale, a thin outline on each port a cable is plugged into, a grey tab
@@ -77,7 +78,11 @@ export const PhotoNode = memo(function PhotoNode({
   )
   return (
     <div
-      className={cn("relative transition-opacity", d.dimmed && "opacity-30")}
+      className={cn(
+        "relative transition-opacity",
+        d.impact && IMPACT_RING[d.impact],
+        d.dimmed && "opacity-30"
+      )}
       style={{ width: box.w, height: box.h }}
       data-card={d.device_id}
       data-photo={ph.kind}

@@ -51,11 +51,13 @@ User = get_user_model()
 # What one device page read costs, the session's own reads and writes aside:
 # the user and the tenant (middleware), the device row with every tab count,
 # its tags and device profiles, then the coverage warning days and the
-# end-of-life settings.
-DEVICE_DETAIL_QUERIES = 7
+# end-of-life settings; plus whether vulnerability data is on (the row's
+# vulnerability_summary rides on the row itself, #451).
+DEVICE_DETAIL_QUERIES = 8
 # The VM's: the user, the tenant, the VM row with its tab counts, then its
-# tags, disks and device profiles, and the end-of-life settings.
-VM_DETAIL_QUERIES = 7
+# tags, disks and device profiles, the end-of-life settings, and whether
+# vulnerability data is on.
+VM_DETAIL_QUERIES = 8
 
 DEVICE_COUNTS = (
     "interface_count", "ip_count", "hardware_count", "console_count", "power_count",

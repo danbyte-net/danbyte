@@ -12,19 +12,25 @@ Like the Vault backend, the vault URL is **deployment-admin-configured** - the
 same trust tier as the SSRF allowlist - so it is reached directly (TLS-verified,
 redirects disabled, short timeout) rather than through the tenant-facing guard.
 That is also what lets it work against Azure Government, Azure Stack or a
-private endpoint, none of which the public guard would allow.
+private endpoint, none of which the public guard would allow. Both the vault
+URL and the sign-in endpoint must be ``https://``: the client secret goes to
+the one and the bearer token and secret values to the other (#512).
 """
 from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
+import threading
 import time
 from urllib.parse import urlsplit
 
 import requests
 
 from .secret_store import SecretPathError, SecretStoreError, clean_secret_path
+
+log = logging.getLogger(__name__)
 
 API_VERSION = "7.4"
 PUBLIC_AUTHORITY = "https://login.microsoftonline.com"
@@ -41,6 +47,35 @@ _LEGAL_NAME = re.compile(r"[0-9A-Za-z-]{1,127}")
 _MANAGED_NAME = re.compile(
     r"danbyte-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-", re.I
 )
+
+
+# Entra ID tokens, shared by every store instance in this process (#510).
+# ``active_secret_store()`` builds a fresh store per operation, so a cache on
+# the instance never got a second hit. Keyed on everything that decides the
+# token - authority, directory, client, scope, and a digest of the client
+# secret - so a settings change misses the cache and signs in again at once.
+_TOKENS: dict[tuple, tuple[str, float]] = {}
+_TOKENS_LOCK = threading.Lock()
+#: Renew this long before the token's stated expiry (at most half its life).
+TOKEN_MARGIN = 300
+
+
+def clear_token_cache() -> None:
+    """Forget every cached token."""
+    with _TOKENS_LOCK:
+        _TOKENS.clear()
+
+
+def https_url_problem(value: str, label: str) -> str:
+    """Why ``value`` is not an https URL with a host, or ``""`` when it is.
+
+    Azure serves Entra ID and Key Vault over HTTPS only, so a plain-http value
+    is a typo or a man in the middle: the client secret, the bearer token and
+    the secret values would cross the wire in clear (#512)."""
+    parts = urlsplit((value or "").strip())
+    if parts.scheme.lower() != "https" or not parts.hostname:
+        return f"{label} must be an https:// URL."
+    return ""
 
 
 def _safe(text: str) -> str:
@@ -68,9 +103,14 @@ class AzureKeyVaultSecretStore:
         self.client_id = client_id
         self.client_secret = client_secret
         self.authority = (authority or PUBLIC_AUTHORITY).rstrip("/")
+        # Refused here as well as in the settings form, so a row saved before
+        # the check can never send the client secret in clear.
+        for url, label in ((self.vault_url, "Key Vault URL"),
+                           (self.authority, "Sign-in endpoint")):
+            problem = https_url_problem(url, label)
+            if problem:
+                raise SecretStoreError(problem)
         self.timeout = timeout
-        self._token = ""
-        self._token_expires = 0.0
 
     @classmethod
     def from_deployment(cls):
@@ -87,13 +127,19 @@ class AzureKeyVaultSecretStore:
         secret = (dep.secrets or {}).get("azure_client_secret", "")
         if not (url and directory and client and secret):
             return None
-        return cls(
-            url,
-            directory,
-            client,
-            secret,
-            authority=(dep.azure_authority or "").strip(),
-        )
+        try:
+            return cls(
+                url,
+                directory,
+                client,
+                secret,
+                authority=(dep.azure_authority or "").strip(),
+            )
+        except SecretStoreError as exc:
+            # A plain-http URL saved before the check: unusable, so disabled
+            # (fail closed) rather than an error on every caller.
+            log.warning("Azure Key Vault secret store refused: %s", exc)
+            return None
 
     # ─── naming ─────────────────────────────────────────────────────────
     def _name(self, tenant_id, ref: str) -> str:
@@ -122,12 +168,30 @@ class AzureKeyVaultSecretStore:
         suffix = host.split(".", 1)[1] if "." in host else host
         return f"https://{suffix}/.default"
 
-    def _access_token(self) -> str:
-        # Cached until shortly before it expires: one token covers a whole
-        # issuance run, and a round-trip per read would double every call.
-        if self._token and time.monotonic() < self._token_expires:
-            return self._token
-        url = f"{self.authority}/{self.directory_id}/oauth2/v2.0/token"
+    def _token_key(self) -> tuple:
+        secret = hashlib.sha256(self.client_secret.encode()).hexdigest()
+        return (self.authority, self.directory_id, self.client_id, self._scope(), secret)
+
+    def _access_token(self, *, renew: bool = False) -> str:
+        """A token from the process-wide cache, signing in when there is none,
+        it is about to expire, or ``renew`` (the vault refused the cached one).
+        Under the lock, so concurrent callers share one sign-in."""
+        key = self._token_key()
+        with _TOKENS_LOCK:
+            now = time.monotonic()
+            hit = _TOKENS.get(key)
+            if hit and not renew and now < hit[1]:
+                return hit[0]
+            token, lifetime = self._sign_in()
+            for stale in [k for k, (_, exp) in _TOKENS.items() if exp <= now]:
+                del _TOKENS[stale]
+            margin = min(TOKEN_MARGIN, lifetime // 2)
+            _TOKENS[key] = (token, now + max(0, lifetime - margin))
+            return token
+
+    def _sign_in(self) -> tuple[str, int]:
+        """One client-credentials round trip: ``(access_token, expires_in)``."""
+        url =f"{self.authority}/{self.directory_id}/oauth2/v2.0/token"
         try:
             r = requests.post(
                 url,
@@ -149,21 +213,30 @@ class AzureKeyVaultSecretStore:
                 f"Key Vault sign-in failed ({r.status_code}): {r.text[:200]}"
             )
         body = r.json()
-        self._token = body.get("access_token") or ""
-        if not self._token:
+        token = body.get("access_token") or ""
+        if not token:
             raise SecretStoreError("Key Vault sign-in returned no access token.")
-        self._token_expires = time.monotonic() + max(
-            60, int(body.get("expires_in") or 3600) - 60
-        )
-        return self._token
+        try:
+            lifetime = int(body.get("expires_in") or 3600)
+        except (TypeError, ValueError):
+            lifetime = 3600
+        return token, lifetime
 
     def _req(self, method: str, path: str, **kw):
+        r = self._send(method, path, self._access_token(), **kw)
+        if r.status_code == 401:
+            # A cached token the vault no longer takes (revoked, role
+            # changed): sign in again once rather than fail until it expires.
+            r = self._send(method, path, self._access_token(renew=True), **kw)
+        return r
+
+    def _send(self, method: str, path: str, token: str, **kw):
         try:
             return requests.request(
                 method,
                 f"{self.vault_url}/{path.lstrip('/')}",
                 params={"api-version": API_VERSION},
-                headers={"Authorization": f"Bearer {self._access_token()}"},
+                headers={"Authorization": f"Bearer {token}"},
                 timeout=self.timeout,
                 allow_redirects=False,
                 **kw,
@@ -230,6 +303,69 @@ class AzureKeyVaultSecretStore:
         # Danbyte writes a JSON object. An operator's own secret is usually a
         # bare string, so it comes back as {"value": "…"} rather than nothing.
         return parsed if isinstance(parsed, dict) else {"value": raw}
+
+    def _secret_names(self) -> list[str]:
+        """Every secret name in the vault, following ``nextLink`` only while
+        it stays on this vault over https - the bearer token goes with it."""
+        own = urlsplit(self.vault_url)
+        names: list[str] = []
+        path = "secrets"
+        for _ in range(10000):
+            r = self._req("GET", path)
+            if r.status_code != 200:
+                raise SecretStoreError(
+                    f"Key Vault list failed ({r.status_code}): {r.text[:200]}"
+                )
+            body = r.json()
+            for item in body.get("value") or []:
+                name = (item.get("id") or "").rstrip("/").rsplit("/", 1)[-1]
+                if name:
+                    names.append(name)
+            nxt = body.get("nextLink") or ""
+            if not nxt:
+                break
+            parts = urlsplit(nxt)
+            if parts.scheme != "https" or parts.netloc != own.netloc:
+                raise SecretStoreError("Key Vault list pointed at another host; stopped.")
+            # The skip token rides in the query; api-version is added again.
+            query = "&".join(
+                q for q in parts.query.split("&") if not q.startswith("api-version=")
+            )
+            path = parts.path.lstrip("/") + (f"?{query}" if query else "")
+        return names
+
+    def managed_refs(self, tenant_id=None) -> list[tuple[str, str]]:
+        """``(tenant id, ref)`` of every Danbyte-managed secret in the vault -
+        one tenant's, or every tenant's (a deleted tenant's too). A name is
+        mapped back to its ref by rebuilding the name from the ref, so only
+        names Danbyte itself wrote are returned. Never the values."""
+        from .secret_refs import MANAGED_SECRETS
+
+        shape = re.compile(
+            r"danbyte-(?P<tenant>[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})-"
+            rf"(?P<body>.+)-[0-9a-f]{{{DIGEST_LEN}}}"
+        )
+        uuid_re = r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}"
+        out = []
+        for name in self._secret_names():
+            m = shape.fullmatch(name)
+            if not m:
+                continue
+            tenant = m.group("tenant")
+            if tenant_id is not None and tenant != str(tenant_id):
+                continue
+            body = m.group("body")
+            for spec in MANAGED_SECRETS:
+                folder = _safe(spec.folder)
+                tail = "-account" if spec.folder == "issuer" else ""
+                hit = re.fullmatch(rf"{re.escape(folder)}-({uuid_re}){tail}", body)
+                if not hit:
+                    continue
+                ref = f"{spec.folder}/{hit.group(1)}" + ("/account" if tail else "")
+                if self._name(tenant, ref) == name:
+                    out.append((tenant, ref))
+                break
+        return out
 
     def delete(self, tenant_id, ref: str) -> None:
         name = self._name(tenant_id, ref)

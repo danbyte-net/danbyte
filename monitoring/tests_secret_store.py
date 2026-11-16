@@ -19,7 +19,7 @@ from .secret_store import (
     require_secret_store,
     secret_store_enabled,
 )
-from .secret_store_azure import AzureKeyVaultSecretStore
+from .secret_store_azure import AzureKeyVaultSecretStore, clear_token_cache
 from .secret_store_vault import VaultSecretStore
 
 
@@ -197,8 +197,13 @@ class AzureKeyVaultSecretStoreTests(TestCase):
             "client-secret",
         )
         # Skip the token round-trip in the operation tests - it has its own.
-        self.store._token = "tok"
-        self.store._token_expires = float("inf")
+        clear_token_cache()
+        self.addCleanup(clear_token_cache)
+        patcher = mock.patch.object(
+            AzureKeyVaultSecretStore, "_access_token", return_value="tok"
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self.tid = "11111111-1111-1111-1111-111111111111"
 
     def test_name_is_deterministic_legal_and_ref_specific(self):
@@ -293,6 +298,89 @@ class AzureKeyVaultSecretStoreTests(TestCase):
         ):
             self.store.delete(self.tid, "csr/abc")
 
+
+class AzureTokenCacheTests(TestCase):
+    """One Entra ID token per expiry period, across store instances (#510)."""
+
+    tid = "11111111-1111-1111-1111-111111111111"
+
+    def setUp(self):
+        clear_token_cache()
+        self.addCleanup(clear_token_cache)
+
+    def _configure(self, secret="s"):
+        dep = DeploymentSettings.load()
+        dep.secrets_provider = "azure"
+        dep.azure_vault_url = "https://kv.vault.azure.net"
+        dep.azure_directory_id = "dir"
+        dep.azure_client_id = "client"
+        dep.azure_authority = ""
+        dep.secrets = {"azure_client_secret": secret}
+        dep.save()
+
+    def test_a_fresh_store_per_operation_reuses_one_token(self):
+        # active_secret_store() builds a new instance every call, as reveal does.
+        self._configure()
+        token = _resp(200, {"access_token": "T", "expires_in": 3600})
+        with (
+            mock.patch("monitoring.secret_store_azure.requests.post",
+                       return_value=token) as post,
+            mock.patch("monitoring.secret_store_azure.requests.request",
+                       return_value=_resp(200, {"value": "{}"})) as req,
+        ):
+            for _ in range(5):
+                active_secret_store().get(self.tid, "device-credentials/x")
+        self.assertEqual(post.call_count, 1)
+        self.assertEqual(req.call_count, 5)
+
+    def test_changed_settings_sign_in_again_at_once(self):
+        self._configure("old")
+        tokens = [_resp(200, {"access_token": "A", "expires_in": 3600}),
+                  _resp(200, {"access_token": "B", "expires_in": 3600})]
+        with (
+            mock.patch("monitoring.secret_store_azure.requests.post",
+                       side_effect=tokens) as post,
+            mock.patch("monitoring.secret_store_azure.requests.request",
+                       return_value=_resp(200, {"value": "{}"})) as req,
+        ):
+            active_secret_store().get(self.tid, "a")
+            self._configure("new")
+            active_secret_store().get(self.tid, "a")
+        self.assertEqual(post.call_count, 2)
+        self.assertEqual(post.call_args[1]["data"]["client_secret"], "new")
+        self.assertEqual(req.call_args[1]["headers"]["Authorization"], "Bearer B")
+
+    def test_a_token_is_renewed_before_it_expires(self):
+        store = AzureKeyVaultSecretStore("https://kv.vault.azure.net", "d", "c", "s")
+        tokens = [_resp(200, {"access_token": "A", "expires_in": 3600}),
+                  _resp(200, {"access_token": "B", "expires_in": 3600})]
+        clock = mock.Mock(return_value=1000.0)
+        with (
+            mock.patch("monitoring.secret_store_azure.time.monotonic", clock),
+            mock.patch("monitoring.secret_store_azure.requests.post",
+                       side_effect=tokens) as post,
+        ):
+            self.assertEqual(store._access_token(), "A")
+            clock.return_value = 1000.0 + 3600 - 301
+            self.assertEqual(store._access_token(), "A")
+            clock.return_value = 1000.0 + 3600 - 299
+            self.assertEqual(store._access_token(), "B")
+        self.assertEqual(post.call_count, 2)
+
+    def test_a_refused_token_is_renewed_once(self):
+        store = AzureKeyVaultSecretStore("https://kv.vault.azure.net", "d", "c", "s")
+        tokens = [_resp(200, {"access_token": "A", "expires_in": 3600}),
+                  _resp(200, {"access_token": "B", "expires_in": 3600})]
+        with (
+            mock.patch("monitoring.secret_store_azure.requests.post",
+                       side_effect=tokens),
+            mock.patch("monitoring.secret_store_azure.requests.request",
+                       side_effect=[_resp(401), _resp(200, {"value": '{"k": 1}'})]) as req,
+        ):
+            self.assertEqual(store.get(self.tid, "a"), {"k": 1})
+        auth = [c[1]["headers"]["Authorization"] for c in req.call_args_list]
+        self.assertEqual(auth, ["Bearer A", "Bearer B"])
+
     def test_token_is_fetched_once_and_reused(self):
         store = AzureKeyVaultSecretStore(
             "https://kv.vault.azure.net", "dir-id", "client-id", "sec"
@@ -323,6 +411,8 @@ class AzureKeyVaultSecretStoreTests(TestCase):
                 store.get(self.tid, "a")
         self.assertIn("AADSTS7000215", str(cm.exception))
 
+
+class AzureFromDeploymentTests(TestCase):
     def test_from_deployment_none_until_every_part_is_set(self):
         dep = DeploymentSettings.load()
         dep.secrets_provider = "azure"
@@ -426,3 +516,90 @@ class RegistryTests(TestCase):
         )
         self.assertEqual(ok.status_code, 200)
         self.assertEqual(ok.json()["secrets_provider"], "local")
+
+
+class AzureHttpsOnlyTests(TestCase):
+    """The client secret, the bearer token and the secret values never go to
+    a plain-http Key Vault URL or sign-in endpoint (#512). A HashiCorp Vault
+    on plain HTTP inside the LAN stays allowed."""
+
+    def setUp(self):
+        from django.contrib.auth.models import User
+        from django.test import Client
+
+        user = User.objects.create_user("root", password="x", is_superuser=True)
+        self.c = Client()
+        self.c.force_login(user)
+
+    def _put(self, **body):
+        import json
+
+        return self.c.put(
+            "/api/deployment/email/", data=json.dumps(body), content_type="application/json"
+        )
+
+    def test_the_store_refuses_an_http_vault_url_or_authority(self):
+        with self.assertRaises(SecretStoreError):
+            AzureKeyVaultSecretStore("http://kv.vault.azure.net", "d", "c", "s")
+        with self.assertRaises(SecretStoreError):
+            AzureKeyVaultSecretStore(
+                "https://kv.vault.azure.net", "d", "c", "s",
+                authority="http://login.microsoftonline.com",
+            )
+
+    def test_an_http_row_saved_before_the_check_is_disabled_not_used(self):
+        dep = DeploymentSettings.load()
+        dep.secrets_provider = "azure"
+        dep.azure_vault_url = "http://kvmock.vault.azure.test:9080"
+        dep.azure_directory_id = "dir"
+        dep.azure_client_id = "client"
+        dep.azure_authority = ""
+        dep.secrets = {"azure_client_secret": "s"}
+        dep.save()
+        with (
+            mock.patch("monitoring.secret_store_azure.requests.post") as post,
+            mock.patch("monitoring.secret_store_azure.requests.request") as req,
+        ):
+            self.assertIsNone(active_secret_store())
+            with self.assertRaises(SecretStoreDisabled):
+                require_secret_store()
+        post.assert_not_called()
+        req.assert_not_called()
+
+    def test_settings_refuse_http_for_the_vault_url_and_sign_in_endpoint(self):
+        r = self._put(azure_vault_url="http://kvmock.vault.azure.test:9080")
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("https://", str(r.json()["azure_vault_url"]))
+        r = self._put(azure_authority="http://login.azure.test:9080")
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("https://", str(r.json()["azure_authority"]))
+        r = self._put(azure_vault_url="https:///no-host")
+        self.assertEqual(r.status_code, 400)
+
+    def test_settings_accept_https_and_blank(self):
+        r = self._put(
+            azure_vault_url="https://kv-danbyte.vault.azure.net",
+            azure_authority="https://login.microsoftonline.us",
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        r = self._put(azure_vault_url="", azure_authority="")
+        self.assertEqual(r.status_code, 200, r.content)
+
+    def test_a_plain_http_hashicorp_vault_still_saves_and_works(self):
+        r = self._put(vault_addr="http://10.0.0.48:8200", vault_token="hvs.x",
+                      secrets_provider="vault")
+        self.assertEqual(r.status_code, 200, r.content)
+        store = VaultSecretStore.from_deployment()
+        self.assertEqual(store.addr, "http://10.0.0.48:8200")
+        with mock.patch(
+            "monitoring.secret_store_vault.requests.request",
+            return_value=_resp(200, {"data": {"data": {"k": "v"}}}),
+        ) as req:
+            self.assertEqual(store.get("t", "csr/x"), {"k": "v"})
+        self.assertTrue(req.call_args[0][1].startswith("http://10.0.0.48:8200/v1/"))
+
+    def test_the_vault_address_field_carries_a_warning_not_a_rule(self):
+        r = self.c.get("/api/deployment/secret-stores/")
+        vault = next(p for p in r.json()["providers"] if p["kind"] == "vault")
+        addr = next(f for f in vault["fields"] if f["name"] == "vault_addr")
+        self.assertIn("warn_http", addr)

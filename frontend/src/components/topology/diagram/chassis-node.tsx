@@ -5,6 +5,7 @@ import type { NodeProps } from "@xyflow/react"
 import {
   ArrowUpRight,
   Columns2,
+  Minimize2,
   PanelBottom,
   PanelLeft,
   PanelRight,
@@ -32,6 +33,10 @@ import type { Side } from "./types"
  * Selected, its toolbar turns it top to bottom or left to right, moves its
  * name to another side, draws its members apart, opens the chassis and, on
  * a hand-picked map where it was placed, takes it off the map.
+ *
+ * A cluster's frame (#517, `kind: "cluster"`) is the same stack round the
+ * cluster's hosts: its name opens the cluster, and Collapse folds it back
+ * into one card in place of Unstack.
  */
 
 /** What a stack's toolbar and menu do, by chassis id. The page provides
@@ -46,6 +51,15 @@ export interface ChassisActions {
   onRemove?: (vc: string) => void
   /** Was it placed on the map (Remove applies)? */
   placed?: (vc: string) => boolean
+  /** A cluster's frame: fold it back into one card. */
+  onCollapse?: (cluster: string) => void
+}
+
+/** Where a frame's name leads: its chassis, or its cluster. */
+export function frameTarget(d: Pick<ChassisNodeData, "kind">) {
+  return d.kind === "cluster"
+    ? ({ to: "/clusters/$id", label: "Open cluster" } as const)
+    : ({ to: "/virtual-chassis/$id", label: "Open virtual chassis" } as const)
 }
 
 export const ChassisActionsContext = createContext<ChassisActions | null>(null)
@@ -72,9 +86,12 @@ const STRIP_AT: Record<Side, string> = {
 
 /** The line on a stack's strip, in a tooltip: its size and the cables the
  * frame stands for. */
-export function chassisTip(d: Pick<ChassisNodeData, "members" | "inner">) {
+export function chassisTip(
+  d: Pick<ChassisNodeData, "members" | "inner" | "kind">
+) {
   const n = d.members.length
-  const members = `${n} ${n === 1 ? "member" : "members"}`
+  const noun = d.kind === "cluster" ? "host" : "member"
+  const members = `${n} ${noun}${n === 1 ? "" : "s"}`
   return d.inner
     ? `${members} · ${d.inner} ${d.inner === 1 ? "cable" : "cables"} between them`
     : members
@@ -88,6 +105,8 @@ export function ChassisNode({ data, selected }: NodeProps) {
   const side = d.side
   const upright = stripUpright(side)
   const placed = !!act?.onRemove && !!act.placed?.(d.vc.id)
+  const cluster = d.kind === "cluster"
+  const target = frameTarget(d)
   return (
     <>
       <NodeToolbar
@@ -120,16 +139,26 @@ export function ChassisNode({ data, selected }: NodeProps) {
               />
             ))}
             <span className="mx-0.5 h-4 w-px bg-border" />
-            <ToolButton
-              label="Unstack"
-              onClick={() => act.onUnstack(d.vc.id)}
-              icon={<Ungroup className="size-3" />}
-            />
+            {cluster ? (
+              act.onCollapse && (
+                <ToolButton
+                  label="Collapse"
+                  onClick={() => act.onCollapse?.(d.vc.id)}
+                  icon={<Minimize2 className="size-3" />}
+                />
+              )
+            ) : (
+              <ToolButton
+                label="Unstack"
+                onClick={() => act.onUnstack(d.vc.id)}
+                icon={<Ungroup className="size-3" />}
+              />
+            )}
             <Link
-              to="/virtual-chassis/$id"
+              to={target.to}
               params={{ id: d.vc.id }}
-              aria-label="Open virtual chassis"
-              data-tip="Open virtual chassis"
+              aria-label={target.label}
+              data-tip={target.label}
               data-tip-plain=""
               className="flex size-5 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground"
             >
@@ -157,6 +186,7 @@ export function ChassisNode({ data, selected }: NodeProps) {
         )}
         style={{ ...look.style, borderColor: look.edge }}
         data-chassis={d.orient}
+        data-kind={d.kind ?? "vc"}
       >
         <div
           className={cn(
@@ -175,7 +205,7 @@ export function ChassisNode({ data, selected }: NodeProps) {
             )}
           >
             <Link
-              to="/virtual-chassis/$id"
+              to={target.to}
               params={{ id: d.vc.id }}
               className="nodrag text-[11px] leading-none font-semibold whitespace-nowrap text-foreground/75 hover:text-foreground hover:underline"
             >

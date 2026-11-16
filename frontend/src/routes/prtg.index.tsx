@@ -216,7 +216,7 @@ function PrtgPage() {
     <ListPageShell
       title="PRTG"
       count={connections.data ? all.length : undefined}
-      actions={
+      add={
         canAdd && (
           <Button size="sm" onClick={() => setAdding(true)}>
             <Plus className="h-3.5 w-3.5" /> Add connection
@@ -1122,7 +1122,7 @@ function PrtgConnectionForm({
             <Field
               label="Engines"
               hint={engineOptions.length ? undefined : "None yet"}
-              info="The monitoring engines whose PRTG checks this connection answers. Create one of kind PRTG under Governance → Monitoring engines, then link it here."
+              info="The monitoring engines whose PRTG checks this connection answers. Create one of kind PRTG under Monitoring → Engines, then link it here."
               error={fieldErrors.engines}
             >
               <IdMultiSelect

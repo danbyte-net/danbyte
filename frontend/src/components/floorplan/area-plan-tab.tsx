@@ -11,7 +11,6 @@ import type {
   FloorPlanCrop,
   FloorPlanLiveState,
   FloorPlanRegion,
-  FloorPlanRegionArea,
 } from "@/lib/api"
 import { useMe } from "@/lib/use-me"
 import { Loading } from "@/components/loading"
@@ -19,6 +18,7 @@ import { QueryError } from "@/components/query-error"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { useTheme } from "@/components/theme-provider"
 import { Button } from "@/components/ui/button"
+import { floorLabel } from "@/components/show-on-floor-plan"
 
 import { CadLayer, useCadSource } from "./cad-layer"
 import { CELL } from "./canvas-geometry"
@@ -46,14 +46,6 @@ export function useAreaPlan(
     placeholderData: keepPreviousData,
     refetchInterval: 30_000,
   })
-}
-
-/** "HQ · Ground", or the floor's name when its floor plan is named alike. */
-export function floorLabel(a: FloorPlanRegionArea): string {
-  const fp = a.floor_plan
-  return fp.stack && fp.stack.name !== fp.name
-    ? `${fp.stack.name} · ${fp.name}`
-    : fp.name
 }
 
 /** An area of a region's contents moved back into its floor's cells - what

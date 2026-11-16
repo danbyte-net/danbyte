@@ -46,14 +46,16 @@ function ListPage() {
       title="Contact roles"
       count={query.data ? rows.length : undefined}
       search={{ value: q, onChange: setQ, placeholder: "Filter…" }}
+      add={
+        canAdd && (
+          <Button size="sm" asChild>
+            <Link to="/contact-roles/new">Add role</Link>
+          </Button>
+        )
+      }
       actions={
         <>
           <TableActions ioType="contactrole" />
-          {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/contact-roles/new">Add role</Link>
-            </Button>
-          )}
         </>
       }
       query={query}

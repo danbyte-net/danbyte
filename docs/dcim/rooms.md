@@ -43,7 +43,11 @@ location's page has a **Rooms** tab listing its rooms.
 ### Floor plan
 
 When the room is drawn as an [area on a floor plan](../features/floor-plans.md#rooms-and-areas),
-its page gets a **Floor plan** tab: the room's part of that floor - the
+its header carries **Show on floor plan**, which opens that floor zoomed onto
+the room (`/floorplans/<id>?area=<area id>`, the room open in the map panel) -
+a menu of the floors when it is drawn on several, nothing when it is drawn on
+none. It lists the same floors as the tab, under the same permissions. The
+page also gets a **Floor plan** tab: the room's part of that floor - the
 area's bounding box in whole cells - drawn by the floor-plan canvas, read-only
 and live (read again every 30 seconds, rack and monitoring overlays
 included), with everything outside the room's outline dimmed. A turned or

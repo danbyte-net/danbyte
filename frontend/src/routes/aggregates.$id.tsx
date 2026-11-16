@@ -2,7 +2,6 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { CustomFieldValues } from "@/components/custom-field-display"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
-import { Pencil, Trash2 } from "lucide-react"
 import { useCallback, useMemo, useState } from "react"
 
 import { api, type Aggregate, type Paginated, type Prefix } from "@/lib/api"
@@ -10,11 +9,11 @@ import { buildPrefixColumns } from "@/components/columns/prefix-columns"
 import { DataTable } from "@/components/data-table"
 import type { ColumnDef } from "@tanstack/react-table"
 import { TagList } from "@/components/cells/tag-list"
-import { Button } from "@/components/ui/button"
 import { KvCard, type KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { UtilCell } from "@/components/cells/util-cell"
 import { AggregateDeleteDialog } from "@/components/aggregate-delete-dialog"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
@@ -66,26 +65,15 @@ function Body({ aggregate: a }: { aggregate: Aggregate }) {
       backLabel="Aggregates"
       title={<span className="font-mono">{a.prefix}</span>}
       presence={{ type: "aggregate", id: a.id }}
-      actions={
-        <>
-          {canDo("aggregate", "change") && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/aggregates/$id/edit" params={{ id: a.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDo("aggregate", "delete") && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeleting(a)}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
-        </>
+      edit={
+        canDo("aggregate", "change") && (
+          <EditButton to="/aggregates/$id/edit" params={{ id: a.id }} />
+        )
+      }
+      remove={
+        canDo("aggregate", "delete") && (
+          <DeleteButton onClick={() => setDeleting(a)} />
+        )
       }
       hero={
         <DetailHero

@@ -22,7 +22,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { PlanningTask } from "@/lib/api"
 import { DetailShell, DetailTab } from "@/components/detail-shell"
 import { ObjectTasksPanel } from "./object-tasks"
-import { PlanFromObject } from "./plan-from-object"
 import { AddTaskButton } from "./add-task"
 
 class ResizeObserverStub {
@@ -283,12 +282,21 @@ describe("Add task without an object (calendar)", () => {
   })
 })
 
-describe("PlanFromObject with the shared create", () => {
+/** Plan a change lives in the detail header's More menu (#507). */
+async function openPlan() {
+  fireEvent.pointerDown(
+    await screen.findByRole("button", { name: "More" }),
+    new PointerEvent("pointerdown", { bubbles: true, button: 0 })
+  )
+  fireEvent.click(
+    await screen.findByRole("menuitem", { name: /Plan a change/ })
+  )
+}
+
+describe("Plan a change with the shared create", () => {
   it("creates and links a task, then opens the edit form in plan mode", async () => {
-    const router = mount(<PlanFromObject />)
-    fireEvent.click(
-      await screen.findByRole("button", { name: /Plan a change/ })
-    )
+    const router = mount(<Page />)
+    await openPlan()
     fireEvent.change(
       await screen.findByPlaceholderText("Which task is this for?"),
       { target: { value: "Re-cable uplinks" } }
@@ -320,10 +328,8 @@ describe("PlanFromObject with the shared create", () => {
 
   it("offers no New task without the right to add tasks", async () => {
     denied.add("task.add")
-    mount(<PlanFromObject />)
-    fireEvent.click(
-      await screen.findByRole("button", { name: /Plan a change/ })
-    )
+    mount(<Page />)
+    await openPlan()
     expect(await screen.findByText("No tasks yet.")).toBeTruthy()
     expect(screen.queryByRole("button", { name: /New task/ })).toBeNull()
   })

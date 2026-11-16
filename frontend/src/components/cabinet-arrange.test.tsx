@@ -324,31 +324,33 @@ describe("Arrange", () => {
     expect(status()).toBe("Overlaps a at 0-60 mm.")
   })
 
-  it("puts the server's refusal on the device it names", async () => {
-    apiMock.mockImplementation((path) =>
-      path === "/api/cabinets/c1/arrange/"
-        ? Promise.reject(
-            new ApiError(400, {
-              placements: [{ din_offset_mm: ["Overlaps x at 0-90 mm."] }],
-            })
-          )
-        : page([])
-    )
-    renderPlate()
-    fireEvent.click(button("Arrange"))
-    fireEvent.keyDown(pick("b", 90), { key: "ArrowRight" })
-    await waitFor(() => expect(body("b").x).toBe(61))
-    fireEvent.click(button("Save"))
-    await waitFor(() => expect(body("b").mark).toBe("clash"))
-    expect(status()).toBe("Overlaps x at 0-90 mm.")
-    // Still arranging, the move kept.
-    expect(button("Save")).toBeTruthy()
-    // Dropping the pick names the device the refusal is about.
-    fireEvent.keyDown(screen.getByRole("slider", { name: "b" }), {
-      key: "Escape",
-    })
-    await waitFor(() => expect(status()).toBe("b: Overlaps x at 0-90 mm."))
-  })
+  it.each([
+    ["as a list", [{ din_offset_mm: ["Overlaps x at 0-90 mm."] }]],
+    ["keyed by index", { "0": { din_offset_mm: ["Overlaps x at 0-90 mm."] } }],
+  ])(
+    "puts the server's refusal on the device it names (%s)",
+    async (_, placements) => {
+      apiMock.mockImplementation((path) =>
+        path === "/api/cabinets/c1/arrange/"
+          ? Promise.reject(new ApiError(400, { placements }))
+          : page([])
+      )
+      renderPlate()
+      fireEvent.click(button("Arrange"))
+      fireEvent.keyDown(pick("b", 90), { key: "ArrowRight" })
+      await waitFor(() => expect(body("b").x).toBe(61))
+      fireEvent.click(button("Save"))
+      await waitFor(() => expect(body("b").mark).toBe("clash"))
+      expect(status()).toBe("Overlaps x at 0-90 mm.")
+      // Still arranging, the move kept.
+      expect(button("Save")).toBeTruthy()
+      // Dropping the pick names the device the refusal is about.
+      fireEvent.keyDown(screen.getByRole("slider", { name: "b" }), {
+        key: "Escape",
+      })
+      await waitFor(() => expect(status()).toBe("b: Overlaps x at 0-90 mm."))
+    }
+  )
 
   it("puts everything back on Cancel", async () => {
     renderPlate()

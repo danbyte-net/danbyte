@@ -134,6 +134,19 @@ export interface SceneTile {
   riser_to?: { id: string; floor_plan: string }[]
 }
 
+/** A tile's name as the room writes it: its label, else what it links
+ * to, else its type. */
+export function sceneTileName(t: SceneTile): string {
+  return (
+    t.label ||
+    t.rack?.name ||
+    t.cabinet?.name ||
+    t.device_name ||
+    t.type_name ||
+    ""
+  )
+}
+
 /** An uploaded 3D model as the room draws it (api.model_3d.effective). */
 export interface SceneModel {
   url: string

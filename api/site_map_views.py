@@ -21,7 +21,7 @@ from core.models import DeploymentSettings
 from core.tags import TAGS, TAGS_ATTR, tags_of
 
 from .models import CableRoute, Device, Site, SiteMarker
-from .site_map_links import LinkFigures, include_capacity
+from .site_map_links import LinkFigures, include_capacity, include_dependencies
 from .topology_provider import provider_circuits
 from .views import _get_active_tenant
 
@@ -34,7 +34,9 @@ CAPACITY_PARAMETER = OpenApiParameter(
         "`capacity`: each line also carries `capacity` (its speed and where the "
         "figure came from, or null), `links` (the end-to-end links it carries, "
         "the first 50, each with the device, port and speed at either end) and "
-        "`link_count`."
+        "`link_count`. `dependencies` (connections only): the response also "
+        "carries `dependencies`, the device dependency lines (#450). Both: "
+        "`capacity,dependencies`."
     ),
 )
 
@@ -61,24 +63,60 @@ ESRI_SAT_ATTRIBUTION = (
 )
 
 
-def effective_tiles() -> dict:
+# The OpenStreetMap Foundation's vector tiles (Shortbread 1.1), the default
+# vector source (#467). Same donated-service caveat as the raster tiles:
+# https://operations.osmfoundation.org/policies/vector/ asks for the
+# attribution and no bulk download; the browser only fetches what it shows.
+OSM_VECTOR_URL = "https://vector.openstreetmap.org/shortbread_v1/tilejson.json"
+
+
+def label_language(ds, user=None, tenant=None) -> str:
+    """The vector basemap's label language for this user: their preference,
+    else the deployment default. Always a MAP_LABEL_CHOICES key."""
+    from auth_api import user_prefs
+
+    keys = {k for k, _ in DeploymentSettings.MAP_LABEL_CHOICES}
+    if user is not None:
+        mine = user_prefs.get(user, "map_label_language", tenant=tenant)
+        if mine in keys:
+            return mine
+    return ds.map_label_language if ds.map_label_language in keys else "en"
+
+
+def effective_tiles(user=None, tenant=None) -> dict:
+    """The basemap config the browser uses: the raster street tiles (also the
+    fallback of a browser without WebGL), satellite, and the vector source
+    with the user's label language when ``basemap`` is vector."""
     ds = DeploymentSettings.load()
     url = (ds.map_tile_url or "").strip()
     sat_url = (ds.map_satellite_url or "").strip()
+    vec_url = (ds.map_vector_url or "").strip()
     satellite = {
         "url": sat_url or ESRI_SAT_URL,
         "attribution": (ds.map_satellite_attribution or "")
         if sat_url else ESRI_SAT_ATTRIBUTION,
     }
-    if url:
-        return {
-            "url": url,
-            "attribution": ds.map_tile_attribution or "",
-            "osm_default": False,
-            "satellite": satellite,
-        }
-    return {"url": OSM_TILE_URL, "attribution": OSM_ATTRIBUTION,
-            "osm_default": True, "satellite": satellite}
+    vector = {
+        "url": vec_url or OSM_VECTOR_URL,
+        "attribution": (ds.map_vector_attribution or "") if vec_url else OSM_ATTRIBUTION,
+        "osm_default": not vec_url,
+    }
+    out = {
+        "url": url or OSM_TILE_URL,
+        "attribution": (ds.map_tile_attribution or "") if url else OSM_ATTRIBUTION,
+        "osm_default": not url,
+        "satellite": satellite,
+        "basemap": ds.map_basemap if ds.map_basemap in ("raster", "vector") else "raster",
+        "vector": vector,
+        "labels": label_language(ds, user, tenant),
+    }
+    return out
+
+
+def street_attribution(tiles: dict) -> str:
+    """The credit of the street basemap a capture was drawn from."""
+    return tiles["vector"]["attribution"] if tiles.get("basemap") == "vector" \
+        else tiles["attribution"]
 
 
 @extend_schema(
@@ -361,7 +399,7 @@ def site_map(request):
     ]
 
     return Response({
-        "tiles": effective_tiles(),
+        "tiles": effective_tiles(request.user, tenant),
         "sites": sites,
         "devices": devices,
         "markers": markers,
@@ -380,6 +418,16 @@ def _viewable_links(user, tenant, links) -> list:
 
     ok = viewable_cable_ids(user, tenant, {hop[0].id for hop in links})
     return [hop for hop in links if hop[0].id in ok]
+
+
+def _site_ref(site):
+    """A placed site as a line's end names it."""
+    return {
+        "id": str(site.id),
+        "name": site.name,
+        "latitude": float(site.latitude),
+        "longitude": float(site.longitude),
+    }
 
 
 def _termination_site_id(term):
@@ -468,8 +516,16 @@ def site_map_connections(request):
         if visible_sites else []
     )
     two_sites = len(visible_sites) >= 2
+    # The Dependencies layer (#450): its own lines, asked for beside these.
+    extra: dict = {}
+    if include_dependencies(request):
+        from .dependency_maps import site_map_lines
+
+        extra["dependencies"] = site_map_lines(
+            request.user, tenant, visible_sites, _site_ref,
+        )
     if not two_sites and not pn_rows:
-        return Response({"connections": [], "provider_networks": []})
+        return Response({"connections": [], "provider_networks": [], **extra})
 
     # The cable hops, loaded once: the cable lines below, and with
     # ?include=capacity what each circuit is cabled to and where each trunk's
@@ -496,13 +552,7 @@ def site_map_connections(request):
         if capacity else None
     )
 
-    def site_ref(site):
-        return {
-            "id": str(site.id),
-            "name": site.name,
-            "latitude": float(site.latitude),
-            "longitude": float(site.longitude),
-        }
+    site_ref = _site_ref
 
     def status_ref(status):
         return {"name": status.name, "color": status.color} if status else None
@@ -651,7 +701,7 @@ def site_map_connections(request):
                 edge.update(figures.cables(entry["hops"], site_a_id=entry["a"]))
             edges.append(edge)
 
-    return Response({"connections": edges, "provider_networks": networks})
+    return Response({"connections": edges, "provider_networks": networks, **extra})
 
 
 #: How far (degrees) a provider network's marker sits off the one site it

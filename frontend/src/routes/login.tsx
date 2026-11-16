@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router"
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useCallback, useEffect, useState } from "react"
 import { KeyRound, LogIn, Mail, } from "lucide-react"
@@ -281,6 +281,14 @@ function LoginPage() {
                 {busy && <Spinner className="size-4" />}
                 Sign in
               </Button>
+              {me.password_reset_available && (
+                <Link
+                  to="/forgot-password"
+                  className="text-center text-[12px] whitespace-nowrap text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                >
+                  Forgot password?
+                </Link>
+              )}
 
               {providers.length > 0 && (
                 <>

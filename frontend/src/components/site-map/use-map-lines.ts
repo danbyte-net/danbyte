@@ -17,10 +17,21 @@ export const MAP_CABLES_KEY = ["site-map-cables", "capacity"] as const
 export const MAP_CONNECTIONS_URL = "/api/site-map/connections/?include=capacity"
 export const MAP_CABLES_URL = "/api/site-map/cables/?include=capacity"
 
-export function useMapConnections() {
+/** With the Dependencies layer on (#450), the same lines plus the
+ * dependency lines (`include=dependencies`), under a key of their own; the
+ * lines already drawn stay up while it loads. */
+export function useMapConnections(dependencies = false) {
   return useQuery({
-    queryKey: MAP_CONNECTIONS_KEY,
-    queryFn: () => api<SiteMapConnections>(MAP_CONNECTIONS_URL),
+    queryKey: dependencies
+      ? [...MAP_CONNECTIONS_KEY, "dependencies"]
+      : MAP_CONNECTIONS_KEY,
+    queryFn: () =>
+      api<SiteMapConnections>(
+        dependencies
+          ? `${MAP_CONNECTIONS_URL},dependencies`
+          : MAP_CONNECTIONS_URL
+      ),
+    placeholderData: (prev) => prev,
   })
 }
 

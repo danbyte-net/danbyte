@@ -304,6 +304,22 @@ describe("docReducer: device set", () => {
 describe("docReducer: virtual chassis", () => {
   const VC = "7c1d5e92-3b6f-4a0d-8e47-1b9c2d5f6e05"
 
+  it("keeps a cluster opened into its frame (#517), and only `true`", () => {
+    const CL = "2e4f6a81-5c3d-4b7e-9f10-8a2b4c6d8e01"
+    const d = docFromView(
+      view({
+        filters: { clusters: "on" },
+        chassis: { [CL]: { open: true, side: "R" }, [VC]: { open: "yes" } },
+      }),
+      styleOf
+    )
+    expect(d.chassisLooks).toEqual({ [CL]: { open: true, side: "R" } })
+    expect((toViewState(d) as Record<string, unknown>).chassis).toEqual({
+      [CL]: { open: true, side: "R" },
+    })
+    expect(toViewState(d).filters).toMatchObject({ clusters: "on" })
+  })
+
   it("reads and writes placed chassis and each chassis' look", () => {
     const d = docFromView(
       view({

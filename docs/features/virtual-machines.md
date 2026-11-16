@@ -19,7 +19,7 @@ Every VM can be created by hand. If you run Proxmox VE or VMware vCenter, a
 | **Name**, **status** | As for a device - the same status catalog. |
 | **Power** | Read-only, from the hypervisor - see [Power state](#power-state). |
 | **Role**, **platform** | Also the device catalogs, so one role can span physical and virtual. |
-| **Software version** | The version it runs, judged against the platform's [target version](lifecycle.md#software-target). Typed, or read from SNMP `sysDescr` - the Overview shows [where it came from](lifecycle.md#where-the-running-version-comes-from). |
+| **Software version** | The version it runs, judged against the platform's [target version](lifecycle.md#software-target). Typed, or read from SNMP `sysDescr` or an Oxidized config - the Overview shows [where it came from](lifecycle.md#where-the-running-version-comes-from). |
 | **Cluster** | The [cluster](clusters.md) it runs on. |
 | **Group** | Its [VM group](vm-groups.md) - a vApp, resource pool, folder or one of your own - on the same cluster. Optional. |
 | **Host device** | The physical host *inside* that cluster - see [Placement](#placement-site-and-host-device). |
@@ -41,6 +41,15 @@ The header carries the VM's status, its power state and, when anything
 monitors it, the same monitoring pill as a device's header: the worst state
 across its addresses' checks and PRTG. Hovering it shows each source's state
 and counts.
+
+The header's **Connect** menu is the device one: the enabled [connect
+protocols](device-access.md#connect-protocols) filled from the VM (`{host}`
+is its primary IP, `{username}` one of its credentials' usernames) and, when
+the [in-browser SSH terminal](device-access.md#the-in-browser-ssh-terminal)
+is on, **Open web terminal**. It shows to holders of the **connect**
+permission on *Virtual machines*; the device verb does not reach VMs. The
+terminal authenticates with an SSH credential from the **Credentials** card
+on the Monitoring tab and verifies the VM's SSH host keys (Certificates tab).
 
 **Overview** carries the same **monitoring card** as a device's: with
 problems, full width on top with the worst three (each a link to the check or
@@ -80,7 +89,7 @@ interfaces a VLAN. Then:
 | **Monitoring** | Checks against its primary address, same engine as devices (`?state=` filters them, as the monitoring bar does), and one **PRTG** row while PRTG is on, whose chevron opens [in PRTG, managed, registration and planned](prtg.md#planned-changes) with **Register in PRTG** and **Add to PRTG now**. |
 | **Sensors** | Only when [PRTG monitoring](prtg.md#sensors) is on, with the sensor count: the same status strip, sensor cards and sensor panel as a device's, and before PRTG has sensors for the VM the same state cards (excluded, not in PRTG, planned with **Add to PRTG now**, needs attention, being added, no sensors yet). |
 | **SNMP** | Facts, the interface table, LLDP neighbours and the ARP table, when the VM answers SNMP. Each SNMP interface is read against the VM's own NICs by name; when the guest names a NIC differently from the hypervisor (`ether1` for `nic0`), set **SNMP name** on the interface and the row maps. |
-| **Certificates** | TLS certificates seen on its endpoints. |
+| **Certificates** | TLS certificates seen on its endpoints, and its [SSH host keys](../monitoring/ssh-host-keys.md#virtual-machines-and-discovery). |
 | **Config** | The rendered config context for this VM, with its sources in merge order, and the [Oxidized backup](oxidized.md) of a virtual router when that is on. The VM form's **Config context → Local context data** (`local_context_data` in the API) is merged last, over every matching context - see [Local context data](config-contexts.md#local-context-data). |
 | **Journal**, **Change log** | Notes you write, and the automatic change record. |
 
@@ -89,7 +98,10 @@ interfaces a VLAN. Then:
 For a VM a [sync](external-sync.md) tracks, Danbyte shows the hypervisor's
 reported **power state** - *Powered on*, *Powered off* or *Suspended* - on the
 VM's hero, in its Overview with the time the reading was taken, and as a
-filterable **Power** column in VM tables.
+filterable **Power** column in VM tables (the VM list, and the VM tabs on
+clusters, VM groups, platforms and sites). The badge is coloured by state:
+*Powered on* green, *Suspended* or *Paused* amber, *Powered off* a neutral
+outline.
 
 It is deliberately separate from **Status**, and the distinction matters:
 
@@ -235,6 +247,17 @@ and `?vmid=<n>`.
 On an intended VM's page the Overview has a **Build** card with these
 fields, and a **Drift** card with what the hypervisor reports where it
 differs from the intent.
+
+Any VM with open drift - intended or synced - shows the **Drift** card on
+its Overview and at the top of its Components tab: one row per field, with
+what Danbyte holds and what the hypervisor reports. The **N drift** badge
+in the header names the fields on hover and opens the Components tab.
+With change rights on virtualization changes, each item has **Use
+hypervisor's** (write the hypervisor's values into Danbyte; for an interface
+the hypervisor no longer reports, **Delete interface**) and **Keep
+Danbyte's** (dismiss the item until the hypervisor's value changes again).
+Overwriting an intended VM or deleting an interface asks first. Neither
+writes to the hypervisor.
 
 ### Building it: render and provision
 

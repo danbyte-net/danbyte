@@ -53,7 +53,9 @@ import {
   layoutOutOfBounds,
   realignHierPorts,
 } from "./layout"
-import { OverlayEdge, bgpLabel } from "./overlay-edge"
+import { OverlayEdge, bgpLabel, dependencyLabel } from "./overlay-edge"
+import { dependencyEdgeParts } from "./dependency-edge"
+import type { ImpactHighlight } from "./what-if"
 import { FLOW_ARIA_LABELS } from "./flow-aria"
 import { drawnEdgeIds } from "./hidden"
 import { clearOfCorner } from "./fit-clear"
@@ -61,6 +63,7 @@ import { ZoomControls } from "./zoom-controls"
 import { RoutedEdge } from "./routed-edge"
 import { ZONE_DRAG_HANDLE } from "./zone-node"
 import { BAND_DRAG_HANDLE, BAND_NODE_CLASS } from "./diagram/band-node"
+import { clusterCardOf } from "./clusters"
 import { collapseChassis, isChassisNode } from "./diagram/chassis"
 import type { ChassisOptions, ChassisOrient } from "./diagram/chassis"
 import { ChassisActionsContext } from "./diagram/chassis-node"
@@ -446,6 +449,7 @@ export function hoverLabel(e: Edge): string | undefined {
         sem?: string
         raw?: TopoEdge["data"]
         bgp?: Parameters<typeof bgpLabel>[0]
+        dependency?: Parameters<typeof dependencyLabel>[0]
         cables?: BundleMember[]
         group?: GroupEdgeInfo
         fan?: { ports?: string[] }
@@ -453,6 +457,8 @@ export function hoverLabel(e: Edge): string | undefined {
     | undefined
   if (!d) return undefined
   if (d.sem === "bgp" && d.bgp) return bgpLabel(d.bgp)
+  if (d.sem === "dependency" && d.dependency)
+    return dependencyLabel(d.dependency)
   // A tunnel map's line: the tunnel, and a plain link's two ends. A hub's
   // trunk and legs are the one tunnel interface: the name alone.
   if (d.sem === "cable" && d.raw?.tunnel) {
@@ -568,6 +574,14 @@ function flowEdge(c: EdgeClass, colorMode: EdgeColorMode): Edge {
         type: "overlay",
         data: { sem: "bgp", bgp: c.raw },
         ...flowEdgeStyle(edgeLook("bgp")),
+      }
+    // A device dependency (#450): upstream → downstream, in its medium's
+    // look; the hover tip names both ends.
+    case "dependency":
+      return {
+        ...ends,
+        ...dependencyEdgeParts(c.raw),
+        data: { sem: "dependency", dependency: c.raw },
       }
     // LLDP "ghost" link - SNMP-adjacent, no cable. Clicking offers to
     // materialise it.
@@ -825,6 +839,9 @@ export interface TopologyCanvasProps {
   fitKey?: string
   /** Node ids matching the search - everything else renders dimmed. */
   matchedIds?: Set<string> | null
+  /** "What if this fails?" (#450): the cards it marks wear their ring,
+   * every other card fades. */
+  impact?: ImpactHighlight | null
   /** The edge whose panel is open - drawn emphasized in primary. */
   selectedEdgeId?: string | null
   onSelectNode?: (data: TopologyGraph["nodes"][number]["data"]) => void
@@ -849,6 +866,9 @@ export interface TopologyCanvasProps {
   /** Double-clicking a device card opens its page (double-click on a group
    * still drills). Disables React Flow's double-click zoom when set. */
   onOpenDevice?: (deviceId: string) => void
+  /** Double-clicking a cluster drawn as one card (#517) opens it into its
+   * frame. */
+  onOpenCluster?: (clusterId: string) => void
   /** Right-click on a node - screen coords + the raw RF node for branching
    * on type (a device card vs a sitegroup). */
   onNodeContext?: (node: Node, x: number, y: number) => void
@@ -1098,6 +1118,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     layoutTick = 0,
     fitKey = "",
     matchedIds,
+    impact,
     selectedEdgeId = null,
     onSelectNode,
     onSelectEdge,
@@ -1106,6 +1127,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     onSelectGroupEdge,
     onDrillGroup,
     onOpenDevice,
+    onOpenCluster,
     onNodeContext,
     onPaneContext,
     onEdgeContext,
@@ -1639,7 +1661,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
   // dims in the build).
   const searchSet = offThread ? (matchedIds ?? null) : null
   const shownNodes = useMemo(() => {
-    if (!spotSet && !monitor && !searchSet) return nodes
+    if (!spotSet && !monitor && !searchSet && !impact) return nodes
     const memo = monMemo.current
     return nodes.map((n) => {
       let out = n
@@ -1659,6 +1681,14 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
         !isOverlayNode(n) &&
         n.type !== "junction" &&
         n.type !== "chassis"
+      // What if this fails: a marked card wears its ring; any other card
+      // (not a frame, junction or note) fades.
+      if (impact && !isOverlayNode(n) && n.type !== "junction") {
+        const mark = impact.marks.get(n.id)
+        if (mark) out = { ...out, data: { ...out.data, impact: mark } }
+        else if (n.type !== "chassis" && n.type !== "sitegroup")
+          return { ...out, data: { ...out.data, dimmed: true } }
+      }
       return !unmatched &&
         (!spotSet ||
           spotSet.has(n.id) ||
@@ -1667,7 +1697,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
         ? out
         : { ...out, data: { ...out.data, dimmed: true } }
     })
-  }, [nodes, spotSet, monitor, searchSet])
+  }, [nodes, spotSet, monitor, searchSet, impact])
   // Built off the main thread, a newly focused card is selected here (the
   // in-place build selects it).
   useEffect(() => {
@@ -2297,10 +2327,15 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
         if (d.group_id) onDrillGroup?.(d)
         return
       }
+      const card = clusterCardOf(node.data)
+      if (card) {
+        onOpenCluster?.(card.id)
+        return
+      }
       const dev = (node.data as { device_id?: string }).device_id
       if (dev) onOpenDevice?.(dev)
     },
-    [onDrillGroup, onOpenDevice]
+    [onDrillGroup, onOpenDevice, onOpenCluster]
   )
   const onEdgeClick = useCallback(
     (_: unknown, edge: Edge) => {

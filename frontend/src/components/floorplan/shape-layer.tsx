@@ -2,7 +2,16 @@ import { Link2 } from "lucide-react"
 
 import { getLucideIcon } from "@/components/dynamic-icon"
 
+import {
+  AREA_NAME_BASE_PX,
+  DEFAULT_AREA_NAME_LOOK,
+  areaNameFallback,
+  areaNameFontPx,
+  areaNameSize,
+} from "./area-name-style"
+import type { AreaNameLook } from "./area-name-style"
 import { CELL } from "./canvas-geometry"
+
 import { fontGrow } from "./readable"
 import {
   AREA_INK_SHARE,
@@ -23,6 +32,7 @@ import {
   boxCenter,
   handlePoint,
   labelBox,
+  labelPlateBox,
   labelFontCells,
   labelPlate,
   patternRuns,
@@ -38,12 +48,10 @@ import type { GestureTarget, ShapeGestures } from "./use-shape-gestures"
 
 const px = (v: number) => v * CELL
 
-/** The name's size, and the icon's before it (world px). */
-const NAME_PX = 12
-const ICON_PX = 12
-const ICON_GAP = 4
-/** ~Average glyph width of the name's semibold sans, per em. */
-const NAME_EM = 0.6
+/** The name's size at M, which Readable grows from (world px). */
+const NAME_PX = AREA_NAME_BASE_PX
+/** A fine pattern's share of the usual stroke opacity (Detail by zoom). */
+const FINE_PATTERN = 0.45
 
 /** An area type's pattern: its strokes over the fill, clipped to the
  * area's own outline (`clip`: a rect or polygon in world px). */
@@ -54,12 +62,15 @@ function PatternStrokes({
   clip,
   box,
   zoom,
+  fine = false,
 }: {
   id: string
   area: AreaShape
   color: string
   clip: React.ReactNode
   box: { x: number; y: number; w: number; h: number }
+  /** Detail by zoom: thinner and fainter lines. */
+  fine?: boolean
   /** The canvas zoom: the lines keep their spacing and width on screen,
    * so a hatch stays readable zoomed out. */
   zoom: number
@@ -75,8 +86,8 @@ function PatternStrokes({
         clipPath={`url(#${id})`}
         data-pattern={areaPattern(area)}
         stroke={color}
-        strokeOpacity={PATTERN_STROKE.opacity}
-        strokeWidth={PATTERN_STROKE.width / zoom}
+        strokeOpacity={PATTERN_STROKE.opacity * (fine ? FINE_PATTERN : 1)}
+        strokeWidth={(PATTERN_STROKE.width * (fine ? 0.7 : 1)) / zoom}
         pointerEvents="none"
       >
         {runs.map((run, r) => (
@@ -106,57 +117,111 @@ function areaNameInks(area: AreaShape): React.CSSProperties {
 const AREA_INK_CLASS =
   "text-(--area-ink) stroke-(--area-halo) dark:text-(--area-ink-dark) dark:stroke-(--area-halo-dark)"
 
-/** An area's name with its type's icon before it: from (x, y) in its top
- * left (`start`, y the baseline), or centred on (x, y) (`middle`, y the
- * middle). A patterned area's name reads over its lines through a halo of
- * the background. */
+/** A plate behind text, so it reads over lines - a label's, and an area
+ * name's when its look asks for one: the theme's background (or `fill`)
+ * with a hairline of the border. */
+function Plate({
+  x,
+  y,
+  width,
+  height,
+  font,
+  fill,
+  part,
+}: {
+  x: number
+  y: number
+  width: number
+  height: number
+  /** The text's size: the corners round with it. */
+  font: number
+  fill?: string | null
+  part?: string
+}) {
+  return (
+    <rect
+      data-part={part}
+      x={x}
+      y={y}
+      width={width}
+      height={height}
+      rx={Math.min(6, font * 0.2)}
+      className={fill ? "stroke-border" : "fill-background stroke-border"}
+      fill={fill ?? undefined}
+      data-plate={fill ?? undefined}
+      strokeWidth={1}
+    />
+  )
+}
+
+/** An area's name with its type's icon before it, in its box (`x`, `y`:
+ * the top left, world px) at its look's size and colour, on a plate when
+ * its look has one. A patterned area's name reads over its lines through
+ * a halo of the background. */
 function AreaName({
   area,
   name,
   x,
   y,
-  anchor,
   ink,
+  look,
   grow = 1,
 }: {
   area: AreaShape
   name: string
   x: number
   y: number
-  anchor: "start" | "middle"
   ink: string
+  look: AreaNameLook
   /** Readable from afar: the name and its icon grown by this much. */
   grow?: number
 }) {
   const icon = areaIcon(area)
   const Icon = icon ? getLucideIcon(icon) : null
-  const namePx = NAME_PX * grow
-  const iconPx = ICON_PX * grow
-  const shift = Icon ? iconPx + ICON_GAP * grow : 0
-  const textW = name.length * namePx * NAME_EM
-  // The text's anchor point, and the icon's top left before the text.
-  const tx = anchor === "middle" ? x + shift / 2 : x + shift
-  const ix = anchor === "middle" ? x - (shift + textW) / 2 : x
-  const mid = anchor === "middle" ? y : y - namePx * 0.35
-  // Grown, it spills over tiles and lines: always on its halo.
-  const own = ink === areaColor(area)
-  const halo = areaNameHalo(area) || grow > 1
-  // In the area's own colour, a name keeps some of the page's ink, so a
-  // pale colour still reads, on a halo of the page. Over a strong fill it
-  // is black or white - judged against the fill as it reads over each
+  const namePx = areaNameFontPx(look, grow)
+  const iconPx = namePx
+  const box = areaNameSize(name, namePx, !!Icon, look.plate)
+  const tx = x + box.pad + box.shift
+  const ix = x + box.pad
+  const baseline = y + box.baseline
+  const mid = baseline - namePx * 0.35
+  // A chosen colour is the name's ink as it is. On a plate the page is
+  // under it: the area's own colour, as over a light fill. Otherwise, in
+  // the area's own colour a name keeps some of the page's ink, so a pale
+  // colour still reads, on a halo of the page; over a strong fill it is
+  // black or white - judged against the fill as it reads over each
   // theme's page - on a halo of the other one, so the glyphs keep their
   // edges (a white name on a white halo smears).
-  const fill = own
-    ? `color-mix(in oklab, ${ink} ${AREA_INK_SHARE * 100}%, var(--foreground))`
-    : "currentColor"
+  const chosen = look.color
+  const own = !!chosen || look.plate || ink === areaColor(area)
+  const base = look.plate && !chosen ? areaColor(area) : ink
+  // Grown, it spills over tiles and lines: always on its halo - none on a
+  // plate, which is its own backdrop.
+  const halo = !look.plate && (!!chosen || areaNameHalo(area) || grow > 1)
+  const fill = chosen
+    ? chosen
+    : own
+      ? `color-mix(in oklab, ${base} ${AREA_INK_SHARE * 100}%, var(--foreground))`
+      : "currentColor"
   const inks = own ? undefined : areaNameInks(area)
   return (
     <g
       pointerEvents="none"
       data-part="area-name"
+      data-position={look.position}
       style={inks}
       className={inks ? AREA_INK_CLASS : undefined}
     >
+      {look.plate && (
+        <Plate
+          part="area-name-plate"
+          x={x}
+          y={y}
+          width={box.w}
+          height={box.h}
+          font={namePx}
+        />
+      )}
       {Icon && (
         <Icon
           data-part="area-icon"
@@ -170,9 +235,7 @@ function AreaName({
       )}
       <text
         x={tx}
-        y={y}
-        textAnchor={anchor === "middle" ? "middle" : undefined}
-        dominantBaseline={anchor === "middle" ? "middle" : undefined}
+        y={baseline}
         fontSize={namePx}
         fontWeight={600}
         fill={fill}
@@ -197,10 +260,16 @@ function OpensMark({
   y,
   ink,
   area,
+  size = LINK_PX,
+  onOpen,
 }: {
   x: number
   y: number
   ink: string
+  /** Its size (world px). */
+  size?: number
+  /** View, while a click on the area zooms: a click on the mark opens. */
+  onOpen?: () => void
   /** An area's mark: black or white over a strong fill, as its name. */
   area?: AreaShape
 }) {
@@ -210,19 +279,42 @@ function OpensMark({
       data-part="opens-mark"
       x={x}
       y={y}
-      width={LINK_PX}
-      height={LINK_PX}
+      width={size}
+      height={size}
       color={inks ? "currentColor" : ink}
       strokeWidth={2.25}
       pointerEvents="none"
     />
   )
-  return inks ? (
+  const drawn = inks ? (
     <g style={inks} className={AREA_INK_CLASS}>
       {mark}
     </g>
   ) : (
     mark
+  )
+  if (!onOpen) return drawn
+  return (
+    <g
+      data-part="opens-button"
+      role="link"
+      aria-label="Open the linked plan"
+      style={{ cursor: "pointer", pointerEvents: "auto" }}
+      onPointerDown={(e) => e.stopPropagation()}
+      onClick={(e) => {
+        e.stopPropagation()
+        onOpen()
+      }}
+    >
+      <rect
+        x={x - size * 0.2}
+        y={y - size * 0.2}
+        width={size * 1.4}
+        height={size * 1.4}
+        fill="transparent"
+      />
+      {drawn}
+    </g>
   )
 }
 
@@ -239,14 +331,36 @@ export function AreaShapeView({
   multiSelected = false,
   minNamePx,
   nameAt,
+  nameLook = DEFAULT_AREA_NAME_LOOK,
+  pattern = "full",
+  recedes = false,
+  hot = false,
+  onActivate,
+  onFocusChange,
+  onOpens,
 }: {
+  /** View, while a click zooms to it: its Opens mark opens the plan. */
+  onOpens?: () => void
+  /** View, from afar: Enter or Space on the focused area zooms to it. */
+  onActivate?: () => void
+  onFocusChange?: (focused: boolean) => void
   area: AreaShape
+  /** The plan's filter leaves it out (its area type): faded. */
+  recedes?: boolean
+  /** View, from afar: under the pointer or focused, a click zooms to it -
+   * its outline lit. */
+  hot?: boolean
+  /** Detail by zoom: the type's pattern as drawn, fine and faint, or left
+   * out (a flat tint). */
+  pattern?: "full" | "fine" | "none"
   /** Readable: the name never under this on screen (px). */
   minNamePx?: number
   /** Where the plan's label pass put the name - its box's top left
    * (cells) - or null where it would cover another text; left out, the
    * name sits where it always does. */
   nameAt?: Pt | null
+  /** How its name is drawn: the plan's default under its own style. */
+  nameLook?: AreaNameLook
   selected: boolean
   /** Picked with others (Ctrl/⌘-click) - walls go round them together. */
   multiSelected?: boolean
@@ -261,11 +375,20 @@ export function AreaShapeView({
   const ink = areaLabelColor(area)
   const name = area.show_name && nameAt !== null ? areaName(area) : ""
   const dash = area.border === "dashed" ? "8 5" : undefined
-  const on = selected || multiSelected
+  const on = selected || multiSelected || hot
   const strokeOpacity =
     area.border === "none" && !on ? 0 : on ? 1 : AREA_STROKE_OPACITY
   const clipId = `area-pattern-${area.id}`
   const grow = minNamePx ? fontGrow(NAME_PX, zoom, minNamePx) : 1
+  const nameBox = areaNameSize(
+    name,
+    areaNameFontPx(nameLook, grow),
+    !!getLucideIcon(areaIcon(area)),
+    nameLook.plate
+  )
+  // A mark that opens: big enough on screen to press.
+  const linkPx = onOpens ? Math.max(LINK_PX, 16 / zoom) : LINK_PX
+  const linkGap = onOpens ? 4 / zoom : 4
   const common = {
     fill: color,
     fillOpacity: area.fill_opacity / 100,
@@ -277,7 +400,24 @@ export function AreaShapeView({
   const style: React.CSSProperties = {
     cursor: interactive ? "pointer" : undefined,
     pointerEvents: interactive ? "auto" : "none",
+    opacity: recedes ? 0.35 : undefined,
+    outline: "none",
   }
+  // Focusable when a key can zoom to it; its lit outline is the ring.
+  const keys = onActivate
+    ? {
+        tabIndex: 0,
+        role: "button",
+        "aria-label": `Zoom to ${areaName(area) || "area"}`,
+        onKeyDown: (e: React.KeyboardEvent) => {
+          if (e.key !== "Enter" && e.key !== " ") return
+          e.preventDefault()
+          onActivate()
+        },
+        onFocus: () => onFocusChange?.(true),
+        onBlur: () => onFocusChange?.(false),
+      }
+    : {}
   if (area.shape === "polygon") {
     const pts = area.points
     if (pts.length < 3) return null
@@ -294,21 +434,25 @@ export function AreaShapeView({
         style={style}
         onPointerDown={onPointerDown}
         aria-label={name || "Area"}
+        {...keys}
       >
         <polygon points={outline} strokeLinejoin="round" {...common} />
-        <PatternStrokes
-          id={clipId}
-          area={area}
-          color={color}
-          zoom={zoom}
-          clip={<polygon points={outline} />}
-          box={{
-            x: bx,
-            y: by,
-            w: Math.max(...xs) - bx,
-            h: Math.max(...ys) - by,
-          }}
-        />
+        {pattern !== "none" && (
+          <PatternStrokes
+            id={clipId}
+            area={area}
+            color={color}
+            zoom={zoom}
+            fine={pattern === "fine"}
+            clip={<polygon points={outline} />}
+            box={{
+              x: bx,
+              y: by,
+              w: Math.max(...xs) - bx,
+              h: Math.max(...ys) - by,
+            }}
+          />
+        )}
         {onEdgeDoubleClick &&
           pts.map((p, i) => {
             const q = pts[(i + 1) % pts.length]
@@ -329,19 +473,21 @@ export function AreaShapeView({
           <AreaName
             area={area}
             name={name}
-            x={px(cx)}
-            y={px(cy)}
-            anchor="middle"
+            x={px(cx) - nameBox.w / 2}
+            y={px(cy) - nameBox.h / 2}
             ink={ink}
+            look={nameLook}
             grow={grow}
           />
         )}
         {(area.opens || area.opens_hidden) && (
           <OpensMark
-            x={px(cx) - LINK_PX / 2}
-            y={px(cy) + (name ? NAME_PX : -LINK_PX / 2)}
+            x={px(cx) - linkPx / 2}
+            y={px(cy) + (name ? NAME_PX : -linkPx / 2)}
             area={area}
             ink={ink}
+            size={linkPx}
+            onOpen={onOpens}
           />
         )}
       </g>
@@ -362,6 +508,7 @@ export function AreaShapeView({
           : undefined
       }
       aria-label={name || "Area"}
+      {...keys}
     >
       <rect
         x={px(area.x)}
@@ -371,37 +518,39 @@ export function AreaShapeView({
         rx={3}
         {...common}
       />
-      <PatternStrokes
-        id={clipId}
-        area={area}
-        color={color}
-        zoom={zoom}
-        clip={
-          <rect x={px(area.x)} y={px(area.y)} width={w} height={h} rx={3} />
-        }
-        box={{ x: px(area.x), y: px(area.y), w, h }}
-      />
+      {pattern !== "none" && (
+        <PatternStrokes
+          id={clipId}
+          area={area}
+          color={color}
+          zoom={zoom}
+          fine={pattern === "fine"}
+          clip={
+            <rect x={px(area.x)} y={px(area.y)} width={w} height={h} rx={3} />
+          }
+          box={{ x: px(area.x), y: px(area.y), w, h }}
+        />
+      )}
       {name && (nameAt || (w > 30 && h > 18) || grow > 1) && (
         <AreaName
           area={area}
           name={name}
-          x={nameAt ? px(nameAt[0]) : px(area.x) + 6 * grow}
-          y={
-            nameAt
-              ? px(nameAt[1]) + NAME_PX * grow * 0.8
-              : px(area.y) + 15 * grow
-          }
-          anchor="start"
+          {...(nameAt
+            ? { x: px(nameAt[0]), y: px(nameAt[1]) }
+            : areaNameFallback(area, nameLook, nameBox, grow))}
           ink={ink}
+          look={nameLook}
           grow={grow}
         />
       )}
-      {(area.opens || area.opens_hidden) && w > LINK_PX + 8 && (
+      {(area.opens || area.opens_hidden) && w > linkPx + linkGap * 2 && (
         <OpensMark
-          x={px(area.x) + w - LINK_PX - 4}
-          y={px(area.y) + 4}
+          x={px(area.x) + w - linkPx - linkGap}
+          y={px(area.y) + linkGap}
           area={area}
           ink={ink}
+          size={linkPx}
+          onOpen={onOpens}
         />
       )}
     </g>
@@ -431,6 +580,7 @@ export function LabelShapeView({
   onPointerDown?: (e: React.PointerEvent) => void
 }) {
   const box = labelBox(label, cellMm)
+  const plateBox = label.plate ? labelPlateBox(label, cellMm) : box
   const [cx, cy] = boxCenter(box)
   const size = px(labelFontCells(label.font_mm, cellMm))
   const lines = label.text.split("\n")
@@ -469,24 +619,27 @@ export function LabelShapeView({
         pointerEvents: interactive ? "auto" : "none",
       }}
     >
-      {/* The hit area, and the plate when it has one. */}
-      <rect
-        x={px(box.x)}
-        y={px(box.y)}
-        width={px(box.width)}
-        height={px(box.height)}
-        rx={Math.min(6, size * 0.2)}
-        className={
-          label.plate
-            ? plate.fill
-              ? "stroke-border"
-              : "fill-background stroke-border"
-            : undefined
-        }
-        fill={label.plate ? (plate.fill ?? undefined) : "transparent"}
-        data-plate={plate.fill ?? undefined}
-        strokeWidth={label.plate ? 1 : 0}
-      />
+      {/* The hit area, and the plate when it has one - never narrower
+          than the text it backs. */}
+      {label.plate ? (
+        <Plate
+          x={px(plateBox.x)}
+          y={px(plateBox.y)}
+          width={px(plateBox.width)}
+          height={px(plateBox.height)}
+          font={size}
+          fill={plate.fill}
+        />
+      ) : (
+        <rect
+          x={px(box.x)}
+          y={px(box.y)}
+          width={px(box.width)}
+          height={px(box.height)}
+          fill="transparent"
+          strokeWidth={0}
+        />
+      )}
       <text
         className={plate.ink ? undefined : color.className}
         fill={plate.ink ?? undefined}

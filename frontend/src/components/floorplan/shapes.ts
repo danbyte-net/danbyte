@@ -264,29 +264,180 @@ export function labelFontCells(fontMm: number, cellMm: number): number {
   return fontMm / Math.max(1, cellMm)
 }
 
-/** ~Average glyph width of the plan's sans, per em. */
-const GLYPH_EM = 0.58
+// Advance widths of the plan's sans (Inter), per em, rounded up a touch -
+// the fallback where the browser cannot measure (tests, a font not loaded
+// yet). One average glyph (0.58 em) per character came up short on
+// capitals: "WELCOME … DEMO" ran past its plate.
+const GLYPH_WIDTHS: Record<string, number> = {
+  A: 0.7,
+  B: 0.65,
+  C: 0.72,
+  D: 0.73,
+  E: 0.6,
+  F: 0.58,
+  G: 0.75,
+  H: 0.76,
+  I: 0.29,
+  J: 0.54,
+  K: 0.68,
+  L: 0.55,
+  M: 0.9,
+  N: 0.77,
+  O: 0.78,
+  P: 0.64,
+  Q: 0.78,
+  R: 0.66,
+  S: 0.64,
+  T: 0.64,
+  U: 0.75,
+  V: 0.7,
+  W: 1.0,
+  X: 0.69,
+  Y: 0.68,
+  Z: 0.64,
+  a: 0.56,
+  b: 0.61,
+  c: 0.56,
+  d: 0.61,
+  e: 0.58,
+  f: 0.37,
+  g: 0.61,
+  h: 0.6,
+  i: 0.26,
+  j: 0.26,
+  k: 0.55,
+  l: 0.26,
+  m: 0.9,
+  n: 0.6,
+  o: 0.6,
+  p: 0.61,
+  q: 0.61,
+  r: 0.39,
+  s: 0.53,
+  t: 0.38,
+  u: 0.6,
+  v: 0.56,
+  w: 0.81,
+  x: 0.55,
+  y: 0.56,
+  z: 0.54,
+  " ": 0.29,
+  ".": 0.29,
+  ",": 0.29,
+  ":": 0.29,
+  ";": 0.29,
+  "!": 0.31,
+  "'": 0.25,
+  '"': 0.42,
+  "-": 0.45,
+  "(": 0.38,
+  ")": 0.38,
+  "/": 0.42,
+  "|": 0.3,
+  "\u00b7": 0.29,
+  "\u2026": 0.9,
+}
+/** A digit, and any glyph not listed. */
+const GLYPH_DEFAULT = 0.64
+/** Bold sets wider. */
+const BOLD_GROW = 1.07
+
+/** The text as SVG draws it: runs of spaces collapse to one, and leading
+ * and trailing ones go - so a trailing space never widens a plate. */
+export function drawnText(text: string): string {
+  return text.replace(/\s+/g, " ").trim()
+}
+
+const MEASURE_PX = 100
+const measured = new Map<string, number>()
+let measureCtx: CanvasRenderingContext2D | null | undefined
+
+/** The browser's own width of `text` at 1 em in the plan's font, or null
+ * where it cannot say (no canvas, the web font not loaded yet). */
+function measureEm(text: string, bold: boolean): number | null {
+  if (typeof document === "undefined") return null
+  const font = `${bold ? 700 : 400} ${MEASURE_PX}px "Inter Variable", Inter, sans-serif`
+  const key = `${bold ? 1 : 0}${text}`
+  const hit = measured.get(key)
+  if (hit != null) return hit
+  try {
+    if (!document.fonts?.check(font, text)) return null
+    if (measureCtx === undefined)
+      measureCtx = document.createElement("canvas").getContext("2d")
+    if (!measureCtx) return null
+    measureCtx.font = font
+    const w = measureCtx.measureText(text).width / MEASURE_PX
+    if (!(w > 0)) return null
+    if (measured.size > 2000) measured.clear()
+    measured.set(key, w)
+    return w
+  } catch {
+    measureCtx = null
+    return null
+  }
+}
+
+/** A line's advance width at 1 em, as drawn: measured by the browser when
+ * it can, else glyph by glyph - never by a character count. */
+export function textWidthEm(text: string, bold = false): number {
+  const t = drawnText(text)
+  const m = measureEm(t, bold)
+  if (m != null) return m
+  let w = 0
+  for (const ch of t) w += GLYPH_WIDTHS[ch] ?? GLYPH_DEFAULT
+  return bold ? w * BOLD_GROW : w
+}
+
 const LINE_EM = 1.25
-const PAD_EM = 0.3
+/** A label's pad round its text, per em of its font. */
+export const LABEL_PAD_EM = 0.3
+const PAD_EM = LABEL_PAD_EM
+
+type LabelSizing = Pick<
+  FloorPlanLabel,
+  "text" | "x" | "y" | "width" | "height" | "rotation" | "font_mm"
+> &
+  Partial<Pick<FloorPlanLabel, "weight">>
+
+/** A label's widest line at its font (cells). */
+function labelTextCells(l: LabelSizing, f: number): number {
+  const lines = (l.text || " ").split("\n")
+  const bold = l.weight === "bold"
+  return Math.max(0.5, ...lines.map((s) => textWidthEm(s, bold))) * f
+}
 
 /** The box a label takes: its own size, or sized to its text. */
-export function labelBox(
-  l: Pick<
-    FloorPlanLabel,
-    "text" | "x" | "y" | "width" | "height" | "rotation" | "font_mm"
-  >,
-  cellMm: number
-): Box {
+export function labelBox(l: LabelSizing, cellMm: number): Box {
   const f = labelFontCells(l.font_mm, cellMm)
   const lines = (l.text || " ").split("\n")
-  const longest = Math.max(1, ...lines.map((s) => s.length))
   return {
     x: l.x,
     y: l.y,
-    width: l.width ?? longest * GLYPH_EM * f + PAD_EM * 2 * f,
+    width: l.width ?? labelTextCells(l, f) + PAD_EM * 2 * f,
     height: l.height ?? lines.length * LINE_EM * f + PAD_EM * f,
     rotation: l.rotation,
   }
+}
+
+/** A label's plate (cells): its box, widened where a set width is
+ * narrower than its text - grown from the side the text is aligned to -
+ * so the plate always covers the text with the same pad either side. */
+export function labelPlateBox(
+  l: LabelSizing & Pick<FloorPlanLabel, "align">,
+  cellMm: number
+): Box {
+  const box = labelBox(l, cellMm)
+  const f = labelFontCells(l.font_mm, cellMm)
+  const need = labelTextCells(l, f) + PAD_EM * 2 * f
+  if (box.width >= need) return box
+  const extra = need - box.width
+  const x =
+    l.align === "center"
+      ? box.x - extra / 2
+      : l.align === "right"
+        ? box.x - extra
+        : box.x
+  return { ...box, x, width: need }
 }
 
 /** The palette a label's colour token names: for the screen (a class

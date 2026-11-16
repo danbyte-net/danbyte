@@ -65,14 +65,12 @@ function FloorTileTypesPage() {
         onChange: setQ,
         placeholder: "Filter by name…",
       }}
-      actions={
-        <>
-          {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/floor-tile-types/new">Add tile type</Link>
-            </Button>
-          )}
-        </>
+      add={
+        canAdd && (
+          <Button size="sm" asChild>
+            <Link to="/floor-tile-types/new">Add tile type</Link>
+          </Button>
+        )
       }
       query={query}
     >

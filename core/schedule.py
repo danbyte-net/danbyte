@@ -221,6 +221,19 @@ SCHEDULE: tuple[ScheduledTask, ...] = (
         label="Refresh end-of-life data (when turned on)",
     ),
     ScheduledTask(
+        unit="danbyte-vuln-refresh",
+        commands=("vuln_refresh", "vuln_maintenance"),
+        at=("05:50",),
+        label="Fetch vulnerability data (when turned on in server mode); expire "
+              "exceptions and purge old resolved matches",
+    ),
+    ScheduledTask(
+        unit="danbyte-inventory",
+        commands=("inventory_dispatch",),
+        every=15 * MINUTE,
+        label="Queue due package-inventory runs (when discovery is turned on)",
+    ),
+    ScheduledTask(
         unit="danbyte-certificate-expiry",
         commands=("certificate_expiry",),
         at=("06:30",),

@@ -57,8 +57,9 @@ SITE_PATHS: dict[str, str] = {
     "modulebay": "device__site",
     "module": "device__site",
     "macaddress": "assigned_interface__device__site",
-    "sshhostkey": "device__site",
-    "devicecredential": "device__site",
+    # A host key or a credential belongs to a device or (#451) a VM.
+    "sshhostkey": "device__site|virtual_machine__site",
+    "devicecredential": "device__site|virtual_machine__site",
     "vminterface": "vm__site",
     # Its own site, else the VM it lands on (#432) - an end at a provider
     # network bound to a VM interface belongs to that VM's site.
@@ -161,6 +162,10 @@ SITE_PATHS: dict[str, str] = {
     # Installed software follows its device or VM (#436); the application
     # catalog itself is tenant-wide, like platforms.
     "installedsoftware": "device__site|virtual_machine__site",
+    # A vulnerability exception follows its host (#451); one for a platform,
+    # an application or the whole tenant has no site, so a site role reads
+    # it as shared and never writes it.
+    "vulnerabilityexception": "device__site|virtual_machine__site",
     # An application group follows its host the same way (#436); the group
     # and its members are a tenant-wide catalog.
     "applicationgroupassignment": "device__site|virtual_machine__site",
@@ -178,6 +183,9 @@ SITE_PATHS: dict[str, str] = {
         "|source_prefix__site|destination_prefix__site"
         "|source_range__prefix__site|destination_range__prefix__site"
     ),
+    # A device dependency belongs to its downstream's site - the device that
+    # is affected - else its upstream's (#450).
+    "devicedependency": "downstream__site|upstream__site",
 }
 
 # Site-bound types the one-click site roles do NOT grant (auth_api.api.
@@ -261,6 +269,7 @@ CATALOG_SITE_PATHS: dict[str, str] = {
     "customfield": "owning_site",
     "customfieldgroup": "owning_site",
     "zone": "owning_site",
+    "dependencymedium": "owning_site",
     # Component templates inherit the locality of their owning DeviceType.
     "interfacetemplate": "device_type__owning_site",
     "consoleporttemplate": "device_type__owning_site",

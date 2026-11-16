@@ -54,7 +54,9 @@ a lot of data fast - typography and spacing serve that, not decoration.
   buttons for labels or counts; `rounded-full` stays reserved for status dots
   and avatars. Severity chips use the semantic variants (`destructive`,
   `warning`, `success`) as **separate badges per severity**, not one combined
-  pill. Chips overlaying a tinted/tiled canvas sit on a solid
+  pill. A scale with two red levels (a vulnerability's Critical / High,
+  Fix first / High) puts the worst on `destructive-solid` (solid
+  `bg-destructive`) and the next on the soft `destructive`. Chips overlaying a tinted/tiled canvas sit on a solid
   `bg-background/95 rounded-md border` backdrop so the tint reads.
 - **Tooltips never go white in dark mode.** The plain tooltip is a chip:
   inverted on light (dark chip, light text), but on dark it steps *up* to a
@@ -71,7 +73,14 @@ a lot of data fast - typography and spacing serve that, not decoration.
   flow's (#163): a solid head in the line's own colour at the destination,
   at both ends for a flow both ways, drawn as a polygon (never an SVG
   `<marker>`, which the PDF sanitizer drops). Cables and sessions stay
-  plain lines.
+  plain lines. A device dependency on the Topology map (#450) is the one
+  canvas line with a React Flow marker at its downstream card, in its
+  medium's colour; it is a screen layer the exports leave out.
+- **Impact rings** ("What if this fails?" on the Topology map,
+  `components/topology/what-if.ts`): an outline on the card in the impact
+  colours the impact lists use - thick `--destructive` for the failed
+  device, `--destructive` for down, dashed amber for reduced redundancy -
+  with every other card faded as a search miss is. Never a fill.
 - **Flow diagrams** draw one neutral row band per application, titled with
   its path, and neutral cards: the colour stays with roles and statuses.
 - **Canvas notes** are text in `text-foreground/75` and Lucide icons in
@@ -187,6 +196,10 @@ parts, so a control reads the same on each:
 | A right-click menu on a canvas | `PointerMenu` (`components/pointer-menu.tsx`): the shared dropdown opened at the pointer. A key an item shows (++h++, ++delete++) is passed in `keys`, so it acts on what was right-clicked, not on the selection |
 | The detail panel over a canvas | `PanelShell` (`components/map-panel.tsx`): title and Close, `PanelRow` key/value rows, `PanelSection`s under a `SectionLabel`, and the actions at the foot (*Open …* first). `SectionLabel` also heads a legend |
 | A name that will not sit clearly by its object on a floor plan | The label pass's callout (`components/floorplan/plan-callouts.ts`, drawn by `plan-callouts-layer.tsx`): a plain `rounded-md` box in `--popover` with a `--border` outline, at a constant size on screen, the name then at most three lines (a status or role as its badge, never a dot); a straight leader from the middle of the box edge facing the object to the object's edge - 1.25 px `--muted-foreground` on a 3 px `--background` casing, a small dot at the object - so it reads on any map or plan. Hover or selection lights the pair in `--primary` with a thicker leader, drawn over the rest; the others keep full ink (never faded). A row of racks whose names do not fit gets one row name instead (`plan-rows.ts`): bold text along the row at its angle, never upside down, on a `--background` plate with a `--border` outline. From afar the row is one bar along its line in its racks' colour, and a room's rows one `--popover` plate on the room with the racks' icon square and `Data Hall 1 · 120 racks` (`plan-lod.ts`) |
+| A placed object or planning tile on a floor plan | Display → *Tile icons* (on by default; `components/floorplan/tile-face.ts`, drawn by `TileShape` and printed by `plan-svg.ts` from the same layout): the tile is a solid `rounded` block in the colour **Color by** gives it - its type's, its role's, a status's or a capacity level's, never one picked from a name - with a 1 px border a shade of that colour (darker on a light page, lighter on a dark one). A tile linked to nothing is the same colour at 60 % over the page. On it, centred in what the front-edge marker and the capacity bar leave free, the Lucide icon of what it is (`tileIcon`: the device's or its type's, the tile type's, the role's, else the kind's - *container* for a rack, *rows-4* for a cabinet), white wherever white keeps 3 : 1 on the fill and near-black otherwise; the name and the marks take the same ink. The glyph scales with the tile (at most 30 px on a rack-sized tile, more on a big one), sits above or beside a name drawn in the tile and gives way to it when both do not fit, and is never drawn under 10 px. Icons are one SVG sprite per canvas (`tile-glyph.tsx`): one `<symbol>` per icon, a `<use>` per tile. A tile the colouring is not about stays pale so the racks read; zones and photos are unchanged. Off, tiles are the plain tint they always were |
+| A floor plan from afar | Display → *Detail: Auto* (`components/floorplan/plan-detail.ts`): one clear picture per zoom, never everything at once. Whole floor: rooms as flat blocks in their area type's tint (no hatch), thin walls, one centred room label (`room-labels-layer.tsx`) - the name in `--foreground` semibold, a muted facts line under it (*72 racks · 61% full*, *3 UPS*), an alarm as a squarish badge in its check colour - at a constant 12 / 10.5 px on a halo of the page, upright or along a narrow room, never over another (the smaller room gives way, its name in the shared tooltip on hover); the base map blanked to `--background` inside the building. A hall on screen: rows as bars, icon tiles, no callouts but the hovered or selected one's, zones a light wash, door swings back. Racks readable: short names (*A01*), the capacity bar and the camera cone only in focus, the front edge faint, a fine faint hatch. *Always full* is the old everything-everywhere look |
+| Zooming into a floor plan from afar | Click to zoom (`components/floorplan/plan-zoom.ts`): the room a click would fit lights its outline under the pointer (the selection's stroke), the cursor a pointer; the view eases with the 3D fly-to's cubic in-out (`easeInOut`), instantly under reduced motion. Room labels stay upright - over their room's edges before they turn - and only a name ever turns; a badge never does |
+| Filtering what a map shows (floor plans) | `PlanFilterMenu` (`components/floorplan/plan-filter-menu.tsx`): a `BarMenuTrigger` *Filter* with its count `Badge`, a popover of the lists' `FacetGroup`s and `ExpressionFilter`, a *Hide others* `Switch`; then the lists' `SavedViews` (`compact`, h-7) and, while a filter is on, `HiddenChip` with `position="inline"` - what it keeps, *N shown*, *Clear*. What it leaves out recedes at the rack table's 25 % (areas 35 %), never a new colour |
 | A chip on a canvas (*Partial map*) | Bordered `bg-background/95`, no shadow and no blur: shadows are for overlays |
 | A legend on a canvas | `LegendFrame` (`components/map-legend.tsx`): bordered and opaque `bg-background`, no shadow and no blur, headed *Legend* with a *Hide legend* button, open or folded (remembered per browser under its `storageKey`, or held by the page), so a colored rail or card behind it never shows through; folded, an outline `xs` button with the List icon. `w-60` unless its rows need their own width (`w-fit`). A legend that is part of an exported picture keeps its Hide button out of the export: the button and the folded chip carry `data-export-skip`, which the floor plan's PNG export filters out. The floor plan draws its keys - Color by, cables, area types - as sections of one card (`PlanLegend`, `components/floorplan/plan-legend.tsx`), never as boxes stacked in the corner; `hideable={false}` stays for a legend that must never fold. The topology's `CanvasLegend`, the rail maps' `RailLegend`, the site map's legend and the 3D room's key are built on it. `TopologyCanvas` takes its box as `keepClear`, so a fit keeps the map beside or above it; `RailCanvas` keeps room for it under the drawing |
 | A legend's rows | From `components/map-legend.tsx`: `LegendRow` (swatch, then label), `LegendLine` (a line keys a line), `LegendTones` (a colour mode's keys as short lines, wrapping), and `LegendPills` / `LegendStatuses` for roles and statuses as their `ColorBadge` / `StatusBadge` pills - never a coloured dot beside a name. `LegendItems` draws a list of `LegendItem`s in that order |
@@ -243,14 +256,23 @@ can't drift page to page (source of truth:
 `frontend/src/components/list-page-shell.tsx`, reference implementation
 `routes/manufacturers.index.tsx`):
 
-- The shell owns the header (title · count chip · search · actions) and the
-  scrolling body. Header order is fixed: **search first, then the action
-  cluster** - `TableActions` (Import / Export) and then `Add X`.
-- The header is one h-14 row when everything fits. When it doesn't, the search
-  box narrows (18rem down to 10rem), then the controls move under the title and
-  wrap onto more rows. Nothing in a page header is ever scrolled out of sight
-  behind a hidden scrollbar - the same goes for `DetailShell`'s actions and tab
-  strip, which wrap too.
+- The shell owns the header (title · count chip · actions) and the scrolling
+  body. The actions follow the [action ribbon](#the-action-ribbon) order:
+  `actions` - `TableActions` (Import / Export) and any view controls - then
+  `Add X` (the shell's `add` prop, solid primary) at the right end.
+- **Search sits in the toolbar row over the table, not the header** (#507).
+  The shell draws one row at the top of the body - the narrow-window
+  rail button, Saved views, then the search box - and the page's
+  `DataTable` moves its own controls (selection count, Download, Columns) up
+  into the same row, right-aligned, instead of drawing a second row. The row
+  sits outside the loading switch, so the search box never remounts while
+  someone types. A page whose list is not a `DataTable` still gets the row,
+  with search alone.
+- The header is one h-14 row when everything fits; the toolbar row wraps too -
+  the search box narrows (18rem down to 10rem) before Download and Columns
+  move to a second line, so a 320 px window shows every control. Nothing in a
+  page header is ever scrolled out of sight behind a hidden scrollbar - the
+  same goes for `DetailShell`'s actions and tab strip, which wrap too.
 - `Add X` is the copy for a create button, with **no icon**. Not "New X".
 - Filters live in the rail (`FilterRail` + `FacetGroup`, usually via
   `useTableFilters`), not in a second toolbar row under the header. A filter that
@@ -368,6 +390,84 @@ marks each side with more columns to scroll to. A `stickyHeader` table that
 scrolls in a bounded pane keeps its native bar (already at the pane's
 bottom edge), and printing hides both. Shift-wheel and trackpad sideways
 scrolling work on the table as before.
+
+**The rule: a sideways scrollbar is never below the fold.** Anything wide and
+tall enough to scroll sideways gets the same floating bar, never a bare
+`overflow-x-auto` whose bar sits after the last row. `table-scroll.tsx` has
+the two wrappers for content outside `DataTable`:
+
+- `ScrollFrame` - the bordered frame around a shadcn `<Table>` (the table's
+  own container scrolls). `SimpleTable` and the hand-built detail tables
+  (component templates, members, terminations, search results, device bays,
+  modules and antennas) use it.
+- `HScroll` - wide content that is not a table: the rack elevations wall, the
+  rack and cabinet drawings when zoomed past their column, the device's rack
+  card, the image list, the OID explorer. `className` lays out the content,
+  `frameClassName` draws the frame, `viewportRef` reaches the scroller for
+  code that measures it. While it overflows the viewport is a named,
+  focusable region, so arrow keys scroll it; it prints unclipped.
+
+Both show the bar only while the content overflows, add no height of their
+own (the proxy takes the place of the native bar), and stay in step with
+the content both ways. Out of scope: canvases that pan (topology, floor
+plans, the site map), bounded boxes whose bar is already in view (a
+`max-h-*` list, a dialog's code block, a kanban board that fills its pane),
+and one-line strips (headers, tab rows, faceplates, cable traces).
+
+**Pinned columns.** Every `DataTable` lets a column be pinned to the left
+edge from the Columns menu (a Lucide `Pin` / `PinOff` button per shown
+column, labelled through the shared Tooltip). A pinned column keeps its
+place in the column order and sticks (`position: sticky`) only once sideways
+scrolling would carry it past the left edge, at `left` = the widths of the
+pinned columns before it in display order, so pins stack up in table order
+as each is passed; the `select` column sticks too whenever anything is
+pinned (`lib/column-pins.ts`, widths measured from the header row). Pins are
+part of the saved layout (`pinned` beside `order` and `hidden` in
+`/api/prefs/columns/<table>/`; the list's order does not matter, and older
+layouts without the key load unchanged). Guardrails: the stuck band is
+capped at 60% of the frame (later pins scroll), and pins are ignored in a
+frame under 640 px. A stuck cell is opaque - `--background` with the row's
+stripe / hover / selected tint over it (styles.css) - and the right-most
+column that is actually stuck carries a 1 px `--border` hairline; no shadow.
+Nothing is reordered, so exports and prints keep the table's order. A
+table where pinning makes no sense passes `pinnable={false}`. Known limit: a
+page's own `rowClassName` tint does not reach the stuck cells, which show
+the plain row colour.
+
+## The action ribbon
+
+A page header's buttons follow one order everywhere (#507) - source of truth
+`frontend/src/components/action-ribbon.tsx`, laid out by `DetailShell` and
+`ListPageShell` from their slot props, so a page never orders them by hand:
+
+| Slot | What goes there | Look |
+| --- | --- | --- |
+| `add` | Creating something: *Add IP*, *Add device*, *Add object* | `Button` default - solid primary |
+| `edit` | `EditButton` (a link to the edit route, or `onClick` for a dialog) | `tinted` - the primary hue, softened; the only tinted button in a header |
+| `actions` | The few verbs an operator uses daily: Connect, Show on, Topology, Run, Check now, Test | `outline` |
+| `exports` | `DropdownMenuItem`s for the **Export** menu: spec sheet, PDF report, Print label, SBOM, CSR. The route's Import / Export joins them | `outline` menu |
+| `more` | `DropdownMenuItem`s for the **More** menu: Clone (`CloneMenuItem`), Sync from type, Move to site…, Renumber…, Add child prefix. *Plan a change* joins them | `outline` menu |
+| `remove` | `DeleteButton` | ghost, destructive text - always last |
+
+- The order is: page actions, **Export**, **More**, then Add, Edit and
+  Delete at the right end. Edit sits right after Add, is the one tinted
+  button, and only Delete goes further right, so the ways to change data
+  read together where the eye ends.
+- Outputs (anything that hands you a file, a PDF, a label or the clipboard)
+  go in **Export**; rarer verbs in **More**. A page with neither shows
+  neither menu. A menu whose items all decline to render (no label template
+  matches, no import right) says *Nothing available* rather than opening
+  empty.
+- A menu item that opens a dialog keeps the dialog **outside** the menu - the
+  menu unmounts its items when it closes. Such actions are hooks returning
+  `{ item, dialog }` (`useObjectReportItem`, `useRackSyncType`,
+  `useRackMove`, `useCabinetSyncType`, `useExportBundle`); the page puts
+  `item` in the slot and renders `dialog` in its body.
+- Several places to look an object up fold into one **Show on** control
+  (`ShowOnFloorPlan` with `siteMap`, `CableShowOn`): a plain button when
+  there is one place, a menu when there are more.
+- Permission gating stays on the page: pass `canDo(…) && <EditButton …/>`;
+  a falsy slot renders nothing.
 
 ## Column factories
 

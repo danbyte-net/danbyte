@@ -10,6 +10,7 @@ import type {
 import { ColorBadge } from "@/components/cells/color-badge"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table"
+import { ScrollFrame } from "@/components/table-scroll"
 import { cn } from "@/lib/utils"
 import { DatePicker } from "@/components/ui/date-picker"
 import { TimePicker } from "@/components/ui/time-picker"
@@ -43,7 +44,7 @@ export function PropertyTable({
   rows: { label: string; value: ReactNode }[]
 }) {
   return (
-    <div className="overflow-hidden rounded-lg border border-border bg-card">
+    <ScrollFrame className="rounded-lg border border-border bg-card">
       <Table>
         <TableBody>
           {rows.map((row, i) => (
@@ -61,7 +62,7 @@ export function PropertyTable({
           ))}
         </TableBody>
       </Table>
-    </div>
+    </ScrollFrame>
   )
 }
 

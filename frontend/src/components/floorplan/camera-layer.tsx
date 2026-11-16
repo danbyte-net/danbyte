@@ -61,8 +61,12 @@ export const LiveCameraLayer = memo(function LiveCameraLayer({
   width,
   height,
   showSeen = false,
+  only = null,
 }: {
   part: "cones" | "coverage"
+  /** Cones: only these cameras' (Detail by zoom: the hovered or selected
+   * one); null draws every one. */
+  only?: ReadonlySet<string> | null
   tiles: readonly FloorPlanTile[]
   walls: readonly FloorPlanWall[]
   cellMm: number
@@ -79,7 +83,10 @@ export const LiveCameraLayer = memo(function LiveCameraLayer({
     { cellMm, racksBlock, enabled: true },
     40
   )
-  if (part === "cones") return <CameraCones views={views} />
+  if (part === "cones")
+    return (
+      <CameraCones views={only ? views.filter((v) => only.has(v.id)) : views} />
+    )
   return (
     <CoverageOverlay
       views={views}

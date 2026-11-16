@@ -263,10 +263,19 @@ class RenderTests(_Base):
 class MigrationTests(TestCase):
     """The upgrade moves keys written before #383 out of the row."""
 
-    def setUp(self):
-        self.tenant = _tenant()
+    @classmethod
+    def setUpTestData(cls):
+        cls.tenant = _tenant()
         # Rows written in this transaction leave deferred foreign-key checks
         # pending, and ALTER TABLE refuses a table with pending checks.
+        with connection.cursor() as c:
+            c.execute("SET CONSTRAINTS ALL IMMEDIATE")
+        # Rolling back to BEFORE unapplies most of the graph and takes
+        # minutes, so it is done once: every test starts there, and the
+        # class's transaction puts the schema back afterwards.
+        MigrationExecutor(connection).migrate([BEFORE])
+
+    def setUp(self):
         with connection.cursor() as c:
             c.execute("SET CONSTRAINTS ALL IMMEDIATE")
 

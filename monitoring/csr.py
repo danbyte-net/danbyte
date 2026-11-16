@@ -103,7 +103,7 @@ def generate(
     if country and len(country) != 2:
         raise CsrError("Country must be a 2-letter code (e.g. US, DK).")
 
-    store = require_secret_store()  # fail closed before any key is generated
+    require_secret_store()  # fail closed before any key is generated
 
     req = CertificateRequest(
         tenant=tenant,
@@ -139,11 +139,14 @@ def generate(
     # to trip over. SecretStoreError propagates for the viewset to turn into 400.
     from django.db import transaction
 
+    from .secret_store import write_managed
+
     with transaction.atomic():
         req.save()
-        store.put(
-            tenant.id, req.key_ref, {"private_key": private_pem, "csr": req.csr_pem}
+        req.key_provider = write_managed(
+            "", tenant.id, req.key_ref, {"private_key": private_pem, "csr": req.csr_pem}
         )
+        req.save(update_fields=["key_provider"])
     return req, private_pem
 
 
@@ -203,16 +206,11 @@ def import_issued(req: CertificateRequest, pem_text: str):
 
 def get_private_key(req: CertificateRequest) -> str:
     """The stored private key PEM for a request (from the secret store)."""
-    store = require_secret_store()
-    data = store.get(req.tenant_id, req.key_ref) or {}
+    from .secret_store import read_managed
+
+    require_secret_store()
+    data = read_managed(req.key_provider, req.tenant_id, req.key_ref) or {}
     return data.get("private_key", "")
 
 
-def delete_key(req: CertificateRequest) -> None:
-    """Best-effort removal of a request's private key from the secret store."""
-    if not req.key_ref:
-        return
-    try:
-        require_secret_store().delete(req.tenant_id, req.key_ref)
-    except Exception:  # noqa: BLE001 - store disabled/unreachable: nothing to do
-        pass
+# A deleted request's key leaves the store with it: monitoring.secret_refs.

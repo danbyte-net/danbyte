@@ -1,11 +1,10 @@
-import { ChevronDown, Cpu, FileText, Layers } from "lucide-react"
+import { Cpu, FileText, Layers } from "lucide-react"
 
-import { Button } from "@/components/ui/button"
 import {
-  DropdownMenu,
-  DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuTrigger,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
 } from "@/components/ui/dropdown-menu"
 
 const BASE = {
@@ -19,12 +18,13 @@ function open(url: string) {
 }
 
 /**
- * Opens the object's printable spec sheet (a server-rendered PDF, #150) in
- * a new tab. The browser's own viewer handles print and save. A device has
- * three: the datasheet, a hardware sheet that leads with CPU, memory and
- * storage instead of rack position and power, and both on one sheet.
+ * The object's printable spec sheet (a server-rendered PDF, #150), opened in
+ * a new tab where the browser's own viewer handles print and save - as items
+ * for the detail header's Export menu (#507). A device has three: the
+ * datasheet, a hardware sheet that leads with CPU, memory and storage instead
+ * of rack position and power, and both on one sheet, in a submenu.
  */
-export function SpecSheetButton({
+export function SpecSheetMenuItems({
   kind,
   id,
 }: {
@@ -34,29 +34,26 @@ export function SpecSheetButton({
   const base = `${BASE[kind]}/${id}/spec-sheet/`
   if (kind !== "device")
     return (
-      <Button variant="outline" size="sm" onClick={() => open(base)}>
+      <DropdownMenuItem onSelect={() => open(base)}>
         <FileText className="h-3.5 w-3.5" /> Spec sheet
-      </Button>
+      </DropdownMenuItem>
     )
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="outline" size="sm">
-          <FileText className="h-3.5 w-3.5" /> Spec sheet
-          <ChevronDown className="h-3 w-3 opacity-60" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="min-w-44">
-        <DropdownMenuItem onClick={() => open(base)}>
+    <DropdownMenuSub>
+      <DropdownMenuSubTrigger>
+        <FileText className="h-3.5 w-3.5" /> Spec sheet
+      </DropdownMenuSubTrigger>
+      <DropdownMenuSubContent className="min-w-44">
+        <DropdownMenuItem onSelect={() => open(base)}>
           <FileText className="h-3.5 w-3.5 shrink-0" /> Datasheet
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => open(`${base}?variant=hardware`)}>
+        <DropdownMenuItem onSelect={() => open(`${base}?variant=hardware`)}>
           <Cpu className="h-3.5 w-3.5 shrink-0" /> Hardware sheet
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => open(`${base}?variant=full`)}>
+        <DropdownMenuItem onSelect={() => open(`${base}?variant=full`)}>
           <Layers className="h-3.5 w-3.5 shrink-0" /> All in one
         </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+      </DropdownMenuSubContent>
+    </DropdownMenuSub>
   )
 }

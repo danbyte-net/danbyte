@@ -18,6 +18,10 @@ This page explains how that view behaves and when it switches to a flat table.
 Sort by CIDR when you want the hierarchy. Sort by anything else when you want a
 plain ranked list.
 
+The list's rail can also show a **Tree** of one VRF's prefixes, to browse
+the hierarchy and scope the table to a prefix - see
+[Browse by tree](prefix-crud.md#browse-by-tree).
+
 ## Sections per VRF
 
 In the tree view, prefixes are grouped by VRF first, then nested by containment

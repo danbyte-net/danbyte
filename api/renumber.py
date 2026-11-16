@@ -29,6 +29,13 @@ Foreign keys to a moved prefix or address (FHRP virtual IPs, NAT rules,
 services, VTEPs, primary IPs …) need no write: they follow the row. Anything
 that carries an address inside the tree and is not rewritten is listed as
 left unchanged, with the reason - nothing is skipped silently.
+
+The plan is collected per tenant; what the caller sees of it is not (#504).
+:class:`Viewer` answers, per kind, the rule that kind's own API applies, and
+:func:`describe` shows only those rows: the rest is one ``hidden_total``
+count, never an address, label or id. A row the renumber would write that
+the caller can't view refuses the whole renumber (:func:`blockers`), so
+nothing hidden is rewritten on their behalf.
 """
 
 from __future__ import annotations
@@ -191,6 +198,102 @@ def _vrf_q(path: str, vrf_id) -> Q:
     return Q(**{f"{path}__isnull": True}) if vrf_id is None else Q(**{f"{path}_id": vrf_id})
 
 
+# ─── visibility ─────────────────────────────────────────────────────────────
+
+
+class Viewer:
+    """Which plan rows ``user`` may view, each by the rule of that object's
+    own API. ``user=None`` (an internal call) and superusers see everything.
+    A kind with no rule here is hidden: fail closed."""
+
+    def __init__(self, user, tenant):
+        self.user = user
+        self.tenant = tenant
+        self.everything = user is None or bool(getattr(user, "is_superuser", False))
+
+    def _view(self, qs, slug: str) -> set:
+        from auth_api import rbac
+        from auth_api.object_types import is_registered
+
+        if not is_registered(slug):
+            return set()
+        return set(rbac.restrict_queryset(qs, self.user, self.tenant, slug, "view")
+                   .values_list("pk", flat=True))
+
+    def _ids(self, model, slug: str, ids) -> set:
+        ids = {i for i in ids if i is not None}
+        if not ids:
+            return set()
+        return self._view(model._default_manager.filter(pk__in=ids), slug)
+
+    def visible(self, kind: str, objs) -> set:
+        """The pks of ``objs`` (all of one ``kind``) the user may view."""
+        objs = list(objs)
+        if not objs:
+            return set()
+        if self.everything:
+            return {o.pk for o in objs}
+        rule = getattr(self, f"_rule_{kind}", None)
+        if rule is not None:
+            return rule(objs)
+        model = type(objs[0])
+        return self._ids(model, model._meta.model_name, {o.pk for o in objs})
+
+    def sees(self, kind: str, obj) -> bool:
+        return obj.pk in self.visible(kind, [obj])
+
+    # A DHCP exclusion is part of its scope (the scope's API lists it).
+    def _rule_dhcpexclusion(self, objs):
+        from integrations.models import DhcpScope
+
+        ok = self._ids(DhcpScope, "dhcpscope", {o.scope_id for o in objs})
+        return {o.pk for o in objs if o.scope_id in ok}
+
+    # The BMC endpoint is read through its device (/monitoring/devices/<id>/redfish/).
+    def _rule_redfishendpoint(self, objs):
+        from .models import Device
+
+        ok = self._ids(Device, "device", {o.device_id for o in objs})
+        return {o.pk for o in objs if o.device_id in ok}
+
+    # An ARP entry is shown where the MAC lookup shows it (api/mac_views):
+    # macaddress view, and only on devices and VMs the user may view.
+    def _rule_arpsighting(self, objs):
+        from auth_api import rbac
+
+        from .models import Device, VirtualMachine
+
+        if not rbac.has_action(self.user, self.tenant, "macaddress", "view"):
+            return set()
+        devs = self._ids(Device, "device", {o.device_id for o in objs})
+        vms = self._ids(VirtualMachine, "virtualmachine", {o.vm_id for o in objs})
+        return {o.pk for o in objs
+                if (o.device_id and o.device_id in devs) or (o.vm_id and o.vm_id in vms)}
+
+    # The engine list (with its SSH host and agent address) is readable by
+    # every member of the tenant: the site forms need it (monitoring viewsets).
+    def _rule_monitoringengine(self, objs):
+        return {o.pk for o in objs}
+
+    # An SNMP binding is read through its target (monitoring snmp_binding_view).
+    def _rule_snmpprofilebinding(self, objs):
+        from auth_api import rbac
+        from monitoring.models import SnmpProfileBinding as B
+        from monitoring.views import _binding_target, _can_access_binding_target
+
+        out = set()
+        for b in objs:
+            slugs = {B.SCOPE_SITE: ("site", "device"),
+                     B.SCOPE_LOCATION: ("location", "device")}.get(b.scope, ("device",))
+            if not any(rbac.has_action(self.user, self.tenant, s, "view") for s in slugs):
+                continue
+            target = _binding_target(self.tenant, b.scope, b.object_id)
+            if target is not None and _can_access_binding_target(
+                    self.user, self.tenant, b.scope, target, "view"):
+                out.add(b.pk)
+        return out
+
+
 # ─── labels ─────────────────────────────────────────────────────────────────
 
 
@@ -242,29 +345,34 @@ def parse_target(prefix: Prefix, raw) -> tuple[Any, Any]:
     return old, new
 
 
-def build_plan(prefix: Prefix, raw_new, *, lock: bool = False) -> Plan:
+def build_plan(prefix: Prefix, raw_new, *, lock: bool = False,
+               viewer: Viewer | None = None) -> Plan:
     """Everything a renumber of ``prefix`` to ``raw_new`` writes, and every
-    reference it leaves alone. Raises :class:`RenumberError` on a conflict.
+    reference it leaves alone. Raises :class:`RenumberError` on a conflict;
+    a conflicting row ``viewer`` may not view is not named.
     ``lock`` takes row locks on what it will write (inside a transaction)."""
     old, new = parse_target(prefix, raw_new)
     sh = _Shift(old, new)
     tenant_id, vrf_id = prefix.tenant_id, prefix.vrf_id
     global_table = vrf_id is None
     plan = Plan(prefix=prefix, old=old, new=new)
+    viewer = viewer or Viewer(None, None)
 
     def locked(qs):
         return qs.select_for_update(of=("self",)) if lock else qs
 
     # ── conflicts in the new space ─────────────────────────────────────
     in_vrf = Q(tenant_id=tenant_id) & _vrf_q("vrf", vrf_id)
-    taken = _inside(Prefix.objects.filter(in_vrf), "cidr", new, cast=True)
-    first = taken.values_list("cidr", flat=True).first()
+    first = _inside(Prefix.objects.filter(in_vrf), "cidr", new, cast=True).first()
     if first:
-        raise RenumberError(f"{first} already exists inside {new}.")
-    first = _inside(IPAddress.objects.filter(in_vrf), "ip_address", new).values_list(
-        "ip_address", flat=True).first()
+        if viewer.sees("prefix", first):
+            raise RenumberError(f"{first.cidr} already exists inside {new}.")
+        raise RenumberError(f"A prefix you can't view already exists inside {new}.")
+    first = _inside(IPAddress.objects.filter(in_vrf), "ip_address", new).first()
     if first:
-        raise RenumberError(f"The address {first} already exists inside {new}.")
+        if viewer.sees("ipaddress", first):
+            raise RenumberError(f"The address {first.ip_address} already exists inside {new}.")
+        raise RenumberError(f"An address you can't view already exists inside {new}.")
     for net, what in ((new, "overlaps {net}"), (old, "crosses the edge of {net}")):
         ranges = IPRange.objects.filter(in_vrf).annotate(_rn_ov=RawSQL(
             '"api_iprange"."start_address" <= %s::inet AND '
@@ -277,10 +385,9 @@ def build_plan(prefix: Prefix, raw_new, *, lock: bool = False) -> Plan:
             s, e = r._start_ip, r._end_ip
             if net is old and s is not None and e is not None and s in old and e in old:
                 continue
-            raise RenumberError(
-                f"The IP range {r.start_address}–{r.end_address} "
-                + what.format(net=net) + "."
-            )
+            name = (f"The IP range {r.start_address}–{r.end_address}"
+                    if viewer.sees("iprange", r) else "An IP range you can't view")
+            raise RenumberError(f"{name} " + what.format(net=net) + ".")
 
     # ── prefixes ───────────────────────────────────────────────────────
     tree = list(locked(_inside(
@@ -367,6 +474,7 @@ def build_plan(prefix: Prefix, raw_new, *, lock: bool = False) -> Plan:
 
 def _keep(plan: Plan, kind: str, obj, value: str, detail: str, reason: str) -> None:
     plan.unchanged.append({
+        "_obj": obj,  # for the visibility check; describe() drops it
         "kind": kind,
         "id": str(obj.pk),
         "label": str(obj)[:120],
@@ -659,7 +767,9 @@ def _observed(plan, sh, tenant_id, global_table):
 
 def _linked(plan, tree_ids, moved_ip_ids, moved_range_ids) -> list[dict]:
     """Rows that point at a moved prefix, address or range by foreign key:
-    they follow without a write. Counted per kind for the preview."""
+    they follow without a write. Counted per kind for the preview; each
+    entry keeps its querysets (``_qs``) so describe() counts what the caller
+    may view."""
     from integrations.models import (
         DhcpLease,
         DhcpReservation,
@@ -684,8 +794,9 @@ def _linked(plan, tree_ids, moved_ip_ids, moved_range_ids) -> list[dict]:
             if rm in handled or getattr(rel, "field", None) is None or rm._meta.auto_created:
                 continue
             try:
-                n = rm._base_manager.filter(
-                    **{f"{rel.field.name}__in": list(ids)}).distinct().count()
+                qs = rm._base_manager.filter(
+                    **{f"{rel.field.name}__in": list(ids)}).distinct()
+                n = qs.count()
             except Exception:  # noqa: BLE001 - a relation we can't filter on
                 continue
             if not n:
@@ -695,8 +806,10 @@ def _linked(plan, tree_ids, moved_ip_ids, moved_range_ids) -> list[dict]:
                 "kind": rm._meta.model_name,
                 "label": str(rm._meta.verbose_name_plural).capitalize(),
                 "count": 0,
+                "_qs": [],
             })
             row["count"] += n
+            row["_qs"].append((qs, n))
     return sorted(counts.values(), key=lambda r: r["label"])
 
 
@@ -704,18 +817,27 @@ def _linked(plan, tree_ids, moved_ip_ids, moved_range_ids) -> list[dict]:
 
 
 def blockers(plan: Plan, user, tenant) -> list[str]:
-    """What the user may not change, as ``"3 IP addresses"`` phrases."""
+    """What the user may not change, as ``"3 IP addresses"`` phrases. Only
+    kinds the user may view are named; a row to write they can't view is a
+    blocker too, counted in one ``"N objects you can't view"`` phrase."""
     from auth_api import rbac
     from auth_api.object_types import is_registered
 
     if user is None or getattr(user, "is_superuser", False):
         return []
+    viewer = Viewer(user, tenant)
     by_kind: dict[str, list] = {}
     for c in plan.changes:
         by_kind.setdefault(c.kind, []).append(c.obj)
     out = []
-    for kind, objs in by_kind.items():
+    hidden = 0
+    for kind, all_objs in by_kind.items():
         label, slug = KINDS[kind]
+        seen = viewer.visible(kind, all_objs)
+        objs = [o for o in all_objs if o.pk in seen]
+        hidden += len(all_objs) - len(objs)
+        if not objs:
+            continue
         if kind == "dhcpexclusion":
             from integrations.models import DhcpScope
 
@@ -735,40 +857,104 @@ def blockers(plan: Plan, user, tenant) -> list[str]:
         if allowed < len(ids):
             n = len(ids) - allowed
             out.append(f"{n} of {len(ids)} {label.lower()}")
+    if hidden:
+        out.append(f"{hidden} object{'' if hidden == 1 else 's'} you can't view")
     # A site-scoped prefix editor may not move the tree into another site's
     # or the shared space - the same rule a new prefix follows.
     sites = rbac.site_scope(user, tenant, "prefix", "change")
     if sites is not None:
         tree = {c.obj.pk for c in plan.changes if c.kind == "prefix"}
-        overlapping = Prefix.objects.filter(
+        overlapping = list(Prefix.objects.filter(
             Q(tenant_id=plan.prefix.tenant_id) & _vrf_q("vrf", plan.prefix.vrf_id)
         ).exclude(pk__in=tree).annotate(_rn_ov=RawSQL(
             '"api_prefix"."cidr"::inet && %s::inet', (str(plan.new),),
             output_field=BooleanField(),
-        )).filter(_rn_ov=True).values_list("cidr", "site_id")
-        for cidr, site_id in overlapping:
-            if site_id not in sites:
-                where = "another site" if site_id else "the shared space"
-                out.append(f"{plan.new} sits in {cidr}, which belongs to {where}")
+        )).filter(_rn_ov=True).only("pk", "cidr", "site_id"))
+        seen = viewer.visible("prefix", overlapping)
+        unseen = 0
+        for p in overlapping:
+            if p.site_id in sites:
+                continue
+            if p.pk not in seen:
+                unseen += 1
+                continue
+            where = "another site" if p.site_id else "the shared space"
+            out.append(f"{plan.new} sits in {p.cidr}, which belongs to {where}")
+        if unseen:
+            out.append(f"{plan.new} overlaps {unseen} prefix"
+                       f"{'' if unseen == 1 else 'es'} you can't view")
     return out
 
 
 # ─── output ─────────────────────────────────────────────────────────────────
 
 
-def describe(plan: Plan, *, dry_run: bool, applied: bool = False) -> dict:
+def _seen_by_kind(viewer: Viewer, items, kind_of, obj_of) -> set:
+    by_kind: dict[str, list] = {}
+    for it in items:
+        by_kind.setdefault(kind_of(it), []).append(obj_of(it))
+    out = set()
+    for kind, objs in by_kind.items():
+        out |= {(kind, pk) for pk in viewer.visible(kind, objs)}
+    return out
+
+
+def _linked_visible(viewer: Viewer, linked: list[dict]) -> tuple[list[dict], int]:
+    """The linked counts narrowed to rows the caller may view, and how many
+    were left out. A type outside RBAC is not narrowed (as its own API, see
+    auth_api.drf.restrict_for_view): these rows hang off the tree's own rows,
+    which the caller may view or the renumber is refused."""
+    from auth_api import rbac
+    from auth_api.object_types import is_registered
+
+    out, hidden = [], 0
+    for row in linked:
+        n = 0
+        for qs, total in row.get("_qs", []):
+            slug = qs.model._meta.model_name
+            if viewer.everything or not is_registered(slug):
+                n += total
+            else:
+                n += rbac.restrict_queryset(qs, viewer.user, viewer.tenant, slug,
+                                            "view").count()
+        hidden += row["count"] - n
+        if n:
+            out.append({"kind": row["kind"], "label": row["label"], "count": n})
+    return out, hidden
+
+
+def describe(plan: Plan, *, dry_run: bool, applied: bool = False,
+             user=None, tenant=None) -> dict:
+    """The preview (or the applied result) as ``user`` may see it: rows of
+    kinds and objects they can't view are left out and counted together in
+    ``hidden_total``, with nothing else about them."""
+    viewer = Viewer(user, tenant)
+    seen_changes = _seen_by_kind(viewer, plan.changes, lambda c: c.kind, lambda c: c.obj)
+    seen_kept = _seen_by_kind(viewer, plan.unchanged, lambda u: u["kind"],
+                              lambda u: u["_obj"])
+    hidden = 0
     rows = []
     counts: dict[str, int] = {}
     for c in plan.changes:
+        if (c.kind, c.obj.pk) not in seen_changes:
+            hidden += 1
+            continue
         counts[c.kind] = counts.get(c.kind, 0) + 1
         for f, (old, new) in c.shown.items():
             rows.append({
                 "kind": c.kind, "id": str(c.obj.pk), "label": c.label or "",
                 "field": f, "old": old, "new": new,
             })
+    unchanged = []
     unchanged_counts: dict[str, int] = {}
     for u in plan.unchanged:
+        if (u["kind"], u["_obj"].pk) not in seen_kept:
+            hidden += 1
+            continue
+        unchanged.append({k: v for k, v in u.items() if k != "_obj"})
         unchanged_counts[u["kind"]] = unchanged_counts.get(u["kind"], 0) + 1
+    linked, hidden_linked = _linked_visible(viewer, plan.linked)
+    hidden += hidden_linked
     return {
         "prefix": {"id": str(plan.prefix.pk), "cidr": str(plan.old)},
         "new_prefix": str(plan.new),
@@ -784,9 +970,13 @@ def describe(plan: Plan, *, dry_run: bool, applied: bool = False) -> dict:
             {"kind": k, "label": KINDS[k][0], "count": n}
             for k, n in unchanged_counts.items()
         ],
-        "unchanged_total": len(plan.unchanged),
-        "unchanged": plan.unchanged[:PREVIEW_LIMIT],
-        "linked": plan.linked,
+        "unchanged_total": len(unchanged),
+        "unchanged": unchanged[:PREVIEW_LIMIT],
+        "linked": linked,
+        # Rows of the tree's references the caller may not view: left as
+        # they are (a row the renumber writes is never hidden - see
+        # blockers), and never described beyond this count.
+        "hidden_total": hidden,
     }
 
 
@@ -810,7 +1000,7 @@ def apply_plan(prefix: Prefix, raw_new, user, tenant) -> Plan:
 
     with transaction.atomic():
         root = Prefix.objects.select_for_update().get(pk=prefix.pk)
-        plan = build_plan(root, raw_new, lock=True)
+        plan = build_plan(root, raw_new, lock=True, viewer=Viewer(user, tenant))
         blocked = blockers(plan, user, tenant)
         if blocked:
             raise RenumberError("You can't change " + "; ".join(blocked) + ".", status=403)

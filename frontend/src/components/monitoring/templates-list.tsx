@@ -3,7 +3,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import type { ColumnDef } from "@tanstack/react-table"
 import { toast } from "sonner"
 
-import { api, type CheckTemplate } from "@/lib/api"
+import { api } from "@/lib/api"
+import type { CheckTemplate } from "@/lib/api"
 import { apiAll } from "@/lib/api-all"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -20,9 +21,10 @@ import {
 import { DataTable, SortHeader } from "@/components/data-table"
 import { RowActions } from "@/components/row-actions"
 import { EmptyState } from "@/components/empty-state"
-import { QueryError } from "@/components/query-error"
+import { ListPageShell } from "@/components/list-page-shell"
 import { TemplateEditor } from "./template-editor"
 import { apiErrorToast } from "@/lib/api-toast"
+import { useMonitoringCrumb } from "./monitoring-tabs"
 
 // Reusable check library: define a check once, attach it to many IPs/prefixes,
 // edit it in one place. Editing propagates to every assignment.
@@ -36,6 +38,16 @@ export function TemplatesList() {
   const [deleting, setDeleting] = useState<CheckTemplate | null>(null)
 
   const rows = q.data?.results ?? []
+  const crumb = useMonitoringCrumb()
+  const [filter, setFilter] = useState("")
+  const needle = filter.trim().toLowerCase()
+  const shown = needle
+    ? rows.filter(
+        (t) =>
+          t.name.toLowerCase().includes(needle) ||
+          t.kind.toLowerCase().includes(needle)
+      )
+    : rows
 
   const columns: ColumnDef<CheckTemplate>[] = [
     {
@@ -107,27 +119,30 @@ export function TemplatesList() {
   ]
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center gap-2">
-        <p className="text-sm text-muted-foreground">
-          Reusable checks - attach one to many IPs or prefixes; editing updates
-          them all.
-        </p>
-        <Button size="sm" className="ml-auto" onClick={() => setCreating(true)}>
-          Add check
+    <ListPageShell
+      {...crumb}
+      title="Templates"
+      count={q.data ? shown.length : undefined}
+      search={{
+        value: filter,
+        onChange: setFilter,
+        placeholder: "Name or type…",
+      }}
+      actions={
+        <Button size="sm" onClick={() => setCreating(true)}>
+          Add template
         </Button>
-      </div>
-
-      {q.isError && <QueryError error={q.error} />}
-
-      {q.data && rows.length === 0 ? (
+      }
+      query={q}
+    >
+      {rows.length === 0 ? (
         <EmptyState title="No check templates yet.">
           Create one, then attach it from any IP or prefix.
         </EmptyState>
       ) : (
         <DataTable
           tableId="check-templates"
-          data={rows}
+          data={shown}
           total={q.data?.count}
           columns={columns}
           flexColumn="name"
@@ -146,7 +161,7 @@ export function TemplatesList() {
         template={deleting}
         onOpenChange={(o) => !o && setDeleting(null)}
       />
-    </div>
+    </ListPageShell>
   )
 }
 

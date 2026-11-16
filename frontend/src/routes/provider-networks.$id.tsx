@@ -1,17 +1,16 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
-import { Pencil, Trash2 } from "lucide-react"
 import { useCallback, useState } from "react"
 
 import { api, type ProviderNetwork } from "@/lib/api"
-import { Button } from "@/components/ui/button"
 import { TimeCell } from "@/components/cells/time-ago"
 import { TagList } from "@/components/cells/tag-list"
 import { KvCard, dash } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { ProviderNetworkDeleteDialog } from "@/components/provider-network-delete-dialog"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
@@ -56,26 +55,15 @@ function Body({ network: n }: { network: ProviderNetwork }) {
       backLabel="Provider networks"
       title={n.name}
       presence={{ type: "providernetwork", id: n.id }}
-      actions={
-        <>
-          {canDo("providernetwork", "change") && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/provider-networks/$id/edit" params={{ id: n.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDo("providernetwork", "delete") && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeleting(n)}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
-        </>
+      edit={
+        canDo("providernetwork", "change") && (
+          <EditButton to="/provider-networks/$id/edit" params={{ id: n.id }} />
+        )
+      }
+      remove={
+        canDo("providernetwork", "delete") && (
+          <DeleteButton onClick={() => setDeleting(n)} />
+        )
       }
       hero={
         <DetailHero

@@ -6,8 +6,6 @@ import {
   Bookmark,
   Cable as CableIcon,
   Layers,
-  Pencil,
-  Trash2,
   TriangleAlert,
   Workflow,
 } from "lucide-react"
@@ -52,6 +50,7 @@ import {
   traceUrl,
 } from "@/components/cable-trace-path"
 import { PathRow } from "@/components/device-paths-list"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
@@ -165,6 +164,11 @@ function Body({ iface: i }: { iface: Interface }) {
       }
       title={<span className="font-mono">{i.name}</span>}
       presence={{ type: "interface", id: i.id }}
+      edit={
+        canDo("interface", "change") && (
+          <EditButton to="/interfaces/$id/edit" params={{ id: i.id }} />
+        )
+      }
       actions={
         <>
           {canDo("cable", "add") && i.cable_count === 0 && (
@@ -200,24 +204,12 @@ function Body({ iface: i }: { iface: Interface }) {
               labeled
             />
           )}
-          {canDo("interface", "change") && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/interfaces/$id/edit" params={{ id: i.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDo("interface", "delete") && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeleting(i)}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
         </>
+      }
+      remove={
+        canDo("interface", "delete") && (
+          <DeleteButton onClick={() => setDeleting(i)} />
+        )
       }
       hero={
         <DetailHero

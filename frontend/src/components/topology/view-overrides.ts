@@ -20,6 +20,8 @@ export const OVERRIDE_KEYS = [
   "line",
   "labels",
   "lag",
+  "deps",
+  "clusters",
   "levels",
   "device",
   "depth",

@@ -17,6 +17,7 @@ import {
   SettingsCard,
   SettingsHeader,
 } from "@/components/settings/settings-card"
+import { LayoutPresetsCard } from "@/components/settings/layout-presets-card"
 
 export const Route = createFileRoute("/settings/table-defaults")({
   component: TableDefaultsPage,
@@ -71,6 +72,8 @@ function TableDefaultsPage() {
       <SettingsHeader title="Table layouts">
         The starting column layout everyone in this tenant gets, per table.
       </SettingsHeader>
+
+      <LayoutPresetsCard />
 
       <SettingsCard
         title="Tenant defaults"
@@ -209,6 +212,7 @@ function AdminTableRow({
       return putTableDefault(table.id, {
         order: mine.data?.order ?? [],
         hidden: mine.data?.hidden ?? [],
+        ...(mine.data?.pinned ? { pinned: mine.data.pinned } : {}),
         forced,
       })
     },

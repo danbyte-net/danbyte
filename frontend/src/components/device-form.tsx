@@ -87,6 +87,10 @@ import {
 } from "@/components/topology/diagram/card-lines-dialog"
 import { inheritedCardLines } from "@/components/topology/diagram/card-lines"
 import { useMe } from "@/lib/use-me"
+import {
+  ScanExemptField,
+  useScanExemptDraft,
+} from "@/components/discovery/scan-exempt-field"
 
 // Thrown when the local-context-data text is not a JSON object: the field
 // shows the error, so no toast.
@@ -169,6 +173,9 @@ export function DeviceForm({
     initial?.profileIds
   )
   const isPlanning = !!usePlanTarget()
+  // Discovery's "Do not scan" (#451): written once the device saved; not
+  // offered while planning (the exempt call is not staged).
+  const scanExempt = useScanExemptDraft("device", isPlanning ? null : device)
 
   const [name, setName] = useState(device?.name ?? "")
   // A `[a-b]` range in a new device's name creates one device per name.
@@ -695,6 +702,7 @@ export function DeviceForm({
         names: isRange ? rangeNames : undefined,
       })
       await bindingDrafts.commit()
+      await scanExempt.commit()
       await groupsDraft.commit({ kind: "device", id: saved.id })
       await profilesDraft.commit({ kind: "device", id: saved.id })
       return { one: saved }
@@ -1348,6 +1356,12 @@ export function DeviceForm({
                 onHostChange={setPrtgHost}
                 hostError={fieldErrors.prtg_host}
               />
+            </FormSection>
+          )}
+
+          {scanExempt.show && (
+            <FormSection title="Discovery" card>
+              <ScanExemptField draft={scanExempt} />
             </FormSection>
           )}
 

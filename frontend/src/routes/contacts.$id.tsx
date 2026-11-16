@@ -3,7 +3,6 @@ import { CustomFieldValues } from "@/components/custom-field-display"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
-import { Pencil, Trash2 } from "lucide-react"
 import { useCallback, useMemo, useState } from "react"
 
 import {
@@ -14,9 +13,9 @@ import {
 } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { TagList } from "@/components/cells/tag-list"
-import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { buildContactAssignmentColumns } from "@/components/columns/contact-assignment-columns"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { KvCard, dash, type KvRow } from "@/components/kv-card"
 import { BusinessHoursSummary } from "@/components/business-hours-field"
@@ -122,26 +121,15 @@ function Body({ contact: c }: { contact: Contact }) {
       backLabel="Contacts"
       title={c.name}
       presence={{ type: "contact", id: c.id }}
-      actions={
-        <>
-          {canDo("contact", "change") && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/contacts/$id/edit" params={{ id: c.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDo("contact", "delete") && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeleting(c)}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
-        </>
+      edit={
+        canDo("contact", "change") && (
+          <EditButton to="/contacts/$id/edit" params={{ id: c.id }} />
+        )
+      }
+      remove={
+        canDo("contact", "delete") && (
+          <DeleteButton onClick={() => setDeleting(c)} />
+        )
       }
       hero={
         <DetailHero

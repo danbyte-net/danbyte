@@ -7,10 +7,12 @@ describe("driftRows", () => {
   it("flattens spec and interface drift into intended vs hypervisor", () => {
     const rows = driftRows([
       {
+        id: "c1",
         kind: "spec_change",
         detail: { memory_mb: { danbyte: 2048, hypervisor: 4096 } },
       },
       {
+        id: "c2",
         kind: "iface_change",
         detail: {
           interfaces: {
@@ -18,13 +20,19 @@ describe("driftRows", () => {
           },
         },
       },
-      { kind: "iface_extra", detail: { names: ["net2"] } },
-      { kind: "new_guest", detail: {} },
+      { id: "c3", kind: "iface_extra", detail: { names: ["net2"] } },
+      { id: "c4", kind: "new_guest", detail: {} },
     ])
     expect(rows.map((r) => [r.field, r.intended, r.observed])).toEqual([
       ["Memory MB", 2048, 4096],
       ["net0 Bridge", "vmbr0", "vmbr1"],
       ["net2", "present", "missing"],
+    ])
+    // Each review item's buttons sit on its first row.
+    expect(rows.map((r) => [r.change, r.first])).toEqual([
+      ["c1", true],
+      ["c2", true],
+      ["c3", true],
     ])
   })
 })

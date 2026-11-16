@@ -2,7 +2,7 @@ import { useMemo } from "react"
 import type { RefObject } from "react"
 
 import type { TopoNode } from "@/lib/api"
-import { chassisNodeId, vcOf } from "./chassis"
+import { frameOfData, vcOf } from "./chassis"
 import type { CanvasBandEdit, CanvasHandle } from "../topology-canvas"
 import type { PosMap, Zone } from "../view-positions"
 import {
@@ -144,11 +144,11 @@ export function useBands(opts: {
     const info = new Map((nodes ?? []).map((n) => [n.id, n.data]))
     // A virtual chassis' stack is one card to a band (the canvas's boxes
     // hold its frame, not its members): its master's role and type.
+    // An open cluster's frame likewise (#517): its first host's.
     for (const n of nodes ?? []) {
-      const vc = vcOf(n.data)
-      if (!vc) continue
-      const frame = chassisNodeId(vc.id)
-      if (!info.has(frame) || vc.master) info.set(frame, n.data)
+      const frame = frameOfData(n.data)
+      if (!frame) continue
+      if (!info.has(frame) || vcOf(n.data)?.master) info.set(frame, n.data)
     }
     /** Every card on the map with its role and type: who is in which row
      * and on which of its sub-rows. */

@@ -90,14 +90,16 @@ function ApplicationsPage() {
         onChange: setQ,
         placeholder: "Filter by name, description…",
       }}
+      add={
+        canAdd && (
+          <Button size="sm" asChild>
+            <Link to="/applications/new">Add application</Link>
+          </Button>
+        )
+      }
       actions={
         <>
           <TableActions ioType="application" />
-          {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/applications/new">Add application</Link>
-            </Button>
-          )}
         </>
       }
       query={query}

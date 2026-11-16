@@ -150,6 +150,15 @@ import { CableDetailPanel } from "./cable-detail-panel"
 import { ObjectDetailPanel } from "./object-detail-panel"
 import { applyPick } from "./plan-search"
 import type { PlanHit } from "./plan-search"
+import {
+  filterFactKey,
+  filterSearch,
+  matchAreas,
+  matchTiles,
+  readPlanFilter,
+} from "./plan-filter"
+import type { PlanFilter } from "./plan-filter"
+import { PlanFilterMenu } from "./plan-filter-menu"
 
 /** The floor-plan page's search params (validated by the route). */
 export interface FloorPlanSearch {
@@ -162,6 +171,8 @@ export interface FloorPlanSearch {
   /** A room, location or area opened and zoomed onto on arrival (a room's
    * Floor plan tab, "Open in floor plan"). */
   area?: string
+  /** The plan's filter (plan-filter.ts filterSnapshot): shareable. */
+  pf?: Record<string, unknown>
 }
 
 /** The floor-plan editor: header, bar, mode rail, the 2D canvas or the 3D
@@ -234,6 +245,8 @@ export function FloorPlanEditor({
       search: {
         ...(view3d ? { viz: "3d" as const } : {}),
         ...(tile ? { tile } : {}),
+        // The filter goes with you, floor to floor.
+        ...(search.pf ? { pf: search.pf } : {}),
       },
     })
 
@@ -504,6 +517,46 @@ export function FloorPlanEditor({
   )
   // The area types the shown plain areas wear: the plan's Areas legend.
   const areaTypes = useMemo(() => areaTypesInUse(shownShapes), [shownShapes])
+  // The plan's filter (plan-filter.ts), kept in the URL so a link shares
+  // it: what it keeps, the areas its area type keeps, and what the rooms'
+  // facts count under it.
+  const planFilter = useMemo(() => readPlanFilter(search.pf), [search.pf])
+  const setPlanFilter = useCallback(
+    (f: PlanFilter) =>
+      void nav({
+        to: "/floorplans/$id",
+        params: { id },
+        search: (prev: FloorPlanSearch) => ({ ...prev, pf: filterSearch(f) }),
+        replace: true,
+      } as never),
+    [nav, id]
+  )
+  const planAreas = useMemo(
+    () => shownShapes.filter((s): s is AreaShape => s.kind === "area"),
+    [shownShapes]
+  )
+  const filterIds = useMemo(
+    () => matchTiles(shownTiles, planAreas, planFilter),
+    [shownTiles, planAreas, planFilter]
+  )
+  const filterAreaIds = useMemo(
+    () => matchAreas(planAreas, planFilter),
+    [planAreas, planFilter]
+  )
+  const factKey = useCallback(
+    (t: FloorPlanTile) => filterFactKey(t, planFilter),
+    [planFilter]
+  )
+  /** What the filter leaves out (null while it is off). */
+  const filteredOut = useMemo(
+    () =>
+      filterIds
+        ? new Set(
+            shownTiles.filter((t) => !filterIds.has(t.id)).map((t) => t.id)
+          )
+        : null,
+    [filterIds, shownTiles]
+  )
   // The cameras' views against the walls (camera-view.ts): the 3D room's
   // fans, the PDF's, and the coverage figures - the floor's in the legend
   // under Display > Camera coverage, an area's in its panel.
@@ -965,8 +1018,18 @@ export function FloorPlanEditor({
   ) =>
     plan
       ? planSvg({
-          plan,
-          tiles: shownTiles,
+          // Its area names' default as on screen.
+          plan: {
+            ...plan,
+            state: { ...plan.state, area_names: prefs.areaNames },
+          },
+          // The filter as on screen: Hide others leaves the rest off the
+          // paper, else it prints faded.
+          tiles:
+            filteredOut && planFilter.hide
+              ? shownTiles.filter((t) => !filteredOut.has(t.id))
+              : shownTiles,
+          dimTileIds: filteredOut && !planFilter.hide ? filteredOut : undefined,
           walls,
           trays,
           areas,
@@ -979,6 +1042,7 @@ export function FloorPlanEditor({
           // Readable on paper as on screen, at the sheet's scale.
           objectSize: prefs.objectSize,
           iconTiles: prefs.iconTiles,
+          tileIcons: prefs.tileIcons,
           callouts: ownCallouts && prefs.callouts === "auto",
           cameras: prefs.showFov
             ? { racksBlock: prefs.fovRacksBlock }
@@ -1018,11 +1082,19 @@ export function FloorPlanEditor({
   /** A report sheet (report-dialog.tsx): this floor framed to the scope's
    * box at the sheet's scale - the view with the screen's callouts - or
    * another level of the building, drawn from its own rows. */
-  const drawReportSheet: DrawSheet = async ({ scope, paper, floor, area }) => {
+  const drawReportSheet: DrawSheet = async ({
+    scope,
+    paper,
+    floor,
+    area,
+    cables = true,
+  }) => {
     if (!plan) return null
+    // Bundles: the server draws the cables, the sheet goes without them.
+    const links = prefs.showCableLinks && cables
     if (floor && floor !== plan.id)
       return drawLevel(floor, paper, {
-        showCableLinks: prefs.showCableLinks,
+        showCableLinks: links,
         cableColorBy: prefs.cableColorBy,
         bundleCables: prefs.bundleCables,
         showCableLabels: prefs.showCableLabels,
@@ -1030,6 +1102,7 @@ export function FloorPlanEditor({
         showTrays: prefs.showTrays,
         objectSize: prefs.objectSize,
         iconTiles: prefs.iconTiles,
+        tileIcons: prefs.tileIcons,
         showFov: prefs.showFov,
         fovRacksBlock: prefs.fovRacksBlock,
         callouts: prefs.callouts === "auto",
@@ -1048,7 +1121,7 @@ export function FloorPlanEditor({
     }
     const svg = exportSvg(
       paper,
-      prefs.showCableLinks,
+      links,
       true,
       { box, mmPerPx: reportScale(box, paper) },
       true,
@@ -1314,6 +1387,15 @@ export function FloorPlanEditor({
         }}
         search={ed.search}
         onSearchChange={ed.setSearch}
+        filterSlot={
+          <PlanFilterMenu
+            filter={planFilter}
+            onChange={setPlanFilter}
+            tiles={shownTiles}
+            areas={planAreas}
+            kept={filterIds ? filterIds.size : null}
+          />
+        }
         onPickHit={pickHit}
         onFit={() => canvasApi.current?.fit()}
         showGrid={ed.showGrid}
@@ -1437,7 +1519,12 @@ export function FloorPlanEditor({
               plan={plan}
               cameraViews={prefs.showFov ? camViews : undefined}
               liveState={liveState.data ?? null}
-              hiddenTileIds={hiddenTileIds}
+              hiddenTileIds={
+                filteredOut && planFilter.hide
+                  ? new Set([...hiddenTileIds, ...filteredOut])
+                  : hiddenTileIds
+              }
+              recedeTileIds={planFilter.hide ? null : filteredOut}
               traceCableId={
                 detail?.kind === "cable" ? detail.id : (traceParam ?? null)
               }
@@ -1454,6 +1541,10 @@ export function FloorPlanEditor({
                 else if ((k === "rack" || k === "cabinet") && deviceId)
                   openTilePanel(tile, deviceId)
               }}
+              tiles={tiles}
+              popover={popover}
+              popoverFields={popoverFields}
+              onSelectTile={setSelectedId}
               focusTarget={focus3d}
               prefs={prefs}
               capacity={capacity}
@@ -1494,6 +1585,12 @@ export function FloorPlanEditor({
               plan={plan}
               shownTiles={drawnTiles}
               shownShapes={shownShapes}
+              filter={{
+                ids: filterIds,
+                hide: planFilter.hide,
+                areaIds: filterAreaIds,
+                factKey,
+              }}
               shapeEdits={shapeEdits}
               canEdit={editing}
               onOpenShape={(s) => {
@@ -2093,6 +2190,10 @@ export function FloorPlanEditor({
         }
         hiddenTiles={[...hiddenTileIds].filter((t) => !isTemp(t))}
         draw={drawReportSheet}
+        planSvg={async (paper, closeup) =>
+          exportSvg(paper, false, true, closeup) || null
+        }
+        selectedCables={ed.highlightCableIds}
       />
       <CableScheduleDialog
         planId={plan.id}
@@ -2101,9 +2202,10 @@ export function FloorPlanEditor({
         onOpenChange={setScheduleOpen}
         // Built from the plan's data, not the 2D canvas, so it works from
         // the 3D view too.
-        planSvg={async (paper, closeup) =>
-          exportSvg(paper, true, true, closeup) || null
+        planSvg={async (paper, closeup, opts) =>
+          exportSvg(paper, opts?.cables ?? true, true, closeup) || null
         }
+        selectedCables={ed.highlightCableIds}
       />
       <SnapAllDialog
         planId={plan.id}

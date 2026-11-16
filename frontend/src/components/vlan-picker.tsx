@@ -22,6 +22,7 @@ export function VlanPicker({ label = "VLAN", ...rest }: VlanPickerProps) {
       detailEndpoint: (id) => `/api/vlans/${id}/`,
       detailQueryKey: (id) => ["vlan", id],
       detailLabel: (v) => `${v.vlan_id} · ${v.name}`,
+      customFieldScope: true,
       listEndpoint: "/api/vlans/",
       searchHint: "Search VLAN ID, name, description…",
       filters: [

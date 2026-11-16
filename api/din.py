@@ -74,6 +74,14 @@ def rail_errors(rails: list[dict], width, height) -> list[dict]:
     return errors
 
 
+def by_position(errors: list[dict]) -> dict[str, dict]:
+    """Per-rail errors keyed by the rail's position in the request, the
+    failing ones only: the shape DRF gives the same list's field errors
+    (LIST_SERIALIZER_ERRORS_AS_DICT), so ``rails`` reads alike whichever
+    check refused it."""
+    return {str(i): err for i, err in enumerate(errors) if err}
+
+
 def as_dict(rail) -> dict:
     return {f: getattr(rail, f) for f in RAIL_FIELDS}
 
@@ -91,15 +99,15 @@ def summaries(rails) -> list[str]:
 def check_fit(rails: list[dict], width, height, *, field_for_axis: dict | None = None):
     """Refuse a set of rails that does not fit, as field errors.
 
-    Rails the caller sent get their errors under ``rails`` (one entry per
-    rail, as DRF reports a list). Rails already stored, or copied from a type,
-    are not the caller's to fix: their errors land on the plate size that no
+    Rails the caller sent get their errors under ``rails`` (keyed by the
+    rail's position, as DRF reports a list). Rails already stored, or copied
+    from a type, are not the caller's to fix: their errors land on the plate size that no
     longer fits them (``field_for_axis``: ``{"x": ..., "y": ...}``)."""
     errors = rail_errors(rails, width, height)
     if not any(errors):
         return
     if field_for_axis is None:
-        raise ValidationError({"rails": errors})
+        raise ValidationError({"rails": by_position(errors)})
     out: dict[str, list[str]] = {}
     for rail, err in zip(rails, errors, strict=True):
         for field, messages in err.items():
@@ -179,7 +187,8 @@ def diff_cabinet_from_type(cabinet) -> dict:
             check_rail_devices([{"id": have[label].id, **as_dict(want[label])}],
                                [have[label]])
         except ValidationError as exc:
-            reasons = [m for err in exc.detail["rails"] for ms in err.values() for m in ms]
+            reasons = [m for err in exc.detail["rails"].values()
+                       for ms in err.values() for m in ms]
             blocked.append({"label": label, "changes": changes, "reason": " ".join(reasons)})
         else:
             update.append({"label": label, "changes": changes})
@@ -225,8 +234,8 @@ def sync_cabinet_from_type(cabinet, *, sizes: bool = True, rails: bool = True) -
         check_fit(result, cabinet.inner_width_mm, cabinet.inner_height_mm)
     except ValidationError as exc:
         problems = [
-            f"{rail['label']}: {message}"
-            for rail, err in zip(result, exc.detail["rails"], strict=True)
+            f"{result[int(i)]['label']}: {message}"
+            for i, err in exc.detail["rails"].items()
             for messages in err.values() for message in messages
         ]
         raise ValidationError({"detail": "The type's rails do not fit this cabinet - "
@@ -390,7 +399,7 @@ def check_rail_devices(items: list[dict], stored) -> None:
             errors[i]["profile"] = [f"{_names(misfit)} cannot mount on a "
                                     f"{PROFILE_LABELS[item['profile']]} rail."]
     if any(errors):
-        raise ValidationError({"rails": errors})
+        raise ValidationError({"rails": by_position(errors)})
 
 
 def check_type_change(device_type, width, profiles) -> None:

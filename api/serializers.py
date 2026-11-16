@@ -11,6 +11,7 @@ import math
 import os
 import re
 
+from django.core.exceptions import FieldDoesNotExist
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.db.models import Q, QuerySet
@@ -349,6 +350,8 @@ _PARENT_TENANT_PATH = {
     "CoolingIntake": "device__tenant",
     "CoolingOutflow": "device__tenant",
     "CoolingIntakeTemplate": "device_type__tenant",
+    "PowerPortTemplate": "device_type__tenant",
+    "RearPortTemplate": "device_type__tenant",
     "AuxPort": "device__tenant",
     "DinRail": "cabinet__tenant",
     "FloorPlanArea": "floor_plan__tenant",
@@ -1485,6 +1488,89 @@ class PrefixSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
     dns_record_count = serializers.SerializerMethodField()
     static_route_count = serializers.SerializerMethodField()
 
+    def get_permissions(self, obj) -> dict[str, bool]:
+        """``change``/``delete`` as for any row, plus ``add_child``: may the
+        reader create a prefix inside this one? A site-limited creator may
+        not when this prefix or one holding it is shared or another site's:
+        the create would be refused (PrefixViewSet._assert_write_in_site_scope,
+        allocate and plan). The UI hides Create under such a parent."""
+        out = super().get_permissions(obj)
+        out["add_child"] = self._can_add_child(obj)
+        return out
+
+    def _can_add_child(self, obj) -> bool:
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        if request is None or not getattr(user, "is_authenticated", False):
+            return False
+        if getattr(user, "is_superuser", False):
+            return True
+        from api.views import _get_active_tenant
+        from auth_api import rbac
+
+        tenant = _get_active_tenant(request)
+        memo = getattr(request, "_prefix_add_child_memo", None)
+        if memo is None:
+            memo = request._prefix_add_child_memo = {
+                "sites": rbac.site_scope(user, tenant, "prefix", "add"), "pages": {}}
+        sites = memo["sites"]
+        if sites is None:
+            return True
+        if not sites:
+            return False
+        parent = getattr(self, "parent", None)
+        rows = getattr(parent, "instance", None) if parent is not None else None
+        key = id(rows) if rows is not None else ("one", obj.pk)
+        hit = memo["pages"].get(key)
+        if hit is None or hit[0] is not rows:
+            try:
+                page = [r for r in rows if isinstance(r, Prefix)] if rows is not None else []
+            except TypeError:
+                page = []
+            page = page or [obj]
+            hit = memo["pages"][key] = (rows, self._blocked_parents(tenant, page, sites))
+        return obj.pk not in hit[1]
+
+    @staticmethod
+    def _blocked_parents(tenant, page, sites) -> set:
+        """The prefixes on ``page`` that are, or sit inside, a prefix outside
+        ``sites`` (shared or another site's). One query for the page."""
+        import ipaddress
+
+        from django.db.models import BooleanField, Q
+        from django.db.models.expressions import RawSQL
+
+        nets = {}
+        for p in page:
+            try:
+                nets[p.pk] = (p.vrf_id, ipaddress.ip_network(p.cidr, strict=False))
+            except (TypeError, ValueError):
+                continue
+        if not nets:
+            return set()
+        foreign = (
+            Prefix.objects.filter(tenant=tenant)
+            .filter(Q(site__isnull=True) | ~Q(site_id__in=sites))
+            .annotate(_holds=RawSQL(
+                '"api_prefix"."cidr"::inet >>= ANY(%s::inet[])',
+                (sorted({str(n) for _v, n in nets.values()}),),
+                output_field=BooleanField(),
+            ))
+            .filter(_holds=True)
+            .values_list("vrf_id", "cidr")
+        )
+        holders = []
+        for vrf_id, cidr in foreign:
+            try:
+                holders.append((vrf_id, ipaddress.ip_network(cidr, strict=False)))
+            except (TypeError, ValueError):
+                continue
+        return {
+            pk for pk, (vrf_id, net) in nets.items()
+            if any(hv == vrf_id and hn.version == net.version and net.subnet_of(hn)
+                   for hv, hn in holders)
+        }
+
     def get_static_route_count(self, obj) -> int:
         # Static routes whose destination is this prefix - the page's tab.
         # Detail only, like the DNS count.
@@ -1767,12 +1853,13 @@ class PrefixSerializer(StatusSerializerMixin, ObjectPermsSerializerMixin, Custom
             "vrf_id", "site_id", "vlan_id", "location_id", "tag_ids",
             "gateway", "description", "auto_discover", "auto_assign_site",
             "allocate_from_ranges", "allocation", "auto_gateway",
-            "monitoring_engine",
+            "monitoring_engine", "scan_exempt",
             "tags",
             "custom_fields",
             "permissions",
             "created_at", "updated_at"]
-        read_only_fields = ["id", "numid", "created_at", "updated_at"]
+        # scan_exempt: set through /api/discovery/exempt/ (#451).
+        read_only_fields = ["id", "numid", "scan_exempt", "created_at", "updated_at"]
 
 
 # ─── Picker payloads ────────────────────────────────────────────────────
@@ -1959,6 +2046,24 @@ class IPAddressSerializer(HiddenRelatedFieldsMixin, ObjectPermsSerializerMixin, 
         required=False, allow_null=True, min_value=0, max_value=128
     )
     cidr = serializers.CharField(read_only=True)
+    # Discovery (#451): set through /api/discovery/exempt/, never by a PATCH.
+    scan_exempt = serializers.BooleanField(read_only=True)
+    scan_exempt_via = serializers.SerializerMethodField()
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    @detail_only(None)
+    def get_scan_exempt_via(self, obj):
+        """The exempt prefix that keeps discovery off this address, when one
+        does (``{id, cidr}``, or ``{id: null, cidr: null}`` for a prefix the
+        caller may not view); None otherwise. Only the record itself carries
+        it: the nested IP tabs (a device's, an interface's, a prefix's) render
+        many rows and must not pay this lookup per row."""
+        from discovery.exempt import exempt_through
+
+        if isinstance(self.parent, serializers.ListSerializer):
+            return None
+        request = self.context.get("request")
+        return exempt_through(obj, getattr(request, "user", None))
 
     def to_internal_value(self, data):
         raw = data.get("ip_address") if hasattr(data, "get") else None
@@ -2261,6 +2366,7 @@ class IPAddressSerializer(HiddenRelatedFieldsMixin, ObjectPermsSerializerMixin, 
             "discovered",
             "flap_exclude",
             "monitoring_excluded", "availability_since",
+            "scan_exempt", "scan_exempt_via",
             "is_primary_for_device",
             "is_primary_for_vm",
             "is_secondary_for_device",
@@ -2622,6 +2728,38 @@ def _platform_lifecycle(platform, context) -> dict:
         "eol": payload(platform, cfg),
         **effective_payload(platform, cfg),
     }
+
+
+#: The ``vulnerabilities`` shape on device and VM table rows (#451).
+VULNERABILITIES_SCHEMA = inline_serializer("HostVulnerabilities", {
+    "open": serializers.IntegerField(),
+    "priority": serializers.CharField(),
+    "kev": serializers.BooleanField(),
+})
+
+
+def _host_vulnerabilities(obj):
+    from vulnerabilities.host_columns import payload
+
+    return payload(obj)
+
+
+#: ``vulnerability_summary`` on device and VM table rows and detail reads:
+#: open matches no exception covers, the worst severity and top score among
+#: them, and how many are fix first or in KEV (#451).
+VULNERABILITY_SUMMARY_SCHEMA = inline_serializer("HostVulnerabilitySummary", {
+    "open": serializers.IntegerField(),
+    "worst_severity": serializers.CharField(),
+    "max_cvss": serializers.FloatField(allow_null=True),
+    "fix_first": serializers.IntegerField(),
+    "kev": serializers.IntegerField(),
+}, allow_null=True)
+
+
+def _host_vulnerability_summary(obj):
+    from vulnerabilities.host_columns import summary_payload
+
+    return summary_payload(obj)
 
 
 #: The ``lifecycle_next`` shape on device and VM rows.
@@ -3280,6 +3418,8 @@ class DeviceSerializer(TableSerializerMixin, StatusSerializerMixin, ObjectPermsS
         "prtg_sync", "prtg_plan", "prtg_host",
         # Its own column, Profiles (device-columns.tsx).
         "device_profiles",
+        # Its own column, Vulnerabilities (device-columns.tsx, #451).
+        "vulnerabilities", "vulnerability_summary",
     )
     topology_card = TopologyCardField(required=False, allow_null=True)
     device_type = DeviceTypeMiniSerializer(read_only=True)
@@ -3328,6 +3468,11 @@ class DeviceSerializer(TableSerializerMixin, StatusSerializerMixin, ObjectPermsS
     coverage = serializers.SerializerMethodField()
     # The soonest end across hardware, OS and coverage (#436).
     lifecycle_next = serializers.SerializerMethodField()
+    # Open vulnerability records (#451): on the table row while the
+    # feature is on (vulnerabilities.host_columns), else null.
+    vulnerabilities = serializers.SerializerMethodField()
+    # The open-match summary: table row and detail read, else null.
+    vulnerability_summary = serializers.SerializerMethodField()
     tags = TagSerializer(many=True, read_only=True)
     rack = serializers.SerializerMethodField()
     u_height = serializers.SerializerMethodField()
@@ -3510,6 +3655,14 @@ class DeviceSerializer(TableSerializerMixin, StatusSerializerMixin, ObjectPermsS
     @extend_schema_field(LIFECYCLE_NEXT_SCHEMA)
     def get_lifecycle_next(self, obj):
         return _lifecycle_next(self, obj, device=True)
+
+    @extend_schema_field(VULNERABILITIES_SCHEMA)
+    def get_vulnerabilities(self, obj):
+        return _host_vulnerabilities(obj)
+
+    @extend_schema_field(VULNERABILITY_SUMMARY_SCHEMA)
+    def get_vulnerability_summary(self, obj):
+        return _host_vulnerability_summary(obj)
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_effective_platform(self, obj):
@@ -4059,7 +4212,8 @@ class DeviceSerializer(TableSerializerMixin, StatusSerializerMixin, ObjectPermsS
                   "status", "status_id",  "serial_number", "asset_tag",
                   "software_version", "software_version_seen_at",
                   "software_version_source",
-                  "warranty_end", "coverage", "lifecycle_next",
+                  "warranty_end", "coverage", "lifecycle_next", "vulnerabilities",
+                  "vulnerability_summary",
                   "description", "comments", "airflow", "effective_airflow",
                   "cooling_method", "effective_cooling_method",
                   "width_mm", "height_mm", "depth_mm",
@@ -4078,9 +4232,10 @@ class DeviceSerializer(TableSerializerMixin, StatusSerializerMixin, ObjectPermsS
                   "front_port_count", "rear_port_count",
                   "service_count", "routing_count", "image_count", "certificate_count",
                   "contact_count", "document_count", "install_count", "device_profiles",
-                  "backing_vm",
+                  "backing_vm", "scan_exempt",
                   "permissions", "created_at", "updated_at"]
-        read_only_fields = ["id", "numid", "u_height", "rack_width",
+        # scan_exempt: set through /api/discovery/exempt/ (#451).
+        read_only_fields = ["id", "numid", "u_height", "rack_width", "scan_exempt",
                             "model_3d", "model_3d_effective",
                             "software_version_seen_at", "software_version_source",
                             "created_at", "updated_at"]
@@ -5027,6 +5182,19 @@ class _ComponentTemplateSerializer(serializers.ModelSerializer):
                   "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]
 
+    def get_fields(self):
+        # Bays, inventory items, antennas and cooling templates have no
+        # `type` column; accepting one would reach Model.objects.create() and
+        # 500 (#513), and reading it would raise AttributeError.
+        fields = super().get_fields()
+        model = getattr(self.Meta, "model", None)
+        if model is not None and "type" in fields:
+            try:
+                model._meta.get_field("type")
+            except FieldDoesNotExist:
+                fields.pop("type")
+        return fields
+
 
 class InterfaceTemplateSerializer(_ComponentTemplateSerializer):
     class Meta(_ComponentTemplateSerializer.Meta):
@@ -5882,7 +6050,7 @@ class PowerPortTemplateSerializer(_ComponentTemplateSerializer):
 
 class PowerOutletTemplateSerializer(_ComponentTemplateSerializer):
     power_port_template = serializers.SerializerMethodField()
-    power_port_template_id = serializers.PrimaryKeyRelatedField(
+    power_port_template_id = TenantScopedPrimaryKeyRelatedField(
         source="power_port_template", queryset=PowerPortTemplate.objects.all(),
         write_only=True, required=False, allow_null=True,
     )
@@ -6191,7 +6359,7 @@ class RearPortTemplateSerializer(_ComponentTemplateSerializer):
 
 class FrontPortTemplateSerializer(_ComponentTemplateSerializer):
     rear_port_template = serializers.SerializerMethodField()
-    rear_port_template_id = serializers.PrimaryKeyRelatedField(
+    rear_port_template_id = TenantScopedPrimaryKeyRelatedField(
         source="rear_port_template", queryset=RearPortTemplate.objects.all(),
         write_only=True,
     )
@@ -6966,7 +7134,9 @@ class VirtualMachineSerializer(TableSerializerMixin, StatusSerializerMixin, Cust
     cf_model = "virtualmachine"
     # Its own column, Next end of life (vm-columns.tsx).
     list_columns_exclude = ("lifecycle_next", "prtg_sync", "prtg_plan", "prtg_host",
-                            "device_profiles", "local_context_data")
+                            "device_profiles", "local_context_data",
+                            # Its own column, Vulnerabilities (#451).
+                            "vulnerabilities", "vulnerability_summary")
     cluster = ClusterMiniSerializer(read_only=True)
     #: What the PRTG plan made of a save that changed prtg_sync; else null.
     prtg_plan = serializers.SerializerMethodField()
@@ -7106,6 +7276,18 @@ class VirtualMachineSerializer(TableSerializerMixin, StatusSerializerMixin, Cust
     def get_lifecycle_next(self, obj):
         return _lifecycle_next(self, obj, device=False)
 
+    # Open vulnerability records (#451), as on the device row.
+    vulnerabilities = serializers.SerializerMethodField()
+    vulnerability_summary = serializers.SerializerMethodField()
+
+    @extend_schema_field(VULNERABILITIES_SCHEMA)
+    def get_vulnerabilities(self, obj):
+        return _host_vulnerabilities(obj)
+
+    @extend_schema_field(VULNERABILITY_SUMMARY_SCHEMA)
+    def get_vulnerability_summary(self, obj):
+        return _host_vulnerability_summary(obj)
+
     # Hypervisor-reported runtime state, annotated by the viewset. Distinct
     # from `status`, which is the operator's lifecycle field: a VM can be
     # Active and powered off at the same time. `power_state_at` ships with it
@@ -7215,7 +7397,7 @@ class VirtualMachineSerializer(TableSerializerMixin, StatusSerializerMixin, Cust
         list_serializer_class = _VMListSerializer
         fields = ["id", "name", "cluster", "cluster_id", "group", "group_id",
                   "role", "role_id", "platform", "platform_id", "lifecycle_next",
-                  "device", "device_id",
+                  "vulnerabilities", "vulnerability_summary", "device", "device_id",
                   "site", "site_id", "status", "status_id",
                   "power_state", "power_state_at",
                   "synced_from", "synced_from_id", "drift_count",
@@ -7230,8 +7412,9 @@ class VirtualMachineSerializer(TableSerializerMixin, StatusSerializerMixin, Cust
                   "ip_count",
                   "device_profiles", "primary_ip", "primary_ip_id", "description",
                   "tags", "tag_ids", "custom_fields", "prtg_sync", "prtg_plan", "prtg_host",
-                  "created_at", "updated_at"]
-        read_only_fields = ["id", "power_state", "power_state_at",
+                  "scan_exempt", "created_at", "updated_at"]
+        # scan_exempt: set through /api/discovery/exempt/ (#451).
+        read_only_fields = ["id", "power_state", "power_state_at", "scan_exempt",
                             "synced_from", "synced_from_id", "drift_count",
                             "missing_since",
                             "software_version_seen_at", "software_version_source",
@@ -7868,7 +8051,7 @@ def _check_rail_set(attrs, key, instance, stored, width, height) -> None:
                 errors[i]["id"] = ["This rail is listed twice."]
             seen.add(rid)
         if any(errors):
-            raise serializers.ValidationError({key: errors})
+            raise serializers.ValidationError({key: din.by_position(errors)})
     try:
         din.check_fit(items, width, height)
     except serializers.ValidationError as exc:
@@ -10224,6 +10407,55 @@ def hex_color_or_blank(value: str) -> str:
     return (value or "").lower()
 
 
+AREA_NAME_POSITIONS = (
+    "top-left", "top", "top-right", "left", "center", "right",
+    "bottom-left", "bottom", "bottom-right",
+)
+AREA_NAME_SIZES = ("s", "m", "l")
+
+
+def area_name_style(value) -> dict:
+    """How an area's name is drawn: ``position`` (one of nine), ``size``
+    (s/m/l), ``color`` (``#rrggbb``, or blank for the theme-aware ink) and
+    ``plate`` (a backplate). Every key optional - one left out inherits
+    (an area from its plan's default, a plan from the built-in look)."""
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise serializers.ValidationError("Must be an object.")
+    unknown = set(value) - {"position", "size", "color", "plate"}
+    if unknown:
+        raise serializers.ValidationError(
+            f"Unknown key: {', '.join(sorted(unknown))}."
+        )
+    out: dict = {}
+    if "position" in value:
+        if value["position"] not in AREA_NAME_POSITIONS:
+            raise serializers.ValidationError(
+                f"position must be one of {', '.join(AREA_NAME_POSITIONS)}."
+            )
+        out["position"] = value["position"]
+    if "size" in value:
+        if value["size"] not in AREA_NAME_SIZES:
+            raise serializers.ValidationError("size must be s, m or l.")
+        out["size"] = value["size"]
+    if "color" in value:
+        c = value["color"]
+        if not isinstance(c, str):
+            raise serializers.ValidationError("color must be a string.")
+        try:
+            out["color"] = hex_color_or_blank(c)
+        except serializers.ValidationError:
+            raise serializers.ValidationError(
+                "color must be a #rrggbb colour, or blank for Auto."
+            ) from None
+    if "plate" in value:
+        if not isinstance(value["plate"], bool):
+            raise serializers.ValidationError("plate must be true or false.")
+        out["plate"] = value["plate"]
+    return out
+
+
 def location_type_ref(t) -> dict | None:
     """How a location names its type: id, name, colour and icon."""
     if t is None:
@@ -10625,6 +10857,14 @@ class ExportTemplateSerializer(NumIdModelSerializer):
             raise serializers.ValidationError(f"Template syntax error: {exc}")
         return value
 
+    def validate_ignore_lint_patterns(self, value):
+        from .cli_lint import clean_patterns
+
+        try:
+            return clean_patterns(value)
+        except ValueError as exc:
+            raise serializers.ValidationError(str(exc)) from exc
+
     def validate(self, attrs):
         """A target path ending in ``/`` is a directory: the template writes
         one file per ``{% file %}`` block. Only a device template has one, a
@@ -10667,6 +10907,7 @@ class ExportTemplateSerializer(NumIdModelSerializer):
         fields = ["id", "name", "object_type", "object_type_label", "description",
                   "template_code", "mime_type", "file_extension", "as_attachment",
                   "target_path", "bundle_path", "is_directory",
+                  "lint_family", "ignore_lint_patterns",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "object_type_label", "bundle_path", "is_directory",
                             "created_at", "updated_at"]
@@ -11489,6 +11730,14 @@ class FloorPlanSerializer(
     def validate_state(self, v):
         if not isinstance(v, dict):
             raise serializers.ValidationError("state must be an object")
+        if "area_names" in v:
+            # The plan's default look for its areas' names.
+            try:
+                v = {**v, "area_names": area_name_style(v["area_names"])}
+            except serializers.ValidationError as e:
+                raise serializers.ValidationError(
+                    f"area_names: {' '.join(str(m) for m in e.detail)}"
+                ) from None
         return v
 
     @extend_schema_field(OpenApiTypes.OBJECT)
@@ -11919,6 +12168,10 @@ def _tile_photos_for(tiles, context) -> dict:
     return tile_photos(tiles, request.user, tenant)
 
 
+#: A linked device's, rack's or cabinet's type, by link kind.
+_LINK_TYPE_FIELD = {"device": "device_type", "rack": "rack_type", "cabinet": "cabinet_type"}
+
+
 class FloorPlanTileSerializer(NumIdModelSerializer):
     """A placed tile. The link is written as ``link_kind`` + ``link_id``
     (resolved to the right FK, tenant-checked, and to an object the writer
@@ -12037,6 +12290,20 @@ class FloorPlanTileSerializer(NumIdModelSerializer):
             # A device's own icon, else its type's: it wins over the tile's
             # type and the role (linked.role.icon); "" when neither has one.
             out["icon"] = target.own_icon if obj.link_kind == "device" else ""
+            # What the plan's filter sorts by: the object's type, status and
+            # tags (tenant-scoped, as the object is).
+            kind_type = getattr(target, _LINK_TYPE_FIELD[obj.link_kind], None)
+            out["type"] = None if kind_type is None else {
+                "id": str(kind_type.pk), "name": kind_type.name,
+            }
+            status = target.status
+            out["status"] = None if status is None else {
+                "id": str(status.pk), "name": status.name, "color": status.color,
+            }
+            out["tags"] = [
+                {"id": tag.pk, "name": tag.name, "slug": tag.slug, "color": tag.color}
+                for tag in target.tags.all()
+            ]
             # A device's measured size (its own, else its type's): what the
             # editor's "Fit to size" resizes the tile to.
             if obj.link_kind == "device":
@@ -12881,6 +13148,9 @@ class FloorPlanAreaSerializer(_OpensMixin, NumIdModelSerializer):
             model.objects.filter(pk=obj.pk), request.user, tenant, model_slug, "view",
         ).exists()
 
+    def validate_name_style(self, value):
+        return area_name_style(value)
+
     def validate(self, attrs):
         from .floor_stacks import in_scope
 
@@ -12970,8 +13240,8 @@ class FloorPlanAreaSerializer(_OpensMixin, NumIdModelSerializer):
         fields = ["id", "floor_plan_id", "shape", "x", "y", "width", "height",
                   "rotation", "points", "room", "room_id", "location", "location_id",
                   "area_type", "area_type_id",
-                  "label", "color", "fill_opacity", "border", "show_name", "z",
-                  "locked", "opens", "opens_id", "opens_hidden", "back_label",
+                  "label", "color", "fill_opacity", "border", "show_name", "name_style",
+                  "z", "locked", "opens", "opens_id", "opens_hidden", "back_label",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "room", "location", "area_type", "opens",
                             "opens_hidden", "back_label", "created_at", "updated_at"]

@@ -1,17 +1,16 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
-import { Pencil, Trash2 } from "lucide-react"
 import { useCallback, useState } from "react"
 
 import { api, type RackRole } from "@/lib/api"
-import { Button } from "@/components/ui/button"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { TimeCell } from "@/components/cells/time-ago"
 import { KvCard, dash } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { RackRoleDeleteDialog } from "@/components/rack-role-delete-dialog"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { EmbeddedRackTable } from "@/components/embedded-tables"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
@@ -55,26 +54,15 @@ function Body({ role: r }: { role: RackRole }) {
       backLabel="Rack roles"
       title={r.name}
       presence={{ type: "rackrole", id: r.id }}
-      actions={
-        <>
-          {canDo("rackrole", "change") && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/rack-roles/$id/edit" params={{ id: r.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDo("rackrole", "delete") && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeleting(r)}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
-        </>
+      edit={
+        canDo("rackrole", "change") && (
+          <EditButton to="/rack-roles/$id/edit" params={{ id: r.id }} />
+        )
+      }
+      remove={
+        canDo("rackrole", "delete") && (
+          <DeleteButton onClick={() => setDeleting(r)} />
+        )
       }
       hero={
         <DetailHero

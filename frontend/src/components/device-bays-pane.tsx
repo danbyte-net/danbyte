@@ -21,6 +21,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { ScrollFrame } from "@/components/table-scroll"
 import { Section } from "@/components/ui/section"
 import { DevicePicker } from "@/components/device-picker"
 import { QueryError } from "@/components/query-error"
@@ -70,7 +71,7 @@ export function DeviceBaysPane({ deviceId }: { deviceId: string }) {
       ) : q.isLoading ? (
         <p className="p-4 text-sm text-muted-foreground">Loading…</p>
       ) : (
-        <div className="overflow-x-auto">
+        <ScrollFrame>
           <Table>
             <TableHeader>
               <TableRow>
@@ -133,7 +134,7 @@ export function DeviceBaysPane({ deviceId }: { deviceId: string }) {
               ))}
             </TableBody>
           </Table>
-        </div>
+        </ScrollFrame>
       )}
 
       <InstallChildDialog

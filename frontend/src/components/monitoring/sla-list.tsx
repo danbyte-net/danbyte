@@ -1,7 +1,6 @@
 import { useMemo, useState } from "react"
 import { Link } from "@tanstack/react-router"
 import { keepPreviousData, useQuery } from "@tanstack/react-query"
-import { FileDown, Plus } from "lucide-react"
 
 import { api } from "@/lib/api"
 import type { Paginated, SlaAgreement } from "@/lib/api"
@@ -17,19 +16,33 @@ import {
 import { DataTable } from "@/components/data-table"
 import { ListPageShell } from "@/components/list-page-shell"
 import { slaAgreementColumns } from "@/components/columns/sla-columns"
-import { HolidayCalendarsButton } from "./holiday-calendars-dialog"
-import { SlaCausesButton } from "./sla-follow-up"
+import { HolidayCalendarsDialog } from "./holiday-calendars-dialog"
+import { SlaCausesDialog } from "./sla-follow-up"
 import { SlaOverviewSchedulesDialog } from "./sla-report-schedules"
-import { SlaTemplatesButton } from "./sla-templates"
+import { SlaTemplatesDialog } from "./sla-templates"
+import { useMonitoringCrumb } from "./monitoring-tabs"
 
 /**
- * `/monitoring?view=sla` - every agreement with this period's figure against
+ * `/monitoring/sla` - every agreement with this period's figure against
  * its target, the budget left and how much of the time was measured.
  */
 export function SlaList() {
+  const crumb = useMonitoringCrumb()
   const { canDo } = useMe()
   const [q, setQ] = useState("")
   const [scheduling, setScheduling] = useState(false)
+  // The catalogs agreements draw on, behind one Setup menu.
+  const [catalog, setCatalog] = useState<
+    "holidays" | "causes" | "templates" | null
+  >(null)
+  const catalogs = (
+    [
+      ["holidays", "Holiday calendars…", "holidaycalendar"],
+      ["causes", "Incident causes…", "slaincidentcause"],
+      ["templates", "SLA templates…", "slatemplate"],
+    ] as const
+  ).filter(([, , type]) => canDo(type, "view"))
+  const close = (o: boolean) => !o && setCatalog(null)
   const query = useQuery({
     queryKey: ["sla-agreements", q],
     queryFn: () =>
@@ -46,6 +59,7 @@ export function SlaList() {
   const columns = useMemo(() => slaAgreementColumns({ credits }), [credits])
   return (
     <ListPageShell
+      {...crumb}
       title="SLAs"
       count={query.data?.count}
       search={{
@@ -58,7 +72,7 @@ export function SlaList() {
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button size="sm" variant="outline">
-                <FileDown className="h-3.5 w-3.5" /> Overview
+                Reports
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-max">
@@ -104,14 +118,34 @@ export function SlaList() {
             open={scheduling}
             onOpenChange={setScheduling}
           />
-          <HolidayCalendarsButton />
-          <SlaCausesButton />
-          <SlaTemplatesButton />
+          {catalogs.length > 0 && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="sm" variant="outline">
+                  Setup
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-max">
+                {catalogs.map(([key, label]) => (
+                  <DropdownMenuItem key={key} onSelect={() => setCatalog(key)}>
+                    {label}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+          <HolidayCalendarsDialog
+            open={catalog === "holidays"}
+            onOpenChange={close}
+          />
+          <SlaCausesDialog open={catalog === "causes"} onOpenChange={close} />
+          <SlaTemplatesDialog
+            open={catalog === "templates"}
+            onOpenChange={close}
+          />
           {canDo("slaagreement", "add") && (
             <Button size="sm" asChild>
-              <Link to="/monitoring/sla/new">
-                <Plus className="h-3.5 w-3.5" /> New agreement
-              </Link>
+              <Link to="/monitoring/sla/new">Add agreement</Link>
             </Button>
           )}
         </>

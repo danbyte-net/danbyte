@@ -1,11 +1,10 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { ArrowRight, Pencil, Trash2 } from "lucide-react"
+import { ArrowRight } from "lucide-react"
 import { useCallback, useState } from "react"
 
 import { api } from "@/lib/api"
 import type { NATRule } from "@/lib/api"
-import { Button } from "@/components/ui/button"
 import { KvCard, dash } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
 import { StatusBadge } from "@/components/status-badge"
@@ -17,6 +16,7 @@ import {
   NATRuleDeleteDialog,
   NATRuleFormDialog,
 } from "@/components/nat-rule-dialogs"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
@@ -140,28 +140,15 @@ function NATRuleDetailBody({ rule: r }: { rule: NATRule }) {
       backTo="/nat-rules"
       backLabel="NAT rules"
       title={r.name}
-      actions={
-        <>
-          {canDo("natrule", "change") && (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setEditing(true)}
-            >
-              <Pencil className="h-3.5 w-3.5" /> Edit
-            </Button>
-          )}
-          {canDo("natrule", "delete") && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeleting(r)}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
-        </>
+      edit={
+        canDo("natrule", "change") && (
+          <EditButton onClick={() => setEditing(true)} />
+        )
+      }
+      remove={
+        canDo("natrule", "delete") && (
+          <DeleteButton onClick={() => setDeleting(r)} />
+        )
       }
       hero={
         <DetailHero

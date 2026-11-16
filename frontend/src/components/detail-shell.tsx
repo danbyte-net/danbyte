@@ -6,15 +6,20 @@ import {
   useSearch,
   type LinkProps,
 } from "@tanstack/react-router"
-import { ChevronLeft, ChevronRight, Pin } from "lucide-react"
+import { CalendarClock, ChevronLeft, ChevronRight, Pin } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent } from "@/components/ui/tabs"
 import { SegmentedTabs } from "@/components/segmented-tabs"
-import { DetailActions } from "@/components/detail-actions"
+import { useDetailIO } from "@/components/detail-actions"
+import { ExportMenu, MoreMenu } from "@/components/action-ribbon"
+import {
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu"
 import { useRegisterPresence } from "@/lib/presence-context"
-import { PlanFromObject } from "@/components/planning/plan-from-object"
+import { usePlanFromObject } from "@/components/planning/plan-from-object"
 import { PlannedChangeBadge } from "@/components/planning/planned-change-badge"
 import {
   ObjectOverdueWarning,
@@ -34,16 +39,17 @@ import {
 // ─── The canonical detail-page chrome ────────────────────────────────────
 //
 // Every `/thing/<id>` page shares the same shell: a breadcrumb header bar
-// (back link + name + Import/Export/Share + page actions), an optional hero
+// (back link + name + the action ribbon), an optional hero
 // strip (title + stats), and a SegmentedTabs strip over scrollable panes.
 // DetailShell owns all of it so the ~40 detail routes can't drift on header
-// height, tab-strip styling, pane padding, presence, or forget DetailActions.
+// height, tab-strip styling, pane padding, presence, or button order.
 //
 //   <DetailShell
 //     backTo="/vlans" backLabel="VLANs"
 //     title={<span className="font-mono">{v.vlan_id} · {v.name}</span>}
 //     presence={{ type: "vlan", id: v.id }}
-//     actions={<>{canEdit && <EditLink/>}{canDelete && <DeleteButton/>}</>}
+//     edit={canEdit && <EditButton to="/vlans/$id/edit" params={{ id }} />}
+//     remove={canDelete && <DeleteButton onClick={() => setDeleting(v)} />}
 //     hero={
 //       <DetailHero
 //         title={`VLAN ${v.vlan_id}`} mono
@@ -150,7 +156,12 @@ export function DetailShell({
   crumbs,
   title,
   presence,
+  add,
+  edit,
   actions,
+  exports,
+  more,
+  remove,
   hero,
   tabs,
   tab,
@@ -171,9 +182,22 @@ export function DetailShell({
   title: ReactNode
   /** Registers "viewing" presence - every detail page should pass this. */
   presence?: { type: string; id: string }
-  /** Page-specific action buttons (Edit/Delete/…). Import/Export/Share is
-   * added automatically via DetailActions (route-derived). */
+  /** The action ribbon (#507), laid out in this order - see
+   * `components/action-ribbon.tsx`. Creation buttons (Add IP, Add device):
+   * solid primary, first. */
+  add?: ReactNode
+  /** `<EditButton/>`, right after Add. */
+  edit?: ReactNode
+  /** The page's everyday buttons (Connect, Topology, Show on floor plan). */
   actions?: ReactNode
+  /** Menu items for the Export menu: spec sheet, PDF report, print label.
+   * The route's Import / Export joins them on its own. */
+  exports?: ReactNode
+  /** Menu items for the More menu: Clone, Sync from type, Move. Plan a
+   * change joins them on its own. */
+  more?: ReactNode
+  /** `<DeleteButton/>` - always last. */
+  remove?: ReactNode
   /** The title/stat strip under the header - page-specific. */
   hero?: ReactNode
   tabs: DetailTabItem[]
@@ -183,6 +207,8 @@ export function DetailShell({
   children: ReactNode
 }) {
   usePageTitle(nodeText(title))
+  const io = useDetailIO()
+  const plan = usePlanFromObject()
   const planning = useObjectPlanning(tabs, tab, onTabChange)
   // Safe when presence is omitted - the hook no-ops on an undefined id.
   useRegisterPresence(presence?.type ?? "", presence?.id, "viewing")
@@ -212,11 +238,35 @@ export function DetailShell({
         </nav>
         <div className="flex min-w-[min(100%,18rem)] flex-1 flex-wrap items-center justify-end gap-1.5">
           <PlannedForRoute />
-          <DetailActions />
-          {/* Route-derived like DetailActions: renders only on a detail page
-              whose type can be planned. */}
-          <PlanFromObject />
           {actions}
+          {(exports || io.available) && (
+            <ExportMenu>
+              {exports}
+              {exports && io.available && <DropdownMenuSeparator />}
+              {io.items}
+            </ExportMenu>
+          )}
+          {/* Plan a change is route-derived: it joins the menu on a detail
+              page whose type can be planned, and its picker hangs off the
+              menu's button. */}
+          {(more || plan.available) &&
+            plan.popover(
+              <span className="inline-flex">
+                <MoreMenu>
+                  {more}
+                  {more && plan.available && <DropdownMenuSeparator />}
+                  {plan.available && (
+                    <DropdownMenuItem onSelect={plan.start}>
+                      <CalendarClock className="h-3.5 w-3.5" /> Plan a change
+                    </DropdownMenuItem>
+                  )}
+                </MoreMenu>
+              </span>
+            )}
+          {add}
+          {edit}
+          {remove}
+          {io.dialog}
         </div>
       </header>
 

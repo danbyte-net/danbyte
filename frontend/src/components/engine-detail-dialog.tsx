@@ -11,6 +11,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Badge } from "@/components/ui/badge"
+import { OutpostRootBadge } from "@/components/outpost-root-badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { FormCheckbox, FormText } from "@/components/forms"
@@ -116,6 +117,7 @@ export function EngineDetailDialog({
             <Badge variant="outline" className="text-[10px]">
               {engine?.transport === "ssh" ? "SSH" : "HTTPS"}
             </Badge>
+            <OutpostRootBadge engine={engine} />
           </DialogTitle>
         </DialogHeader>
 

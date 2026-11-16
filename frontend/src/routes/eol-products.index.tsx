@@ -80,14 +80,16 @@ function EolProductsPage() {
         onChange: setQ,
         placeholder: "Filter by name, key, notes…",
       }}
+      add={
+        canAdd && (
+          <Button size="sm" asChild>
+            <Link to="/eol-products/new">Add product</Link>
+          </Button>
+        )
+      }
       actions={
         <>
           <TableActions ioType="eolproduct" />
-          {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/eol-products/new">Add product</Link>
-            </Button>
-          )}
         </>
       }
       query={query}

@@ -84,6 +84,8 @@ INSTALLED_APPS = [
     "agents.apps.AgentsConfig",
     "assistant.apps.AssistantConfig",
     "routing.apps.RoutingConfig",
+    "vulnerabilities.apps.VulnerabilitiesConfig",
+    "discovery.apps.DiscoveryConfig",
 ]
 
 # ─── Plugins ─────────────────────────────────────────────────────────────────
@@ -166,6 +168,9 @@ else:
 INSTALLED_APPS.append("plugins.apps.PluginsConfig")
 
 MIDDLEWARE = [
+    # HTTP-01 tokens for the site certificate answer for any Host, before
+    # anything validates it; every other path is untouched (core/middleware.py).
+    "core.middleware.AcmeChallengeMiddleware",
     "django.middleware.security.SecurityMiddleware",
     # GZip sits high so it compresses responses after every other middleware
     # has written them. Cuts the space-map picker's ~300 KB Tailwind HTML
@@ -260,60 +265,44 @@ DATABASES = {
 # Keeps per-request cached values from expiring mid-test (danbyte/test_runner.py).
 TEST_RUNNER = "danbyte.test_runner.DanbyteTestRunner"
 
-CACHES = {
-    "default": {
-        "BACKEND": "django_redis.cache.RedisCache",
-        "LOCATION": os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0"),
-        "OPTIONS": {
-            "CLIENT_CLASS": "django_redis.client.DefaultClient",
-            # Explicit, so a stalled Redis costs a request two seconds rather
-            # than whatever the installed client stack defaults to (#230).
-            "SOCKET_CONNECT_TIMEOUT": 2,
-            "SOCKET_TIMEOUT": 2,
-        },
-    }
-}
+# Redis: the cache, the RQ queues and the Channels layer all come from one
+# connection read from the environment (#502, danbyte/redis_conf.py):
+# REDIS_URL (redis://, rediss:// or unix://), else REDIS_SOCKET, else
+# REDIS_HOST/REDIS_PORT; credentials in the URL or REDIS_USERNAME/
+# REDIS_PASSWORD. A contradictory setup refuses to start rather than send the
+# queue to one server and the cache to another. The password never sits in a
+# URL here, only in PASSWORD/password keys that error reports mask.
+from danbyte.redis_conf import RedisConfigError as _RedisConfigError  # noqa: E402
+from danbyte.redis_conf import from_env as _redis_from_env  # noqa: E402
 
-# Channels - the channel layer for real-time presence WebSockets. Redis-backed
-# (same Redis as RQ/cache). In-memory fallback keeps tests/single-process dev
-# working even if Redis is unreachable for the layer.
-CHANNEL_LAYERS = {
-    "default": {
-        "BACKEND": "channels_redis.core.RedisChannelLayer",
-        "CONFIG": {
-            "hosts": [
-                (
-                    os.getenv("REDIS_HOST", "localhost"),
-                    int(os.getenv("REDIS_PORT", "6379")),
-                )
-            ]
-        },
-    }
-}
+try:
+    DANBYTE_REDIS = _redis_from_env(os.environ)
+except _RedisConfigError as _exc:
+    from django.core.exceptions import ImproperlyConfigured
+
+    raise ImproperlyConfigured(f"Redis: {_exc}") from None
+
+CACHES = {"default": DANBYTE_REDIS.cache()}
+if TESTING:
+    # A test run must not share cache keys with a live instance on the same
+    # Redis (a live value replaced what a test had just set).
+    CACHES["default"]["KEY_PREFIX"] = f"test:{os.getenv('DB_NAME', 'danbyte')}:{os.getpid()}"
+
+# Channels - the channel layer for real-time presence WebSockets, on the same
+# Redis (database 0, as before).
+CHANNEL_LAYERS = {"default": DANBYTE_REDIS.channels()}
 
 # RQ queue DB - separate from 0 lets a second instance on the same Redis run
 # its own worker pool without stealing the primary's jobs (a dev clone sets
 # RQ_REDIS_DB to a spare index).
 _RQ_DB = int(os.getenv("RQ_REDIS_DB", "0"))
 RQ_QUEUES = {
-    "default": {
-        "HOST": os.getenv("REDIS_HOST", "localhost"),
-        "PORT": int(os.getenv("REDIS_PORT", "6379")),
-        "DB": _RQ_DB,
-        "DEFAULT_TIMEOUT": "1h",
-    },
-    "high": {
-        "HOST": os.getenv("REDIS_HOST", "localhost"),
-        "PORT": int(os.getenv("REDIS_PORT", "6379")),
-        "DB": _RQ_DB,
-        "DEFAULT_TIMEOUT": "1h",
-    },
-    "low": {
-        "HOST": os.getenv("REDIS_HOST", "localhost"),
-        "PORT": int(os.getenv("REDIS_PORT", "6379")),
-        "DB": _RQ_DB,
-        "DEFAULT_TIMEOUT": "24h",
-    },
+    "default": DANBYTE_REDIS.rq(_RQ_DB, "1h"),
+    "high": DANBYTE_REDIS.rq(_RQ_DB, "1h"),
+    "low": DANBYTE_REDIS.rq(_RQ_DB, "24h"),
+    # Discovery runs (package inventory): long, outbound, and kept off `low`
+    # so they never hold up vulnerability recomputes (#451 decision 8).
+    "discovery": DANBYTE_REDIS.rq(_RQ_DB, "6h"),
 }
 
 # List pagination (#447). A list request without ?page_size= gets API_PAGE_SIZE
@@ -390,12 +379,18 @@ def api_max_tokens_per_user(env) -> int:
 API_MAX_TOKENS_PER_USER = api_max_tokens_per_user(os.environ)
 
 # A list endpoint names the query parameters it ignored in an
-# X-Danbyte-Unknown-Params header (core/query_params.py). With this on, an
-# unknown parameter is a 400 instead, unless the request sends ?strict=0.
-# Off in 0.19.x; the default becomes on in 0.20.
-API_STRICT_QUERY_PARAMS = (
-    os.getenv("API_STRICT_QUERY_PARAMS", "").strip().lower() in ("1", "true", "yes", "on")
-)
+# X-Danbyte-Unknown-Params header (core/query_params.py). With this on (the
+# default since 0.20), an unknown parameter is a 400 instead, unless the
+# request sends ?strict=0. API_STRICT_QUERY_PARAMS=0 turns it off for the
+# whole install (only the headers then).
+def api_strict_query_params(env) -> bool:
+    """``API_STRICT_QUERY_PARAMS`` from an environment mapping: on unless
+    set to 0/false/no/off."""
+    raw = str(env.get("API_STRICT_QUERY_PARAMS") or "").strip().lower()
+    return raw not in ("0", "false", "no", "off")
+
+
+API_STRICT_QUERY_PARAMS = api_strict_query_params(os.environ)
 
 
 # Application flow requirements (api.flow_requirements): the preview warns
@@ -433,10 +428,10 @@ REST_FRAMEWORK = {
     # Converts an uncaught IntegrityError (a duplicate/constraint hit a
     # serializer didn't validate) into a 409 instead of a raw 500.
     "EXCEPTION_HANDLER": "api.exception_handler.exception_handler",
-    # Errors for a nested list stay a list (one entry per item), as before
-    # DRF 3.18 changed the default to a dict keyed by index. The frontend and
-    # API clients read the list form; DRF removes this switch in 3.20.
-    "LIST_SERIALIZER_ERRORS_AS_DICT": False,
+    # Errors for a nested list are a dict keyed by the failing items' index
+    # ({"steps": {"1": {...}}}), DRF's default since 3.18 and its only form
+    # from 3.20. Before 0.20 they were a list with {} for each valid item.
+    "LIST_SERIALIZER_ERRORS_AS_DICT": True,
     "DEFAULT_AUTHENTICATION_CLASSES": [
         "auth_api.token_auth.ApiTokenAuthentication",
         "rest_framework.authentication.SessionAuthentication",
@@ -650,6 +645,15 @@ AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
 
+# Self-service "Forgot password?" by email (#492). Off by default; offered only
+# when it is on and the deployment can send mail and has a public URL
+# (auth_api.password_api.reset_available). The link expires after
+# PASSWORD_RESET_LINK_TIMEOUT seconds; invite links keep PASSWORD_RESET_TIMEOUT.
+PASSWORD_RESET_ENABLED = os.getenv("PASSWORD_RESET_ENABLED", "").strip().lower() in (
+    "1", "true", "yes", "on",
+)
+PASSWORD_RESET_LINK_TIMEOUT = int(os.getenv("PASSWORD_RESET_LINK_TIMEOUT", "3600"))
+
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
@@ -761,6 +765,18 @@ DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024
 # The largest 3D model (binary glTF) a device type or device takes, in bytes
 # (api.model_3d). 25 MB by default.
 DEVICE_MODEL_MAX_BYTES = int(os.getenv("DEVICE_MODEL_MAX_BYTES", str(25 * 1024 * 1024)))
+# Largest vulnerability data file an admin may upload (#451): NVD feeds, OSV
+# zips, KEV, EPSS. Keep it at or under nginx client_max_body_size (512m).
+VULN_IMPORT_MAX_BYTES = int(
+    os.getenv("DANBYTE_VULN_IMPORT_MAX_BYTES", str(512 * 1024 * 1024)))
+# How many months of Microsoft's security update documents the server fetch
+# reads (#451): each costs 4 to 30 MB per refresh. 1 to 36, default 12.
+try:
+    VULN_MSRC_MONTHS = max(1, min(36, int(os.getenv("DANBYTE_VULN_MSRC_MONTHS", "12"))))
+except ValueError:
+    from django.core.exceptions import ImproperlyConfigured
+
+    raise ImproperlyConfigured("DANBYTE_VULN_MSRC_MONTHS must be a number.") from None
 
 # Uploaded media (device-type rack images, …). Served through
 # api.media_views, never straight from disk: a new upload and the folders
@@ -796,6 +812,16 @@ if not MONITORING_SECRET_KEY and TESTING:
     # Deterministic key for the test DB (DEBUG is off under the test runner, so
     # the fail-closed derivation guard would otherwise abort migrations).
     MONITORING_SECRET_KEY = "test-monitoring-secret-key-not-for-production"
+# A comma-separated list rotates the key (#493): newest first, the first key
+# encrypts, every key decrypts. A malformed list stops the service here.
+try:
+    from danbyte.secret_keys import parse_monitoring_keys
+
+    parse_monitoring_keys(MONITORING_SECRET_KEY)
+except ValueError as _exc:
+    from django.core.exceptions import ImproperlyConfigured
+
+    raise ImproperlyConfigured(str(_exc)) from None
 MONITORING_SECRETS_BACKEND = os.getenv("MONITORING_SECRETS_BACKEND", "")
 
 # SSRF policy for the CENTRAL check runner. When True, a check target that
@@ -806,6 +832,52 @@ MONITORING_SECRETS_BACKEND = os.getenv("MONITORING_SECRETS_BACKEND", "")
 # endpoint is refused regardless. DANBYTE_SSRF_ALLOWLIST (shared with the
 # outbound guard in core/ssrf.py) lists CIDRs permitted even when this is on.
 CHECK_BLOCK_INTERNAL = os.getenv("DANBYTE_CHECK_BLOCK_INTERNAL", "False") == "True"
+
+# Built-in discovery (#451): package inventory over SSH with the tenants' own
+# device credentials. Off unless this deployment switch AND a tenant's
+# Discovery integration are both on; nothing is contacted otherwise. The
+# check runner's target policy above (block_internal, SSRF allow-list)
+# applies to every host discovery logs in to from the server.
+#
+# Three states. Unset (or empty): the switch is a stored setting, off by
+# default, that deployment admins change on the Discovery card
+# (DeploymentSettings.discovery_enabled). "True" (true/1/yes/on): locked on.
+# Anything else, "False" included: locked off - nothing can enable it.
+_discovery_env = os.getenv("DANBYTE_DISCOVERY_ENABLED", "").strip()
+DISCOVERY_ENABLED = (
+    None if not _discovery_env
+    else _discovery_env.lower() in ("true", "1", "yes", "on"))
+# WinRM over HTTPS (client certificate, verified server certificate) is the
+# third discovery transport, off per tenant by default. False forbids it for
+# every tenant. The CA bundle server certificates are checked against
+# defaults to the system bundle; point it at your internal CA's bundle.
+DISCOVERY_WINRM_ALLOWED = (
+    os.getenv("DANBYTE_DISCOVERY_WINRM_ALLOWED", "True").strip().lower()
+    not in ("false", "0", "no", "off"))
+DISCOVERY_WINRM_CA_BUNDLE = os.getenv("DANBYTE_DISCOVERY_WINRM_CA_BUNDLE", "").strip()
+# Whether Run now may offer "Accept new host keys" (trust a host's key the
+# first time it is seen, for hosts with no accepted key). False hides the
+# option everywhere and the API refuses it.
+DISCOVERY_ALLOW_FIRST_USE_KEYS = (
+    os.getenv("DANBYTE_DISCOVERY_ALLOW_FIRST_USE_KEYS", "True").strip().lower()
+    not in ("false", "0", "no", "off"))
+# The service scan's hard cap: new TCP connections per second one run may
+# open, whatever a profile asks (profiles default to 20). At most 2000.
+try:
+    DISCOVERY_SCAN_MAX_RATE = max(1, min(2000, int(
+        os.getenv("DANBYTE_DISCOVERY_SCAN_MAX_RATE", "200"))))
+except ValueError:
+    from django.core.exceptions import ImproperlyConfigured
+
+    raise ImproperlyConfigured("DANBYTE_DISCOVERY_SCAN_MAX_RATE must be a number.") from None
+# nmap for service scans (#451 B4): never installed or bundled by Danbyte.
+# NMAP_BINARY is the absolute path of one the admin installed; unset, `nmap`
+# is looked up on the service user's PATH. DANBYTE_DISCOVERY_NMAP_ALLOWED=
+# False forbids it for every tenant.
+NMAP_BINARY = os.getenv("NMAP_BINARY", "").strip()
+DISCOVERY_NMAP_ALLOWED = (
+    os.getenv("DANBYTE_DISCOVERY_NMAP_ALLOWED", "True").strip().lower()
+    not in ("false", "0", "no", "off"))
 SSRF_ALLOWLIST = [
     p.strip() for p in os.getenv("DANBYTE_SSRF_ALLOWLIST", "").split(",") if p.strip()
 ]

@@ -25,6 +25,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Spinner } from "@/components/ui/spinner"
+import { PolicyDiscoveryItems } from "@/components/discovery/policy-discovery"
 import { PolicyFilterButton } from "./policy-filters"
 
 export type SavePolicy<T extends { id: string }> = (args: {
@@ -161,7 +162,7 @@ export function PolicyControls<T extends { id: string }>({
             <ChevronDown data-icon="inline-end" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-64">
+        <DropdownMenuContent align="end" className="w-72">
           <DropdownMenuLabel>Policy</DropdownMenuLabel>
           <DropdownCheckItem
             checked={inherited}
@@ -241,6 +242,8 @@ export function PolicyControls<T extends { id: string }>({
               </DropdownCheckItem>
             ))
           )}
+          {/* Mounted only while the menu is open, so 500 rows cost nothing. */}
+          <PolicyDiscoveryItems policyId={policy?.id} />
         </DropdownMenuContent>
       </DropdownMenu>
     </div>

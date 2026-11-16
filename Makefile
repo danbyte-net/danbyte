@@ -19,10 +19,10 @@ SHARED_SERVICES := danbyte-workers danbyte-fastlane danbyte-docs
 SERVICES       := $(DEV_SERVICES) $(SHARED_SERVICES)
 # Timer-driven oneshots (monitoring beat). Each has a .service + a .timer; the
 # timer is what gets enabled. Not part of `up`/`down` (they're not long-running).
-TIMERS         := danbyte-dispatch danbyte-materialise danbyte-prune danbyte-utilization danbyte-alert-maintenance danbyte-discover danbyte-cleanup danbyte-drift-dispatch danbyte-auto-upgrade danbyte-drive-outposts danbyte-digest danbyte-hardware danbyte-certificate-expiry danbyte-acme-renew danbyte-document-linkcheck danbyte-task-reminders danbyte-external-sync danbyte-zabbix-sync danbyte-extmon-sync danbyte-search-reindex danbyte-backups danbyte-scripts danbyte-rollups danbyte-sla danbyte-sla-burn danbyte-snmp-poll danbyte-eol-refresh danbyte-oxidized-sync danbyte-update-check
+TIMERS         := danbyte-dispatch danbyte-materialise danbyte-prune danbyte-utilization danbyte-alert-maintenance danbyte-discover danbyte-cleanup danbyte-drift-dispatch danbyte-auto-upgrade danbyte-drive-outposts danbyte-digest danbyte-hardware danbyte-certificate-expiry danbyte-acme-renew danbyte-document-linkcheck danbyte-task-reminders danbyte-external-sync danbyte-zabbix-sync danbyte-extmon-sync danbyte-search-reindex danbyte-backups danbyte-scripts danbyte-rollups danbyte-sla danbyte-sla-burn danbyte-snmp-poll danbyte-eol-refresh danbyte-vuln-refresh danbyte-oxidized-sync danbyte-update-check danbyte-inventory
 PY             := $(PROJECT_DIR)/.venv/bin/python
 
-.PHONY: help install-services link-units print-timers uninstall-services reload admin-link install-tls-unit uninstall-tls-unit host-sync root-tree-only \
+.PHONY: help install-services link-units unit-hardening unit-hardening-status print-timers uninstall-services reload admin-link install-tls-unit uninstall-tls-unit host-sync root-tree-only \
         up down restart status logs logs-file \
         mockups-up mockups-down mockups-restart mockups-logs \
         docs-up docs-down docs-restart docs-logs docs-build schema \
@@ -30,10 +30,10 @@ PY             := $(PROJECT_DIR)/.venv/bin/python
         backend-up backend-down backend-restart backend-logs \
         workers-up workers-down workers-restart workers-logs \
         fastlane-up fastlane-down fastlane-restart fastlane-logs \
-        migrate makemigrations superuser bootstrap seed-demo seed-fabric seed-floorplan-demo seed-building-demo shell test check \
+        migrate makemigrations superuser bootstrap seed-demo seed-fabric seed-floorplan-demo seed-building-demo shell test test-fast test-timings check \
         collectstatic install-prod-services prod-up prod-down prod-restart prod-logs \
         proxy-cert proxy-install proxy-reload proxy-uninstall \
-        linger service-user cad-tools sbom
+        linger service-user cad-tools sbom lock lock-upgrade lock-check
 
 help:
 	@echo "Danbyte dev shortcuts"
@@ -57,9 +57,10 @@ help:
 	@echo "    make logs      Tail journalctl for all"
 	@echo ""
 	@echo "  Django"
-	@echo "    make migrate / makemigrations / superuser / shell / test / check"
+	@echo "    make migrate / makemigrations / superuser / shell / test / test-fast / check"
 	@echo "    make cad-tools  Build LibreDWG's dwg2dxf into vendor/cad (DWG floor plans)"
 	@echo "    make sbom       Write Danbyte's own CycloneDX SBOM to sbom.cdx.json"
+	@echo "    make lock       Regenerate requirements.lock (hashes) from requirements.txt"
 	@echo ""
 	@echo "  Reverse proxy (everything on https/443)"
 	@echo "    make proxy-install     One-time: nginx + self-signed cert + config"
@@ -95,6 +96,7 @@ install-services:
 		echo "  linked $$s.service + $$s.timer" ; \
 	done
 	@systemctl --user daemon-reload
+	@/bin/sh $(PROJECT_DIR)/scripts/unit-hardening.sh
 	@for s in $(TIMERS); do \
 		systemctl --user enable --now $$s.timer ; \
 	done
@@ -121,6 +123,16 @@ link-units:
 		ln -sfn $(PROJECT_DIR)/services/$$s.timer $(SYSTEMD_DIR)/$$s.timer ; \
 	done
 	@systemctl --user daemon-reload
+	@/bin/sh $(PROJECT_DIR)/scripts/unit-hardening.sh
+
+# The sandboxing drop-ins of the app units (#500), again: after a change to
+# DANBYTE_UNIT_HARDENING or DANBYTE_UNIT_WRITABLE_PATHS in .env. Restart the
+# units afterwards. unit-hardening-status shows what each unit has.
+unit-hardening:
+	@/bin/sh $(PROJECT_DIR)/scripts/unit-hardening.sh
+
+unit-hardening-status:
+	@/bin/sh $(PROJECT_DIR)/scripts/unit-hardening.sh status
 
 print-timers:
 	@echo $(TIMERS)
@@ -133,7 +145,7 @@ uninstall-services:
 		systemctl --user disable --now $$s.timer 2>/dev/null || true ; \
 		rm -f $(SYSTEMD_DIR)/$$s.service $(SYSTEMD_DIR)/$$s.timer ; \
 	done
-	@systemctl --user daemon-reload
+	@/bin/sh $(PROJECT_DIR)/scripts/unit-hardening.sh remove
 	@echo "Removed."
 
 reload:
@@ -432,6 +444,16 @@ shell:
 test:
 	@$(PY) manage.py test
 
+# The whole suite across every core (Django's --parallel; one test database
+# per worker). PARALLEL=<n> to cap it, ARGS= for labels or --keepdb.
+test-fast:
+	@$(PY) manage.py test --noinput --parallel $(or $(PARALLEL),auto) $(ARGS)
+
+# Re-measure seconds per test module (the whole suite, in parallel) into
+# danbyte/test_timings.json, which balances the CI shards.
+test-timings:
+	@DANBYTE_TEST_TIMINGS=$(CURDIR)/danbyte/test_timings.json $(PY) manage.py test --noinput --parallel auto
+
 coverage:
 	@$(PY) -m coverage run --source='.' manage.py test
 	@$(PY) -m coverage report
@@ -451,6 +473,24 @@ cad-tools:
 # /api/system/sbom/ serves it. Release bundles and images ship one already.
 sbom:
 	@$(PY) scripts/release/sbom.py --output sbom.cdx.json
+
+# requirements.lock: requirements.txt's floors resolved to exact versions with
+# the sha256 of every file, for the platform the bundle ships (#451). `lock`
+# keeps the versions already pinned and only resolves what requirements.txt
+# changed; `lock-upgrade` moves every package to its newest release.
+# `lock-check` fails when `lock` would change the file (CI runs it).
+UV         ?= $(shell command -v uv 2>/dev/null || echo $(HOME)/.local/bin/uv)
+LOCK_FLAGS := --generate-hashes --python-version 3.13 --python-platform x86_64-manylinux_2_28 \
+              --custom-compile-command "make lock" --quiet
+lock:
+	@$(UV) pip compile requirements.txt $(LOCK_FLAGS) -o requirements.lock
+lock-upgrade:
+	@$(UV) pip compile requirements.txt $(LOCK_FLAGS) --upgrade -o requirements.lock
+lock-check:
+	@tmp=$$(mktemp) && cp requirements.lock $$tmp \
+	  && $(UV) pip compile requirements.txt $(LOCK_FLAGS) -o $$tmp \
+	  && diff -u requirements.lock $$tmp; rc=$$?; rm -f $$tmp; \
+	  [ $$rc -eq 0 ] || { echo "requirements.lock is out of date: run make lock" >&2; exit 1; }
 
 # Gather Django static (admin + DRF assets) into STATIC_ROOT so nginx serves
 # them from disk in production (gunicorn doesn't serve static with DEBUG off).
@@ -478,6 +518,7 @@ install-prod-services:
 		ln -sfn $(PROJECT_DIR)/services/$$s.timer $(SYSTEMD_DIR)/$$s.timer ; \
 	done
 	@systemctl --user daemon-reload
+	@/bin/sh $(PROJECT_DIR)/scripts/unit-hardening.sh
 	@for s in $(TIMERS); do \
 		systemctl --user enable --now $$s.timer >/dev/null 2>&1 || true ; \
 	done

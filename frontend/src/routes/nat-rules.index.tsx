@@ -71,7 +71,7 @@ function NATRulesPage() {
         onChange: setQ,
         placeholder: "Filter by name, address, port…",
       }}
-      actions={
+      add={
         canAdd && (
           <Button size="sm" onClick={() => setAdding(true)}>
             Add NAT rule

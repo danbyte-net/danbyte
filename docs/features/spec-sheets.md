@@ -7,7 +7,7 @@ icon: lucide/file-text
 A **spec sheet** is a one-object PDF that reads like a vendor datasheet: the
 device, virtual machine or virtual chassis with everything Danbyte knows
 about it, laid out to be handed to an external party, a site technician, or
-a colleague who never opens Danbyte. Open the object and click **Spec sheet**
+a colleague who never opens Danbyte. Open the object and pick **Export → Spec sheet**
 - the PDF opens in a new tab, where the browser's viewer prints or saves it.
 
 ## What is on the page
@@ -58,7 +58,7 @@ the footer.
 
 ## The hardware sheet
 
-A device has a second sheet, **Spec sheet → Hardware sheet**, for when the
+A device has a second sheet, **Export → Spec sheet → Hardware sheet**, for when the
 question is what is inside the box rather than where it sits. The header and
 elevations are the same; the three stat boxes become **CPU** (total cores,
 with sockets, clock and model underneath - or the socket count when no core
@@ -80,6 +80,10 @@ before DIMM 10, Bay 9 before Bay 10. Parts a BMC synced carry no slot, so
 their names order them. The modules and inventory list on the datasheet
 follow the same order.
 
+The same block can go into the device's [PDF report](reports.md): tick
+**Hardware** in its sections. Both are drawn from the same templates, so the
+report's boxes and tables always read like the sheet's.
+
 **All in one**, the third entry, is the datasheet with the hardware block
 inserted: the three datasheet boxes, details, port utilisation, then the
 CPU, memory and storage boxes, the parts per kind, the modules, the
@@ -94,7 +98,15 @@ sheet is served inline; add `?download=1` for a download. The file is named
 `<name>-spec-<date>.pdf`. On a device, `?variant=hardware` returns the
 hardware sheet and `?variant=full` the all-in-one sheet
 (`<name>-spec-hardware-<serial>.pdf`, `<name>-spec-full-<serial>.pdf`). Reading a sheet needs the same **view** permission
-as the object page, so site scoping applies unchanged.
+as the object page, so site scoping applies unchanged. The parts and modules
+are read through their own lists: without view on inventory items the
+hardware tables say so instead of listing them (and the datasheet's
+inventory list is empty), without view on modules the modules table is left
+out. Interfaces are read through the interface list the same way, as the
+device report's Interfaces section reads them: its row constraints and site
+rules apply, and without view on interfaces the datasheet, the all-in-one
+sheet and each stack member say so instead of listing them (the Interfaces
+box shows "—").
 
 The PDF is rendered server-side with the same engine as
 [label templates](label-templates.md), so it looks identical on every machine

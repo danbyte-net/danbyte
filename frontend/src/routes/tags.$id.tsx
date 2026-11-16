@@ -2,14 +2,13 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
-import { Pencil, Trash2 } from "lucide-react"
 import { useCallback, useMemo, useState } from "react"
 
 import { api, type Tag, type TagUsage, type TagUsageItem } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { DataTable, SortHeader } from "@/components/data-table"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { KvCard, dash } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
@@ -61,23 +60,8 @@ function TagDetailBody({ tag: t }: { tag: Tag }) {
       backLabel="Tags"
       title={t.name}
       presence={{ type: "tag", id: String(t.id) }}
-      actions={
-        <>
-          <Button variant="outline" size="sm" asChild>
-            <Link to="/tags/$id/edit" params={{ id: String(t.id) }}>
-              <Pencil className="h-3.5 w-3.5" /> Edit
-            </Link>
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="text-destructive hover:text-destructive"
-            onClick={() => setDeleting(t)}
-          >
-            <Trash2 className="h-3.5 w-3.5" /> Delete
-          </Button>
-        </>
-      }
+      edit={<EditButton to="/tags/$id/edit" params={{ id: String(t.id) }} />}
+      remove={<DeleteButton onClick={() => setDeleting(t)} />}
       hero={
         <DetailHero
           title={<ColorBadge name={t.name} color={t.color || undefined} />}

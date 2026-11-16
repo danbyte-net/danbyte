@@ -58,14 +58,16 @@ function ListPage() {
         onChange: setQ,
         placeholder: "Filter…",
       }}
+      add={
+        canAdd && (
+          <Button size="sm" asChild>
+            <Link to="/contact-groups/new">Add group</Link>
+          </Button>
+        )
+      }
       actions={
         <>
           <TableActions ioType="contactgroup" />
-          {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/contact-groups/new">Add group</Link>
-            </Button>
-          )}
         </>
       }
       query={query}

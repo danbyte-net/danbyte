@@ -121,14 +121,12 @@ function CustomFieldsPage() {
         onChange: setQ,
         placeholder: "Filter by key, label…",
       }}
-      actions={
-        <>
-          {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/custom-fields/new">Add field</Link>
-            </Button>
-          )}
-        </>
+      add={
+        canAdd && (
+          <Button size="sm" asChild>
+            <Link to="/custom-fields/new">Add field</Link>
+          </Button>
+        )
       }
       query={query}
     >

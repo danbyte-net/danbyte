@@ -1,0 +1,28 @@
+{
+  "schema_version": "1.6.0",
+  "id": "GHSA-5hgc-2vfp-mqvc",
+  "modified": "2024-10-08T19:42:11Z",
+  "published": "2024-09-03T15:30:47Z",
+  "aliases": ["CVE-2024-45230", "PYSEC-2024-83"],
+  "summary": "Django vulnerable to denial-of-service attack via the urlize() and urlizetrunc() template filters",
+  "details": "An issue was discovered in Django 5.1 before 5.1.1, 5.0 before 5.0.9, and 4.2 before 4.2.16.",
+  "severity": [
+    {"type": "CVSS_V3", "score": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"}
+  ],
+  "affected": [
+    {
+      "package": {"ecosystem": "PyPI", "name": "Django", "purl": "pkg:pypi/django"},
+      "ranges": [
+        {"type": "ECOSYSTEM", "events": [{"introduced": "4.2"}, {"fixed": "4.2.16"}]},
+        {"type": "ECOSYSTEM", "events": [{"introduced": "5.0"}, {"fixed": "5.0.9"}]},
+        {"type": "GIT", "repo": "https://github.com/django/django", "events": [{"introduced": "0"}, {"fixed": "abc123"}]}
+      ],
+      "versions": ["4.2", "4.2.1", "5.0", "5.0.8"]
+    }
+  ],
+  "references": [
+    {"type": "ADVISORY", "url": "https://nvd.nist.gov/vuln/detail/CVE-2024-45230"},
+    {"type": "WEB", "url": "https://www.djangoproject.com/weblog/2024/sep/03/security-releases/"}
+  ],
+  "database_specific": {"cwe_ids": ["CWE-130", "CWE-400"], "severity": "HIGH"}
+}

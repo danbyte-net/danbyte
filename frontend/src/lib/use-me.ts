@@ -14,7 +14,7 @@ import { setCapacityThresholds } from "@/lib/rack-capacity"
  */
 export function objCan(
   obj: { permissions?: ObjectPerms } | null | undefined,
-  action: "change" | "delete",
+  action: "change" | "delete" | "add_child",
   fallback: boolean
 ): boolean {
   return obj?.permissions?.[action] ?? fallback

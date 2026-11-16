@@ -148,6 +148,20 @@ const ROWS: Row[] = [
   ["applications", "Applications", "Software & lifecycle", "/api/applications/", { ioType: "application" }],
   ["application-installs", "Application · Installed on", "Software & lifecycle", "/api/installed-software/", sub],
   ["application-eol-cycles", "Application · End-of-life cycles", "Software & lifecycle", null],
+  ["device-vulnerabilities", "Device · Vulnerabilities", "Software & lifecycle", null, sub],
+  ["vm-vulnerabilities", "Virtual machine · Vulnerabilities", "Software & lifecycle", null, sub],
+  ["platform-vulnerabilities", "Platform · Vulnerabilities", "Software & lifecycle", null, sub],
+  ["application-vulnerabilities", "Application · Vulnerabilities", "Software & lifecycle", null, sub],
+  // Grouped and match rows of vulnerabilities/list_api.py, not a model list.
+  ["vulnerabilities", "Vulnerabilities", "Software & lifecycle", null],
+  ["vulnerability-matches", "Vulnerabilities · By object", "Software & lifecycle", null],
+  ["vulnerability-affected", "Vulnerability · Affected", "Software & lifecycle", null, sub],
+  // Exceptions carry nested refs, not flat list fields.
+  ["vulnerability-exceptions", "Vulnerabilities · Exceptions", "Software & lifecycle", null],
+  ["vulnerability-record-exceptions", "Vulnerability · Exceptions", "Software & lifecycle", null, sub],
+  ["vulnerability-exception-matches", "Vulnerability exception · Covers", "Software & lifecycle", null, sub],
+  ["vulnerability-mapping-suggestions", "Vulnerabilities · Suggest mappings", "Software & lifecycle", null, sub],
+  ["vuln-sync-products", "Vulnerability browser sync", "Software & lifecycle", null, sub],
   ["application-children", "Application · Child applications", "Software & lifecycle", "/api/applications/", sub],
   ["application-groups", "Application groups", "Software & lifecycle", "/api/application-groups/", { ioType: "applicationgroup" }],
   ["application-group-members", "Application group · Applications", "Software & lifecycle", "/api/application-groups/", sub],
@@ -180,6 +194,10 @@ const ROWS: Row[] = [
   ["embedded-cabinets", "Cabinets (embedded)", "DCIM", "/api/cabinets/", sub],
   ["interfaces", "Interfaces", "DCIM", "/api/interfaces/", { ioType: "interface" }],
   ["cables", "Cables", "DCIM", "/api/cables/", { ioType: "cable" }],
+  ["device-dependencies", "Dependencies", "DCIM", "/api/device-dependencies/", { ioType: "devicedependency" }],
+  ["dependency-media", "Dependency media", "DCIM", "/api/dependency-media/", { ioType: "dependencymedium" }],
+  ["medium-dependencies", "Medium · Dependencies", "DCIM", "/api/device-dependencies/", sub],
+  ["dependency-proposals", "Suggested dependencies", "DCIM", null],
   ["fiber-cables", "Fiber cables", "DCIM", "/api/cables/"],
   ["port-reservations", "Port reservations", "DCIM", "/api/port-reservations/"],
   ["port-utilization", "Port utilization", "DCIM", null],
@@ -245,6 +263,7 @@ const ROWS: Row[] = [
   ["saved-filters", "Saved views", "Customize", "/api/saved-filters/"],
   ["export-templates", "Export templates", "Customize", "/api/export-templates/"],
   ["label-templates", "Label templates", "Customize", "/api/label-templates/"],
+  ["text-versions", "Template · Versions", "Customize", null, sub],
   ["config-contexts", "Config contexts", "Customize", "/api/config-contexts/"],
   ["dashboards", "Dashboards", "Customize", "/api/dashboards/"],
   ["topology-views", "Topology views", "Customize", null],
@@ -260,6 +279,7 @@ const ROWS: Row[] = [
 
   // ─── Monitoring ────────────────────────────────────────────────────────
   ["alerts", "Alerts", "Monitoring", null],
+  ["root-causes", "Root causes", "Monitoring", null],
   ["monitoring-history", "Monitoring history", "Monitoring", null],
   ["monitoring-checks", "Monitoring checks", "Monitoring", null],
   ["monitoring-engines", "Monitoring engines", "Monitoring", "/api/monitoring/engines/"],
@@ -269,6 +289,7 @@ const ROWS: Row[] = [
   ["check-templates", "Check templates", "Monitoring", "/api/monitoring/templates/"],
   ["maintenance-events", "Maintenance", "Monitoring", "/api/monitoring/maintenance-events/"],
   ["watched-endpoints", "Watched endpoints", "Monitoring", "/api/monitoring/watched-endpoints/"],
+  ["shared-credentials", "Shared credentials", "Monitoring", "/api/monitoring/shared-credentials/"],
   ["certificates", "Certificates", "Monitoring", "/api/monitoring/certificates/"],
   ["certificate-requests", "Certificate requests", "Monitoring", "/api/monitoring/certificate-requests/"],
   ["certificate-issuers", "Certificate authorities", "Monitoring", "/api/monitoring/issuers/"],
@@ -302,6 +323,7 @@ const ROWS: Row[] = [
   ["embedded-deploy-runs", "Deploy runs (embedded)", "Integrations", "/api/deploy-runs/", sub],
   ["prefix-renumber-changes", "Renumber: changes", "IPAM", "/api/prefixes/", sub],
   ["prefix-renumber-unchanged", "Renumber: left unchanged", "IPAM", "/api/prefixes/", sub],
+  ["prefix-plan-preview", "Plan subnets: preview", "IPAM", null, sub],
   ["deploy-pipelines", "Pipelines", "Integrations", "/api/deploy-pipelines/"],
   ["deploy-pipeline-runs", "Pipeline runs", "Integrations", "/api/deploy-pipeline-runs/"],
   ["deploy-pipeline-runs-of-pipeline", "Pipeline runs (embedded)", "Integrations", "/api/deploy-pipeline-runs/", sub],
@@ -346,12 +368,25 @@ const ROWS: Row[] = [
   ["prtg-retire-rules", "PRTG · Retirement rules", "Integrations", "/api/prtg/retire-rules/"],
   ["oxidized-links", "Oxidized · Linked nodes", "Integrations", "/api/oxidized/links/"],
   ["oxidized-unmatched", "Oxidized · Unmatched nodes", "Integrations", null],
+  // Discovery (#451 B2): nested refs and counts, not flat list fields.
+  ["inventory-profiles", "Discovery · Inventory profiles", "Integrations", null],
+  ["inventory-runs", "Discovery · Runs", "Integrations", null, sub],
+  ["inventory-recent-runs", "Discovery · Recent runs", "Integrations", null, sub],
+  ["inventory-run-hosts", "Discovery run · Hosts", "Integrations", null, sub],
+  ["inventory-scope-hosts", "Inventory profile · Hosts", "Integrations", null, sub],
+  ["inventory-host-keys", "Discovery · Host keys to review", "Integrations", null, sub],
+  // Service scan (#451 B3): computed proposals and nested evidence.
+  ["discovery-findings", "Discovery · Findings", "Integrations", null],
+  ["discovery-services", "Discovery · Open ports", "Integrations", null],
+  ["device-packages", "Device · Packages", "Software & lifecycle", null, sub],
+  ["vm-packages", "Virtual machine · Packages", "Software & lifecycle", null, sub],
 
   // ─── Planning & system ─────────────────────────────────────────────────
   ["planning-boards", "Boards", "Planning", "/api/planning/boards/"],
   ["task-statuses", "Task statuses", "Planning", "/api/planning/statuses/", sub],
   ["jobs", "Jobs", "System", null],
   ["backups", "Backups", "System", "/api/backups/"],
+  ["layout-presets", "Layout presets", "System", null, sub],
 ]
 
 export const REGISTERED_TABLES: TableMeta[] = ROWS.map(

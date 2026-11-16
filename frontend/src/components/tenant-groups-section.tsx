@@ -30,6 +30,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { ScrollFrame } from "@/components/table-scroll"
 import {
   FormCombobox,
   FormFooter,
@@ -116,7 +117,7 @@ export function TenantGroupsSection() {
             never gate access.
           </p>
         ) : (
-          <div className="overflow-hidden rounded-lg border border-border">
+          <ScrollFrame className="rounded-lg border border-border">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -179,7 +180,7 @@ export function TenantGroupsSection() {
                 ))}
               </TableBody>
             </Table>
-          </div>
+          </ScrollFrame>
         ))}
 
       <TenantGroupDialog

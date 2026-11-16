@@ -1,0 +1,18 @@
+{
+  "schema_version": "1.6.0",
+  "id": "GHSA-2222-3333-4444",
+  "modified": "2025-01-20T08:00:00Z",
+  "published": "2025-01-10T08:00:00Z",
+  "aliases": [],
+  "summary": "Prototype pollution in example-merge",
+  "severity": [
+    {"type": "CVSS_V4", "score": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:L/VI:L/VA:N/SC:N/SI:N/SA:N"}
+  ],
+  "affected": [
+    {
+      "package": {"ecosystem": "npm", "name": "example-merge"},
+      "ranges": [{"type": "SEMVER", "events": [{"introduced": "0"}, {"fixed": "2.1.4"}]}]
+    }
+  ],
+  "references": [{"type": "PACKAGE", "url": "https://www.npmjs.com/package/example-merge"}]
+}

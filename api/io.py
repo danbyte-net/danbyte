@@ -623,6 +623,7 @@ class ModelIOHandler:
         if _has_custom_fields(self.model) and "custom_fields" in row:
             self._apply_custom_fields(obj, existing, row.get("custom_fields"), tenant)
 
+        self.lock_for_write(obj, old, tenant)
         obj.full_clean()
 
         if existing is None:
@@ -648,6 +649,11 @@ class ModelIOHandler:
                 for k in new if old.get(k) != new[k]
             }
         return obj, action, changes, tag_names
+
+    def lock_for_write(self, obj, old, tenant) -> None:
+        """Hook run before the row is validated, for a lock the API takes
+        before validating the same write (``old`` is the stored row's
+        values, empty for a create). Default: none."""
 
     def _coerce_scalar(self, field, raw, tenant, user):
         if field.get_internal_type() == "ArrayField" and (
@@ -889,6 +895,24 @@ class DeviceIOHandler(ModelIOHandler):
         return obj
 
 
+class PrefixIOHandler(ModelIOHandler):
+    """Prefixes: a row that creates one, or moves one to a new CIDR or VRF,
+    takes the allocation lock (prefix_space_views.lock_holders) before it
+    is validated, as the API's create and edit do."""
+
+    def lock_for_write(self, obj, old, tenant) -> None:
+        from .prefix_space_views import lock_holders, parse_cidr
+
+        net = parse_cidr(obj.cidr)
+        if net is None:
+            return  # validation refuses it
+        if old and str(net) == str(parse_cidr(old.get("cidr"))) and (
+            obj.vrf_id == old.get("vrf")
+        ):
+            return
+        lock_holders(getattr(tenant, "pk", None) or obj.tenant_id, obj.vrf_id, net)
+
+
 class InstalledSoftwareIOHandler(ModelIOHandler):
     """Installed software (#436): a row an import creates is marked
     ``source=import`` unless the file says otherwise."""
@@ -969,7 +993,7 @@ def register_builtins() -> None:
     from .models import VLAN, Device, IPAddress, IPRange, Prefix, SupportContract, SupportCoverage
 
     register_io(_handler(
-        Prefix, natural_key=["cidr", "vrf"],
+        Prefix, PrefixIOHandler, natural_key=["cidr", "vrf"],
         fk_keys={"site": "name", "vlan": "vlan_id", "vrf": "name"},
     ))
     register_io(_handler(
@@ -1034,6 +1058,16 @@ def register_builtins() -> None:
         fk_keys={"application": "slug", "service": "name",
                  "source_ip": "ip_address", "destination_ip": "ip_address",
                  "source_prefix": "cidr", "destination_prefix": "cidr"},
+    ))
+    # Device dependencies (#450): a pair by its two device names, the medium
+    # by slug. Rows save through the viewset, so a cycle refuses the row
+    # with its path, in a dry run too.
+    from .models import DependencyMedium, DeviceDependency
+
+    register_io(_handler(DependencyMedium, natural_key=["slug"]))
+    register_io(_handler(
+        DeviceDependency, natural_key=["upstream", "downstream"],
+        fk_keys={"upstream": "name", "downstream": "name", "medium": "slug"},
     ))
     # Rooms (floor plans P1b): a room by its name in its location. The slug
     # is derived, so a row without one never lands on another room there.

@@ -1,0 +1,1465 @@
+{
+ "DocumentTitle": {
+  "Value": "November 2026 Security Updates"
+ },
+ "DocumentType": {
+  "Value": "Security Update"
+ },
+ "DocumentTracking": {
+  "Identification": {
+   "ID": {
+    "Value": "2026-Nov"
+   },
+   "Alias": {
+    "Value": "2026-Nov"
+   }
+  },
+  "Status": 2,
+  "Version": "1.0",
+  "RevisionHistory": [
+   {
+    "Number": "167",
+    "Date": "2026-11-10T08:00:00",
+    "Description": {
+     "Value": "November 2026 Security Updates"
+    }
+   }
+  ],
+  "InitialReleaseDate": "2026-11-10T08:00:00",
+  "CurrentReleaseDate": "2026-11-10T08:00:00"
+ },
+ "ProductTree": {
+  "FullProductName": [
+   {
+    "ProductID": "10378",
+    "CPE": "cpe:2.3:o:microsoft:windows_server_2012:6.2.9200.26434:*:*:*:*:*:x64:*",
+    "Value": "Windows Server 2012"
+   },
+   {
+    "ProductID": "10379",
+    "CPE": "cpe:2.3:o:microsoft:windows_server_2012:6.2.9200.26434:*:*:*:*:*:x64:*",
+    "Value": "Windows Server 2012 (Server Core installation)"
+   },
+   {
+    "ProductID": "10483",
+    "CPE": "cpe:2.3:o:microsoft:windows_server_2012_R2:6.3.9600.23470:*:*:*:*:*:x64:*",
+    "Value": "Windows Server 2012 R2"
+   },
+   {
+    "ProductID": "10543",
+    "CPE": "cpe:2.3:o:microsoft:windows_server_2012_R2:6.3.9600.23470:*:*:*:*:*:x64:*",
+    "Value": "Windows Server 2012 R2 (Server Core installation)"
+   },
+   {
+    "ProductID": "10816",
+    "CPE": "cpe:2.3:o:microsoft:windows_server_2016:10.0.14393.9688:*:*:*:*:*:*:*",
+    "Value": "Windows Server 2016"
+   },
+   {
+    "ProductID": "10852",
+    "CPE": "cpe:2.3:o:microsoft:windows_10_1607:10.0.14393.9688:*:*:*:*:*:x86:*",
+    "Value": "Windows 10 Version 1607 for 32-bit Systems"
+   },
+   {
+    "ProductID": "10853",
+    "CPE": "cpe:2.3:o:microsoft:windows_10_1607:10.0.14393.9688:*:*:*:*:*:x64:*",
+    "Value": "Windows 10 Version 1607 for x64-based Systems"
+   },
+   {
+    "ProductID": "10855",
+    "CPE": "cpe:2.3:o:microsoft:windows_server_2016:10.0.14393.9688:*:*:*:*:*:*:*",
+    "Value": "Windows Server 2016 (Server Core installation)"
+   },
+   {
+    "ProductID": "11568",
+    "CPE": "cpe:2.3:o:microsoft:windows_10_1809:10.0.17763.9487:*:*:*:*:*:x86:*",
+    "Value": "Windows 10 Version 1809 for 32-bit Systems"
+   },
+   {
+    "ProductID": "11569",
+    "CPE": "cpe:2.3:o:microsoft:windows_10_1809:10.0.17763.9487:*:*:*:*:*:x64:*",
+    "Value": "Windows 10 Version 1809 for x64-based Systems"
+   },
+   {
+    "ProductID": "11571",
+    "CPE": "cpe:2.3:o:microsoft:windows_server_2019:10.0.17763.9487:*:*:*:*:*:*:*",
+    "Value": "Windows Server 2019"
+   },
+   {
+    "ProductID": "11572",
+    "CPE": "cpe:2.3:o:microsoft:windows_server_2019:10.0.17763.9487:*:*:*:*:*:*:*",
+    "Value": "Windows Server 2019 (Server Core installation)"
+   },
+   {
+    "ProductID": "11923",
+    "CPE": "cpe:2.3:o:microsoft:windows_server_2022:10.0.20348.5870:*:*:*:*:*:*:*",
+    "Value": "Windows Server 2022"
+   },
+   {
+    "ProductID": "11924",
+    "CPE": "cpe:2.3:o:microsoft:windows_server_2022:10.0.20348.5870:*:*:*:*:*:*:*",
+    "Value": "Windows Server 2022 (Server Core installation)"
+   },
+   {
+    "ProductID": "11929",
+    "CPE": "cpe:2.3:o:microsoft:windows_10_21H2:10.0.19044.7846:*:*:*:*:*:x86:*",
+    "Value": "Windows 10 Version 21H2 for 32-bit Systems"
+   },
+   {
+    "ProductID": "11930",
+    "CPE": "cpe:2.3:o:microsoft:windows_10_21H2:10.0.19044.7846:*:*:*:*:*:arm64:*",
+    "Value": "Windows 10 Version 21H2 for ARM64-based Systems"
+   },
+   {
+    "ProductID": "11931",
+    "CPE": "cpe:2.3:o:microsoft:windows_10_21H2:10.0.19044.7846:*:*:*:*:*:x64:*",
+    "Value": "Windows 10 Version 21H2 for x64-based Systems"
+   },
+   {
+    "ProductID": "12097",
+    "CPE": "cpe:2.3:o:microsoft:windows_10_22H2:10.0.19045.7846:*:*:*:*:*:x64:*",
+    "Value": "Windows 10 Version 22H2 for x64-based Systems"
+   },
+   {
+    "ProductID": "12098",
+    "CPE": "cpe:2.3:o:microsoft:windows_10_22H2:10.0.19045.7846:*:*:*:*:*:arm64:*",
+    "Value": "Windows 10 Version 22H2 for ARM64-based Systems"
+   },
+   {
+    "ProductID": "12099",
+    "CPE": "cpe:2.3:o:microsoft:windows_10_22H2:10.0.19045.7846:*:*:*:*:*:x86:*",
+    "Value": "Windows 10 Version 22H2 for 32-bit Systems"
+   },
+   {
+    "ProductID": "12242",
+    "CPE": "cpe:2.3:o:microsoft:windows_11_23H2:10.0.22631.7711:*:*:*:*:*:arm64:*",
+    "Value": "Windows 11 Version 23H2 for ARM64-based Systems"
+   },
+   {
+    "ProductID": "12243",
+    "CPE": "cpe:2.3:o:microsoft:windows_11_23H2:10.0.22631.7711:*:*:*:*:*:x64:*",
+    "Value": "Windows 11 Version 23H2 for x64-based Systems"
+   },
+   {
+    "ProductID": "12389",
+    "CPE": "cpe:2.3:o:microsoft:windows_11_24H2:10.0.26100.9445:*:*:*:*:*:arm64:*",
+    "Value": "Windows 11 Version 24H2 for ARM64-based Systems"
+   },
+   {
+    "ProductID": "12390",
+    "CPE": "cpe:2.3:o:microsoft:windows_11_24H2:10.0.26100.9445:*:*:*:*:*:x64:*",
+    "Value": "Windows 11 Version 24H2 for x64-based Systems"
+   },
+   {
+    "ProductID": "12436",
+    "CPE": "cpe:2.3:o:microsoft:windows_server_2025:10.0.26100.33822:*:*:*:*:*:*:*",
+    "Value": "Windows Server 2025"
+   },
+   {
+    "ProductID": "12437",
+    "CPE": "cpe:2.3:o:microsoft:windows_server_2025:10.0.26100.33822:*:*:*:*:*:*:*",
+    "Value": "Windows Server 2025 (Server Core installation)"
+   },
+   {
+    "ProductID": "20437",
+    "CPE": "cpe:2.3:o:microsoft:windows_11_25H2:10.0.26200.9445:*:*:*:*:*:arm64:*",
+    "Value": "Windows 11 Version 25H2 for ARM64-based Systems"
+   },
+   {
+    "ProductID": "20438",
+    "CPE": "cpe:2.3:o:microsoft:windows_11_25H2:10.0.26200.9445:*:*:*:*:*:x64:*",
+    "Value": "Windows 11 Version 25H2 for x64-based Systems"
+   },
+   {
+    "ProductID": "20853",
+    "CPE": "cpe:2.3:o:microsoft:windows_11_26H1:10.0.28000.3501:*:*:*:*:*:x64:*",
+    "Value": "Windows 11 version 26H1 for x64-based Systems"
+   },
+   {
+    "ProductID": "20854",
+    "CPE": "cpe:2.3:o:microsoft:windows_11_26H1:10.0.28000.3501:*:*:*:*:*:arm64:*",
+    "Value": "Windows 11 Version 26H1 for ARM64-based Systems"
+   },
+   {
+    "ProductID": "21547",
+    "CPE": "cpe:2.3:a:microsoft:azure_cyclecloud:8.9.1:*:*:*:*:*:*:*",
+    "Value": "Azure CycleCloud 8.9.1"
+   },
+   {
+    "ProductID": "21945",
+    "CPE": "cpe:2.3:a:microsoft:windows_11_version_26h2_for_arm64-based_systems:*:*:*:*:*:*:*:*",
+    "Value": "Windows 11 Version 26H2 for ARM64-based Systems"
+   },
+   {
+    "ProductID": "21946",
+    "CPE": "cpe:2.3:a:microsoft:windows_11_version_26h2_for_x64-based_systems:*:*:*:*:*:*:*:*",
+    "Value": "Windows 11 Version 26H2 for x64-based Systems"
+   }
+  ]
+ },
+ "Vulnerability": [
+  {
+   "Title": {
+    "Value": "Windows NTFS Elevation of Privilege Vulnerability"
+   },
+   "CVE": "CVE-2026-100223",
+   "CWE": [
+    {
+     "ID": "CWE-416",
+     "Value": "Use After Free"
+    }
+   ],
+   "ProductStatuses": [
+    {
+     "ProductID": [
+      "10852",
+      "10853",
+      "10816",
+      "10855",
+      "11568",
+      "11569",
+      "11571",
+      "11572",
+      "11929",
+      "11930",
+      "11931",
+      "12099",
+      "12098",
+      "12097",
+      "11923",
+      "11924",
+      "12242",
+      "12243",
+      "12389",
+      "12390",
+      "20437",
+      "20438",
+      "21945",
+      "21946",
+      "12436",
+      "12437",
+      "20854",
+      "20853"
+     ],
+     "Type": 3
+    }
+   ],
+   "CVSSScoreSets": [
+    {
+     "BaseScore": 7.8,
+     "TemporalScore": 6.8,
+     "EnvironmentalScore": 0,
+     "Vector": "CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H/E:U/RL:O/RC:C",
+     "ProductID": [
+      "10852"
+     ],
+     "IsTemporalScoreFieldSpecified": false
+    },
+    {
+     "BaseScore": 7.8,
+     "TemporalScore": 6.8,
+     "EnvironmentalScore": 0,
+     "Vector": "CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H/E:U/RL:O/RC:C",
+     "ProductID": [
+      "10853"
+     ],
+     "IsTemporalScoreFieldSpecified": false
+    },
+    {
+     "BaseScore": 7.8,
+     "TemporalScore": 6.8,
+     "EnvironmentalScore": 0,
+     "Vector": "CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H/E:U/RL:O/RC:C",
+     "ProductID": [
+      "10816"
+     ],
+     "IsTemporalScoreFieldSpecified": false
+    },
+    {
+     "BaseScore": 7.8,
+     "TemporalScore": 6.8,
+     "EnvironmentalScore": 0,
+     "Vector": "CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H/E:U/RL:O/RC:C",
+     "ProductID": [
+      "10855"
+     ],
+     "IsTemporalScoreFieldSpecified": false
+    },
+    {
+     "BaseScore": 7.8,
+     "TemporalScore": 6.8,
+     "EnvironmentalScore": 0,
+     "Vector": "CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H/E:U/RL:O/RC:C",
+     "ProductID": [
+      "11568"
+     ],
+     "IsTemporalScoreFieldSpecified": false
+    },
+    {
+     "BaseScore": 7.8,
+     "TemporalScore": 6.8,
+     "EnvironmentalScore": 0,
+     "Vector": "CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H/E:U/RL:O/RC:C",
+     "ProductID": [
+      "11569"
+     ],
+     "IsTemporalScoreFieldSpecified": false
+    },
+    {
+     "BaseScore": 7.8,
+     "TemporalScore": 6.8,
+     "EnvironmentalScore": 0,
+     "Vector": "CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H/E:U/RL:O/RC:C",
+     "ProductID": [
+      "11571"
+     ],
+     "IsTemporalScoreFieldSpecified": false
+    },
+    {
+     "BaseScore": 7.8,
+     "TemporalScore": 6.8,
+     "EnvironmentalScore": 0,
+     "Vector": "CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H/E:U/RL:O/RC:C",
+     "ProductID": [
+      "11572"
+     ],
+     "IsTemporalScoreFieldSpecified": false
+    },
+    {
+     "BaseScore": 7.8,
+     "TemporalScore": 6.8,
+     "EnvironmentalScore": 0,
+     "Vector": "CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H/E:U/RL:O/RC:C",
+     "ProductID": [
+      "11929"
+     ],
+     "IsTemporalScoreFieldSpecified": false
+    },
+    {
+     "BaseScore": 7.8,
+     "TemporalScore": 6.8,
+     "EnvironmentalScore": 0,
+     "Vector": "CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H/E:U/RL:O/RC:C",
+     "ProductID": [
+      "11930"
+     ],
+     "IsTemporalScoreFieldSpecified": false
+    },
+    {
+     "BaseScore": 7.8,
+     "TemporalScore": 6.8,
+     "EnvironmentalScore": 0,
+     "Vector": "CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H/E:U/RL:O/RC:C",
+     "ProductID": [
+      "11931"
+     ],
+     "IsTemporalScoreFieldSpecified": false
+    },
+    {
+     "BaseScore": 7.8,
+     "TemporalScore": 6.8,
+     "EnvironmentalScore": 0,
+     "Vector": "CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H/E:U/RL:O/RC:C",
+     "ProductID": [
+      "12099"
+     ],
+     "IsTemporalScoreFieldSpecified": false
+    },
+    {
+     "BaseScore": 7.8,
+     "TemporalScore": 6.8,
+     "EnvironmentalScore": 0,
+     "Vector": "CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H/E:U/RL:O/RC:C",
+     "ProductID": [
+      "12098"
+     ],
+     "IsTemporalScoreFieldSpecified": false
+    },
+    {
+     "BaseScore": 7.8,
+     "TemporalScore": 6.8,
+     "EnvironmentalScore": 0,
+     "Vector": "CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H/E:U/RL:O/RC:C",
+     "ProductID": [
+      "12097"
+     ],
+     "IsTemporalScoreFieldSpecified": false
+    },
+    {
+     "BaseScore": 7.8,
+     "TemporalScore": 6.8,
+     "EnvironmentalScore": 0,
+     "Vector": "CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H/E:U/RL:O/RC:C",
+     "ProductID": [
+      "11923"
+     ],
+     "IsTemporalScoreFieldSpecified": false
+    },
+    {
+     "BaseScore": 7.8,
+     "TemporalScore": 6.8,
+     "EnvironmentalScore": 0,
+     "Vector": "CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H/E:U/RL:O/RC:C",
+     "ProductID": [
+      "11924"
+     ],
+     "IsTemporalScoreFieldSpecified": false
+    },
+    {
+     "BaseScore": 7.8,
+     "TemporalScore": 6.8,
+     "EnvironmentalScore": 0,
+     "Vector": "CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H/E:U/RL:O/RC:C",
+     "ProductID": [
+      "12242"
+     ],
+     "IsTemporalScoreFieldSpecified": false
+    },
+    {
+     "BaseScore": 7.8,
+     "TemporalScore": 6.8,
+     "EnvironmentalScore": 0,
+     "Vector": "CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H/E:U/RL:O/RC:C",
+     "ProductID": [
+      "12243"
+     ],
+     "IsTemporalScoreFieldSpecified": false
+    },
+    {
+     "BaseScore": 7.8,
+     "TemporalScore": 6.8,
+     "EnvironmentalScore": 0,
+     "Vector": "CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H/E:U/RL:O/RC:C",
+     "ProductID": [
+      "12389"
+     ],
+     "IsTemporalScoreFieldSpecified": false
+    },
+    {
+     "BaseScore": 7.8,
+     "TemporalScore": 6.8,
+     "EnvironmentalScore": 0,
+     "Vector": "CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H/E:U/RL:O/RC:C",
+     "ProductID": [
+      "12390"
+     ],
+     "IsTemporalScoreFieldSpecified": false
+    },
+    {
+     "BaseScore": 7.8,
+     "TemporalScore": 6.8,
+     "EnvironmentalScore": 0,
+     "Vector": "CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H/E:U/RL:O/RC:C",
+     "ProductID": [
+      "20437"
+     ],
+     "IsTemporalScoreFieldSpecified": false
+    },
+    {
+     "BaseScore": 7.8,
+     "TemporalScore": 6.8,
+     "EnvironmentalScore": 0,
+     "Vector": "CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H/E:U/RL:O/RC:C",
+     "ProductID": [
+      "20438"
+     ],
+     "IsTemporalScoreFieldSpecified": false
+    },
+    {
+     "BaseScore": 7.8,
+     "TemporalScore": 6.8,
+     "EnvironmentalScore": 0,
+     "Vector": "CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H/E:U/RL:O/RC:C",
+     "ProductID": [
+      "21945"
+     ],
+     "IsTemporalScoreFieldSpecified": false
+    },
+    {
+     "BaseScore": 7.8,
+     "TemporalScore": 6.8,
+     "EnvironmentalScore": 0,
+     "Vector": "CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H/E:U/RL:O/RC:C",
+     "ProductID": [
+      "21946"
+     ],
+     "IsTemporalScoreFieldSpecified": false
+    },
+    {
+     "BaseScore": 7.8,
+     "TemporalScore": 6.8,
+     "EnvironmentalScore": 0,
+     "Vector": "CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H/E:U/RL:O/RC:C",
+     "ProductID": [
+      "12436"
+     ],
+     "IsTemporalScoreFieldSpecified": false
+    },
+    {
+     "BaseScore": 7.8,
+     "TemporalScore": 6.8,
+     "EnvironmentalScore": 0,
+     "Vector": "CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H/E:U/RL:O/RC:C",
+     "ProductID": [
+      "12437"
+     ],
+     "IsTemporalScoreFieldSpecified": false
+    },
+    {
+     "BaseScore": 7.8,
+     "TemporalScore": 6.8,
+     "EnvironmentalScore": 0,
+     "Vector": "CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H/E:U/RL:O/RC:C",
+     "ProductID": [
+      "20854"
+     ],
+     "IsTemporalScoreFieldSpecified": false
+    },
+    {
+     "BaseScore": 7.8,
+     "TemporalScore": 6.8,
+     "EnvironmentalScore": 0,
+     "Vector": "CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H/E:U/RL:O/RC:C",
+     "ProductID": [
+      "20853"
+     ],
+     "IsTemporalScoreFieldSpecified": false
+    }
+   ],
+   "Remediations": [
+    {
+     "Description": {
+      "Value": "5131291"
+     },
+     "Supercedence": "5126868",
+     "ProductID": [
+      "10852",
+      "10853",
+      "10816",
+      "10855"
+     ],
+     "Type": 2,
+     "SubType": "Security Update",
+     "FixedBuild": "10.0.14393.9688"
+    },
+    {
+     "ProductID": [
+      "10852",
+      "10853",
+      "10816",
+      "10855"
+     ],
+     "Type": 3,
+     "SubType": "5131291"
+    },
+    {
+     "Description": {
+      "Value": "5131291"
+     },
+     "ProductID": [
+      "10852",
+      "10853",
+      "10816",
+      "10855"
+     ],
+     "Type": 6
+    },
+    {
+     "Description": {
+      "Value": "5131085"
+     },
+     "Supercedence": "5126651",
+     "ProductID": [
+      "11568",
+      "11569",
+      "11571",
+      "11572"
+     ],
+     "Type": 2,
+     "SubType": "Security Update",
+     "FixedBuild": "10.0.17763.9487"
+    },
+    {
+     "ProductID": [
+      "11568",
+      "11569",
+      "11571",
+      "11572"
+     ],
+     "Type": 3,
+     "SubType": "5131085"
+    },
+    {
+     "Description": {
+      "Value": "5131085"
+     },
+     "ProductID": [
+      "11568",
+      "11569",
+      "11571",
+      "11572"
+     ],
+     "Type": 6
+    },
+    {
+     "Description": {
+      "Value": "5131096"
+     },
+     "Supercedence": "5126657",
+     "ProductID": [
+      "11929",
+      "11930",
+      "11931"
+     ],
+     "Type": 2,
+     "SubType": "Security Update",
+     "FixedBuild": "10.0.19044.7846"
+    },
+    {
+     "ProductID": [
+      "11929",
+      "11930",
+      "11931"
+     ],
+     "Type": 3,
+     "SubType": "5131096"
+    },
+    {
+     "Description": {
+      "Value": "5131096"
+     },
+     "ProductID": [
+      "11929",
+      "11930",
+      "11931",
+      "12099",
+      "12098",
+      "12097"
+     ],
+     "Type": 6
+    },
+    {
+     "Description": {
+      "Value": "5131096"
+     },
+     "Supercedence": "5126657",
+     "ProductID": [
+      "12099",
+      "12098",
+      "12097"
+     ],
+     "Type": 2,
+     "SubType": "Security Update",
+     "FixedBuild": "10.0.19045.7846"
+    },
+    {
+     "ProductID": [
+      "12099",
+      "12098",
+      "12097"
+     ],
+     "Type": 3,
+     "SubType": "5131096"
+    },
+    {
+     "Description": {
+      "Value": "5131090"
+     },
+     "Supercedence": "5126655",
+     "ProductID": [
+      "11923",
+      "11924"
+     ],
+     "Type": 2,
+     "SubType": "Security Update",
+     "FixedBuild": "10.0.20348.5870"
+    },
+    {
+     "ProductID": [
+      "11923",
+      "11924"
+     ],
+     "Type": 3,
+     "SubType": "5131090"
+    },
+    {
+     "Description": {
+      "Value": "5131090"
+     },
+     "ProductID": [
+      "11923",
+      "11924"
+     ],
+     "Type": 6
+    },
+    {
+     "Description": {
+      "Value": "5131087"
+     },
+     "Supercedence": "5126653",
+     "ProductID": [
+      "12242",
+      "12243"
+     ],
+     "Type": 2,
+     "SubType": "Security Update",
+     "FixedBuild": "10.0.22631.7711"
+    },
+    {
+     "ProductID": [
+      "12242",
+      "12243"
+     ],
+     "Type": 3,
+     "SubType": "5131087"
+    },
+    {
+     "Description": {
+      "Value": "5132061"
+     },
+     "Supercedence": "5127648",
+     "ProductID": [
+      "12389",
+      "12390"
+     ],
+     "Type": 2,
+     "SubType": "Security Update",
+     "FixedBuild": "10.0.26100.9974"
+    },
+    {
+     "ProductID": [
+      "12389",
+      "12390"
+     ],
+     "Type": 3,
+     "SubType": "5132061"
+    },
+    {
+     "Description": {
+      "Value": "5132043"
+     },
+     "Supercedence": "5127648",
+     "ProductID": [
+      "12389",
+      "12390"
+     ],
+     "Type": 2,
+     "SubType": "Security Update",
+     "FixedBuild": "10.0.26100.9911"
+    },
+    {
+     "ProductID": [
+      "12389",
+      "12390"
+     ],
+     "Type": 3,
+     "SubType": "5132043"
+    },
+    {
+     "Description": {
+      "Value": "5132061"
+     },
+     "Supercedence": "5127648",
+     "ProductID": [
+      "20437",
+      "20438"
+     ],
+     "Type": 2,
+     "SubType": "Security Update",
+     "FixedBuild": "10.0.26200.9974"
+    },
+    {
+     "ProductID": [
+      "20437",
+      "20438"
+     ],
+     "Type": 3,
+     "SubType": "5132061"
+    },
+    {
+     "Description": {
+      "Value": "5132043"
+     },
+     "Supercedence": "5127648",
+     "ProductID": [
+      "20437",
+      "20438"
+     ],
+     "Type": 2,
+     "SubType": "Security Update",
+     "FixedBuild": "10.0.26200.9911"
+    },
+    {
+     "ProductID": [
+      "20437",
+      "20438"
+     ],
+     "Type": 3,
+     "SubType": "5132043"
+    },
+    {
+     "Description": {
+      "Value": "5132061"
+     },
+     "Supercedence": "5127648",
+     "ProductID": [
+      "21945",
+      "21946"
+     ],
+     "Type": 2,
+     "SubType": "Security Update",
+     "FixedBuild": "10.0.26300.9974"
+    },
+    {
+     "ProductID": [
+      "21945",
+      "21946"
+     ],
+     "Type": 3,
+     "SubType": "5132061"
+    },
+    {
+     "Description": {
+      "Value": "5132043"
+     },
+     "Supercedence": "5127648",
+     "ProductID": [
+      "21945",
+      "21946"
+     ],
+     "Type": 2,
+     "SubType": "Security Update",
+     "FixedBuild": "10.0.26300.9911"
+    },
+    {
+     "ProductID": [
+      "21945",
+      "21946"
+     ],
+     "Type": 3,
+     "SubType": "5132043"
+    },
+    {
+     "Description": {
+      "Value": "5131080"
+     },
+     "Supercedence": "5126646",
+     "ProductID": [
+      "12436",
+      "12437"
+     ],
+     "Type": 2,
+     "SubType": "Security Update",
+     "FixedBuild": "10.0.26100.33822"
+    },
+    {
+     "ProductID": [
+      "12436",
+      "12437"
+     ],
+     "Type": 3,
+     "SubType": "5131080"
+    },
+    {
+     "Description": {
+      "Value": "5131080"
+     },
+     "ProductID": [
+      "12436",
+      "12437"
+     ],
+     "Type": 6
+    },
+    {
+     "Description": {
+      "Value": "5131077"
+     },
+     "Supercedence": "5126646",
+     "ProductID": [
+      "12436",
+      "12437"
+     ],
+     "Type": 2,
+     "SubType": "Security Hotpatch Update",
+     "FixedBuild": "10.0.26100.33730"
+    },
+    {
+     "ProductID": [
+      "12436",
+      "12437"
+     ],
+     "Type": 3,
+     "SubType": "5131077"
+    },
+    {
+     "Description": {
+      "Value": "5131077"
+     },
+     "ProductID": [
+      "12436",
+      "12437"
+     ],
+     "Type": 6
+    },
+    {
+     "Description": {
+      "Value": "5132059"
+     },
+     "Supercedence": "5127646",
+     "ProductID": [
+      "20854",
+      "20853"
+     ],
+     "Type": 2,
+     "SubType": "Security Update",
+     "FixedBuild": "10.0.28000.3501"
+    },
+    {
+     "ProductID": [
+      "20854",
+      "20853"
+     ],
+     "Type": 3,
+     "SubType": "5132059"
+    }
+   ],
+   "RevisionHistory": [
+    {
+     "Number": "1.0",
+     "Date": "2026-11-10T08:00:00"
+    }
+   ]
+  },
+  {
+   "Title": {
+    "Value": "Windows DNS Elevation of Privilege Vulnerability"
+   },
+   "CVE": "CVE-2026-105520",
+   "CWE": [
+    {
+     "ID": "CWE-59",
+     "Value": "Improper Link Resolution Before File Access ('Link Following')"
+    }
+   ],
+   "ProductStatuses": [
+    {
+     "ProductID": [
+      "10816",
+      "10855",
+      "11571",
+      "11572",
+      "11923",
+      "11924",
+      "12436",
+      "12437"
+     ],
+     "Type": 3
+    }
+   ],
+   "CVSSScoreSets": [
+    {
+     "BaseScore": 7.2,
+     "TemporalScore": 6.3,
+     "EnvironmentalScore": 0,
+     "Vector": "CVSS:3.1/AV:N/AC:L/PR:H/UI:N/S:U/C:H/I:H/A:H/E:U/RL:O/RC:C",
+     "ProductID": [
+      "10816"
+     ],
+     "IsTemporalScoreFieldSpecified": false
+    },
+    {
+     "BaseScore": 7.2,
+     "TemporalScore": 6.3,
+     "EnvironmentalScore": 0,
+     "Vector": "CVSS:3.1/AV:N/AC:L/PR:H/UI:N/S:U/C:H/I:H/A:H/E:U/RL:O/RC:C",
+     "ProductID": [
+      "10855"
+     ],
+     "IsTemporalScoreFieldSpecified": false
+    },
+    {
+     "BaseScore": 7.2,
+     "TemporalScore": 6.3,
+     "EnvironmentalScore": 0,
+     "Vector": "CVSS:3.1/AV:N/AC:L/PR:H/UI:N/S:U/C:H/I:H/A:H/E:U/RL:O/RC:C",
+     "ProductID": [
+      "11571"
+     ],
+     "IsTemporalScoreFieldSpecified": false
+    },
+    {
+     "BaseScore": 7.2,
+     "TemporalScore": 6.3,
+     "EnvironmentalScore": 0,
+     "Vector": "CVSS:3.1/AV:N/AC:L/PR:H/UI:N/S:U/C:H/I:H/A:H/E:U/RL:O/RC:C",
+     "ProductID": [
+      "11572"
+     ],
+     "IsTemporalScoreFieldSpecified": false
+    },
+    {
+     "BaseScore": 7.2,
+     "TemporalScore": 6.3,
+     "EnvironmentalScore": 0,
+     "Vector": "CVSS:3.1/AV:N/AC:L/PR:H/UI:N/S:U/C:H/I:H/A:H/E:U/RL:O/RC:C",
+     "ProductID": [
+      "11923"
+     ],
+     "IsTemporalScoreFieldSpecified": false
+    },
+    {
+     "BaseScore": 7.2,
+     "TemporalScore": 6.3,
+     "EnvironmentalScore": 0,
+     "Vector": "CVSS:3.1/AV:N/AC:L/PR:H/UI:N/S:U/C:H/I:H/A:H/E:U/RL:O/RC:C",
+     "ProductID": [
+      "11924"
+     ],
+     "IsTemporalScoreFieldSpecified": false
+    },
+    {
+     "BaseScore": 7.2,
+     "TemporalScore": 6.3,
+     "EnvironmentalScore": 0,
+     "Vector": "CVSS:3.1/AV:N/AC:L/PR:H/UI:N/S:U/C:H/I:H/A:H/E:U/RL:O/RC:C",
+     "ProductID": [
+      "12436"
+     ],
+     "IsTemporalScoreFieldSpecified": false
+    },
+    {
+     "BaseScore": 7.2,
+     "TemporalScore": 6.3,
+     "EnvironmentalScore": 0,
+     "Vector": "CVSS:3.1/AV:N/AC:L/PR:H/UI:N/S:U/C:H/I:H/A:H/E:U/RL:O/RC:C",
+     "ProductID": [
+      "12437"
+     ],
+     "IsTemporalScoreFieldSpecified": false
+    }
+   ],
+   "Remediations": [
+    {
+     "Description": {
+      "Value": "5131291"
+     },
+     "Supercedence": "5126868",
+     "ProductID": [
+      "10816",
+      "10855"
+     ],
+     "Type": 2,
+     "SubType": "Security Update",
+     "FixedBuild": "10.0.14393.9688"
+    },
+    {
+     "ProductID": [
+      "10816",
+      "10855"
+     ],
+     "Type": 3,
+     "SubType": "5131291"
+    },
+    {
+     "Description": {
+      "Value": "5131291"
+     },
+     "ProductID": [
+      "10816",
+      "10855"
+     ],
+     "Type": 6
+    },
+    {
+     "Description": {
+      "Value": "5131085"
+     },
+     "Supercedence": "5126651",
+     "ProductID": [
+      "11571",
+      "11572"
+     ],
+     "Type": 2,
+     "SubType": "Security Update",
+     "FixedBuild": "10.0.17763.9487"
+    },
+    {
+     "ProductID": [
+      "11571",
+      "11572"
+     ],
+     "Type": 3,
+     "SubType": "5131085"
+    },
+    {
+     "Description": {
+      "Value": "5131085"
+     },
+     "ProductID": [
+      "11571",
+      "11572"
+     ],
+     "Type": 6
+    },
+    {
+     "Description": {
+      "Value": "5131090"
+     },
+     "Supercedence": "5126655",
+     "ProductID": [
+      "11923",
+      "11924"
+     ],
+     "Type": 2,
+     "SubType": "Security Update",
+     "FixedBuild": "10.0.20348.5870"
+    },
+    {
+     "ProductID": [
+      "11923",
+      "11924"
+     ],
+     "Type": 3,
+     "SubType": "5131090"
+    },
+    {
+     "Description": {
+      "Value": "5131090"
+     },
+     "ProductID": [
+      "11923",
+      "11924"
+     ],
+     "Type": 6
+    },
+    {
+     "Description": {
+      "Value": "5131080"
+     },
+     "Supercedence": "5126646",
+     "ProductID": [
+      "12436",
+      "12437"
+     ],
+     "Type": 2,
+     "SubType": "Security Update",
+     "FixedBuild": "10.0.26100.33822"
+    },
+    {
+     "ProductID": [
+      "12436",
+      "12437"
+     ],
+     "Type": 3,
+     "SubType": "5131080"
+    },
+    {
+     "Description": {
+      "Value": "5131080"
+     },
+     "ProductID": [
+      "12436",
+      "12437"
+     ],
+     "Type": 6
+    },
+    {
+     "Description": {
+      "Value": "5131077"
+     },
+     "Supercedence": "5126646",
+     "ProductID": [
+      "12436",
+      "12437"
+     ],
+     "Type": 2,
+     "SubType": "Security Hotpatch Update",
+     "FixedBuild": "10.0.26100.33730"
+    },
+    {
+     "ProductID": [
+      "12436",
+      "12437"
+     ],
+     "Type": 3,
+     "SubType": "5131077"
+    },
+    {
+     "Description": {
+      "Value": "5131077"
+     },
+     "ProductID": [
+      "12436",
+      "12437"
+     ],
+     "Type": 6
+    }
+   ],
+   "RevisionHistory": [
+    {
+     "Number": "1.0",
+     "Date": "2026-11-10T08:00:00"
+    }
+   ]
+  },
+  {
+   "Title": {
+    "Value": "Windows Shell Information Disclosure Vulnerability"
+   },
+   "CVE": "CVE-2026-102868",
+   "CWE": [
+    {
+     "ID": "CWE-497",
+     "Value": "Exposure of Sensitive System Information to an Unauthorized Control Sphere"
+    }
+   ],
+   "ProductStatuses": [
+    {
+     "ProductID": [
+      "12242",
+      "12243",
+      "12389",
+      "12390",
+      "20437",
+      "20438",
+      "20854",
+      "20853"
+     ],
+     "Type": 3
+    }
+   ],
+   "CVSSScoreSets": [
+    {
+     "BaseScore": 5.5,
+     "TemporalScore": 4.8,
+     "EnvironmentalScore": 0,
+     "Vector": "CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N/E:U/RL:O/RC:C",
+     "ProductID": [
+      "12242"
+     ],
+     "IsTemporalScoreFieldSpecified": false
+    },
+    {
+     "BaseScore": 5.5,
+     "TemporalScore": 4.8,
+     "EnvironmentalScore": 0,
+     "Vector": "CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N/E:U/RL:O/RC:C",
+     "ProductID": [
+      "12243"
+     ],
+     "IsTemporalScoreFieldSpecified": false
+    },
+    {
+     "BaseScore": 5.5,
+     "TemporalScore": 4.8,
+     "EnvironmentalScore": 0,
+     "Vector": "CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N/E:U/RL:O/RC:C",
+     "ProductID": [
+      "12389"
+     ],
+     "IsTemporalScoreFieldSpecified": false
+    },
+    {
+     "BaseScore": 5.5,
+     "TemporalScore": 4.8,
+     "EnvironmentalScore": 0,
+     "Vector": "CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N/E:U/RL:O/RC:C",
+     "ProductID": [
+      "12390"
+     ],
+     "IsTemporalScoreFieldSpecified": false
+    },
+    {
+     "BaseScore": 5.5,
+     "TemporalScore": 4.8,
+     "EnvironmentalScore": 0,
+     "Vector": "CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N/E:U/RL:O/RC:C",
+     "ProductID": [
+      "20437"
+     ],
+     "IsTemporalScoreFieldSpecified": false
+    },
+    {
+     "BaseScore": 5.5,
+     "TemporalScore": 4.8,
+     "EnvironmentalScore": 0,
+     "Vector": "CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N/E:U/RL:O/RC:C",
+     "ProductID": [
+      "20438"
+     ],
+     "IsTemporalScoreFieldSpecified": false
+    },
+    {
+     "BaseScore": 5.5,
+     "TemporalScore": 4.8,
+     "EnvironmentalScore": 0,
+     "Vector": "CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N/E:U/RL:O/RC:C",
+     "ProductID": [
+      "20854"
+     ],
+     "IsTemporalScoreFieldSpecified": false
+    },
+    {
+     "BaseScore": 5.5,
+     "TemporalScore": 4.8,
+     "EnvironmentalScore": 0,
+     "Vector": "CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N/E:U/RL:O/RC:C",
+     "ProductID": [
+      "20853"
+     ],
+     "IsTemporalScoreFieldSpecified": false
+    }
+   ],
+   "Remediations": [
+    {
+     "Description": {
+      "Value": "5131087"
+     },
+     "Supercedence": "5126653",
+     "ProductID": [
+      "12242",
+      "12243"
+     ],
+     "Type": 2,
+     "SubType": "Security Update",
+     "FixedBuild": "10.0.22631.7711"
+    },
+    {
+     "ProductID": [
+      "12242",
+      "12243"
+     ],
+     "Type": 3,
+     "SubType": "5131087"
+    },
+    {
+     "Description": {
+      "Value": "5124008"
+     },
+     "Supercedence": "5121003",
+     "ProductID": [
+      "12389",
+      "12390"
+     ],
+     "Type": 2,
+     "SubType": "Security Update",
+     "FixedBuild": "10.0.26100.9445"
+    },
+    {
+     "ProductID": [
+      "12389",
+      "12390"
+     ],
+     "Type": 3,
+     "SubType": "5124008"
+    },
+    {
+     "Description": {
+      "Value": "5124008"
+     },
+     "Supercedence": "5121003",
+     "ProductID": [
+      "20437",
+      "20438"
+     ],
+     "Type": 2,
+     "SubType": "Security Update",
+     "FixedBuild": "10.0.26200.9445"
+    },
+    {
+     "ProductID": [
+      "20437",
+      "20438"
+     ],
+     "Type": 3,
+     "SubType": "5124008"
+    },
+    {
+     "Description": {
+      "Value": "5132059"
+     },
+     "Supercedence": "5127646",
+     "ProductID": [
+      "20854",
+      "20853"
+     ],
+     "Type": 2,
+     "SubType": "Security Update",
+     "FixedBuild": "10.0.28000.3501"
+    },
+    {
+     "ProductID": [
+      "20854",
+      "20853"
+     ],
+     "Type": 3,
+     "SubType": "5132059"
+    }
+   ],
+   "RevisionHistory": [
+    {
+     "Number": "1.0",
+     "Date": "2026-11-10T08:00:00"
+    }
+   ]
+  },
+  {
+   "Title": {
+    "Value": "Azure CycleCloud Elevation of Privilege Vulnerability"
+   },
+   "CVE": "CVE-2026-102224",
+   "CWE": [
+    {
+     "ID": "CWE-78",
+     "Value": "Improper Neutralization of Special Elements used in an OS Command ('OS Command Injection')"
+    }
+   ],
+   "ProductStatuses": [
+    {
+     "ProductID": [
+      "21547"
+     ],
+     "Type": 3
+    }
+   ],
+   "CVSSScoreSets": [
+    {
+     "BaseScore": 8.4,
+     "TemporalScore": 7.3,
+     "EnvironmentalScore": 0,
+     "Vector": "CVSS:3.1/AV:N/AC:L/PR:H/UI:R/S:C/C:H/I:H/A:H/E:U/RL:O/RC:C",
+     "ProductID": [
+      "21547"
+     ],
+     "IsTemporalScoreFieldSpecified": false
+    }
+   ],
+   "Remediations": [
+    {
+     "Description": {
+      "Value": "Release Notes"
+     },
+     "ProductID": [
+      "21547"
+     ],
+     "Type": 2,
+     "SubType": "Security Update",
+     "FixedBuild": "8.10.1"
+    },
+    {
+     "ProductID": [
+      "21547"
+     ],
+     "Type": 3,
+     "SubType": "Release Notes"
+    }
+   ],
+   "RevisionHistory": [
+    {
+     "Number": "1.0",
+     "Date": "2026-11-10T08:00:00"
+    }
+   ]
+  }
+ ]
+}

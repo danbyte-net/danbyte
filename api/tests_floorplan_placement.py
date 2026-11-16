@@ -434,6 +434,63 @@ class RoleLookTests(_Base):
         self.assertEqual(self._tiles()[0]["linked"]["role"]["color"], "#a855f7")
 
 
+class FilterFieldsTests(_Base):
+    """What the plan's filter reads off a tile's link: the object's type,
+    status and tags - in one read, however many tiles there are."""
+
+    def setUp(self):
+        super().setUp()
+        from core.models import Tag
+
+        from .models import Manufacturer, Status
+
+        maker = Manufacturer.objects.create(tenant=self.tenant, name="Ubi", slug="ubi")
+        self.dtype = DeviceType.objects.create(
+            tenant=self.tenant, manufacturer=maker, name="U6 Pro"
+        )
+        self.status = Status.objects.create(
+            tenant=self.tenant, name="Active", slug="active", color="#22c55e"
+        )
+        self.tag = Tag.objects.create(tenant=self.tenant, name="Wi-Fi", slug="wifi")
+
+    def _place(self, n):
+        for i in range(n):
+            dev = Device.objects.create(
+                tenant=self.tenant, name=f"ap{n}-{i}", site=self.site,
+                device_type=self.dtype, status=self.status,
+            )
+            dev.tags.add(self.tag)
+            FloorPlanTile.objects.create(
+                floor_plan=self.plan, x=i, y=0, device=dev, link_kind="device"
+            )
+
+    def test_a_device_tile_carries_its_type_status_and_tags(self):
+        self._place(1)
+        tile = self.client.get(f"/api/floor-plans/{self.plan.id}/contents/").json()["tiles"][0]
+        self.assertEqual(tile["linked"]["type"], {"id": str(self.dtype.id), "name": "U6 Pro"})
+        self.assertEqual(tile["linked"]["status"]["name"], "Active")
+        self.assertEqual([t["slug"] for t in tile["linked"]["tags"]], ["wifi"])
+
+    def test_a_hidden_link_names_none_of_them(self):
+        from .floor_plan_placement import hidden_link
+
+        self.assertNotIn("tags", hidden_link("device"))
+
+    def test_the_tags_cost_no_query_per_tile(self):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        url = f"/api/floor-plans/{self.plan.id}/contents/"
+        self._place(2)
+        with CaptureQueriesContext(connection) as two:
+            self.client.get(url)
+        FloorPlanTile.objects.filter(floor_plan=self.plan).delete()
+        self._place(6)
+        with CaptureQueriesContext(connection) as six:
+            self.client.get(url)
+        self.assertEqual(len(six), len(two))
+
+
 class TileDisplayTests(_Base):
     def setUp(self):
         super().setUp()

@@ -6,9 +6,10 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
-import type { FloorPlanReportTables } from "@/lib/api"
+import type { CableScheduleRow, FloorPlanReportTables } from "@/lib/api"
 import { downloadBlob } from "@/lib/table-export"
 import type * as TableExport from "@/lib/table-export"
 
@@ -34,7 +35,7 @@ vi.mock("@/lib/table-export", async (load) => ({
   downloadBlob: vi.fn(),
 }))
 vi.mock("sonner", () => ({
-  toast: { error: vi.fn(), warning: vi.fn(), success: vi.fn() },
+  toast: { error: vi.fn(), warning: vi.fn(), success: vi.fn(), info: vi.fn() },
 }))
 
 const LINK = "/api/floor-plans/p1/export/report/abcdefghijklmnopqrstuvwxyz0123/"
@@ -72,26 +73,76 @@ const draw = vi.fn<DrawSheet>(({ floor }) =>
 
 function dialog(over: Partial<React.ComponentProps<typeof ReportDialog>> = {}) {
   draw.mockClear()
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
-    <ReportDialog
-      planId="p1"
-      name="Demo tower B1"
-      open
-      onOpenChange={() => {}}
-      areas={[
-        { id: "a1", name: "Server room", kind: "room" },
-        { id: "a2", name: "Plant room", kind: "room" },
-      ]}
-      levels={[
-        { id: "f0", name: "B1" },
-        { id: "p1", name: "Ground" },
-      ]}
-      screenBox={() => ({ x: 40, y: 80, w: 400, h: 200 })}
-      hiddenTiles={["t9"]}
-      draw={draw}
-      {...over}
-    />
+    <QueryClientProvider client={qc}>
+      <ReportDialog
+        planId="p1"
+        name="Demo tower B1"
+        open
+        onOpenChange={() => {}}
+        areas={[
+          { id: "a1", name: "Server room", kind: "room" },
+          { id: "a2", name: "Plant room", kind: "room" },
+        ]}
+        levels={[
+          { id: "f0", name: "B1" },
+          { id: "p1", name: "Ground" },
+        ]}
+        screenBox={() => ({ x: 40, y: 80, w: 400, h: 200 })}
+        hiddenTiles={["t9"]}
+        draw={draw}
+        {...over}
+      />
+    </QueryClientProvider>
   )
+}
+
+/** Answers by URL: the schedule's rows, the layout of trace pages, the
+ * report's tables and its print link. */
+function answerByUrl(routes: Record<string, unknown>) {
+  vi.spyOn(globalThis, "fetch").mockImplementation((url, init) => {
+    const u = String(url)
+    posted.push({
+      url: u,
+      body: JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>,
+    })
+    const key = Object.keys(routes).find((k) => u.includes(k))
+    return Promise.resolve(
+      new Response(JSON.stringify(key ? routes[key] : {}), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      })
+    )
+  })
+}
+
+function scheduleRow(id: string, label: string): CableScheduleRow {
+  return {
+    id,
+    label,
+    type: "smf",
+    type_display: "OS2",
+    color: "",
+    status: null,
+    a: [
+      { device: "leaf", port: "e1", room: "", on_floor: true, hidden: false },
+    ],
+    b: [
+      { device: "spine", port: "e2", room: "", on_floor: true, hidden: false },
+    ],
+    trays: [],
+    route: "",
+    route_source: "",
+    riser: null,
+    computed_m: null,
+    length: null,
+    length_unit: "m",
+    length_m: null,
+    length_source: "",
+    notes: "",
+    rooms: [],
+  }
 }
 
 const tab = (name: string) =>
@@ -116,6 +167,64 @@ describe("ReportDialog", () => {
     expect(draw).toHaveBeenCalledWith(
       expect.objectContaining({ scope: "floor", floor: undefined })
     )
+  })
+
+  it("posts bundles: the sheets drawn without cables", async () => {
+    answer({ url: LINK })
+    dialog()
+    tab("Bundles")
+    fireEvent.click(screen.getByRole("button", { name: /Download/ }))
+    await waitFor(() => expect(posted).toHaveLength(1))
+    expect(posted[0].body.cables).toBe("bundles")
+    expect(draw).toHaveBeenCalledWith(
+      expect.objectContaining({ cables: false })
+    )
+  })
+
+  it("adds a trace page per cable selected on the plan", async () => {
+    const planSvg = vi.fn((_p: unknown, box?: unknown) =>
+      Promise.resolve(box ? "<svg viewBox='0 0 10 10'/>" : null)
+    )
+    answerByUrl({
+      "/cable-schedule/closeups/": {
+        pages: [],
+        traces: [
+          { label: "T1", cable: "c1", box: [0, 0, 400, 200], mm_per_px: 0.2 },
+        ],
+      },
+      "/cable-schedule/": {
+        rows: [scheduleRow("c1", "C-1"), scheduleRow("c2", "C-2")],
+      },
+      "/export/report/": { url: LINK },
+    })
+    dialog({ planSvg, selectedCables: ["c1", "gone"] })
+    check("Cable schedule")
+    expect(
+      screen
+        .getByRole("checkbox", { name: "Trace pages" })
+        .getAttribute("aria-checked")
+    ).toBe("true")
+    await waitFor(() => expect(screen.getByText("C-1")).toBeTruthy())
+    fireEvent.click(screen.getByRole("button", { name: /Download/ }))
+    await waitFor(() =>
+      expect(
+        posted.some((p) => p.url.includes("/export/report/?print=1"))
+      ).toBe(true)
+    )
+    const layout = posted.find((p) => p.url.includes("/closeups/"))!
+    expect(layout.url).toContain("trace=c1")
+    expect(layout.url).toContain("closeups=off")
+    expect(layout.url).not.toContain("gone")
+    expect(planSvg).toHaveBeenCalledWith(
+      { size: "a3", orientation: "landscape" },
+      { box: { x: 0, y: 0, w: 400, h: 200 }, mmPerPx: 0.2 },
+      { cables: false }
+    )
+    const report = posted.find((p) =>
+      p.url.includes("/export/report/?print=1")
+    )!
+    expect(report.body.trace).toEqual(["c1"])
+    expect(report.body.trace_svgs).toEqual({ c1: "<svg viewBox='0 0 10 10'/>" })
   })
 
   it("posts this view with the screen's box", async () => {

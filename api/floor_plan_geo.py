@@ -157,11 +157,11 @@ def _parse_basemap(raw):
 
 
 def _attribution(basemap: str) -> str:
-    from .site_map_views import effective_tiles
+    from .site_map_views import effective_tiles, street_attribution
 
     tiles = effective_tiles()
     return plain_attribution(
-        tiles["satellite"]["attribution"] if basemap == "sat" else tiles["attribution"]
+        tiles["satellite"]["attribution"] if basemap == "sat" else street_attribution(tiles)
     )
 
 

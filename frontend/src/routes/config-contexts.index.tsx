@@ -63,14 +63,16 @@ function ConfigContextsPage() {
         onChange: setQ,
         placeholder: "Filter contexts…",
       }}
+      add={
+        canAdd && (
+          <Button size="sm" asChild>
+            <Link to="/config-contexts/new">Add context</Link>
+          </Button>
+        )
+      }
       actions={
         <>
           <TableActions ioType="configcontext" />
-          {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/config-contexts/new">Add context</Link>
-            </Button>
-          )}
         </>
       }
       query={query}

@@ -26,6 +26,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu"
 
 const SIZE_LABEL: Record<keyof CabinetSizes, string> = {
   inner_width_mm: "Plate width",
@@ -58,7 +59,7 @@ const railValue = (field: CabinetSyncRailField, v: number | string) =>
  * move the devices on a rail would not survive is listed as blocked, with
  * the reason, and skipped.
  */
-export function CabinetSyncTypeButton({ cabinet }: { cabinet: Cabinet }) {
+export function useCabinetSyncType(cabinet: Cabinet) {
   const qc = useQueryClient()
   const { canDo } = useMe()
   const [diff, setDiff] = useState<CabinetSyncDiff | null>(null)
@@ -99,7 +100,8 @@ export function CabinetSyncTypeButton({ cabinet }: { cabinet: Cabinet }) {
     onError: (err) => apiErrorToast(err),
   })
 
-  if (!cabinet.cabinet_type || !canDo("cabinet", "change")) return null
+  if (!cabinet.cabinet_type || !canDo("cabinet", "change"))
+    return { item: null, dialog: null }
 
   const sizes = Object.entries(diff?.sizes ?? {}) as [
     keyof CabinetSizes,
@@ -123,130 +125,130 @@ export function CabinetSyncTypeButton({ cabinet }: { cabinet: Cabinet }) {
     if (!apply.isPending) setDiff(null)
   }
 
-  return (
-    <>
-      <Button
-        variant="outline"
-        size="sm"
-        disabled={check.isPending}
-        onClick={() => check.mutate()}
-      >
-        <RefreshCw className="h-3.5 w-3.5" />
-        {check.isPending ? "Checking…" : "Sync from type"}
-      </Button>
+  // The item goes in the detail header's More menu (#507); the dialog
+  // outside it, as the menu unmounts its items when it closes.
+  const item = (
+    <DropdownMenuItem
+      disabled={check.isPending}
+      onSelect={() => check.mutate()}
+    >
+      <RefreshCw className="h-3.5 w-3.5" />
+      {check.isPending ? "Checking…" : "Sync from type"}
+    </DropdownMenuItem>
+  )
+  const dialog = (
+    <Dialog open={!!diff} onOpenChange={(o) => !o && close()}>
+      <DialogContent size="lg">
+        <DialogHeader>
+          <DialogTitle>
+            Sync with {cabinetTypeLabel(cabinet.cabinet_type)}
+          </DialogTitle>
+        </DialogHeader>
 
-      <Dialog open={!!diff} onOpenChange={(o) => !o && close()}>
-        <DialogContent size="lg">
-          <DialogHeader>
-            <DialogTitle>
-              Sync with {cabinetTypeLabel(cabinet.cabinet_type)}
-            </DialogTitle>
-          </DialogHeader>
+        <div className="grid gap-4 text-sm">
+          {inStep && blocked.length === 0 && (
+            <p className="text-muted-foreground">
+              This cabinet matches its type.
+            </p>
+          )}
 
-          <div className="grid gap-4 text-sm">
-            {inStep && blocked.length === 0 && (
-              <p className="text-muted-foreground">
-                This cabinet matches its type.
-              </p>
-            )}
+          {hasSizes && (
+            <Part
+              title="Sizes"
+              checked={pick ? withSizes : undefined}
+              onCheckedChange={setWithSizes}
+            >
+              {sizes.map(([field, v]) => (
+                <Change
+                  key={field}
+                  label={SIZE_LABEL[field]}
+                  from={mm(v.cabinet)}
+                  to={mm(v.type)}
+                />
+              ))}
+            </Part>
+          )}
 
-            {hasSizes && (
-              <Part
-                title="Sizes"
-                checked={pick ? withSizes : undefined}
-                onCheckedChange={setWithSizes}
-              >
-                {sizes.map(([field, v]) => (
-                  <Change
-                    key={field}
-                    label={SIZE_LABEL[field]}
-                    from={mm(v.cabinet)}
-                    to={mm(v.type)}
-                  />
-                ))}
-              </Part>
-            )}
+          {hasRails && (
+            <Part
+              title="Rails"
+              checked={pick ? withRails : undefined}
+              onCheckedChange={setWithRails}
+            >
+              {add.length > 0 && (
+                <div className="flex items-baseline gap-2">
+                  <span className="min-w-28 text-muted-foreground">Add</span>
+                  <span>{add.join(", ")}</span>
+                </div>
+              )}
+              {update.map((u) =>
+                RAIL_FIELDS.flatMap((field) => {
+                  const v = u.changes[field]
+                  return v
+                    ? [
+                        <Change
+                          key={`${u.label}-${field}`}
+                          label={`${u.label} ${RAIL_FIELD_LABEL[field].toLowerCase()}`}
+                          from={railValue(field, v.cabinet)}
+                          to={railValue(field, v.type)}
+                        />,
+                      ]
+                    : []
+                })
+              )}
+            </Part>
+          )}
 
-            {hasRails && (
-              <Part
-                title="Rails"
-                checked={pick ? withRails : undefined}
-                onCheckedChange={setWithRails}
-              >
-                {add.length > 0 && (
-                  <div className="flex items-baseline gap-2">
-                    <span className="min-w-28 text-muted-foreground">Add</span>
-                    <span>{add.join(", ")}</span>
-                  </div>
-                )}
-                {update.map((u) =>
-                  RAIL_FIELDS.flatMap((field) => {
-                    const v = u.changes[field]
+          {blocked.length > 0 && (
+            <Part title="Blocked, kept">
+              {blocked.map((b) => (
+                <div key={b.label} data-blocked={b.label} className="grid">
+                  {RAIL_FIELDS.flatMap((field) => {
+                    const v = b.changes[field]
                     return v
                       ? [
                           <Change
-                            key={`${u.label}-${field}`}
-                            label={`${u.label} ${RAIL_FIELD_LABEL[field].toLowerCase()}`}
+                            key={field}
+                            label={`${b.label} ${RAIL_FIELD_LABEL[field].toLowerCase()}`}
                             from={railValue(field, v.cabinet)}
                             to={railValue(field, v.type)}
+                            kept
                           />,
                         ]
                       : []
-                  })
-                )}
-              </Part>
-            )}
+                  })}
+                  <p className="text-xs text-amber-600 dark:text-amber-400">
+                    {b.reason}
+                  </p>
+                </div>
+              ))}
+            </Part>
+          )}
 
-            {blocked.length > 0 && (
-              <Part title="Blocked, kept">
-                {blocked.map((b) => (
-                  <div key={b.label} data-blocked={b.label} className="grid">
-                    {RAIL_FIELDS.flatMap((field) => {
-                      const v = b.changes[field]
-                      return v
-                        ? [
-                            <Change
-                              key={field}
-                              label={`${b.label} ${RAIL_FIELD_LABEL[field].toLowerCase()}`}
-                              from={railValue(field, v.cabinet)}
-                              to={railValue(field, v.type)}
-                              kept
-                            />,
-                          ]
-                        : []
-                    })}
-                    <p className="text-xs text-amber-600 dark:text-amber-400">
-                      {b.reason}
-                    </p>
-                  </div>
-                ))}
-              </Part>
-            )}
+          {extra.length > 0 && (
+            <Part title="Not on the type, kept">
+              <span>{extra.join(", ")}</span>
+            </Part>
+          )}
+        </div>
 
-            {extra.length > 0 && (
-              <Part title="Not on the type, kept">
-                <span>{extra.join(", ")}</span>
-              </Part>
-            )}
-          </div>
-
-          <DialogFooter>
-            <Button variant="ghost" onClick={close} disabled={apply.isPending}>
-              {inStep ? "Close" : "Cancel"}
+        <DialogFooter>
+          <Button variant="ghost" onClick={close} disabled={apply.isPending}>
+            {inStep ? "Close" : "Cancel"}
+          </Button>
+          {!inStep && (
+            <Button
+              disabled={apply.isPending || (!sizesOn && !railsOn)}
+              onClick={() => apply.mutate({ sizes: sizesOn, rails: railsOn })}
+            >
+              {apply.isPending ? "Applying…" : "Apply"}
             </Button>
-            {!inStep && (
-              <Button
-                disabled={apply.isPending || (!sizesOn && !railsOn)}
-                onClick={() => apply.mutate({ sizes: sizesOn, rails: railsOn })}
-              >
-                {apply.isPending ? "Applying…" : "Apply"}
-              </Button>
-            )}
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
+  return { item, dialog }
 }
 
 /** One part of the difference, under its heading; with `checked`, the

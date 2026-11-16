@@ -618,6 +618,52 @@ between members.
   stood on average. Layer bands sort and carry a stack as one card, by its
   master's role.
 
+### Grouped clusters {#grouped-clusters}
+
+**Display ▸ Group clusters** draws the hosts of each
+[cluster](clusters.md) as one card - the cluster's name and *N hosts* -
+the way a switch stack is drawn as one thing. It is off by default, saved
+with the view and in the link (`clusters=on`), and offered on the Diagram
+(not on a map grouped by site or location, or a trace map) to a user with
+view on clusters.
+
+- **Which devices are hosts:** a device whose **Cluster** is set, and a
+  device running the cluster's VMs - the same hosts the cluster page's
+  **Hosts** tab lists. A device with a cluster of its own counts for that
+  one; one hosting VMs of several clusters counts for the one most of its
+  VMs run in (then by name). A cluster groups when two or more of its hosts
+  are on the map.
+- **A virtual chassis wins:** a device that is both a member of a virtual
+  chassis and a cluster host stays in its
+  [chassis' stack](#virtual-chassis-stacks), never in the cluster's card or
+  frame. A device can stand in one frame only, and a chassis is one
+  switch - one control plane - where a cluster is a group of separate
+  hosts. Its cables to the cluster's other hosts are drawn to the card like
+  any other.
+- **The card:** its lines are counted - one line from the card to each
+  card its hosts are cabled to, labelled with the number of cables (*4x*),
+  as a map grouped by site counts the cables between sites. Click a line
+  for the count and the cable types. The cables between two of its hosts
+  are not drawn; the panel counts them. Lines laid over the cables (LLDP,
+  BGP, dependencies, circuits) move onto the card. A card takes its hosts'
+  role, site and location when they all share one, so Levels and bands
+  place it where they stood. Click the card for its panel - its hosts on
+  the map, *Open cluster* and *Expand*.
+- **Expand and collapse:** double-click the card (or its panel's *Expand*,
+  or right-click ▸ *Top-down* / *Left-right*) to open it into a frame round
+  its hosts, drawn exactly as a virtual chassis' stack: the strip carries
+  the name and the host count and opens the cluster, the toolbar turns it,
+  moves the name and *Collapse*s it back into its card. Each is one undo
+  step, saved with the view. The card and the frame share one place on the
+  arrangement (`cl:<id>`), so either stands where the other did.
+- **Who sees what:** a cluster groups only for a user with view on it, and
+  only the hosts they may view as devices count. Without view on clusters
+  the toggle is not offered and the hosts are drawn apart.
+- **Exports:** an open cluster's frame is in every file the way a chassis
+  stack is - a frame with its name on the strip, linked to the cluster, a
+  swimlane in draw.io; a collapsed cluster is a card with its counted
+  lines.
+
 ## Routing view {#routing-view}
 
 The **Routing** tab (`?tab=routing`) draws how the network routes rather
@@ -1084,6 +1130,50 @@ You see the line only with view on circuits and on **both** devices: when
 one end's device is outside your `device.view` scope the line is left out,
 so the far device is never named.
 
+## Dependencies {#dependencies}
+
+**Display ▸ Dependencies** draws the
+[device dependencies](../dcim/dependencies.md) between the cards on the
+map (`?deps=on` in the URL; a saved view keeps the setting). Off by
+default, and offered only with view on device dependencies.
+
+- **The line** runs straight from card centre to card centre, over the
+  wiring, with an **arrow at the downstream card**: the arrow points the way
+  an outage travels. It wears its [medium's](../dcim/dependencies.md#media)
+  colour and line style (solid, dashed or dotted); a dependency without a
+  medium is a plain grey line. A **peer** link has no arrow.
+- **Redundancy groups** ride on the line as a small label, so the upstreams
+  that back each other read as a set.
+- **Hover** names it: `acc-7 depends on dist-2 · Fibre · group uplinks`.
+- Dependency lines never move a card: the layout follows the cables.
+- **Hide** them in the Objects sidebar: **Dependencies** is a link family of
+  its own under Cables, with a row per dependency and an eye on each.
+- Only the dependencies between two cards on the map are drawn, and only
+  those you may view between devices you may view. A grouped map has no
+  dependency lines, and the exports (PDF, SVG, PNG, draw.io) leave them out.
+
+### What if this fails? {#what-if}
+
+Right-click a device card → **What if this fails?** rings the cards it
+affects:
+
+| Ring | Means |
+|---|---|
+| thick red | the device you asked about |
+| red | goes down with it - every upstream of one of its redundancy groups is down |
+| dashed amber | loses redundancy - part of a group is down |
+
+Every other card fades. A panel lists the devices that go down and those
+that lose redundancy, each a link to its device, with **Plan maintenance**
+(a new [maintenance event](maintenance.md#from-a-devices-dependents) with
+these impacts). Affected devices that are not on this map are counted in an
+*n affected off the map* chip; **Clear** there, or **Close** on the panel,
+ends it. The answer is the device page's
+[What if this fails?](../dcim/dependencies.md#the-dependencies-tab) - worked
+out over every dependency, listing only the devices you may view - and the
+item is offered only with view on device dependencies. The Dependencies
+layer does not have to be on.
+
 ## Hand-picked maps {#building-a-diagram}
 
 A map normally shows whatever its filters match - a **filtered map**. A
@@ -1199,9 +1289,9 @@ The map has the same eyes as the [site map](site-map.md) and the
 [floor plans](floor-plans.md). In the **Objects** sidebar, every group
 header has one - a **role**, a **site** or a **location** (whichever the
 Devices list is grouped by), a **link family** (a cable type, **No type**
-for cables without one, **LLDP** for discovered links, or **BGP sessions**,
-and **Provider networks**, and **Circuits** for the circuits between your
-sites) - and so does every device row, every cable row, every provider
+for cables without one, **LLDP** for discovered links, **BGP sessions**,
+or **Dependencies**, and **Provider networks**, and **Circuits** for the
+circuits between your sites) - and so does every device row, every cable row, every provider
 network row and every circuit row. Right-click a card →
 **Hide** is the same thing for one card, from the canvas, and right-click a
 line → **Hide** for one line: a cable, a bundle or LAG (its cables), a
@@ -1801,6 +1891,7 @@ is open it acts on what you right-clicked, not on what is selected.
 |---|---|
 | A device card | *Open device*, *Focus*; on a hand-picked map *Add connected devices* and *Remove from map* (++delete++), otherwise *Start hand-picked map*; *Hide* (++h++). On the Diagram, then *Show photo* or *Show card* (disabled, with the reason on hover, for a type with no photo or faceplate), *Cables to ports* / *Cables to edge* on a photo, *Line* ▸ *Default* and the four line types (the device's own line, one undo step), *Card lines…*, *Role card lines* for admins, and on a member of a virtual chassis *Virtual chassis* ▸ its stack's items |
 | A virtual chassis' stack | *Open virtual chassis*; *Top-down*, *Left-right*, *Unstacked*; *Hide stack*; on a hand-picked map where it was placed, *Remove from map* |
+| A cluster's card or frame | *Open cluster*; *Top-down*, *Left-right* (open it into its frame), *Collapsed* (its card); on a frame *Hide stack* - see [Grouped clusters](#grouped-clusters) |
 | A site or location card (grouped map) | *Open group*, *Hide* (++h++) |
 | A line | A cable: *Open cable*; on the Diagram, *Line* ▸ *Default*, *Straight*, *Elbow*, *Bendy*, *Cyclical* (the link's own line, as its panel's Line row sets it, one undo step); *Hide* (++h++). A bundle or LAG: *Line* and *Hide*. An LLDP neighbour or a BGP session: *Hide*. A grouped map's line has no menu: hide one of its sites or locations instead |
 | A band or a zone | *Rename*, the color swatches (a band adds *Neutral*; each is named on hover), on a row *Cables to other bands* ▸ *Auto*, *Up and down*, *Left and right*, and on a Diagram row *Cards per row*, *Align* and *Line* ▸ *Default* and the four line types; *Delete* |
@@ -1853,6 +1944,8 @@ back button and a reload all keep it.
 | `dir` | `lr` (default; `tb` on a Diagram showing photos), `tb` |
 | `color` | `cable` (default), `type`, `status`, `speed`, `none` |
 | `lag` | `on` (default) bundles aggregate members, `off` |
+| `deps` | `on` draws the [dependencies](#dependencies), `off` (default) |
+| `clusters` | Diagram: `on` draws each cluster's hosts as one card - see [Grouped clusters](#grouped-clusters) - `off` (default) |
 | `levels` | the level order - see below |
 | `device` `depth` | focus on one device, 1-6 hops |
 | `devices` | a comma-separated device set - an unsaved hand-picked map, up to 200 |
@@ -2014,7 +2107,9 @@ titled as on the canvas - a band of several layers with its sub-row badges
 and the rules between them - and zones; each
 [virtual chassis stack](#virtual-chassis-stacks) as its frame with the
 name on its strip, linked to the chassis (in a file of the other mode its
-members are packed again at that mode's sizes); and the [notes](#notes),
+members are packed again at that mode's sizes), and an open
+[cluster's frame](#grouped-clusters) the same way, linked to the cluster;
+and the [notes](#notes),
 over everything. The monitoring pill is
 the one on screen when the file is made. Selection, hover, search dimming
 and hidden devices or link families never reach a file.
@@ -2064,7 +2159,8 @@ draw.io (diagrams.net) desktop, on the web or in the VS Code extension.
   container. A virtual chassis' stack is a swimlane of its own holding its
   members - its name down the side of a top-to-bottom stack
   (`horizontal=0`), across the top of a left-to-right one - linked to the
-  chassis, inside the band its frame is in. A card in a swimlane is drawn with it, before the lines, so a
+  chassis, inside the band its frame is in. An open cluster's frame is the
+  same swimlane, linked to the cluster. A card in a swimlane is drawn with it, before the lines, so a
   Straight or Cyclical line that crosses such a card passes over it, while
   one crossing a card outside every band passes under it (Elbow and Bendy
   lines go round the cards they do not connect).
@@ -2153,6 +2249,21 @@ the map was saved is on it and one removed is not. Only chassis the caller
 may view count (others, another tenant's and unknown ids are ignored), and
 the members still follow the caller's `device.view` scope. Without `devices`
 the parameter changes nothing. A malformed id is a 400.
+
+**Clusters.** `group_clusters=1` (a JSON `true` in the POST body; off by
+default, ignored with `group_by`) puts `cluster: {id, name}` on every
+device node that hosts a cluster the caller may view (`cluster.view`) - a
+device whose cluster it is, or one running the cluster's VMs; its own
+cluster wins, then the cluster most of its VMs run in, then by name. A
+node with `vc` never carries `cluster`: the chassis groups it. The graph
+gains `clusters`, by name: per cluster `{id, name, frame, members,
+member_count, inner, links}` - `frame` the node id the Diagram gives its
+card or frame (`cl:<id>`), `members` its host node ids by name, `inner`
+the cables between its hosts, and `links` one row per other node its hosts
+are cabled to, `{node, cable_count, edges}` (the far node as it is on the
+map; two clusters list each other's hosts). Only cable edges count; the
+provider network lines are added after. It costs two queries, whatever the
+map's size. Without view on clusters `clusters` is empty.
 
 **Provider networks.** A circuit with one end on a site and the other on a
 [provider network](circuits.md#provider-networks) adds a node of its own and
@@ -2630,14 +2741,15 @@ earlier versions load and save unchanged.
 
 | Key | Shape |
 |---|---|
-| `positions_by_style.diagram` | the Diagram tab's arrangement, like the other styles'; a stacked virtual chassis is kept as `vc:<id>`, the centre of its frame |
+| `positions_by_style.diagram` | the Diagram tab's arrangement, like the other styles'; a stacked virtual chassis is kept as `vc:<id>`, the centre of its frame, and a grouped cluster as `cl:<id>`, the centre of its card or frame |
 | `zones_by_style.diagram[i]` | a zone, plus optional `kind` (`zone` or `band`), `orient` (`h` for a row, `v` for a side band), `rule` `{by: role\|device_type, ids}` (the band's layers: at most 100 ids, each kept once, in the order its sub-rows stack) and `layout` (`stack` or `row`: set once a band's layers were chosen by hand; absent on a band Arrange made), and on a row `exits` (`v`: its cables to other bands leave its cards' top or bottom, `h`: their left or right; absent is Auto), `per_row` (its [cards per row](#cards-per-row): a whole number from 1 to 200, 200 being *All on one line*; absent is Auto - anything else is a 400) and `align` (`left`, `center` or `right`: where its cards line up across its width; absent is Auto, centred - anything else is a 400) and `line` (`straight`, `elbow`, `bendy` or `cyclical`: the [line](#line-types) its cards' cables take; absent is Default - anything else is a 400). `color` is a `#rrggbb` color (the six swatches and Danbyte's presets are what the map offers), or `null` or `""` for a neutral band; any other color string saves as `null`. |
 | `filters.diagram` | `{mode: simple\|detailed, face: card\|photo, photo_anchor: ports\|edge, line: straight\|elbow\|bendy\|cyclical, labels: [subnet, ip, port], fields, chassis: off\|v\|h}`, each optional. `fields` is the view's own card lines: absent or `null` inherits, `[]` is name only, keys as in [Card lines API](#card-lines-api). `chassis` is how virtual chassis are drawn: apart (`off`), or stacked top to bottom (`v`) or left to right (`h`). |
 | `positions_by_style.routing` | the [Routing tab](#routing-view)'s arrangement: each card's centre by node id (`dev:<id>`, `vm:<id>`, `pn:<id>`) |
 | `zones_by_style.routing[i]` | an AS box or zone of the Routing tab: `{id, label, x, y, w, h, color, asn}`. `kind` is absent or `zone` (no bands here); `x`, `y`, `w`, `h` are numbers (`w`, `h` not negative); `label` at most 200 characters; `asn` (an AS box) a number from 1 to 4294967295; `color` as on the Diagram. |
 | `filters.routing` | the Routing tab's display: `{mode: simple\|detailed, layers: {ebgp, ibgp, ospf, isis, static, circuits, cables: bool}, fields: [role, router_id, asn, loopback, site, primary_ip, status], vrf: global\|all\|<VRF id>, checks: bool}`, each optional; any other key is a 400. Absent layers are their defaults (all on but `cables`); absent `fields` is `router_id, asn, loopback`; absent `vrf` every table (`all`); absent `checks` off. |
 | `filters.chassis` | the virtual chassis placed on a hand-picked map: at most 1,000 ids, each kept once. Their members are on the map as they are when it loads. |
-| `chassis` | per virtual chassis id, at most 10,000: `{orient: v\|h, off: bool, side: T\|B\|L\|R}`, each optional - that chassis stacked top to bottom or left to right, or drawn apart (`off: true`), and the side its name strip runs along (absent: left of a top-to-bottom stack, top of a left-to-right one) |
+| `chassis` | per virtual chassis or cluster id, at most 10,000: `{orient: v\|h, off: bool, side: T\|B\|L\|R, open: bool}`, each optional - that chassis stacked top to bottom or left to right, or drawn apart (`off: true`), the side its name strip runs along (absent: left of a top-to-bottom stack, top of a left-to-right one), and for a cluster `open: true` to draw its hosts in a frame instead of one card ([Grouped clusters](#grouped-clusters)) |
+| `filters.clusters` | `on` or `off`: Display ▸ Group clusters |
 | `links` | per-link overrides keyed by the sorted device pair `"<id>\|<id>"` (lower-case ids): `{line, flip: 1\|-1}`, at most 20,000. `flip` is the side a Cyclical arc bulges to: `-1` above (or left of) the cards, `1` below (or right). |
 | `nodes` | per-card overrides keyed by device id: `{face: card\|photo, anchor: ports\|edge, line: straight\|elbow\|bendy\|cyclical}`, each optional, at most 10,000. `line` is the [line](#line-types) the device's cables take; absent is Default. |
 | `notes` | at most 500 `{id, kind: text\|icon, x, y, text, icon: cloud\|globe\|building, size: s\|m\|l, outline: bool}`; `x, y` is the note's centre, `id` is unique, `text` at most 200 characters, `size` absent = `m` |

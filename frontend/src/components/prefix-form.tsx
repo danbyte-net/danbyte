@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useSiteOptions } from "@/lib/use-site-options"
 import { toast } from "sonner"
@@ -13,6 +13,7 @@ import {
   type VRFOption,
 } from "@/lib/api"
 import { apiAll } from "@/lib/api-all"
+import { carveSizes, withLength } from "@/lib/prefix-free"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
 import { VlanPicker } from "@/components/vlan-picker"
 import {
@@ -21,6 +22,7 @@ import {
   FormColumns,
   FormCombobox,
   FormFooter,
+  FormSelect,
   FormSection,
   FormStatusSelect,
   FormTags,
@@ -28,7 +30,11 @@ import {
   FormTextarea,
   useFieldErrors,
 } from "@/components/forms"
-import { useSaveObject } from "@/lib/save-object"
+import { usePlanTarget, useSaveObject } from "@/lib/save-object"
+import {
+  ScanExemptField,
+  useScanExemptDraft,
+} from "@/components/discovery/scan-exempt-field"
 
 // Pure form body - no dialog chrome. Rendered by /prefixes/new and
 // /prefixes/$id/edit routes. Replaces PrefixFormDialog.
@@ -39,6 +45,9 @@ export interface PrefixFormInitial {
   siteId?: string | null
   locationId?: string | null
   vlanId?: string | null
+  /** A free block (from a free row's Create): the form offers its sizes,
+   * each at the block's start. */
+  freeBlock?: string
 }
 
 export interface PrefixFormProps {
@@ -64,11 +73,20 @@ export function PrefixForm({
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
   const saveObject = useSaveObject()
+  // Discovery's "Do not scan" (#451): written once the prefix saved; not
+  // offered while planning (the exempt call is not staged).
+  const planning = !!usePlanTarget()
+  const scanExempt = useScanExemptDraft("prefix", planning ? null : prefix)
   // Cloneable fields read from the edit object or the clone seed; the CIDR reads
   // from `prefix`/`initial` only, so a clone starts it blank.
   const seed = prefix ?? clone
 
   const [cidr, setCidr] = useState(prefix?.cidr ?? initial?.cidr ?? "")
+  const freeBlock = isEdit ? undefined : initial?.freeBlock
+  const freeSizes = useMemo(
+    () => (freeBlock ? carveSizes(freeBlock) : []),
+    [freeBlock]
+  )
   const [statusId, setStatusId] = useState<string | null>(
     seed?.status?.id ?? null
   )
@@ -167,12 +185,14 @@ export function PrefixForm({
         tag_ids: tagIds,
         custom_fields: customFields,
       }
-      return saveObject<Prefix>({
+      const saved = await saveObject<Prefix>({
         objectType: "api.prefix",
         endpoint: "/api/prefixes/",
         id: isEdit ? prefix!.id : undefined,
         payload,
       })
+      await scanExempt.commit()
+      return saved
     },
     onSuccess: (saved) => {
       qc.invalidateQueries({ queryKey: ["prefixes"] })
@@ -203,16 +223,47 @@ export function PrefixForm({
       <FormColumns>
         <FormColumn>
           <FormSection title="Prefix" card>
-            <FormText
-              label="Prefix (CIDR)"
-              required
-              autoFocus={!isEdit}
-              value={cidr}
-              onChange={setCidr}
-              mono
-              placeholder="10.0.10.0/24"
-              error={fieldErrors.cidr}
-            />
+            {freeSizes.length > 1 ? (
+              <div className="grid gap-3 @md:grid-cols-[1fr_8rem]">
+                <FormText
+                  label="Prefix (CIDR)"
+                  required
+                  autoFocus={!isEdit}
+                  value={cidr}
+                  onChange={setCidr}
+                  mono
+                  placeholder="10.0.10.0/24"
+                  error={fieldErrors.cidr}
+                />
+                <FormSelect
+                  label="Size"
+                  value={
+                    freeSizes.some((n) => withLength(freeBlock!, n) === cidr)
+                      ? cidr.slice(cidr.indexOf("/") + 1)
+                      : null
+                  }
+                  placeholder="Size"
+                  onChange={(v) =>
+                    v && setCidr(withLength(freeBlock!, Number(v)))
+                  }
+                  options={freeSizes.map((n) => ({
+                    value: String(n),
+                    label: `/${n}`,
+                  }))}
+                />
+              </div>
+            ) : (
+              <FormText
+                label="Prefix (CIDR)"
+                required
+                autoFocus={!isEdit}
+                value={cidr}
+                onChange={setCidr}
+                mono
+                placeholder="10.0.10.0/24"
+                error={fieldErrors.cidr}
+              />
+            )}
 
             <div className="grid gap-3 @md:grid-cols-2">
               <FormStatusSelect
@@ -332,6 +383,11 @@ export function PrefixForm({
               error={fieldErrors.description}
             />
           </FormSection>
+          {scanExempt.show && (
+            <FormSection title="Discovery" card>
+              <ScanExemptField draft={scanExempt} />
+            </FormSection>
+          )}
         </FormColumn>
       </FormColumns>
 

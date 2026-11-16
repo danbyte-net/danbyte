@@ -196,6 +196,7 @@ class VaultTenantIsolationApiTests(_TwoTenants, APITestCase):
             BASE,
             {
                 "device": str(self.b_device.id), "name": "x", "kind": "ssh_password",
+                "username": "u",
                 "secret_managed": False, "secret_path": "kv/data/team/ssh",
             },
             format="json",
@@ -212,6 +213,7 @@ class VaultTenantIsolationApiTests(_TwoTenants, APITestCase):
                 BASE,
                 {
                     "device": str(self.b_device.id), "name": f"x{i}", "kind": "ssh_password",
+                    "username": "u",
                     "secret_managed": False, "secret_path": path,
                 },
                 format="json",
@@ -231,6 +233,7 @@ class VaultTenantIsolationApiTests(_TwoTenants, APITestCase):
                 BASE,
                 {
                     "device": str(self.b_device.id), "name": f"x{i}", "kind": "ssh_password",
+                    "username": "u",
                     "secret_managed": False, "secret_path": path,
                 },
                 format="json",
@@ -247,6 +250,7 @@ class VaultTenantIsolationApiTests(_TwoTenants, APITestCase):
             BASE,
             {
                 "device": str(self.b_device.id), "name": "team", "kind": "ssh_password",
+                "username": "u",
                 "secret_managed": False, "secret_path": "kv/data/team/ssh",
             },
             format="json",
@@ -264,6 +268,7 @@ class VaultTenantIsolationApiTests(_TwoTenants, APITestCase):
             BASE,
             {
                 "device": str(self.b_device.id), "name": "team", "kind": "ssh_password",
+                "username": "u",
                 "secret_managed": False, "secret_path": "danbyte/data/team/ssh",
             },
             format="json",
@@ -279,6 +284,7 @@ class VaultTenantIsolationApiTests(_TwoTenants, APITestCase):
             BASE,
             {
                 "device": str(self.b_device.id), "name": "team", "kind": "ssh_password",
+                "username": "u",
                 "secret_managed": False, "secret_path": "kv/data/team/ssh",
             },
             format="json",
@@ -287,6 +293,7 @@ class VaultTenantIsolationApiTests(_TwoTenants, APITestCase):
             BASE,
             {
                 "device": str(self.b_device.id), "name": "mine", "kind": "ssh_password",
+                "username": "u",
                 "secret_managed": True, "password": "b-pw",
             },
             format="json",
@@ -324,6 +331,7 @@ class VaultTenantIsolationApiTests(_TwoTenants, APITestCase):
             BASE,
             {
                 "device": str(self.b_device.id), "name": "x", "kind": "ssh_password",
+                "username": "u",
                 "secret_managed": True,
                 "secret_path": f"../{self.a.id}/device-credentials/{self.a_cred.id}",
                 "password": "owned-by-B",
@@ -347,6 +355,7 @@ class VaultTenantIsolationApiTests(_TwoTenants, APITestCase):
             BASE,
             {
                 "device": str(self.b_device.id), "name": "x", "kind": "ssh_password",
+                "username": "u",
                 "secret_managed": True, "password": "first",
             },
             format="json",
@@ -376,6 +385,7 @@ class VaultTenantIsolationApiTests(_TwoTenants, APITestCase):
             BASE,
             {
                 "device": str(self.b_device.id), "name": "x", "kind": "ssh_password",
+                "username": "u",
                 "secret_managed": True, "password": "first",
             },
             format="json",
@@ -395,6 +405,7 @@ class VaultTenantIsolationApiTests(_TwoTenants, APITestCase):
             BASE,
             {
                 "device": str(self.b_device.id), "name": "team", "kind": "ssh_password",
+                "username": "u",
                 "secret_managed": False, "secret_path": "kv/data/team/ssh",
             },
             format="json",
@@ -555,8 +566,11 @@ class AzureStoreBoundaryTests(TestCase):
         self.store = AzureKeyVaultSecretStore(
             "https://kv.vault.azure.net", "dir", "client", "secret"
         )
-        self.store._token = "t"
-        self.store._token_expires = float("inf")
+        patcher = mock.patch.object(
+            AzureKeyVaultSecretStore, "_access_token", return_value="t"
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self.tid = uuid.uuid4()
         self.other = uuid.uuid4()
 

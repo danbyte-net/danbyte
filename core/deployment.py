@@ -41,6 +41,33 @@ def clean_display_timezone(value: str) -> str:
     return canonical
 
 
+def clean_vector_url(value: str) -> str:
+    """One https TileJSON or style URL with a host, no credentials and no
+    tile placeholders; blank stays blank (the default source)."""
+    from urllib.parse import urlsplit
+
+    value = (value or "").strip()
+    if not value:
+        return ""
+    try:
+        parts = urlsplit(value)
+        parts.port  # noqa: B018 - raises on a port that is not a number
+    except ValueError:
+        raise serializers.ValidationError("Not a valid URL.") from None
+    if parts.scheme != "https":
+        raise serializers.ValidationError("Vector source URL must be https://.")
+    if not parts.hostname or parts.username or parts.password:
+        raise serializers.ValidationError(
+            "Give a host, without a user name or password in the URL."
+        )
+    if re.search(r"[{}<>\"'\\\s]", value):
+        raise serializers.ValidationError(
+            "One TileJSON or style URL, without {z}/{x}/{y} placeholders "
+            "(e.g. https://tiles.example.com/shortbread/tilejson.json)."
+        )
+    return value
+
+
 class DeploymentSettingsSerializer(serializers.ModelSerializer):
     # Write-only secret; never serialised back. A blank value on update leaves
     # the stored password untouched (so the form needn't re-enter it).
@@ -116,6 +143,10 @@ class DeploymentSettingsSerializer(serializers.ModelSerializer):
             "map_tile_attribution",
             "map_satellite_url",
             "map_satellite_attribution",
+            "map_basemap",
+            "map_vector_url",
+            "map_vector_attribution",
+            "map_label_language",
             "enhanced_site_separation",
             "allow_site_settings",
             "allow_site_editor_delegation",
@@ -210,6 +241,36 @@ class DeploymentSettingsSerializer(serializers.ModelSerializer):
     def validate_map_satellite_url(self, value):
         return self.validate_map_tile_url(value)
 
+    def validate_map_vector_url(self, value):
+        """Blank = the OSMF Shortbread tiles. Otherwise one https URL of a
+        TileJSON or a MapLibre style. The browser fetches it, not the server,
+        so the SSRF guard is not the rule here; scheme and host are (#467)."""
+        return clean_vector_url(value)
+
+    def validate_azure_vault_url(self, value):
+        """Blank = not configured. Otherwise https only: the bearer token and
+        the secret values travel to it (#512)."""
+        from monitoring.secret_store_azure import https_url_problem
+
+        value = (value or "").strip()
+        if value:
+            problem = https_url_problem(value, "Key Vault URL")
+            if problem:
+                raise serializers.ValidationError(problem)
+        return value
+
+    def validate_azure_authority(self, value):
+        """Blank = the public cloud. Otherwise https only: the client secret
+        is posted to it (#512)."""
+        from monitoring.secret_store_azure import https_url_problem
+
+        value = (value or "").strip()
+        if value:
+            problem = https_url_problem(value, "Sign-in endpoint")
+            if problem:
+                raise serializers.ValidationError(problem)
+        return value
+
     def validate_display_timezone(self, value):
         return clean_display_timezone(value)
 
@@ -273,7 +334,9 @@ def _require_manage(request):
     responses=OpenApiResponse(
         response=OpenApiTypes.OBJECT,
         description="Registered providers: kind, label, description, and the "
-        "settings fields each one needs (text | password | checkbox).",
+        "settings fields each one needs (text | password | checkbox); plus "
+        "monitoring_keys, how many MONITORING_SECRET_KEY entries are configured; "
+        "and secret_counts, how many managed secrets each store holds.",
     ),
 )
 @api_view(["GET"])
@@ -281,9 +344,26 @@ def _require_manage(request):
 def secret_store_providers_view(request):
     if not _require_manage(request):
         return Response({"detail": "users.manage required."}, status=403)
-    from monitoring.secret_store import secret_store_providers
+    from django.core.exceptions import ImproperlyConfigured
 
-    return Response({"providers": [p.payload() for p in secret_store_providers()]})
+    from monitoring.secret_store import secret_store_providers
+    from monitoring.secrets import monitoring_keys
+
+    # How many MONITORING_SECRET_KEY entries are configured (#493) - a count
+    # only, never a key, so an operator can see a rotation is in progress.
+    try:
+        key_count = len(monitoring_keys())
+    except ImproperlyConfigured:
+        key_count = 0
+    from monitoring.secret_refs import secret_counts
+
+    return Response({
+        "providers": [p.payload() for p in secret_store_providers()],
+        "monitoring_keys": key_count,
+        # How many managed secrets each store holds (#511) - counts only, so
+        # the card can warn before a switch leaves them in the old store.
+        "secret_counts": secret_counts(),
+    })
 
 
 @extend_schema(

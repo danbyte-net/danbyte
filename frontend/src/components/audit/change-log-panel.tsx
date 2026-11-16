@@ -76,24 +76,49 @@ const COLUMNS: ColumnDef<ChangeLogEntry>[] = [
   },
 ]
 
+/** The changed object, for a history that holds rows of related objects
+ * too (a device's dependencies). */
+const OBJECT_COLUMN: ColumnDef<ChangeLogEntry> = {
+  id: "object",
+  accessorFn: (e) => e.object_repr,
+  header: ({ column }) => <SortHeader column={column} label="Object" />,
+  cell: ({ row }) => (
+    <span className="line-clamp-1 block">
+      <span className="text-muted-foreground">
+        {row.original.object_label}{" "}
+      </span>
+      {row.original.object_repr}
+    </span>
+  ),
+}
+
 /**
  * Per-object change history - drop into a detail-page "Change log" tab. Renders
  * the same table look as the global Change log (When / User / Action / Changes
  * with an expandable field-level diff) and offers a CSV export of the object's
  * full history. Reads /api/changelog filtered to one object.
+ *
+ * ``relatedIds`` adds the history of related rows that live with the object
+ * (a device's dependencies, #450) through ``?object_ids=``, with an Object
+ * column naming each row.
  */
 export function ChangeLogPanel({
   objectType,
   objectId,
+  relatedIds,
 }: {
   objectType: string
   objectId: string
+  relatedIds?: string[]
 }) {
+  const related = relatedIds ?? []
   const q = useQuery({
-    queryKey: ["changelog", objectType, objectId],
+    queryKey: ["changelog", objectType, objectId, related],
     queryFn: () =>
       apiAll<ChangeLogEntry>(
-        `/api/changelog/?object_type=${objectType}&object_id=${objectId}`
+        related.length
+          ? `/api/changelog/?object_ids=${[objectId, ...related].join(",")}`
+          : `/api/changelog/?object_type=${objectType}&object_id=${objectId}`
       ),
     // History should always reflect the latest writes - refetch whenever the
     // tab is opened rather than honouring the global 30s staleTime.
@@ -128,7 +153,11 @@ export function ChangeLogPanel({
         <DataTable
           data={rows}
           total={q.data?.count}
-          columns={COLUMNS}
+          columns={
+            related.length
+              ? [COLUMNS[0], OBJECT_COLUMN, ...COLUMNS.slice(1)]
+              : COLUMNS
+          }
           flexColumn="changes"
           embedded
           searchable

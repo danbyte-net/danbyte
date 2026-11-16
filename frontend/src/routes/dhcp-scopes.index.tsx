@@ -88,14 +88,16 @@ function DhcpScopesPage() {
       query={query}
       rail={rail}
       search={{ value: q, onChange: setQ, placeholder: "Filter scopes…" }}
+      add={
+        canManage && (
+          <Button size="sm" onClick={() => setCreating(true)}>
+            <Plus className="h-3.5 w-3.5" /> Add scope
+          </Button>
+        )
+      }
       actions={
         <>
           <TableActions ioType="dhcpscope" />
-          {canManage && (
-            <Button size="sm" onClick={() => setCreating(true)}>
-              <Plus className="h-3.5 w-3.5" /> Add scope
-            </Button>
-          )}
         </>
       }
     >

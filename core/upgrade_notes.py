@@ -379,6 +379,229 @@ def _no_kept_access_grant() -> bool:
     return True
 
 
+_NGINX_MAP_CSP = """\
+# in /etc/nginx/sites-available/danbyte.conf, in the Content-Security-Policy:
+#   connect-src: add https://vector.openstreetmap.org (or your vector host)
+#   then add:    worker-src 'self' blob:;
+sudo sed -i "s|connect-src 'self'|connect-src 'self' https://vector.openstreetmap.org|; \\
+s|; frame-ancestors|; worker-src 'self' blob:; frame-ancestors|" \\
+    /etc/nginx/sites-available/danbyte.conf
+sudo nginx -t && sudo systemctl reload nginx"""
+
+
+def _map_csp_allows_vector() -> bool:
+    """Done when the site's CSP lets the vector basemap run its worker."""
+    text = _site_config()
+    if text is None:
+        return False
+    return "worker-src" in text
+
+
+_VULN_HOSTS = "https://services.nvd.nist.gov https://api.first.org https://api.osv.dev"
+_NGINX_VULN_CSP = f"""\
+# in /etc/nginx/sites-available/danbyte.conf, in the Content-Security-Policy:
+#   connect-src: add {_VULN_HOSTS}
+#   (and the host of any NVD, EPSS or OSV mirror set under Vulnerability data)
+grep -q services.nvd.nist.gov /etc/nginx/sites-available/danbyte.conf || \\
+sudo sed -i "s|\\(connect-src [^;]*\\);|\\1 {_VULN_HOSTS};|" \\
+    /etc/nginx/sites-available/danbyte.conf
+sudo nginx -t && sudo systemctl reload nginx"""
+
+
+def _vuln_csp_allows_browser_sync() -> bool:
+    """Done when the site's CSP lets the browser reach NVD (#451)."""
+    text = _site_config()
+    if text is None:
+        return False
+    return "services.nvd.nist.gov" in text
+
+
+_NGINX_WASM_CSP = """\
+# in /etc/nginx/sites-available/danbyte.conf, in the Content-Security-Policy:
+#   script-src: add 'wasm-unsafe-eval' (WebAssembly compile only, not eval)
+grep -q wasm-unsafe-eval /etc/nginx/sites-available/danbyte.conf || \\
+sudo sed -i "s|\\(script-src [^;]*\\);|\\1 'wasm-unsafe-eval';|" \\
+    /etc/nginx/sites-available/danbyte.conf
+sudo nginx -t && sudo systemctl reload nginx"""
+
+
+def _wasm_csp_allows_models() -> bool:
+    """Done when the site's CSP lets WebAssembly compile (3D models)."""
+    text = _site_config()
+    if text is None:
+        return False
+    return "'wasm-unsafe-eval'" in text
+
+
+#: The TLS lines of the production template's 443 server (#497); a test
+#: pins them to the template.
+NGINX_TLS_LINES = """\
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305;
+    ssl_prefer_server_ciphers off;
+    ssl_session_timeout 1d;
+    ssl_session_cache shared:DanbyteSSL:10m;
+    ssl_session_tickets off;"""
+
+_NGINX_TLS = f"""\
+# in /etc/nginx/sites-available/danbyte.conf, in the 443 server, after
+# ssl_certificate_key:
+{NGINX_TLS_LINES}
+# then: sudo nginx -t && sudo systemctl reload nginx"""
+
+
+def _tls_pinned() -> bool:
+    """Done when the site's nginx names its own TLS protocols and suites."""
+    import re
+
+    text = _site_config()
+    if text is None:
+        return False
+    return all(re.search(rf"(?m)^\s*{d}\s+[^;#]+;", text) for d in ("ssl_protocols", "ssl_ciphers"))
+
+
+_NGINX_RATE_LIMITS = """\
+# in /etc/nginx/sites-available/danbyte.conf - at the top, beside the maps:
+limit_req_zone $binary_remote_addr zone=danbyte_auth:10m rate=1r/s;
+limit_req_zone $binary_remote_addr zone=danbyte_csp:10m rate=2r/s;
+# in the 443 server, before location /api/:
+    location ~ ^/api/auth/(login|mfa/verify|mfa/resend|password-reset|password-reset/confirm|set-password)/$ {
+        limit_req zone=danbyte_auth burst=5 nodelay;
+        limit_req_status 429;
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+    location = /api/csp-report/ {
+        limit_req zone=danbyte_csp burst=20 nodelay;
+        limit_req_status 429;
+        client_max_body_size 16k;
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+# and at the end of the 443 server:
+    error_page 429 @danbyte_rate_limited;
+    location @danbyte_rate_limited {
+        internal;
+        default_type application/json;
+        return 429 '{"detail":"Too many attempts from this address. Wait a minute and try again."}';
+    }
+# then: sudo nginx -t && sudo systemctl reload nginx"""
+
+
+def _rate_limited() -> bool:
+    """Done when the site's nginx limits the sign-in endpoints."""
+    import re
+
+    text = _site_config()
+    if text is None:
+        return False
+    return bool(re.search(r"(?m)^\s*limit_req\s+zone=danbyte_auth\b", text))
+
+
+#: The maintenance page's policy line (#498); a test pins it to the template.
+NGINX_MAINTENANCE_CSP_LINE = (
+    "        add_header Content-Security-Policy \"default-src 'none'; "
+    "style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; "
+    "frame-ancestors 'self'\" always;"
+)
+
+_NGINX_MAINTENANCE_CSP = f"""\
+# in /etc/nginx/sites-available/danbyte.conf, in location @danbyte_maintenance,
+# after add_header Retry-After:
+{NGINX_MAINTENANCE_CSP_LINE}
+# then: sudo nginx -t && sudo systemctl reload nginx"""
+
+
+def _maintenance_csp() -> bool:
+    """Done when the site's maintenance page names a policy of its own."""
+    import re
+
+    text = _site_config()
+    if text is None:
+        return False
+    text = re.sub(r"(?m)#.*$", "", text)
+    start = text.find("location @danbyte_maintenance")
+    if start < 0:
+        return False
+    block = text[start + 1:]
+    end = block.find("location ")
+    block = block if end < 0 else block[:end]
+    return bool(re.search(r"add_header\s+Content-Security-Policy\s", block))
+
+
+_REDIS_AUTH = """\
+# 1. pick a quiet moment: Jobs shows nothing running (queued jobs are kept)
+# 2. as root: give Redis the password, without restarting it yet
+pw=$(openssl rand -hex 32)
+( umask 027; printf 'requirepass %s\\n' "$pw" > /etc/redis/danbyte-auth.conf )
+chgrp redis /etc/redis/danbyte-auth.conf
+printf '\\ninclude /etc/redis/danbyte-auth.conf\\n' >> /etc/redis/redis.conf
+# 3. the same password in .env, as the service user
+printf '\\nREDIS_PASSWORD=%s\\n' "$pw" | sudo -u danbyte tee -a @@APP@@/.env >/dev/null
+# 4. Redis, then every Danbyte unit, back to back
+systemctl restart redis-server && danbyte services restart
+# Docker: set REDIS_PASSWORD in the stack's .env, then docker compose up -d"""
+
+
+_UNIT_PATHS = """\
+# as the service user: every local backup directory outside the default one
+echo 'DANBYTE_UNIT_WRITABLE_PATHS=/srv/danbyte-backups' >> @@APP@@/.env
+cd @@APP@@ && make unit-hardening
+systemctl --user restart danbyte-web
+# what each unit got:  make unit-hardening-status"""
+
+
+def _local_targets_covered() -> bool:
+    """Done when every local backup target is the default backup directory
+    or listed in DANBYTE_UNIT_WRITABLE_PATHS: the web unit's sandbox then
+    lets the target's test write there."""
+    import os
+    from pathlib import Path
+
+    from django.conf import settings
+
+    from backups.models import BackupTarget
+
+    allowed = [Path(str(settings.DANBYTE_BACKUP_DIR))]
+    raw = os.getenv("DANBYTE_UNIT_WRITABLE_PATHS", "").replace(":", " ").replace(",", " ")
+    allowed += [Path(p) for p in raw.split()]
+    for cfg in BackupTarget.objects.filter(kind="local").values_list("config", flat=True):
+        path = Path(os.path.abspath(os.path.expanduser((cfg or {}).get("path") or "")))
+        if not any(path == a or a in path.parents for a in allowed):
+            return False
+    return True
+
+
+def _redis_auth_on() -> bool:
+    """Done when Danbyte sends Redis a password or reaches it over a unix
+    socket."""
+    from django.conf import settings
+
+    conf = getattr(settings, "DANBYTE_REDIS", None)
+    return bool(conf and (conf.password or conf.unix))
+
+
+def _outposts_run_discovery() -> bool:
+    """Done when every Outpost a discovery profile runs on says it can run
+    discovery work (or no profile runs on an Outpost)."""
+    try:
+        from discovery.models import InventoryProfile
+        from discovery.outposts import capabilities
+        from monitoring.models import MonitoringEngine
+    except ImportError:
+        return True
+    if not InventoryProfile.objects.exclude(runs_on="server").exists():
+        return True
+    return all(capabilities(e).get("kinds") for e in MonitoringEngine.objects.filter(
+        kind=MonitoringEngine.REMOTE, enabled=True))
+
+
 #: Migration api 0265 marks this note done when the fixed version ran here
 #: (#501); a test pins the two ids.
 PREFIX_CLEANUP_NOTE = "0.19.2-prefix-cleanup"
@@ -388,6 +611,29 @@ _PREFIX_LOSS = """\
 .venv/bin/python manage.py prefix_loss_report --backup <id of the backup taken before the 0.19 upgrade>
 # a pg_dump -Fc file of your own instead:
 .venv/bin/python manage.py prefix_loss_report --dump /path/to/danbyte.dump"""
+
+_SECRET_CLEANUP = """\
+# as the service user, in the app directory (Docker: docker compose exec backend python manage.py …):
+.venv/bin/python manage.py cleanup_secret_store            # lists, removes nothing
+.venv/bin/python manage.py cleanup_secret_store --delete   # local store
+.venv/bin/python manage.py cleanup_secret_store --delete --remote   # Vault / Key Vault too"""
+
+
+def _no_secret_orphans() -> bool:
+    """Done when only the local store is configured and it holds no secret
+    whose record is gone. An external store cannot be checked cheaply, so the
+    note stays up while one is configured."""
+    from monitoring.secret_refs import owner_exists
+    from monitoring.secret_store import configured_stores
+
+    stores = configured_stores()
+    if any(not getattr(store, "transactional", False) for _, store in stores):
+        return False
+    return all(
+        owner_exists(tenant, ref)
+        for _, store in stores
+        for tenant, ref in store.managed_refs()
+    )
 
 
 # Newest first.
@@ -409,6 +655,185 @@ NOTES: tuple[UpgradeNote, ...] = (
         ),
         snippet=_PREFIX_LOSS,
         docs="getting-started/upgrading/#prefixes-the-019-upgrade-deleted",
+    ),
+    UpgradeNote(
+        id="0.20.0-unit-sandbox",
+        version="0.20.0",
+        title="Let the sandboxed units write to your backup directory",
+        body=(
+            "The app units now run under systemd sandboxing drop-ins, which the "
+            "upgrade placed. Where the host gives user units a mount namespace "
+            "(Debian 13, for one), the web unit writes only to Danbyte's own "
+            "folders, so testing a local backup target elsewhere fails with "
+            "\"Read-only file system\". List such directories in .env and apply "
+            "the drop-ins again. DANBYTE_UNIT_HARDENING=off removes them."
+        ),
+        snippet=_UNIT_PATHS,
+        docs="getting-started/hardening/#systemd-sandboxing",
+        platforms=("systemd",),
+        check=_local_targets_covered,
+    ),
+    UpgradeNote(
+        id="0.20.0-redis-password",
+        version="0.20.0",
+        title="Optional: give Redis a password",
+        body=(
+            "Redis takes no password on this install, so any account on the host "
+            "can reach the cache, the job queue and the WebSocket layer. Danbyte "
+            "can now send one (REDIS_PASSWORD, or a unix socket) to all of them. "
+            "The upgrade changed nothing: set it in Redis and in .env, then "
+            "restart Redis and every Danbyte unit together. A job running at "
+            "that moment fails and can be re-queued; queued jobs are kept. Skip "
+            "this on a host that runs nothing else."
+        ),
+        snippet=_REDIS_AUTH,
+        docs="getting-started/hardening/#redis-authentication",
+        check=_redis_auth_on,
+    ),
+    UpgradeNote(
+        id="0.20.0-secret-orphans",
+        version="0.20.0",
+        title="Optional: remove secrets left by deleted credentials",
+        body=(
+            "Deleting a managed device or shared credential used to leave its "
+            "password or key in the secret store, readable to anyone with the "
+            "store's own access. Deletes now take the secret along. Secrets "
+            "left by earlier deletes are still there: list them, then remove "
+            "them. Nothing is removed without --delete, and nothing from Vault "
+            "or Key Vault without --remote."
+        ),
+        snippet=_SECRET_CLEANUP,
+        docs="monitoring/certificates/#removing-orphaned-secrets",
+        check=_no_secret_orphans,
+    ),
+    UpgradeNote(
+        id="0.20.0-nginx-maintenance-csp",
+        version="0.20.0",
+        title="Give the maintenance page its own CSP",
+        body=(
+            "Every page now carries a script policy with a fresh nonce from the "
+            "frontend server; that needs no step (DANBYTE_CSP_MODE in .env "
+            "steps it back). The maintenance page nginx shows while Danbyte "
+            "restarts sends its own headers and so had no policy at all; it now "
+            "allows no script, only its inline style. Root runs this from the "
+            "bundle of this release, never from the app directory."
+        ),
+        snippet=_NGINX_MAINTENANCE_CSP,
+        docs="getting-started/hardening/#content-security-policy",
+        platforms=("systemd",),
+        check=_maintenance_csp,
+        host=True,
+    ),
+    UpgradeNote(
+        id="0.20.0-nginx-rate-limits",
+        version="0.20.0",
+        title="Rate-limit sign-in at nginx",
+        body=(
+            "nginx now holds each client address to about one sign-in attempt a "
+            "second (a burst of five), across login, the second factor and "
+            "password reset, and limits the CSP report sink. A flood from one "
+            "address no longer ties up the web workers. An office behind one "
+            "NAT address shares the budget; behind another proxy, nginx needs "
+            "real_ip so it sees the client. Root runs this from the bundle of "
+            "this release, never from the app directory."
+        ),
+        snippet=_NGINX_RATE_LIMITS,
+        docs="getting-started/hardening/#edge-rate-limits",
+        platforms=("systemd",),
+        check=_rate_limited,
+        host=True,
+    ),
+    UpgradeNote(
+        id="0.20.0-nginx-tls",
+        version="0.20.0",
+        title="Pin modern TLS in nginx",
+        body=(
+            "The nginx site now takes TLS 1.2 and 1.3 only, and on TLS 1.2 only "
+            "forward-secret AEAD suites, instead of whatever the distro's "
+            "nginx.conf offers. Browsers from the last eight years or so are "
+            "unaffected; a very old client or script that only speaks TLS 1.0 "
+            "or 1.1, or has no ECDHE, stops connecting. Root runs this from the "
+            "bundle of this release, never from the app directory."
+        ),
+        snippet=_NGINX_TLS,
+        docs="getting-started/hardening/#tls",
+        platforms=("systemd",),
+        check=_tls_pinned,
+        host=True,
+    ),
+    UpgradeNote(
+        id="0.20.0-outpost-discovery",
+        version="0.20.0",
+        title="Update the Outposts that should run discovery",
+        body=(
+            "A discovery profile can now run on an Outpost, for hosts the "
+            "server cannot reach. That needs Outpost agent 0.10.0 or later: an "
+            "older agent is handed no discovery work, and its hosts show "
+            "\"Outpost cannot run it\" with the version it needs. Upload the new "
+            "agent under Monitoring, Engines, Outpost versions and roll "
+            "it out to those sites. Checks keep working on older agents. An "
+            "Outpost installed before 0.10.0 runs as root and keeps nmap off "
+            "(the Outposts list shows a root badge): on that host run sudo "
+            "/opt/danbyte-outpost/danbyte-outpost migrate-service-user, or re-run "
+            "the installer."
+        ),
+        docs="monitoring/outposts/#discovery-on-an-outpost",
+        check=_outposts_run_discovery,
+    ),
+    UpgradeNote(
+        id="0.20.0-nginx-vuln-csp",
+        version="0.20.0",
+        title="Let the browser sync vulnerability data",
+        body=(
+            "Browser mode for vulnerability data has the admin's browser fetch "
+            "NVD, FIRST EPSS and OSV and hand the answers to Danbyte. The nginx "
+            "Content-Security-Policy needs those hosts in connect-src; until "
+            "then the sync page says the policy blocks them. Only needed for "
+            "the Browser update source. Root runs this from the bundle of this "
+            "release, never from the app directory."
+        ),
+        snippet=_NGINX_VULN_CSP,
+        docs="features/vulnerabilities/#browser-mode",
+        platforms=("systemd",),
+        check=_vuln_csp_allows_browser_sync,
+        host=True,
+    ),
+    UpgradeNote(
+        id="0.20.0-nginx-wasm-csp",
+        version="0.20.0",
+        title="Let the 3D room decode compressed models",
+        body=(
+            "A 3D model packed with gltfpack -c (meshopt compression) is "
+            "decoded in the browser by WebAssembly, as are Simplify and STEP or "
+            "IGES uploads. The nginx Content-Security-Policy needs "
+            "'wasm-unsafe-eval' in script-src, which lets WebAssembly compile "
+            "and nothing else; until then such a model does not load. Root "
+            "runs this from the bundle of this release, never from the app "
+            "directory."
+        ),
+        snippet=_NGINX_WASM_CSP,
+        docs="getting-started/hardening/#content-security-policy",
+        platforms=("systemd",),
+        check=_wasm_csp_allows_models,
+        host=True,
+    ),
+    UpgradeNote(
+        id="0.20.0-nginx-map-csp",
+        version="0.20.0",
+        title="Let the Site map load vector tiles",
+        body=(
+            "The vector basemap fetches its tiles in the browser and draws them "
+            "in a web worker. The nginx Content-Security-Policy needs the tile "
+            "host in connect-src and worker-src 'self' blob:. Until then an "
+            "install set to vector tiles falls back to the raster ones. Root "
+            "runs this from the bundle of this release, never from the app "
+            "directory."
+        ),
+        snippet=_NGINX_MAP_CSP,
+        docs="features/site-map/#vector-basemap-and-label-language",
+        platforms=("systemd",),
+        check=_map_csp_allows_vector,
+        host=True,
     ),
     UpgradeNote(
         id="0.19.0-nginx-assets",

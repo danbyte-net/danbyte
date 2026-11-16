@@ -251,6 +251,40 @@
       content: none;
     }
   }
+
+  /* Pinned columns (DataTable, lib/column-pins.ts). A stuck body cell is
+     opaque - the page background with the row's own tint laid over it, the
+     same stripe / hover / selected tint the row has - so cells scrolling
+     under it never show through. The right-most column that is actually
+     stuck (data-pin-last, set from the scroll position) carries a hairline in
+     the border colour, and while one is stuck the frame's left-edge hint
+     gives way to it. */
+  td[data-pinned] {
+    --pin-tint: transparent;
+    background-color: var(--background);
+    background-image: linear-gradient(var(--pin-tint), var(--pin-tint));
+  }
+  table[data-stripes="on"] tbody tr:nth-child(even) > td[data-pinned] {
+    --pin-tint: color-mix(in oklab, var(--muted) 45%, transparent);
+  }
+  tbody tr:hover > td[data-pinned] {
+    --pin-tint: color-mix(in oklab, var(--muted) 50%, transparent);
+  }
+  tbody tr[data-state="selected"] > td[data-pinned] {
+    --pin-tint: var(--muted);
+  }
+  [data-pin-last]::after {
+    content: "";
+    position: absolute;
+    inset-block: 0;
+    right: 0;
+    width: 1px;
+    background: var(--border);
+    pointer-events: none;
+  }
+  [data-pins][data-scroll-left]::before {
+    content: none;
+  }
 }
 
 /* ─── Site map (Leaflet) ─────────────────────────────────────────────────
@@ -409,6 +443,11 @@
   color: var(--muted-foreground);
   border-color: var(--muted-foreground);
   font-size: 10px;
+}
+/* The vector basemap's MapLibre container (#467): positioned like a tile
+   layer; its own CSS would make it a relative block. */
+.leaflet-pane > .leaflet-gl-layer {
+  position: absolute;
 }
 .dark .sm-tiles {
   filter: brightness(0.65) invert(1) contrast(3) hue-rotate(200deg)

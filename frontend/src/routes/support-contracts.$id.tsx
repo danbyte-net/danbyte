@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import type { ColumnDef } from "@tanstack/react-table"
-import { ExternalLink, Pencil, Plus, Trash2 } from "lucide-react"
+import { ExternalLink, Plus, Trash2 } from "lucide-react"
 import { useCallback, useMemo, useState } from "react"
 import { toast } from "sonner"
 
@@ -18,6 +18,7 @@ import { DataTable } from "@/components/data-table"
 import { TagList } from "@/components/cells/tag-list"
 import { KvCard, dash } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
@@ -70,27 +71,12 @@ function Body({ contract: c }: { contract: SupportContract }) {
       backLabel="Support contracts"
       title={<span className="font-mono">{c.contract_number}</span>}
       presence={{ type: "supportcontract", id: c.id }}
-      actions={
-        <>
-          {canEdit && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/support-contracts/$id/edit" params={{ id: c.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDelete && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeleting(c)}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
-        </>
+      edit={
+        canEdit && (
+          <EditButton to="/support-contracts/$id/edit" params={{ id: c.id }} />
+        )
       }
+      remove={canDelete && <DeleteButton onClick={() => setDeleting(c)} />}
       hero={
         <DetailHero
           title={c.contract_number}

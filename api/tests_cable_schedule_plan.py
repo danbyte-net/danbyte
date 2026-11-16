@@ -458,7 +458,7 @@ class CloseupTests(_Big):
                        "rows": [long_id]}],
             closeup_note="2 close-ups of the busiest parts; 1 more part with cables not shown",
         )
-        self.assertIn("<th>Detail</th>", html)
+        self.assertIn("<th class='ref'>Detail</th>", html)
         self.assertIn("<td class='ref'>A, C</td>", html)
         self.assertIn("Detail A", html)
         self.assertIn("· 1:400", html)

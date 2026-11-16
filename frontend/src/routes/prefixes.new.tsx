@@ -25,13 +25,17 @@ export const Route = createFileRoute("/prefixes/new")({
     // Optional too: where to go back to on save / cancel (the space map
     // passes its own zoomed view, so the next block is one click away).
     ...(typeof s.from === "string" ? { from: s.from } : {}),
+    // Optional: the free block a list free row's Create came from, so the
+    // form offers its sizes (a /23 can become a /24 at its start).
+    ...(typeof s.free === "string" ? { free: s.free } : {}),
     ...planSearch(s),
   }),
   component: NewPrefixPage,
 })
 
 function NewPrefixPage() {
-  const { cidr, vrf, site, location, vlan, clone, from } = Route.useSearch()
+  const { cidr, vrf, site, location, vlan, clone, from, free } =
+    Route.useSearch()
   const nav = useNavigate()
   const goBack = useReturnTo(from)
   const cloneQ = useCloneSeed<Partial<Prefix>>("prefixes", clone)
@@ -63,6 +67,7 @@ function NewPrefixPage() {
             siteId: site ?? null,
             locationId: location ?? null,
             vlanId: vlan ?? null,
+            freeBlock: free,
           }}
           clone={cloning ? cloneQ.data?.initial : undefined}
           onSaved={(p) =>

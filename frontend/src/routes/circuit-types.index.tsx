@@ -130,14 +130,16 @@ function CircuitTypesPage() {
         filters: { snapshot, restore, activeCount },
       }}
       search={{ value: q, onChange: setQ, placeholder: "Filter types…" }}
+      add={
+        canAdd && (
+          <Button size="sm" asChild>
+            <Link to="/circuit-types/new">Add type</Link>
+          </Button>
+        )
+      }
       actions={
         <>
           <TableActions ioType="circuittype" />
-          {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/circuit-types/new">Add type</Link>
-            </Button>
-          )}
         </>
       }
       query={query}

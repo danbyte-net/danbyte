@@ -37,6 +37,14 @@ deleted, no name collision with a user-created VRF called Global).
 The `nulls_distinct=False` on the `Prefix` and `IPAddress` uniqueness
 constraints makes Global behave like a real VRF for uniqueness purposes.
 
+## The VRF's page
+
+The **Prefixes** and **IPs** tabs list the VRF's rows with a **Filters** /
+**Tree** rail: the list pages' facets, or the VRF's prefix tree. Picking a
+prefix in the tree scopes the tab to it and everything inside it, on the
+server (`/api/prefixes/?vrf=<id>&within=<prefix>`, the same on
+`/api/ips/`). See [Browse by tree](../features/prefix-crud.md#on-a-vrfs-page).
+
 ## Related
 
 - `Prefix.vrf` and `IPAddress.vrf` - both nullable FKs

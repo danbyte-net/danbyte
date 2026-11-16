@@ -18,6 +18,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { TwoFactorSection } from "@/components/two-factor-section"
+import { PasswordSection } from "@/components/password-section"
 import { ApiTokensSection } from "@/components/api-tokens-section"
 import { SidebarCard } from "@/components/settings/sidebar-card"
 import {
@@ -27,6 +28,7 @@ import {
 } from "@/components/settings/settings-card"
 import { apiErrorToast } from "@/lib/api-toast"
 import { useTimezoneOptions } from "@/lib/use-timezones"
+import { LABEL_LANGUAGE_OPTIONS } from "@/components/site-map/vector-style"
 
 export const Route = createFileRoute("/settings/preferences")({
   component: PreferencesPage,
@@ -49,6 +51,8 @@ function PreferencesPage() {
         <NavigationCard />
         <TaskEmailsCard />
         <SpaceMapCard />
+        <PasswordSection />
+        <SiteMapCard />
         <TwoFactorSection />
         <ApiTokensSection />
       </SettingsGrid>
@@ -257,6 +261,29 @@ function NavigationCard() {
   )
 }
 
+function SiteMapCard() {
+  const d = usePrefDraft()
+  return (
+    <SettingsCard
+      title="Site map"
+      description="Applies to vector basemaps."
+      onSave={d.save}
+      dirty={d.dirty}
+      saving={d.saving}
+    >
+      <FormSelect
+        label="Label language"
+        value={String(d.get("map_label_language") ?? AUTO)}
+        onChange={(v) => v && d.set("map_label_language", v)}
+        options={[
+          { value: AUTO, label: "Auto (deployment default)" },
+          ...LABEL_LANGUAGE_OPTIONS,
+        ]}
+      />
+    </SettingsCard>
+  )
+}
+
 function SpaceMapCard() {
   const d = usePrefDraft()
   return (
@@ -439,6 +466,7 @@ function TableLayoutsSection() {
 
 const SOURCE_LABEL: Record<string, string> = {
   user: "Customised",
+  preset: "Preset",
   default: "Tenant default",
   tenant_forced: "Locked by admin",
   none: "Default",
@@ -463,7 +491,9 @@ function TablePrefRow({
       <span className="min-w-0 flex-1 truncate">{table.label}</span>
       <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
         {isForced && <Lock className="h-3 w-3" />}
-        {SOURCE_LABEL[source] ?? "Default"}
+        {source === "preset" && summary?.preset
+          ? `Preset: ${summary.preset.name}`
+          : (SOURCE_LABEL[source] ?? "Default")}
       </span>
       <Button
         variant="ghost"

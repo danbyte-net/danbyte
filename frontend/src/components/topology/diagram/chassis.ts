@@ -27,6 +27,9 @@ export interface ChassisLook {
   off?: boolean
   /** The side its name strip runs along. Absent: `stripSide(orient)`. */
   side?: Side
+  /** A cluster (#517): drawn as a frame round its hosts. Absent: one
+   * card (clusters.ts). */
+  open?: boolean
 }
 
 export const STRIP_SIDES: readonly Side[] = ["T", "B", "L", "R"]
@@ -57,6 +60,9 @@ export interface ChassisOptions {
   /** Chassis placed on a hand-picked map: stacked even with one member on
    * the map, and even when the view's stacking is off. */
   placed?: readonly string[]
+  /** Group clusters (#517): an open cluster's hosts stack in a frame of
+   * their own, the same way, unless they are a chassis' members. */
+  clusters?: boolean
 }
 
 /** A device node's chassis, as the topology API sends it. */
@@ -91,6 +97,40 @@ export const CHASSIS_NODE_CLASS = "mix-blend-darken dark:mix-blend-lighten"
 /** A stacked chassis' frame node id. */
 export const chassisNodeId = (vc: string) => `vc:${vc}`
 export const isChassisNode = (id: string) => id.startsWith("vc:")
+/** A cluster's frame or card node id (#517). */
+export const clusterNodeId = (cluster: string) => `cl:${cluster}`
+export const isClusterNode = (id: string) => id.startsWith("cl:")
+/** A frame node, a chassis' or a cluster's: placed and saved like a card. */
+export const isFrameNode = (id: string) =>
+  isChassisNode(id) || isClusterNode(id)
+
+/** The cluster a node's data names (`group_clusters`, #517). */
+export function clusterOf(
+  data: unknown
+): { id: string; name: string } | undefined {
+  const c = (data as { cluster?: unknown } | null | undefined)?.cluster
+  if (!c || typeof c !== "object") return undefined
+  const v = c as { id?: unknown; name?: unknown }
+  return typeof v.id === "string" && typeof v.name === "string"
+    ? { id: v.id, name: v.name }
+    : undefined
+}
+
+/** The frame a device node stacks in, when it does: its chassis', else
+ * (with clusters grouped) its cluster's. A chassis wins. */
+export function frameOfData(
+  data: unknown,
+  clusters = true
+): string | undefined {
+  const vc = vcOf(data)
+  if (vc) return chassisNodeId(vc.id)
+  const cl = clusters ? clusterOf(data) : undefined
+  return cl ? clusterNodeId(cl.id) : undefined
+}
+
+/** A cluster frame's strip text: its name and how many hosts it holds. */
+export const clusterLabel = (name: string, n: number) =>
+  `${name} · ${n} ${n === 1 ? "host" : "hosts"}`
 
 /** The chassis a node's data names, when it is a member of one. */
 export function vcOf(data: unknown): NodeChassis | undefined {
@@ -109,9 +149,12 @@ export function vcOf(data: unknown): NodeChassis | undefined {
 
 /** A stacked chassis: its frame's id, and its members in stack order. */
 export interface ChassisSpec {
-  /** The frame node (`vc:<chassis id>`). */
+  /** The frame node (`vc:<chassis id>`, `cl:<cluster id>`). */
   id: string
+  /** The chassis, or the cluster (its name with its host count). */
   vc: { id: string; name: string }
+  /** A cluster's frame (#517); absent for a virtual chassis. */
+  kind?: "cluster"
   orient: ChassisOrient
   /** The side its name strip runs along. */
   side: Side
@@ -184,6 +227,44 @@ export function chassisSpecs(
       side: chassisSide(id, opts, orient),
       members: g.members.map((m) => m.id),
     })
+  }
+  // Group clusters (#517): the hosts of a cluster opened on the view (a
+  // shut one is a single card by now, clusters.ts) stack the same way,
+  // by name - a chassis' members are its chassis', never a cluster's.
+  if (opts.clusters) {
+    const hosts = new Map<
+      string,
+      { name: string; members: { id: string; name: string }[] }
+    >()
+    for (const n of nodes) {
+      if (n.type !== "device" || vcOf(n.data)) continue
+      const cl = clusterOf(n.data)
+      if (!cl) continue
+      const g = hosts.get(cl.id) ?? { name: cl.name, members: [] }
+      g.members.push({
+        id: n.id,
+        name: String((n.data as { name?: unknown }).name ?? ""),
+      })
+      hosts.set(cl.id, g)
+    }
+    for (const [id, g] of hosts) {
+      if (g.members.length < 2) continue
+      const look = opts.looks?.[id]
+      const orient: ChassisOrient =
+        look?.orient ?? (opts.mode !== "off" ? opts.mode : "v")
+      g.members.sort(
+        (a, b) =>
+          byName(a.name, b.name) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+      )
+      out.push({
+        id: clusterNodeId(id),
+        vc: { id, name: clusterLabel(g.name, g.members.length) },
+        kind: "cluster",
+        orient,
+        side: chassisSide(id, opts, orient),
+        members: g.members.map((m) => m.id),
+      })
+    }
   }
   return out.sort((a, b) => byName(a.vc.name, b.vc.name))
 }

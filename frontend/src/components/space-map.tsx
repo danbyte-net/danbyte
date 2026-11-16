@@ -681,8 +681,8 @@ const CELL_FIT: Record<CellFit, string> = {
 
 // One fill for "used", shared by full cells, the used part of a partly used
 // cell and the legend, so a bar reads exactly as much used as a used cell.
-const USED_FILL = "bg-rose-100 dark:bg-rose-950/40"
-const FREE_FILL = "bg-emerald-100 dark:bg-emerald-950/40"
+export const USED_FILL = "bg-rose-100 dark:bg-rose-950/40"
+export const FREE_FILL = "bg-emerald-100 dark:bg-emerald-950/40"
 
 const TONE: Record<SpaceMapCellState, string> = {
   free: `cursor-pointer ${FREE_FILL} text-emerald-700 ring-emerald-200 hover:bg-emerald-200 hover:ring-emerald-400 dark:text-emerald-300 dark:ring-emerald-900 dark:hover:bg-emerald-900/50 dark:hover:ring-emerald-700`,

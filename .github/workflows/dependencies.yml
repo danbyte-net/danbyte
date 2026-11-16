@@ -1,0 +1,70 @@
+name: Dependencies
+
+# The dependency gate (#451). requirements.lock must be what `make lock`
+# makes from requirements.txt, and no runtime dependency in it or in
+# frontend/package-lock.json may carry a critical or high advisory unless
+# osv-scanner.toml allows it, with a reason and an expiry. Weekly as well:
+# advisories appear for versions nobody changed. The release calls it before
+# it builds the bundle. See docs/getting-started/dependencies.md.
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '23 5 * * 1'
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  lock:
+    name: Lock matches requirements.txt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install uv
+        run: python -m pip install 'uv==0.12.0'
+      - name: requirements.lock is current
+        run: |
+          python scripts/release/lockcheck.py
+          make lock-check UV=uv
+
+  scan:
+    name: OSV scan (fails on critical/high runtime findings)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      # Exits non-zero both on findings and on a failed scan; the gate below
+      # decides, and a scan that wrote no results fails it.
+      - name: Scan the lockfiles
+        uses: google/osv-scanner-action/osv-scanner-action@b1d267aea5211fa648d9d442fa64b90dbdcbdd36 # v2.7.0
+        continue-on-error: true
+        with:
+          scan-args: |-
+            --config=osv-scanner.toml
+            --format=json
+            --output=osv-results.json
+            --lockfile=requirements.txt:requirements.lock
+            --lockfile=frontend/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Gate
+        run: python scripts/release/osv_gate.py --results osv-results.json
+      - name: Keep the report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: osv-results
+          path: osv-results.json
+          if-no-files-found: ignore
+          retention-days: 30

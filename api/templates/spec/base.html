@@ -83,27 +83,10 @@
   </div>
 </header>
 
-{% if elevation %}
-<div class="elevation">
-  {% for im in elevation %}<div class="strip"><img src="{{ im.src }}" alt=""><div class="cap">{{ im.caption }}</div></div>{% endfor %}
-</div>
-{% endif %}
-<div class="stats">
-  {% for s in stats %}
-  <div class="stat">
-    <div class="label">{{ s.label }}</div>
-    <div class="value">{{ s.value }}</div>
-    {% if s.hint %}<div class="hint">{{ s.hint }}</div>{% endif %}
-  </div>
-  {% endfor %}
-</div>
+{% include "spec/_elevation.html" %}
+{% include "spec/_stats.html" %}
 
-<section>
-  <h2>Details</h2>
-  <div class="kv">
-    {% for k, v in details %}<div class="row"><div class="k">{{ k }}</div><div class="v">{{ v }}</div></div>{% endfor %}
-  </div>
-</section>
+{% include "spec/_details.html" %}
 
 {% if ports %}
 <section>

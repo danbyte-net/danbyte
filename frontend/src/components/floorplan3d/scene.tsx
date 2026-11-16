@@ -150,9 +150,11 @@ export default function FloorScene3D({
   planId,
   liveState,
   hiddenTileIds,
+  recedeTileIds = null,
   traceCableId,
   onOpenCable,
   onOpenDevice,
+  onOpenTile,
   focusTarget = null,
   showUNumbers = false,
   showNames = false,
@@ -194,12 +196,17 @@ export default function FloorScene3D({
   liveState: FloorPlanLiveState | null
   /** Tiles the plan's eyes have switched off - not drawn here either. */
   hiddenTileIds?: Set<string>
+  /** Tiles the plan's filter leaves out: ghosted, as focus ghosts. */
+  recedeTileIds?: ReadonlySet<string> | null
   traceCableId?: string | null
   /** A cable run clicked: the plan's cable panel in place of the room's
    * cable card (null: clicked away). */
   onOpenCable?: (cableId: string | null) => void
   /** A device clicked: the plan's device panel in place of its card. */
   onOpenDevice?: (tileId: string, deviceId: string) => void
+  /** A tile drawn as massing clicked (power, cooling, unlinked, Hidden):
+   * the plan pins its popover at `at` (px in the room); null: deselected. */
+  onOpenTile?: (tileId: string | null, at?: { x: number; y: number }) => void
   /** Fly to a cable's run or a tile (Find, Show on plan); a new `n` flies
    * again. */
   focusTarget?: { kind: "cable" | "tile"; id: string; n: number } | null
@@ -331,9 +338,17 @@ export default function FloorScene3D({
       labels: showPlanLabels,
       areaNames: showAreaNames,
       zoneNames: showZoneLabels,
+      // Rows are named under Callouts: Auto, as on the 2D plan.
+      rowNames: readableCallouts,
       readable: readableNames,
     }),
-    [showPlanLabels, showAreaNames, showZoneLabels, readableNames]
+    [
+      showPlanLabels,
+      showAreaNames,
+      showZoneLabels,
+      readableCallouts,
+      readableNames,
+    ]
   )
   const sceneData = scene.data
   // Touching raised floors of one depth and colour are one pad.
@@ -549,6 +564,20 @@ export default function FloorScene3D({
     if (sel.kind === "device" && sel.deviceId)
       onOpenDevice?.(sel.tileId, sel.deviceId)
   }
+
+  // A massing tile's popover lives on the plan: it closes whenever the
+  // selection moves off that tile, however it moved.
+  const onOpenTileRef = useRef(onOpenTile)
+  onOpenTileRef.current = onOpenTile
+  const selTileId = selection?.kind === "tile" ? selection.tileId : null
+  const hadTile = useRef(false)
+  useEffect(() => {
+    if (selTileId) hadTile.current = true
+    else if (hadTile.current) {
+      hadTile.current = false
+      onOpenTileRef.current?.(null)
+    }
+  }, [selTileId])
 
   // Esc cancels an in-flight connect.
   useEffect(() => {
@@ -957,7 +986,9 @@ export default function FloorScene3D({
   }
 
   return (
-    <div className="relative h-full min-h-0 w-full">
+    // data-floor-canvas: a click in the room is the room's to interpret, as
+    // on the 2D canvas - the pinned tile popover does not dismiss on it.
+    <div className="relative h-full min-h-0 w-full" data-floor-canvas="">
       <Stage
         quality={rq}
         camera={{
@@ -1102,7 +1133,10 @@ export default function FloorScene3D({
             portLabelColor={faceplatePortLabelColor}
             showAirflow={showAirflow}
             shellMode={shellMode}
-            ghosted={focusOn && !!selection && selection.tileId !== t.id}
+            ghosted={
+              (focusOn && !!selection && selection.tileId !== t.id) ||
+              !!recedeTileIds?.has(t.id)
+            }
             focusDeviceId={
               focusOn && selection?.tileId === t.id
                 ? (selection.deviceId ?? null)
@@ -1138,7 +1172,10 @@ export default function FloorScene3D({
             selected={
               selection?.tileId === t.id && selection.kind === "cabinet"
             }
-            ghosted={focusOn && !!selection && selection.tileId !== t.id}
+            ghosted={
+              (focusOn && !!selection && selection.tileId !== t.id) ||
+              !!recedeTileIds?.has(t.id)
+            }
             xray={shellMode === "xray"}
             attention={attention}
             doorOpen={openDoors.has(t.id)}
@@ -1285,6 +1322,15 @@ export default function FloorScene3D({
               plan={plan}
               tile={t}
               showName={!readableNames}
+              selected={selection?.kind === "tile" && selection.tileId === t.id}
+              ghosted={
+                (focusOn && !!selection && selection.tileId !== t.id) ||
+                !!recedeTileIds?.has(t.id)
+              }
+              onSelect={(at) => {
+                handleSelect({ kind: "tile", tileId: t.id })
+                onOpenTile?.(t.id, at)
+              }}
             />
           ))}
         {/* Devices placed on the floor: their rack-unit box or 3D model. */}
@@ -1299,6 +1345,7 @@ export default function FloorScene3D({
           checks={(id) => liveState?.tiles[id]?.check ?? null}
           selection={selection}
           focusTileId={focusOn && selection ? selection.tileId : null}
+          recedeTileIds={recedeTileIds}
           showNames={!readableNames}
           onSelect={handleSelect}
           onFlyTo={(target, position) => {
@@ -1313,6 +1360,7 @@ export default function FloorScene3D({
           items={activeTexts}
           plan={plan}
           readable={readableNames}
+          walls={sceneData?.walls}
         />
         {building &&
           levels.length > 1 &&

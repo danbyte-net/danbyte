@@ -49,6 +49,11 @@ interface RawAlert {
   detail: MismatchDetail | null
 }
 
+/** What the panel calls its host. */
+function hostNoun(hostField: "device" | "virtual_machine"): string {
+  return hostField === "virtual_machine" ? "VM" : "device"
+}
+
 /**
  * SSH host keys for one device: the keys it is **expected** to present
  * (uploaded), the keys actually **observed** on the wire, drift when the two
@@ -56,7 +61,14 @@ interface RawAlert {
  * Device-scoped - a host key belongs to its device, so there is no assignment
  * step (unlike certificates).
  */
-export function SSHHostKeysPanel({ deviceId }: { deviceId: string }) {
+export function SSHHostKeysPanel({
+  deviceId,
+  hostField = "device",
+}: {
+  /** The host's id: a device's, or a VM's with `hostField="virtual_machine"`. */
+  deviceId: string
+  hostField?: "device" | "virtual_machine"
+}) {
   const qc = useQueryClient()
   const { canDo } = useMe()
   const canManage = canDo("sshhostkey", "add")
@@ -65,7 +77,9 @@ export function SSHHostKeysPanel({ deviceId }: { deviceId: string }) {
   const keys = useQuery({
     queryKey: ["ssh-host-keys", deviceId],
     queryFn: () =>
-      apiAll<SSHHostKey>(`/api/monitoring/ssh-host-keys/?device=${deviceId}`),
+      apiAll<SSHHostKey>(
+        `/api/monitoring/ssh-host-keys/?${hostField}=${deviceId}`
+      ),
   })
 
   const alerts = useQuery({
@@ -175,7 +189,7 @@ export function SSHHostKeysPanel({ deviceId }: { deviceId: string }) {
     <Section
       boxed
       title="SSH host keys"
-      description="the key the device is expected to present on port 22, and what's observed"
+      description={`the key the ${hostNoun(hostField)} is expected to present on port 22, and what's observed`}
       actions={
         canManage ? (
           <Button
@@ -194,8 +208,9 @@ export function SSHHostKeysPanel({ deviceId }: { deviceId: string }) {
           <div>
             <div className="font-medium">Host key drift</div>
             <div className="text-muted-foreground">
-              This device is presenting a key that isn't the expected one.
-              Accept the observed key below if the change is legitimate.
+              This {hostNoun(hostField)} is presenting a key that isn't the
+              expected one. Accept the observed key below if the change is
+              legitimate.
             </div>
           </div>
         </div>
@@ -214,6 +229,7 @@ export function SSHHostKeysPanel({ deviceId }: { deviceId: string }) {
 
       <UploadSSHHostKeyDialog
         deviceId={deviceId}
+        hostField={hostField}
         open={uploadOpen}
         onOpenChange={setUploadOpen}
         onDone={() => {
@@ -227,11 +243,13 @@ export function SSHHostKeysPanel({ deviceId }: { deviceId: string }) {
 
 function UploadSSHHostKeyDialog({
   deviceId,
+  hostField,
   open,
   onOpenChange,
   onDone,
 }: {
   deviceId: string
+  hostField: "device" | "virtual_machine"
   open: boolean
   onOpenChange: (open: boolean) => void
   onDone: () => void
@@ -249,7 +267,7 @@ function UploadSSHHostKeyDialog({
       apiStatus<SSHHostKey>("/api/monitoring/ssh-host-keys/", {
         method: "POST",
         body: JSON.stringify({
-          device: deviceId,
+          [hostField]: deviceId,
           public_key_line: line.trim(),
         }),
       }),
@@ -286,9 +304,10 @@ function UploadSSHHostKeyDialog({
         <DialogHeader>
           <DialogTitle>Add SSH host key</DialogTitle>
           <DialogDescription>
-            Paste the device's public host key (an OpenSSH line like{" "}
-            <code>ssh-ed25519 AAAA… host</code>), or load a <code>.pub</code>{" "}
-            file. Only the public key is stored - never a private key.
+            Paste the {hostNoun(hostField)}&apos;s public host key (an OpenSSH
+            line like <code>ssh-ed25519 AAAA… host</code>), or load a{" "}
+            <code>.pub</code> file. Only the public key is stored - never a
+            private key.
           </DialogDescription>
         </DialogHeader>
 

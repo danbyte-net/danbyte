@@ -155,6 +155,12 @@ export function readIconTiles(v: unknown): boolean {
   return v !== false
 }
 
+/** A stored value as Display > Tile icons: on unless the plan turned it
+ * off (tile-face.ts). */
+export function readTileIcons(v: unknown): boolean {
+  return v !== false
+}
+
 /** Display > Callouts: Auto names a tile whose name will not sit cleanly
  * by it in a box off to the side (plan-callouts.ts); Off does not. */
 export const CALLOUT_MODES = ["auto", "off"] as const

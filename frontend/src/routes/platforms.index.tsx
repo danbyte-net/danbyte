@@ -80,14 +80,16 @@ function PlatformsPage() {
         onChange: setQ,
         placeholder: "Filter by name, description…",
       }}
+      add={
+        canAdd && (
+          <Button size="sm" asChild>
+            <Link to="/platforms/new">Add platform</Link>
+          </Button>
+        )
+      }
       actions={
         <>
           <TableActions ioType="platform" />
-          {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/platforms/new">Add platform</Link>
-            </Button>
-          )}
         </>
       }
       query={query}

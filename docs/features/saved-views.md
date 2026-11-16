@@ -8,6 +8,10 @@ A view is a search and a set of filters, under a name. Instead of rebuilding
 "decommissioning switches in Aarhus" every morning, save it once and pick it
 from the **Views** menu on that list.
 
+A floor plan's **Filter** saves the same way, from the **Views** menu on its
+bar, under the object type `floorplan` - see
+[Filters and saved views](floor-plans.md#filters-and-saved-views).
+
 ## Filtering from the table
 
 A badge in a row is a filter you can click. A status, role, family, or any

@@ -138,7 +138,7 @@ class DeviceCredentialPathTests(_Case):
         self.root = self._user("root", {}, superuser=True)
 
     def _row(self, **kw):
-        row = {"device": "sw-b", "name": "y", "kind": "ssh_password",
+        row = {"device": "sw-b", "name": "y", "kind": "ssh_password", "username": "ops",
                "secret_managed": "False", "secret_provider": "vault",
                "secret_path": "secret/data/prod/core-routers"}
         row.update(kw)
@@ -150,7 +150,8 @@ class DeviceCredentialPathTests(_Case):
         self._login(self.op)
         api = self.client.post("/api/monitoring/device-credentials/", {
             "device": str(self.dev.id), "name": "x", "kind": "ssh_password",
-            "secret_managed": False, "secret_path": "secret/data/prod/core-routers",
+            "username": "ops", "secret_managed": False,
+            "secret_path": "secret/data/prod/core-routers",
         }, format="json")
         self.assertEqual(api.status_code, 403)
         for dry in (True, False):

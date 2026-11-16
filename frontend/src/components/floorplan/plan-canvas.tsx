@@ -115,7 +115,16 @@ export function PlanCanvas({
   onOpenCable,
   outline,
   onion = null,
+  filter,
 }: {
+  /** The plan's filter: the tiles and areas it keeps (null: off), Hide
+   * others, and what the rooms' facts count under it. */
+  filter?: {
+    ids: ReadonlySet<string> | null
+    hide: boolean
+    areaIds: ReadonlySet<string> | null
+    factKey: (tile: FloorPlanTile) => string | undefined
+  }
   /** Another level of an aligned floor plan, faintly under this one. */
   onion?: OnionSkin | null
   /** A cable clicked: its panel opens and it is traced; null clears. */
@@ -246,7 +255,10 @@ export function PlanCanvas({
     showPhotoOutlines,
     objectSize,
     iconTiles,
+    tileIcons,
+    areaNames,
     callouts,
+    detail,
     muteBackground,
     showTrays,
     showCableLinks,
@@ -409,6 +421,10 @@ export function PlanCanvas({
         rackFigures={capacity.figures}
         highlightTileIds={capacity.highlightTileIds}
         dimTileIds={racksOpen ? capacity.dimTileIds : undefined}
+        filterIds={filter?.ids ?? null}
+        filterHide={!!filter?.hide}
+        filterAreaIds={filter?.areaIds ?? null}
+        filterFactKey={filter?.factKey}
         // Inside the export area, so the PNG carries the key.
         overlay={colorLegend}
         labelFit={labelFit}
@@ -419,8 +435,11 @@ export function PlanCanvas({
         photoOutlines={showPhotoOutlines}
         objectSize={objectSize}
         iconTiles={iconTiles}
+        tileIcons={tileIcons}
+        areaNameDefault={areaNames}
         callouts={callouts}
         calloutLines={calloutLines}
+        detail={detail}
         muteBackground={muteBackground}
         mode={mode}
         trays={trays}

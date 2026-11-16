@@ -208,7 +208,12 @@ export function cellNote(cell: SpaceMapCell): string {
       : ""
   switch (cell.state) {
     case "partial":
-      return `${formatUsed(cell.used_fraction)} used · ${cell.overlap_with.join(", ")}${more}${rangeNote(cell)}`
+      // A prefix the reader may not view takes space unnamed.
+      return `${formatUsed(cell.used_fraction)} used${
+        cell.overlap_with.length
+          ? ` · ${cell.overlap_with.join(", ")}${more}`
+          : ""
+      }${rangeNote(cell)}`
     case "full":
       return cell.exact
         ? "Existing prefix"

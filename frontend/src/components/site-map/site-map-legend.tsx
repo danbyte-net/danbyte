@@ -39,8 +39,12 @@ export function SiteMapLegend({
   colorBy = "type",
   lines,
   asOf,
+  dependencies = false,
 }: {
   colorBy?: LineColorBy
+  /** The Dependencies layer draws a line (#450). Each wears its medium's
+   * colour and dash; the row keys the chevron. */
+  dependencies?: boolean
   /** What the drawn lines carry - keyed under Status and Speed. */
   lines?: LineKey
   /** Utilization: the newest sample behind the colours. */
@@ -165,6 +169,9 @@ export function SiteMapLegend({
           }
           label="Cable without a drawn route"
         />
+        {dependencies && (
+          <LegendRow swatch={<LegendLine length={24} />} label="Dependency →" />
+        )}
       </div>
     </LegendFrame>
   )

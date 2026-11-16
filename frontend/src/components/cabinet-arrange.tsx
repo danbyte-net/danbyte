@@ -5,7 +5,7 @@ import type { ShouldBlockFn } from "@tanstack/react-router"
 import { ArrowDownToLine, Plus } from "lucide-react"
 import { toast } from "sonner"
 
-import { ApiError, api } from "@/lib/api"
+import { ApiError, api, itemErrors } from "@/lib/api"
 import type { Cabinet, Device, DinRail, Paginated } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
 import { invalidateCabinetDeviceViews } from "@/lib/cabinets"
@@ -148,10 +148,14 @@ export function useArrangement(
     },
     onError: (err, placements) => {
       const body = err instanceof ApiError ? err.body : null
-      if (err instanceof ApiError && err.status === 400 && isErrorList(body)) {
-        // One entry per placement, in the order sent.
+      const perItem =
+        err instanceof ApiError && err.status === 400
+          ? placementErrors(body)
+          : null
+      if (perItem) {
+        // One entry per placement, by position.
         const next: Record<string, string> = {}
-        body.placements.forEach((e, i) => {
+        perItem.forEach((e, i) => {
           const text = Object.values(e).flat().join(" ")
           if (text && placements[i]) next[placements[i].device_id] = text
         })
@@ -194,17 +198,13 @@ export function useArrangement(
 
 export type Arrangement = ReturnType<typeof useArrangement>
 
-function isErrorList(
-  body: unknown
-): body is { placements: Record<string, string[]>[] } {
-  return (
-    !!body &&
-    typeof body === "object" &&
-    Array.isArray((body as { placements?: unknown }).placements) &&
-    (body as { placements: unknown[] }).placements.every(
-      (e) => !!e && typeof e === "object"
-    )
-  )
+/** The per-placement errors of a refused arrangement, by position, or null. */
+function placementErrors(body: unknown): Record<string, string[]>[] | null {
+  if (!body || typeof body !== "object") return null
+  const items = itemErrors((body as { placements?: unknown }).placements)
+  return items && items.every((e) => !!e && typeof e === "object")
+    ? (items as Record<string, string[]>[])
+    : null
 }
 
 function hasDetail(body: unknown): body is { detail: string } {
@@ -351,7 +351,7 @@ export function ArrangePlate({
         near={near}
         standing={standing}
         box
-        frame="overflow-auto"
+        scroll
         elevationClassName="mx-auto"
         pxPerMm={pxPerMm}
         look={look}

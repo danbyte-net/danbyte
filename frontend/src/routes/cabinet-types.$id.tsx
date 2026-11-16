@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
-import { Pencil, Plus, Trash2 } from "lucide-react"
+import { Plus } from "lucide-react"
 import { useState } from "react"
 
 import { api } from "@/lib/api"
@@ -13,6 +13,7 @@ import { KvCard, dash } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
 import { Loading } from "@/components/loading"
 import { QueryError } from "@/components/query-error"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { EmbeddedCabinetTable } from "@/components/embedded-tables"
 import { CabinetPlateSection } from "@/components/cabinet-plate-section"
@@ -87,26 +88,15 @@ function Body({ cabinetType: ct }: { cabinetType: CabinetType }) {
       backLabel="Cabinet types"
       title={ct.name}
       presence={{ type: "cabinettype", id: ct.id }}
-      actions={
-        <>
-          {canDo("cabinettype", "change") && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/cabinet-types/$id/edit" params={{ id: ct.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDo("cabinettype", "delete") && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeleting(ct)}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
-        </>
+      edit={
+        canDo("cabinettype", "change") && (
+          <EditButton to="/cabinet-types/$id/edit" params={{ id: ct.id }} />
+        )
+      }
+      remove={
+        canDo("cabinettype", "delete") && (
+          <DeleteButton onClick={() => setDeleting(ct)} />
+        )
       }
       hero={
         <DetailHero

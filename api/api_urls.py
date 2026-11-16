@@ -16,7 +16,7 @@ from rest_framework.routers import DefaultRouter
 
 from agents.views import mcp as agent_mcp
 from audit.api import ChangeLogViewSet, JournalEntryViewSet
-from auth_api import column_prefs, dashboard_prefs, sidebar_prefs
+from auth_api import column_prefs, dashboard_prefs, layout_presets, sidebar_prefs
 from auth_api import views as auth_views
 from auth_api.api import (
     GroupViewSet,
@@ -47,6 +47,11 @@ from auth_api.login_api import (
     totp_confirm_api,
     totp_disable_api,
     totp_setup_api,
+)
+from auth_api.password_api import (
+    password_change_api,
+    password_reset_confirm_api,
+    password_reset_request_api,
 )
 from auth_api.people_api import (
     PeopleGroupDetail,
@@ -81,6 +86,13 @@ from compliance.eol_api import (
     eol_settings,
 )
 from compliance.eol_custom import EolCustomProductViewSet
+from vulnerabilities.api import (
+    vulnerability_import,
+    vulnerability_settings,
+    vulnerability_sync_run,
+)
+from vulnerabilities import browser_api as vuln_browser
+from vulnerabilities.fetch_api import vulnerability_cpe_search, vulnerability_refresh
 from core import (
     deployment,
     service_api,
@@ -171,6 +183,8 @@ from routing.viewsets import (
 )
 
 from .application_flows_api import ApplicationFlowViewSet
+from .dependency_maps import topology_dependencies_view
+from .dependency_views import DependencyMediumViewSet, DeviceDependencyViewSet
 from .application_groups_api import ApplicationGroupAssignmentViewSet, ApplicationGroupViewSet
 from .applications_api import ApplicationViewSet, InstalledSoftwareViewSet
 from .csp_views import csp_report
@@ -544,6 +558,10 @@ router.register(r"cable-routes", CableRouteViewSet, basename="cable-route")
 router.register(r"module-interface-templates", ModuleInterfaceTemplateViewSet, basename="module-interface-template")
 router.register(r"modules", ModuleViewSet, basename="module")
 router.register(r"cables",        CableViewSet,       basename="cable")
+# Device dependencies and their media catalog (#450).
+router.register(r"device-dependencies", DeviceDependencyViewSet,
+                basename="device-dependency")
+router.register(r"dependency-media", DependencyMediumViewSet, basename="dependency-medium")
 router.register(r"port-reservations", PortReservationViewSet, basename="port-reservation")
 router.register(r"fiber-settings", FiberSettingsViewSet, basename="fiber-settings")
 router.register(r"custom-fields", CustomFieldViewSet, basename="custom-field")
@@ -621,6 +639,27 @@ urlpatterns = [
     path("eol/products/<slug:source>/<str:name>/", eol_product, name="eol-product"),
     path("eol/platforms/<uuid:platform_id>/", eol_platform_mapping,
          name="eol-platform-mapping"),
+    path("vulnerabilities/settings/", vulnerability_settings,
+         name="vulnerability-settings"),
+    path("vulnerabilities/import/", vulnerability_import, name="vulnerability-import"),
+    path("vulnerabilities/sync/", vuln_browser.sync_start, name="vulnerability-sync"),
+    path("vulnerabilities/sync/<uuid:run_id>/", vulnerability_sync_run,
+         name="vulnerability-sync-run"),
+    path("vulnerabilities/sync/<uuid:run_id>/nvd/", vuln_browser.sync_nvd,
+         name="vulnerability-sync-nvd"),
+    path("vulnerabilities/sync/<uuid:run_id>/epss-plan/", vuln_browser.sync_epss_plan,
+         name="vulnerability-sync-epss-plan"),
+    path("vulnerabilities/sync/<uuid:run_id>/epss/", vuln_browser.sync_epss,
+         name="vulnerability-sync-epss"),
+    path("vulnerabilities/sync/<uuid:run_id>/osv-ids/", vuln_browser.sync_osv_ids,
+         name="vulnerability-sync-osv-ids"),
+    path("vulnerabilities/sync/<uuid:run_id>/osv/", vuln_browser.sync_osv,
+         name="vulnerability-sync-osv"),
+    path("vulnerabilities/sync/<uuid:run_id>/finish/", vuln_browser.sync_finish,
+         name="vulnerability-sync-finish"),
+    path("vulnerabilities/refresh/", vulnerability_refresh, name="vulnerability-refresh"),
+    path("vulnerabilities/cpe/search/", vulnerability_cpe_search,
+         name="vulnerability-cpe-search"),
     path("rbac/object-types/", rbac_object_types, name="rbac-object-types"),
     path("rbac/site-role/", create_site_role, name="rbac-site-role"),
     path("users/<int:user_id>/access-summary/", user_access_summary,
@@ -659,6 +698,9 @@ urlpatterns = [
     path("topology/", topology_view, name="topology"),
     path("routing/topology/bgp/", bgp_topology_view, name="routing-topology-bgp"),
     path("topology/logical/", topology_logical_view, name="topology-logical"),
+    # The Dependencies layer (#450).
+    path("topology/dependencies/", topology_dependencies_view,
+         name="topology-dependencies"),
     path("topology/summary/", topology_summary_view, name="topology-summary"),
     # The Diagram as a PDF (WeasyPrint); ?print=1 answers with a short-lived link.
     path("topology/export/pdf/", topology_pdf_view, name="topology-export-pdf"),
@@ -700,6 +742,10 @@ urlpatterns = [
     path("prtg/", include("prtg.api_urls")),
     # Device profiles: /api/device-profiles/ and /api/device-profile-assignments/.
     path("", include("profiles.api_urls")),
+    # Vulnerability mappings, matches, policy and per-object lists (#451).
+    path("", include("vulnerabilities.api_urls")),
+    # Built-in discovery: profiles, runs, per-host packages (#451 B2).
+    path("", include("discovery.api_urls")),
     path("planning/", include("planning.api_urls")),
     path("outpost/", include("monitoring.outpost_urls")),
     # Background job queue admin (RQ introspection) - gated on jobs.manage.
@@ -751,6 +797,11 @@ urlpatterns = [
     path("auth/sso/<slug:slug>/acs/", sso_acs, name="sso-acs"),
     path("auth/sso/<slug:slug>/metadata/", sso_metadata, name="sso-metadata"),
     path("auth/set-password/", set_password_api, name="auth-set-password"),
+    # Self-service password change (session + CSRF) and reset by email (#492).
+    path("auth/password/change/", password_change_api, name="auth-password-change"),
+    path("auth/password-reset/", password_reset_request_api, name="auth-password-reset"),
+    path("auth/password-reset/confirm/", password_reset_confirm_api,
+         name="auth-password-reset-confirm"),
     path("auth/mfa/verify/", mfa_verify_api, name="auth-mfa-verify"),
     path("auth/mfa/resend/", mfa_resend_api, name="auth-mfa-resend"),
     path("auth/mfa/totp/setup/", totp_setup_api, name="auth-totp-setup"),
@@ -868,6 +919,11 @@ urlpatterns = [
          name="column-pref"),
     path("prefs/columns/<slug:table_id>/default/",
          column_prefs.column_pref_default, name="column-pref-default"),
+    path("prefs/presets/", layout_presets.presets, name="layout-presets"),
+    path("prefs/presets/<uuid:pk>/", layout_presets.preset_detail,
+         name="layout-preset"),
+    path("prefs/presets/<uuid:pk>/reset/", layout_presets.preset_reset,
+         name="layout-preset-reset"),
     # Signed by the target's secret, not a session: see integrations.script_targets.
     path("deploy-runs/<uuid:run_id>/result/", DeployResultView.as_view(),
          name="deploy-run-result"),

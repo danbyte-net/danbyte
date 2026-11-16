@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dialog"
 import { apiErrorToast } from "@/lib/api-toast"
 import { useMe } from "@/lib/use-me"
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu"
 
 const DIM_LABEL: Record<string, string> = {
   width: "Rail width",
@@ -57,7 +58,7 @@ const show = (v: unknown) =>
  * Dry-run first, always: the dialog shows the drift and what would be added
  * before anything is written. Extras are reported, never deleted.
  */
-export function RackSyncTypeButton({ rack }: { rack: Rack }) {
+export function useRackSyncType(rack: Rack) {
   const qc = useQueryClient()
   const { canDo } = useMe()
   const [preview, setPreview] = useState<RackSyncResponse | null>(null)
@@ -92,7 +93,8 @@ export function RackSyncTypeButton({ rack }: { rack: Rack }) {
     onError: (err) => apiErrorToast(err),
   })
 
-  if (!rack.rack_type || !canDo("rack", "change")) return null
+  if (!rack.rack_type || !canDo("rack", "change"))
+    return { item: null, dialog: null }
 
   const diff = preview?.diff
   const dims = Object.entries(diff?.dims ?? {})
@@ -101,127 +103,126 @@ export function RackSyncTypeButton({ rack }: { rack: Rack }) {
   const extra = diff?.accessories?.extra ?? []
   const inStep = dims.length === 0 && add.length === 0 && update.length === 0
 
-  return (
-    <>
-      <Button
-        variant="outline"
-        size="sm"
-        disabled={run.isPending}
-        title="Compare this rack with its type and apply the differences"
-        onClick={() => run.mutate(false)}
-      >
-        <RefreshCw className="h-3.5 w-3.5" />
-        {run.isPending && !preview ? "Checking..." : "Sync type"}
-      </Button>
+  // The item goes in the detail header's More menu (#507); the dialog
+  // outside it, as the menu unmounts its items when it closes.
+  const item = (
+    <DropdownMenuItem
+      disabled={run.isPending}
+      onSelect={() => run.mutate(false)}
+    >
+      <RefreshCw className="h-3.5 w-3.5" />
+      {run.isPending && !preview ? "Checking…" : "Sync type"}
+    </DropdownMenuItem>
+  )
+  const dialog = (
+    <Dialog open={!!preview} onOpenChange={(o) => !o && setPreview(null)}>
+      <DialogContent size="lg">
+        <DialogHeader>
+          <DialogTitle>Sync with {rack.rack_type.name}</DialogTitle>
+        </DialogHeader>
 
-      <Dialog open={!!preview} onOpenChange={(o) => !o && setPreview(null)}>
-        <DialogContent size="lg">
-          <DialogHeader>
-            <DialogTitle>Sync with {rack.rack_type.name}</DialogTitle>
-          </DialogHeader>
-
-          {inStep ? (
-            <p className="text-sm text-muted-foreground">
-              This rack already matches its type - nothing to apply.
-            </p>
-          ) : (
-            <div className="grid gap-4 text-sm">
-              {dims.length > 0 && (
-                <div className="grid gap-1">
-                  <span className="text-[10px] font-medium tracking-[0.08em] text-muted-foreground uppercase">
-                    Dimensions to copy
-                  </span>
-                  {dims.map(([field, v]) => (
-                    <div key={field} className="flex items-baseline gap-2">
-                      <span className="min-w-40">
-                        {DIM_LABEL[field] ?? field}
-                      </span>
-                      <span className="num text-muted-foreground line-through">
-                        {show(v.rack)}
-                      </span>
-                      <span className="num">→ {show(v.type)}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {add.length > 0 && (
-                <div className="grid gap-1">
-                  <span className="text-[10px] font-medium tracking-[0.08em] text-muted-foreground uppercase">
-                    Accessories to add
-                  </span>
-                  <span className="font-mono">{add.join(", ")}</span>
-                  <span className="text-[11px] text-muted-foreground">
-                    Each becomes a side-mounted device named{" "}
-                    <span className="font-mono">{rack.name}-&lt;label&gt;</span>
-                    , with its type's components.
-                  </span>
-                </div>
-              )}
-              {update.length > 0 && (
-                <div className="grid gap-1">
-                  <span className="text-[10px] font-medium tracking-[0.08em] text-muted-foreground uppercase">
-                    Strips to bring in line
-                  </span>
-                  {update.map((u) => (
-                    <div key={u.name} className="grid gap-0.5">
-                      <span className="font-mono">{u.name}</span>
-                      {Object.entries(u.changes).map(([field, v]) => (
-                        <span key={field} className="pl-3 text-[11px]">
-                          <span className="text-muted-foreground">
-                            {ACC_LABEL[field] ?? field}:{" "}
-                          </span>
-                          <span className="text-muted-foreground line-through">
-                            {show(v.device)}
-                          </span>{" "}
-                          → {show(v.type)}
+        {inStep ? (
+          <p className="text-sm text-muted-foreground">
+            This rack already matches its type - nothing to apply.
+          </p>
+        ) : (
+          <div className="grid gap-4 text-sm">
+            {dims.length > 0 && (
+              <div className="grid gap-1">
+                <span className="text-[10px] font-medium tracking-[0.08em] text-muted-foreground uppercase">
+                  Dimensions to copy
+                </span>
+                {dims.map(([field, v]) => (
+                  <div key={field} className="flex items-baseline gap-2">
+                    <span className="min-w-40">
+                      {DIM_LABEL[field] ?? field}
+                    </span>
+                    <span className="num text-muted-foreground line-through">
+                      {show(v.rack)}
+                    </span>
+                    <span className="num">→ {show(v.type)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {add.length > 0 && (
+              <div className="grid gap-1">
+                <span className="text-[10px] font-medium tracking-[0.08em] text-muted-foreground uppercase">
+                  Accessories to add
+                </span>
+                <span className="font-mono">{add.join(", ")}</span>
+                <span className="text-[11px] text-muted-foreground">
+                  Each becomes a side-mounted device named{" "}
+                  <span className="font-mono">{rack.name}-&lt;label&gt;</span>,
+                  with its type's components.
+                </span>
+              </div>
+            )}
+            {update.length > 0 && (
+              <div className="grid gap-1">
+                <span className="text-[10px] font-medium tracking-[0.08em] text-muted-foreground uppercase">
+                  Strips to bring in line
+                </span>
+                {update.map((u) => (
+                  <div key={u.name} className="grid gap-0.5">
+                    <span className="font-mono">{u.name}</span>
+                    {Object.entries(u.changes).map(([field, v]) => (
+                      <span key={field} className="pl-3 text-[11px]">
+                        <span className="text-muted-foreground">
+                          {ACC_LABEL[field] ?? field}:{" "}
                         </span>
-                      ))}
-                    </div>
-                  ))}
-                  <span className="text-[11px] text-muted-foreground">
-                    A changed device type adds the new type's components; the
-                    ones already on the strip stay (use the device's own Sync
-                    from type to prune them, since only that knows what the
-                    cabling depends on).
-                  </span>
-                </div>
-              )}
-              {extra.length > 0 && (
-                <div className="grid gap-1">
-                  <span className="text-[10px] font-medium tracking-[0.08em] text-muted-foreground uppercase">
-                    Not on the type
-                  </span>
-                  <span className="font-mono">{extra.join(", ")}</span>
-                  <span className="text-[11px] text-muted-foreground">
-                    Left alone - syncing never deletes a strip. Remove them by
-                    hand if they really are gone.
-                  </span>
-                </div>
-              )}
-            </div>
-          )}
-
-          <div className="flex justify-end gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setPreview(null)}
-              disabled={run.isPending}
-            >
-              {inStep ? "Close" : "Cancel"}
-            </Button>
-            {!inStep && (
-              <Button
-                size="sm"
-                disabled={run.isPending}
-                onClick={() => run.mutate(true)}
-              >
-                {run.isPending ? "Applying..." : "Apply"}
-              </Button>
+                        <span className="text-muted-foreground line-through">
+                          {show(v.device)}
+                        </span>{" "}
+                        → {show(v.type)}
+                      </span>
+                    ))}
+                  </div>
+                ))}
+                <span className="text-[11px] text-muted-foreground">
+                  A changed device type adds the new type's components; the ones
+                  already on the strip stay (use the device's own Sync from type
+                  to prune them, since only that knows what the cabling depends
+                  on).
+                </span>
+              </div>
+            )}
+            {extra.length > 0 && (
+              <div className="grid gap-1">
+                <span className="text-[10px] font-medium tracking-[0.08em] text-muted-foreground uppercase">
+                  Not on the type
+                </span>
+                <span className="font-mono">{extra.join(", ")}</span>
+                <span className="text-[11px] text-muted-foreground">
+                  Left alone - syncing never deletes a strip. Remove them by
+                  hand if they really are gone.
+                </span>
+              </div>
             )}
           </div>
-        </DialogContent>
-      </Dialog>
-    </>
+        )}
+
+        <div className="flex justify-end gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setPreview(null)}
+            disabled={run.isPending}
+          >
+            {inStep ? "Close" : "Cancel"}
+          </Button>
+          {!inStep && (
+            <Button
+              size="sm"
+              disabled={run.isPending}
+              onClick={() => run.mutate(true)}
+            >
+              {run.isPending ? "Applying..." : "Apply"}
+            </Button>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
   )
+  return { item, dialog }
 }

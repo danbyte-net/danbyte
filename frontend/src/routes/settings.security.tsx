@@ -5,6 +5,7 @@ import { toast } from "sonner"
 
 import { api, type SecretStoreField, type SecretStoreProvider } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
+import { docsUrl } from "@/lib/docs"
 import { useMe } from "@/lib/use-me"
 import { Field, FormCheckbox, FormSelect, FormText } from "@/components/forms"
 import { Button } from "@/components/ui/button"
@@ -85,15 +86,24 @@ function SecretStoreCard() {
   const providers = useQuery({
     queryKey: ["secret-store-providers"],
     queryFn: () =>
-      api<{ providers: SecretStoreProvider[] }>(
-        "/api/deployment/secret-stores/"
-      ),
-    staleTime: 10 * 60_000,
+      api<{
+        providers: SecretStoreProvider[]
+        monitoring_keys?: number
+        secret_counts?: Record<string, number>
+      }>("/api/deployment/secret-stores/"),
+    staleTime: 60_000,
   })
   const [provider, setProvider] = useState("")
   const [values, setValues] = useState<Record<string, FieldValue>>({})
+  const [confirmOpen, setConfirmOpen] = useState(false)
 
   const list = providers.data?.providers ?? []
+  const keyCount = providers.data?.monitoring_keys
+  const counts = Object.entries(providers.data?.secret_counts ?? {}).filter(
+    ([, n]) => n > 0
+  )
+  const labelOf = (kind: string) =>
+    list.find((p) => p.kind === kind)?.label ?? (kind || "Unknown")
   const selected = list.find((p) => p.kind === provider)
   const stored = (data ?? {}) as unknown as Record<string, unknown>
 
@@ -129,15 +139,42 @@ function SecretStoreCard() {
   const setValue = (name: string, v: FieldValue) =>
     setValues((prev) => ({ ...prev, [name]: v }))
 
+  const switching = provider !== data.secrets_provider
+  // Secrets that stay behind in another store when this switch is saved.
+  const leftBehind = counts.filter(([kind]) => kind !== provider)
+  const leftCount = leftBehind.reduce((sum, [, n]) => sum + n, 0)
+  const doSave = () => save.mutate({ key: "secrets", patch })
+
   return (
     <SettingsCard
       title="Secret store"
-      description="Where private keys for certificate requests (CSR) and ACME are kept - the certificate inventory itself never stores keys either way."
-      onSave={() => save.mutate({ key: "secrets", patch })}
+      description="Where Danbyte keeps the secrets it manages: device and shared credentials, PSKs and keys, CSR and ACME private keys."
+      onSave={() =>
+        switching && leftCount > 0 ? setConfirmOpen(true) : doSave()
+      }
       dirty={dirty}
       saving={savingKey === "secrets"}
       saveLabel="Save secret store"
     >
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Switch secret store?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {leftBehind
+                .map(([kind, n]) => `${n} in ${labelOf(kind)}`)
+                .join(", ")}{" "}
+              stay where they are. They remain readable while that store stays
+              configured. Move them with{" "}
+              <span className="font-mono">manage.py migrate_secret_store</span>.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={doSave}>Switch</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <FormSelect
         label="Provider"
         value={provider || null}
@@ -145,9 +182,12 @@ function SecretStoreCard() {
         noneLabel="Disabled"
         info={
           <>
-            Where CSR / ACME private keys are stored. Deployment-wide on purpose
-            - it decides where the organisation&apos;s keys live.{" "}
-            <b>Disabled</b> turns issuance off.
+            Where Danbyte keeps credentials, PSKs and private keys.
+            Deployment-wide on purpose - it decides where the
+            organisation&apos;s secrets live. <b>Disabled</b> turns every
+            feature that needs one off. Switching moves nothing: each secret is
+            read from the store it was written to while that store stays
+            configured.
             {list.map((p) => (
               <span key={p.kind}>
                 <br />
@@ -184,7 +224,11 @@ function SecretStoreCard() {
                 hint={
                   f.type === "password" && isSet
                     ? "set - blank keeps current"
-                    : f.hint
+                    : f.warn_http &&
+                        typeof v === "string" &&
+                        v.trim().toLowerCase().startsWith("http://")
+                      ? f.warn_http
+                      : f.hint
                 }
                 placeholder={
                   f.type === "password" && isSet ? "••••••" : f.placeholder
@@ -193,6 +237,28 @@ function SecretStoreCard() {
             )
           })}
         </div>
+      )}
+      {counts.length > 0 && (
+        <p className="text-[11px] text-muted-foreground">
+          Secrets:{" "}
+          {counts.map(([kind, n]) => `${labelOf(kind)} ${n}`).join(" · ")}
+        </p>
+      )}
+      {keyCount !== undefined && (
+        <p className="text-[11px] text-muted-foreground">
+          {keyCount === 1
+            ? "1 encryption key configured"
+            : `${keyCount} encryption keys configured`}{" "}
+          ·{" "}
+          <a
+            className="link"
+            href={docsUrl("reference/settings/#rotating-the-monitoring-key")}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Docs
+          </a>
+        </p>
       )}
     </SettingsCard>
   )
@@ -438,12 +504,12 @@ function SshTerminalCard() {
         label="Enable the in-browser SSH terminal"
         checked={enabled}
         onChange={setEnabled}
-        hint="Off by default. When on, a user with the device 'connect' permission can open an SSH session to a device through Danbyte. Each session verifies the device's SSH host key, uses a stored credential without exposing it, and is audited."
+        hint="Off by default. When on, a user with the 'connect' permission on devices or virtual machines can open an SSH session to one through Danbyte. Each session verifies the host's SSH host key, uses a stored credential without exposing it, and is audited."
       />
       <p className="text-[11px] text-muted-foreground">
         A high-trust capability: it bridges the browser to a device shell. Grant
         the <span className="font-mono">connect</span> verb narrowly, and record
-        each device&apos;s SSH host key so sessions can be verified.
+        each host&apos;s SSH host key so sessions can be verified.
       </p>
     </SettingsCard>
   )

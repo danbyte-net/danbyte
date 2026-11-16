@@ -29,8 +29,11 @@ import {
   CABLE_COLOR_BY_LABEL,
   readCableColorBy,
 } from "./cable-draw"
+import { resolveAreaNameLook } from "./area-name-style"
+import { AreaNameStyleFields } from "./area-name-style-fields"
 import { ColorBySelect } from "./color-by-select"
 import type { CalloutMode, ObjectSize } from "./readable"
+import type { DetailMode } from "./plan-detail"
 import type { PlanViewPrefs, ShellMode3D } from "./use-plan-view-prefs"
 
 /** The bar's Display popover: what the 2D plan draws, and - in 3D - what the
@@ -56,7 +59,9 @@ export function DisplayMenu({
     bundleCables,
     objectSize,
     iconTiles,
+    tileIcons,
     callouts,
+    detail,
     muteBackground,
     showPhotos,
     showPhotoOutlines,
@@ -79,6 +84,8 @@ export function DisplayMenu({
     setCableLook,
     quality3d,
     setQuality3d,
+    areaNames,
+    setAreaNames,
     setViewPref,
   } = prefs
   // Port labels on this screen - the viewer's switch over the deployment's
@@ -122,6 +129,12 @@ export function DisplayMenu({
             />
           </div>
           <FormCheckbox
+            label="Tile icons"
+            checked={tileIcons}
+            onChange={(v) => setViewPref("tile_icons", v)}
+            className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
+          />
+          <FormCheckbox
             label="Icons when zoomed out"
             checked={iconTiles}
             onChange={(v) => setViewPref("icon_tiles", v)}
@@ -143,6 +156,37 @@ export function DisplayMenu({
                 { value: "auto", label: "Auto" },
                 { value: "off", label: "Off" },
               ]}
+            />
+          </div>
+          <div className="px-2 pt-1 pb-1.5">
+            <span className="mb-1 flex items-center gap-1 text-[10px] font-medium tracking-[0.08em] whitespace-nowrap text-muted-foreground uppercase">
+              Detail
+              <InfoTip>
+                Auto shows rooms from afar, rows closer and every rack up close.
+                Always full draws everything at every zoom.
+              </InfoTip>
+            </span>
+            <SegmentedTabs<DetailMode>
+              value={detail}
+              onValueChange={(v) => setViewPref("detail", v)}
+              items={[
+                { value: "auto", label: "Auto" },
+                { value: "full", label: "Always full" },
+              ]}
+            />
+          </div>
+          <div className="px-2 pt-1 pb-1.5" data-part="area-names-menu">
+            <span className="mb-1.5 flex items-center gap-1 text-[10px] font-medium tracking-[0.08em] whitespace-nowrap text-muted-foreground uppercase">
+              Area names
+              <InfoTip>
+                The plan's default for room and area names. An area can set its
+                own in its inspector.
+              </InfoTip>
+            </span>
+            <AreaNameStyleFields
+              value={areaNames}
+              look={resolveAreaNameLook(areaNames)}
+              onChange={setAreaNames}
             />
           </div>
           <div className="my-1 h-px bg-border" />

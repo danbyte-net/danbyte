@@ -13,7 +13,7 @@ function NewSlaTemplatePage() {
     <EditPageShell
       wide
       crumbs={[
-        { label: "Monitoring", to: "/monitoring" },
+        { label: "SLAs", to: "/monitoring/sla" },
         { label: "New SLA template" },
       ]}
       title="New SLA template"
@@ -23,9 +23,7 @@ function NewSlaTemplatePage() {
         onSaved={(t) =>
           nav({ to: "/monitoring/sla/templates/$id", params: { id: t.id } })
         }
-        onCancel={() =>
-          nav({ to: "/monitoring", search: { view: "sla", status: "all" } })
-        }
+        onCancel={() => nav({ to: "/monitoring/sla" })}
       />
     </EditPageShell>
   )

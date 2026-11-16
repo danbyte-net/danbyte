@@ -27,37 +27,16 @@ const PAPERS = [
   { key: "letter", label: "Letter sheet" },
 ] as const
 
-/**
- * "Print label" action. Shows only when at least one label template exists for
- * ``objectType`` (automatic placement - no per-page config). Opens a
- * label-sized PDF for the given object ids in a new tab - the browser's PDF
- * viewer previews it and prints it at exact physical size (a browser can't
- * print an HTML page at an exact size - the paper size is dialog-controlled).
- * The paper submenu tiles onto A4/Letter for people without a label printer,
- * and "Copy text" yields the label's plain text for an external label program.
- *
- * When ``deviceTypeId``/``roleId`` are given (a device detail page), only
- * templates that target that device type/role - or carry no restriction - are
- * offered. Several may match, so a device can print more than one label.
- * Used on detail pages (single id) and list bulk bars (many ids).
- */
-export function PrintLabelButton({
-  objectType,
-  ids,
-  deviceTypeId,
-  roleId,
-  label = "Print label",
-  size = "sm",
-  variant = "outline",
-}: {
+interface LabelTarget {
   objectType: string
   ids: string[]
   deviceTypeId?: string | null
   roleId?: string | null
-  label?: string
-  size?: "sm" | "icon-sm"
-  variant?: "outline" | "ghost"
-}) {
+}
+
+/** The label menu's body for the templates that fit `objectType` (and the
+ * device's type and role), or `null` when none does. */
+function useLabelMenu({ objectType, ids, deviceTypeId, roleId }: LabelTarget) {
   const q = useQuery({
     queryKey: ["label-templates", objectType, deviceTypeId ?? "", roleId ?? ""],
     queryFn: () => {
@@ -73,7 +52,8 @@ export function PrintLabelButton({
     },
   })
   const templates = q.data?.results ?? []
-  if (templates.length === 0 || ids.length === 0) return null
+  if (templates.length === 0 || ids.length === 0)
+    return { loading: q.isLoading, body: null }
 
   // Default template first, then by name (the API already orders by name).
   const ordered = [...templates].sort(
@@ -164,6 +144,66 @@ export function PrintLabelButton({
     </InfoTip>
   )
 
+  const body = (
+    <>
+      <DropdownMenuLabel className="flex items-center justify-between gap-2">
+        <span>Print &amp; export</span>
+        {layoutTip}
+      </DropdownMenuLabel>
+      {ordered.length === 1 ? (
+        actions(ordered[0].id)
+      ) : (
+        <>
+          <DropdownMenuSeparator />
+          {ordered.map((t) => (
+            <DropdownMenuSub key={t.id}>
+              <DropdownMenuSubTrigger className="whitespace-nowrap">
+                {t.name}
+                {t.is_default && (
+                  <span className="ml-2 text-[11px] text-muted-foreground">
+                    default
+                  </span>
+                )}
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent className="min-w-52">
+                {actions(t.id)}
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+          ))}
+        </>
+      )}
+    </>
+  )
+  return { loading: false, body }
+}
+
+/**
+ * "Print label" action. Shows only when at least one label template exists for
+ * ``objectType`` (automatic placement - no per-page config). Opens a
+ * label-sized PDF for the given object ids in a new tab - the browser's PDF
+ * viewer previews it and prints it at exact physical size (a browser can't
+ * print an HTML page at an exact size - the paper size is dialog-controlled).
+ * The paper submenu tiles onto A4/Letter for people without a label printer,
+ * and "Copy text" yields the label's plain text for an external label program.
+ *
+ * When ``deviceTypeId``/``roleId`` are given (a device detail page), only
+ * templates that target that device type/role - or carry no restriction - are
+ * offered. Several may match, so a device can print more than one label.
+ * Used on list bulk bars (many ids); a detail page uses `PrintLabelMenuItem`
+ * in its Export menu.
+ */
+export function PrintLabelButton({
+  label = "Print label",
+  size = "sm",
+  variant = "outline",
+  ...target
+}: LabelTarget & {
+  label?: string
+  size?: "sm" | "icon-sm"
+  variant?: "outline" | "ghost"
+}) {
+  const menu = useLabelMenu(target)
+  if (!menu.body) return null
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -173,33 +213,30 @@ export function PrintLabelButton({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-52">
-        <DropdownMenuLabel className="flex items-center justify-between gap-2">
-          <span>Print &amp; export</span>
-          {layoutTip}
-        </DropdownMenuLabel>
-        {ordered.length === 1 ? (
-          actions(ordered[0].id)
-        ) : (
-          <>
-            <DropdownMenuSeparator />
-            {ordered.map((t) => (
-              <DropdownMenuSub key={t.id}>
-                <DropdownMenuSubTrigger className="whitespace-nowrap">
-                  {t.name}
-                  {t.is_default && (
-                    <span className="ml-2 text-[11px] text-muted-foreground">
-                      default
-                    </span>
-                  )}
-                </DropdownMenuSubTrigger>
-                <DropdownMenuSubContent className="min-w-52">
-                  {actions(t.id)}
-                </DropdownMenuSubContent>
-              </DropdownMenuSub>
-            ))}
-          </>
-        )}
+        {menu.body}
       </DropdownMenuContent>
     </DropdownMenu>
+  )
+}
+
+/** "Print label" as a submenu of a detail header's Export menu (#507).
+ * Disabled while the templates load; gone when none fits. */
+export function PrintLabelMenuItem(target: LabelTarget) {
+  const menu = useLabelMenu(target)
+  if (!menu.body)
+    return menu.loading ? (
+      <DropdownMenuItem disabled>
+        <Printer className="h-3.5 w-3.5" /> Print label
+      </DropdownMenuItem>
+    ) : null
+  return (
+    <DropdownMenuSub>
+      <DropdownMenuSubTrigger>
+        <Printer className="h-3.5 w-3.5" /> Print label
+      </DropdownMenuSubTrigger>
+      <DropdownMenuSubContent className="min-w-52">
+        {menu.body}
+      </DropdownMenuSubContent>
+    </DropdownMenuSub>
   )
 }

@@ -35,6 +35,7 @@ import { cn } from "@/lib/utils"
 import { CabinetDeviceBodies, nameLayout } from "@/components/cabinet-devices"
 import type { BodyLook, BodyMark } from "@/components/cabinet-devices"
 import { RailSlider } from "@/components/cabinet-rail-slider"
+import { HScroll } from "@/components/table-scroll"
 import {
   CabinetElevation,
   toPlateMm,
@@ -221,6 +222,7 @@ export function PlatePlacer({
   ready = true,
   box = false,
   frame,
+  scroll = false,
   elevationClassName,
   pxPerMm,
   look,
@@ -256,6 +258,9 @@ export function PlatePlacer({
   box?: boolean
   /** Classes for a frame around the drawing. */
   frame?: string
+  /** The frame scrolls sideways when the zoom draws the plate wider than the
+   * column, with its scrollbar at the bottom of the view (HScroll). */
+  scroll?: boolean
   elevationClassName?: string
   /** The drawing's zoom, as the cabinet page has it; fills the column
    * without. */
@@ -370,7 +375,7 @@ export function PlatePlacer({
 
   return (
     <div className="grid min-w-0 gap-1">
-      <div className={frame}>
+      <Frame scroll={scroll} className={frame}>
         <CabinetElevation
           width={cabinet.inner_width_mm}
           height={cabinet.inner_height_mm}
@@ -435,7 +440,7 @@ export function PlatePlacer({
             />
           )}
         </CabinetElevation>
-      </div>
+      </Frame>
       {slide && width != null && (
         <RailSlider
           rail={slide.rail}
@@ -952,5 +957,23 @@ function PlacementLayer({
       )}
       {outlineEl}
     </g>
+  )
+}
+
+function Frame({
+  scroll,
+  className,
+  children,
+}: {
+  scroll: boolean
+  className?: string
+  children: ReactNode
+}) {
+  return scroll ? (
+    <HScroll frameClassName={className} label="Plate">
+      {children}
+    </HScroll>
+  ) : (
+    <div className={className}>{children}</div>
   )
 }

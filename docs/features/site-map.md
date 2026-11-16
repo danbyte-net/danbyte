@@ -287,6 +287,25 @@ networks, and only for the circuits whose site end is at a site you may view:
 a reader scoped to some sites never sees a marker built from circuits at the
 others, and its place is worked out from their sites alone.
 
+## Dependencies {#dependencies}
+
+**Display → Layers → Dependencies** (off by default, remembered per
+browser; offered only with view on device dependencies) draws the
+[device dependencies](../dcim/dependencies.md) over the map:
+
+- **Between two devices with their own coordinates**: a straight line from
+  the upstream to the downstream device.
+- **Every other dependency between two placed sites**: one bowed line per
+  site pair, medium and kind, from the upstreams' site to the dependents'
+  site, bowing the other way from the circuit and tunnel arcs. Hover lists
+  the first device pairs and how many there are.
+
+Each line wears its [medium's](../dcim/dependencies.md#media) colour and
+line style, with a chevron pointing downstream; a peer link has none. A
+dependency inside one site whose devices have no coordinates of their own
+draws nothing. A hidden site or device takes its lines with it. You see a
+line only for the dependencies you may view between devices you may view.
+
 ## Link speed on the map
 
 A line shows how fast it is whenever Danbyte can work that out from what you
@@ -627,6 +646,65 @@ attribution string; nearly every provider requires one.
     [floor plan made from the map](#new-floor-plan-from-this-view) is drawn
     from the same tiles in the browser too.
 
+## Vector basemap and label language
+
+Raster tiles carry their labels baked into the image, in the local
+language - a site in Dubai shows Arabic street names only. A **vector
+basemap** sends the map data instead, and the browser draws it, so it can
+pick the language of the labels.
+
+**Settings → Site map → Basemap**:
+
+| Setting | Meaning |
+|---|---|
+| **Basemap** | **Vector tiles** or **Raster tiles** (the Map tiles card below). A new install starts on vector; an upgraded install keeps raster until you switch. |
+| **Vector source** | A TileJSON in the [Shortbread](https://shortbread-tiles.org/) schema, or a full MapLibre style URL, https only. Blank uses the OpenStreetMap Foundation's Shortbread vector tiles (`https://vector.openstreetmap.org/shortbread_v1/tilejson.json`). |
+| **Attribution** | Shown on the map. Blank uses the OpenStreetMap credit. |
+| **Label language** | The default: **English**, **Local**, **Browser language**, or English / browser language **and local** - e.g. *Sheikh Zayed Rd (شارع الشيخ زايد)*. |
+
+Each user can change the label language under **Preferences → Site map**
+(*Auto* follows the deployment default). A label takes the feature's
+`name_<language>` and falls back to its local `name` when it has none;
+*Browser language* tries each of the browser's languages in order.
+
+How it is drawn:
+
+- The style, the label font (Inter, the app's own font) and everything else
+  ship with Danbyte. Only the tile host is contacted. The style is muted
+  like the rest of the app, with its own light and dark variant.
+- Every overlay (pins, clusters, cables, arcs, outlines, field-of-view
+  cones, plan footprints) stays as it was, on top of the basemap. The
+  [mini maps](#the-map-elsewhere-the-map-widget) use the same basemap.
+- **Satellite** stays imagery; with a vector basemap it gets the vector
+  labels on top, in the same language.
+- A browser without WebGL, or one that can't reach the vector tiles, falls
+  back to the raster tiles with a small note in the corner of the map.
+- A [floor plan made from the map](#new-floor-plan-from-this-view) draws its
+  background from the vector tiles too, rendered once in the browser.
+- The code loads only when a map with a vector basemap opens.
+
+A third-party style URL is used as it is, with its name labels switched to
+the chosen language. Its own glyph and sprite hosts then need the CSP below
+as well. A TileJSON that is not in the Shortbread schema draws nothing; give
+a style URL for it instead.
+
+The OpenStreetMap Foundation's vector tiles have their own
+[usage policy](https://operations.osmfoundation.org/policies/vector/):
+the attribution stays on the map, and the browser only fetches the tiles it
+shows. For heavy, public or offline use, point **Vector source** at your own
+Shortbread tile server (for example tiles made with
+[Tilemaker](https://github.com/systemed/tilemaker) and served over https).
+
+!!! note "Content-Security-Policy"
+    Vector tiles are fetched with `fetch`, not as images, so the tile host
+    goes in `connect-src`, and MapLibre needs `worker-src 'self' blob:`. The
+    shipped nginx config allows `https://vector.openstreetmap.org`. For a
+    different vector source, add its host to `connect-src` in
+    `/etc/nginx/sites-available/danbyte.conf` and reload nginx. If the
+    tiles are blocked, the map says so and falls back to raster tiles.
+    Upgrading: the 0.20 post-upgrade step updates the CSP
+    ([Upgrading](../getting-started/upgrading.md#after-an-upgrade)).
+
 ## API
 
 `GET /api/site-map/` returns the effective tile config plus the RBAC-scoped
@@ -700,6 +778,20 @@ site scope:
   the cables you may view.
 - **Circuits** and **tunnels** follow their own view grants. An end on a
   device or VM you may not view reads `restricted` with no device or port.
+
+### Dependencies: `?include=dependencies` {#include-dependencies}
+
+`/api/site-map/connections/` takes `?include=dependencies` (with capacity:
+`?include=capacity,dependencies`) and then also returns `dependencies`, the
+[Dependencies](#dependencies) layer's lines:
+
+| `kind` | Fields |
+|---|---|
+| `devices` | `id` (`dep:<dependency id>`), `dependency_kind` (`dependency` or `peer`), `medium` (`{id, name, slug, color, text_color, icon, line_style}` or null), `redundancy_group`, and `a` (upstream) / `z` (downstream) as `{lat, lng, device_id, device_name, site_id}`. |
+| `sites` | `id`, `dependency_kind`, `medium`, `site_a` (the upstreams' site) / `site_z`, `count`, and `pairs`: the first 20 `{upstream: {id, name}, downstream: {id, name}, redundancy_group}`. A peer pair's sites are sorted. |
+
+Only rows you may view (`devicedependency.view`) between devices you may
+view, between sites you may view; without the grant the list is empty.
 
 ### Link speed: `?include=capacity` {#link-speed}
 

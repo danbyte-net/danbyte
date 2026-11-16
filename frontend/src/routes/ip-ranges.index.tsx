@@ -184,14 +184,16 @@ function IpRangesPage() {
         onChange: setQ,
         placeholder: "Filter by address, description…",
       }}
+      add={
+        canAdd && (
+          <Button size="sm" asChild>
+            <Link to="/ip-ranges/new">Add IP range</Link>
+          </Button>
+        )
+      }
       actions={
         <>
           <TableActions ioType="iprange" />
-          {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/ip-ranges/new">Add IP range</Link>
-            </Button>
-          )}
         </>
       }
       query={query}
@@ -243,9 +245,7 @@ function buildColumns({
           >
             {row.original.start_address} – {row.original.end_address}
           </Link>
-          {row.original.dhcp === "exclusion" && (
-            <DhcpBadge state="exclusion" />
-          )}
+          {row.original.dhcp === "exclusion" && <DhcpBadge state="exclusion" />}
         </span>
       ),
     },

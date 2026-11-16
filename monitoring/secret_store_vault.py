@@ -127,6 +127,43 @@ class VaultSecretStore:
         # KV v2 → {"data": {...}, "metadata": {...}}; KV v1 → the values flat.
         return inner if isinstance(inner, dict) else data
 
+    def _list(self, path: str) -> list[str]:
+        """The keys directly under ``path`` on the mount's metadata tree
+        (a trailing ``/`` marks a folder). Missing → ``[]``."""
+        r = self._req("LIST", f"{self.addr}/v1/{self.mount}/metadata/{path}")
+        if r.status_code == 404:
+            return []
+        if r.status_code != 200:
+            raise SecretStoreError(f"Vault list failed ({r.status_code}): {r.text[:200]}")
+        return list((r.json().get("data") or {}).get("keys") or [])
+
+    def managed_refs(self, tenant_id=None) -> list[tuple[str, str]]:
+        """``(tenant id, ref)`` of every secret under a managed folder of a
+        tenant folder on the mount - one tenant, or every UUID-named folder
+        (a deleted tenant's too). Never the values."""
+        from .secret_refs import MANAGED_SECRETS
+
+        if tenant_id is not None:
+            tenants = [str(tenant_id)]
+        else:
+            tenants = [k.rstrip("/") for k in self._list("")
+                       if k.endswith("/") and looks_like_tenant_id(k.rstrip("/"))]
+        out = []
+        for tenant in tenants:
+            folders = set(self._list(f"{tenant}/"))
+            for spec in MANAGED_SECRETS:
+                if f"{spec.folder}/" not in folders:
+                    continue
+                for key in self._list(f"{tenant}/{spec.folder}/"):
+                    if not key.endswith("/"):
+                        out.append((tenant, f"{spec.folder}/{key}"))
+                        continue
+                    # issuer/<id>/account
+                    for leaf in self._list(f"{tenant}/{spec.folder}/{key}"):
+                        if not leaf.endswith("/"):
+                            out.append((tenant, f"{spec.folder}/{key}{leaf}"))
+        return out
+
     def delete(self, tenant_id, ref: str) -> None:
         # metadata delete removes all versions permanently - the request's key is
         # gone for good, which is what deleting the request should mean.

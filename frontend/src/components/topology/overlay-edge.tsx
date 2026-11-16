@@ -2,10 +2,12 @@ import { useState } from "react"
 import { BaseEdge, useInternalNode } from "@xyflow/react"
 import type { EdgeProps } from "@xyflow/react"
 
-// A protocol overlay between two cards - a BGP session today. It is not
-// wiring, so it ignores ports: a faint straight line from card centre to
-// card centre that brightens under the pointer. Its name is the canvas's
-// hover tip, like every other line's (see `bgpLabel`).
+// An overlay between two cards - a BGP session, or a device dependency
+// (#450). It is not wiring, so it ignores ports: a faint straight line from
+// card centre to card centre that brightens under the pointer. A dependency
+// carries an arrow at its downstream card and its redundancy group as a
+// small label. Its name is the canvas's hover tip, like every other line's
+// (see `bgpLabel`, `dependencyLabel`).
 
 export type Box = { x: number; y: number; w: number; h: number }
 
@@ -43,7 +45,37 @@ export function bgpLabel(bgp: {
     .join(" · ")
 }
 
-export function OverlayEdge({ id, source, target, style }: EdgeProps) {
+/** What a dependency line says on hover: "acc-7 depends on dist-2 · Fibre
+ * · group uplinks", or for a peer link "a ↔ b · peer". */
+export function dependencyLabel(d: {
+  kind?: string | null
+  upstream?: string
+  downstream?: string
+  medium?: { name: string } | null
+  redundancy_group?: string
+}): string {
+  const head =
+    d.kind === "peer"
+      ? `${d.upstream ?? "?"} ↔ ${d.downstream ?? "?"} · peer`
+      : `${d.downstream ?? "?"} depends on ${d.upstream ?? "?"}`
+  return [
+    head,
+    d.medium?.name ?? null,
+    d.redundancy_group ? `group ${d.redundancy_group}` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ")
+}
+
+export function OverlayEdge({
+  id,
+  source,
+  target,
+  style,
+  markerEnd,
+  label,
+  labelStyle,
+}: EdgeProps) {
   const [hover, setHover] = useState(false)
   const sb = box(useInternalNode(source))
   const tb = box(useInternalNode(target))
@@ -56,6 +88,13 @@ export function OverlayEdge({ id, source, target, style }: EdgeProps) {
       <BaseEdge
         id={id}
         path={path}
+        markerEnd={markerEnd}
+        label={label}
+        labelX={(a.x + b.x) / 2}
+        labelY={(a.y + b.y) / 2}
+        labelStyle={labelStyle}
+        labelBgStyle={{ fill: "var(--card)" }}
+        labelBgPadding={[3, 1]}
         style={{ ...style, opacity: hover ? 0.95 : (style?.opacity ?? 0.45) }}
         interactionWidth={14}
       />

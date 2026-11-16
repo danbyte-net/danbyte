@@ -14,25 +14,44 @@ certificate:
 the automated path (e.g. DNS-01 auto-publish).
 
 Secrets: the ACME **account private key** lives in the secret store at
-``issuer.account_ref`` (never on the row), exactly like CSR keys. The directory
-URL may be an internal host, so it is reached directly - the tenant SSRF guard
-does not apply to admin-configured issuer endpoints, matching Vault/Redfish.
+``issuer.account_ref`` (never on the row), exactly like CSR keys.
+
+Outbound: the directory URL may be an internal host (step-ca on a private
+address is the intended use), so it is reached directly - the tenant SSRF
+guard (``core.ssrf``) deliberately does not apply to issuer endpoints, matching
+Vault/Redfish. Only a user with the issuer ``add``/``change`` grant in the
+tenant can set that URL; nothing from a request body or a CA's answer is
+fetched on its own say-so beyond the URLs the ACME protocol names.
+
+Errors: every exchange with the CA runs inside :func:`_talking_to_ca`, which
+turns a transport failure (TLS, DNS, refused, timeout), a non-ACME answer or
+the CA's own problem document into an :class:`AcmeError` with an
+operator-readable message. ``AcmeError.status`` says how an API action answers
+it: 502 for the CA's side (unreachable, untrusted, refused), 400 for what the
+caller can fix, with ``field`` naming the issuer field when there is one.
 """
 from __future__ import annotations
 
 import datetime as _dt
+import errno
 import logging
+import re
+import socket
+import ssl
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Protocol
+from urllib.parse import urlsplit
 
 import josepy as jose
+import requests
 from acme import challenges, client, messages
+from acme import errors as acme_errors
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
-from django.db import transaction
 
 from .models import AcmeOrder, Issuer
-from .secret_store import require_secret_store
+from .secret_store import read_managed, require_secret_store, write_managed
 
 log = logging.getLogger(__name__)
 
@@ -40,10 +59,293 @@ USER_AGENT = "danbyte-acme"
 # How long finalize will poll authorizations + order before giving up. Short
 # enough not to wedge a worker; a still-pending order can be finalized again.
 _POLL_SECONDS = 90
+#: Seconds one HTTP round trip to the CA may take (connect, and each read).
+_NETWORK_TIMEOUT = 30
 
 
 class AcmeError(RuntimeError):
-    """An ACME operation failed. Carries an operator-facing message."""
+    """An ACME operation failed. Carries an operator-facing message.
+
+    ``status`` is what an API action answers with: 400 for what the caller
+    can fix (``field`` names the issuer field when there is one), 502 for the
+    CA's side. ``code`` is a stable machine-readable tag.
+    """
+
+    status = 400
+    code = "acme_error"
+
+    def __init__(self, message: str, *, status: int | None = None,
+                 field: str | None = None, code: str | None = None):
+        super().__init__(message)
+        if status is not None:
+            self.status = status
+        if code is not None:
+            self.code = code
+        self.field = field
+
+    @property
+    def message(self) -> str:
+        return str(self.args[0]) if self.args else ""
+
+    def payload(self) -> dict:
+        """The JSON body an API action answers with."""
+        if self.field and self.status == 400:
+            return {self.field: [self.message]}
+        return {"detail": self.message, "code": self.code}
+
+
+class AcmeUpstreamError(AcmeError):
+    """The CA could not be reached, was not trusted, or refused."""
+
+    status = 502
+    code = "acme_upstream"
+
+
+def acme_error_response(exc: AcmeError):
+    """The DRF response an API action answers an :class:`AcmeError` with."""
+    from rest_framework.response import Response
+
+    return Response(exc.payload(), status=exc.status)
+
+
+# --------------------------------------------------------------------------- #
+# CA and transport failures → operator messages
+# --------------------------------------------------------------------------- #
+_CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f]+")
+_PROBLEM_PREFIX = "urn:ietf:params:acme:error:"
+
+
+def clean_remote_text(value, limit: int = 300) -> str:
+    """Text that came from a remote CA, safe to store and show as plain text:
+    control characters gone, whitespace collapsed, length capped."""
+    text = " ".join(_CONTROL.sub(" ", str(value or "")).split())
+    if len(text) > limit:
+        text = text[: limit - 1].rstrip() + "…"
+    return text
+
+
+def describe_problem(problem) -> str:
+    """One line for an ACME problem document: ``type - detail``, the type
+    without its URN prefix, then up to five subproblems by identifier."""
+    typ = str(getattr(problem, "typ", "") or "")
+    if typ.startswith(_PROBLEM_PREFIX):
+        typ = typ[len(_PROBLEM_PREFIX):]
+    detail = getattr(problem, "detail", None) or getattr(problem, "title", None) or ""
+    line = " - ".join(p for p in (clean_remote_text(typ, 80), clean_remote_text(detail)) if p)
+    subs = []
+    for sub in list(getattr(problem, "subproblems", None) or [])[:5]:
+        ident = getattr(getattr(sub, "identifier", None), "value", "") or ""
+        text = describe_problem(sub)
+        subs.append(f"{clean_remote_text(ident, 120)}: {text}" if ident else text)
+    return "; ".join(p for p in [line, *subs] if p) or "no detail given"
+
+
+def _host_port(url: str) -> tuple[str, int]:
+    try:
+        parts = urlsplit(url or "")
+        return parts.hostname or "", parts.port or (443 if parts.scheme == "https" else 80)
+    except ValueError:
+        return "", 0
+
+
+def _chain(exc: BaseException):
+    """Every exception reachable from ``exc`` - its args, urllib3's
+    ``reason``, ``__cause__`` and ``__context__`` - each once, bounded."""
+    seen: set[int] = set()
+    todo = [exc]
+    while todo and len(seen) < 40:
+        cur = todo.pop(0)
+        if id(cur) in seen:
+            continue
+        seen.add(id(cur))
+        yield cur
+        nxt = [getattr(cur, "reason", None), cur.__cause__, cur.__context__]
+        nxt += [a for a in getattr(cur, "args", ()) if isinstance(a, BaseException)]
+        todo.extend(e for e in nxt if isinstance(e, BaseException))
+
+
+def _find(exc: BaseException, kind):
+    return next((e for e in _chain(exc) if isinstance(e, kind)), None)
+
+
+def _chain_text(exc: BaseException) -> str:
+    return " ".join(str(e) for e in _chain(exc)).lower()
+
+
+#: OpenSSL verify codes that get their own message.
+_X509_NOT_YET_VALID, _X509_EXPIRED = 9, 10
+_X509_HOSTNAME_MISMATCH, _X509_IP_MISMATCH = 62, 64
+#: What fixes a CA certificate this server does not trust.
+TRUST_HINT = ("Paste the CA's root certificate into the issuer's CA certificate field, "
+              "or add it to this server's trust store.")
+TRUST_HINT_WITH_CA = ("The issuer's CA certificate does not cover it: paste the root that "
+                      "signed the CA's TLS certificate.")
+
+
+def _tls_error(exc: BaseException, issuer: Issuer, host: str) -> AcmeError:
+    verr = _find(exc, ssl.SSLCertVerificationError)
+    code = getattr(verr, "verify_code", None)
+    why = clean_remote_text(getattr(verr, "verify_message", "") or "", 160)
+    text = _chain_text(exc)
+    if code in (_X509_HOSTNAME_MISMATCH, _X509_IP_MISMATCH) or "mismatch" in text:
+        return AcmeUpstreamError(
+            f"The CA's TLS certificate is not valid for {host}. Use the name the "
+            "certificate was issued for in the directory URL, or reissue the CA's "
+            "certificate with this name.",
+            code="acme_tls_hostname",
+        )
+    if code == _X509_EXPIRED or "certificate has expired" in text:
+        return AcmeUpstreamError(
+            f"The CA's TLS certificate at {host} has expired. Renew it on the CA, or "
+            "check this server's clock.",
+            code="acme_tls_expired",
+        )
+    if code == _X509_NOT_YET_VALID or "not yet valid" in text:
+        return AcmeUpstreamError(
+            f"The CA's TLS certificate at {host} is not valid yet. Check this "
+            "server's clock and the CA's.",
+            code="acme_tls_expired",
+        )
+    if verr is not None or "certificate verify failed" in text:
+        hint = TRUST_HINT_WITH_CA if (issuer.ca_certificate or "").strip() else TRUST_HINT
+        return AcmeUpstreamError(
+            f"The ACME directory's certificate at {host} is not trusted"
+            + (f" ({why})" if why else "") + f". {hint}",
+            code="acme_tls_untrusted",
+        )
+    reason = clean_remote_text(getattr(_find(exc, ssl.SSLError), "reason", "") or "", 120)
+    return AcmeUpstreamError(
+        f"The TLS handshake with {host} failed" + (f" ({reason})" if reason else "")
+        + ". Check that the directory URL is the CA's HTTPS address.",
+        code="acme_tls_handshake",
+    )
+
+
+def _errnos(exc: BaseException) -> set:
+    return {getattr(e, "errno", None) for e in _chain(exc)}
+
+
+def _connection_error(exc: BaseException, host: str, port: int, step: str) -> AcmeError:
+    text = _chain_text(exc)
+    if _find(exc, socket.gaierror) is not None or any(s in text for s in (
+        "name or service not known", "nodename nor servname", "failed to resolve",
+        "temporary failure in name resolution", "no address associated",
+    )):
+        return AcmeUpstreamError(
+            f"The CA's host name {host} does not resolve. Check the directory URL and "
+            "this server's DNS.",
+            code="acme_dns",
+        )
+    if _find(exc, ConnectionRefusedError) is not None or errno.ECONNREFUSED in _errnos(exc) \
+            or "connection refused" in text:
+        return AcmeUpstreamError(
+            f"Nothing answers at {host}:{port} - the connection was refused. Check the "
+            "directory URL and that the CA is running.",
+            code="acme_refused",
+        )
+    if _find(exc, (TimeoutError, socket.timeout)) is not None or "timed out" in text:
+        return AcmeUpstreamError(
+            f"The CA at {host} did not answer the {step} request within "
+            f"{_NETWORK_TIMEOUT} seconds.",
+            code="acme_timeout",
+        )
+    if {errno.EHOSTUNREACH, errno.ENETUNREACH} & _errnos(exc) or "unreachable" in text:
+        return AcmeUpstreamError(f"{host} is unreachable from this server.",
+                                 code="acme_unreachable")
+    return AcmeUpstreamError(f"Could not connect to the CA at {host}:{port}.",
+                             code="acme_unreachable")
+
+
+def _response_of(exc) -> requests.Response | None:
+    for arg in getattr(exc, "args", ()):
+        for a in (arg if isinstance(arg, tuple) else (arg,)):
+            if isinstance(a, requests.Response):
+                return a
+    return None
+
+
+def _not_a_directory(issuer: Issuer, answered: str = "") -> AcmeError:
+    return AcmeError(
+        f"{issuer.directory_url[:200]} is not an ACME directory"
+        + (f" - it answered {answered}" if answered else "")
+        + ". Check the directory URL; for step-ca it ends in "
+        "/acme/<provisioner>/directory.",
+        field="directory_url", code="acme_not_directory",
+    )
+
+
+def _explain(exc: BaseException, issuer: Issuer, step: str) -> AcmeError | None:
+    """The :class:`AcmeError` for a failure talking to the CA, or None when
+    ``exc`` is not one (a programming error keeps its traceback)."""
+    host, port = _host_port(issuer.directory_url)
+    directory = step == "directory"
+    if isinstance(exc, requests.exceptions.SSLError):
+        return _tls_error(exc, issuer, host)
+    if isinstance(exc, requests.exceptions.ConnectTimeout):
+        return AcmeUpstreamError(
+            f"Could not connect to the CA at {host}:{port} within {_NETWORK_TIMEOUT} "
+            "seconds.",
+            code="acme_timeout",
+        )
+    if isinstance(exc, requests.exceptions.Timeout):
+        return AcmeUpstreamError(
+            f"The CA at {host} did not answer the {step} request within "
+            f"{_NETWORK_TIMEOUT} seconds.",
+            code="acme_timeout",
+        )
+    if isinstance(exc, requests.exceptions.ConnectionError):
+        if _find(exc, ssl.SSLError) is not None:
+            return _tls_error(exc, issuer, host)
+        return _connection_error(exc, host, port, step)
+    if isinstance(exc, requests.exceptions.RequestException):
+        return AcmeUpstreamError(
+            f"The {step} request to {host} failed ({type(exc).__name__}).",
+            code="acme_unreachable",
+        )
+    if isinstance(exc, messages.Error):
+        if directory:
+            return _not_a_directory(issuer, f"with an error: {describe_problem(exc)}")
+        return AcmeUpstreamError(f"The CA refused the {step}: {describe_problem(exc)}",
+                                 code="acme_ca_refused")
+    if isinstance(exc, acme_errors.ClientError) and not isinstance(exc, acme_errors.PollError):
+        status = getattr(_response_of(exc), "status_code", None)
+        if status is not None and status >= 500:
+            return AcmeUpstreamError(
+                f"The CA at {host} answered the {step} request with HTTP {status}.",
+                code="acme_ca_error",
+            )
+        if directory:
+            return _not_a_directory(issuer, f"HTTP {status}" if status else "")
+        return AcmeUpstreamError(
+            f"The CA at {host} answered the {step} request with something that is not "
+            "ACME" + (f" (HTTP {status})" if status else "") + ".",
+            code="acme_not_acme",
+        )
+    if directory and isinstance(exc, (jose.DeserializationError, ValueError, KeyError,
+                                      TypeError)):
+        return _not_a_directory(issuer)
+    if isinstance(exc, (jose.DeserializationError, ValueError)):
+        return AcmeUpstreamError(
+            f"The CA at {host} answered the {step} request with something that is not "
+            "ACME.",
+            code="acme_not_acme",
+        )
+    return None
+
+
+@contextmanager
+def _talking_to_ca(issuer: Issuer, step: str):
+    """One exchange with the CA; its failures leave as :class:`AcmeError`."""
+    try:
+        yield
+    except AcmeError:
+        raise
+    except Exception as exc:  # noqa: BLE001 - narrowed by _explain
+        err = _explain(exc, issuer, step)
+        if err is None:
+            raise
+        log.warning("ACME %s for issuer %s failed: %s", step, issuer.pk, err.message)
+        raise err from exc
 
 
 # --------------------------------------------------------------------------- #
@@ -348,14 +650,44 @@ def _jwk_and_alg(key):
     return jose.JWKRSA(key=key), jose.RS256
 
 
+def _verify(issuer: Issuer):
+    """What ``requests`` checks the CA's TLS certificate against: False with
+    *Verify TLS* off, else a CA bundle path - the server's trust store plus
+    the issuer's own CA certificate (:mod:`monitoring.acme_trust`)."""
+    from .acme_trust import CaCertificateError, verify_for
+
+    try:
+        return verify_for(issuer)
+    except CaCertificateError as exc:
+        raise AcmeError(str(exc), field="ca_certificate", code="acme_ca_certificate") from exc
+    except OSError as exc:
+        log.warning("ACME trust bundle for issuer %s could not be written: %s", issuer.pk, exc)
+        raise AcmeError(
+            "The CA bundle for this issuer could not be written to the server's "
+            f"temporary directory ({exc.strerror or type(exc).__name__}).",
+            status=503, code="acme_trust_store",
+        ) from exc
+
+
 def _network(issuer: Issuer, jwk, alg, account=None) -> client.ClientNetwork:
+    # Reached directly, not through core.ssrf - see the module docstring.
     return client.ClientNetwork(
         jwk,
         account=account,
         alg=alg,
         user_agent=USER_AGENT,
-        verify_ssl=issuer.verify_tls,
+        verify_ssl=_verify(issuer),
+        timeout=_NETWORK_TIMEOUT,
     )
+
+
+def _directory(issuer: Issuer, net) -> messages.Directory:
+    """Fetch the issuer's ACME directory and check it is one."""
+    with _talking_to_ca(issuer, "directory"):
+        directory = client.ClientV2.get_directory(issuer.directory_url, net)
+        for key in ("newNonce", "newAccount", "newOrder"):
+            directory[key]  # KeyError: not an ACME directory
+    return directory
 
 
 def register_account(issuer: Issuer) -> str:
@@ -364,11 +696,11 @@ def register_account(issuer: Issuer) -> str:
     Idempotent against the CA: ACME ``newAccount`` returns the existing account
     for a known key. Returns the account URI. Fail-closed if no secret store.
     """
-    store = require_secret_store()
+    require_secret_store()  # fail closed before any key is generated
     key = ec.generate_private_key(ec.SECP256R1())
     jwk, alg = _jwk_and_alg(key)
     net = _network(issuer, jwk, alg)
-    directory = client.ClientV2.get_directory(issuer.directory_url, net)
+    directory = _directory(issuer, net)
     acme = client.ClientV2(directory, net)
 
     eab = None
@@ -388,10 +720,8 @@ def register_account(issuer: Issuer) -> str:
         external_account_binding=eab,
         terms_of_service_agreed=True,
     )
-    try:
+    with _talking_to_ca(issuer, "account registration"):
         regr = acme.new_account(reg)
-    except messages.Error as exc:
-        raise AcmeError(f"ACME account registration failed: {exc}") from exc
 
     ref = _account_ref(issuer)
     pem = key.private_bytes(
@@ -399,29 +729,15 @@ def register_account(issuer: Issuer) -> str:
         serialization.PrivateFormat.PKCS8,
         serialization.NoEncryption(),
     ).decode("ascii")
-    store.put(issuer.tenant_id, ref, {"account_key": pem})
+    before = issuer.account_provider if issuer.account_ref == ref else ""
+    issuer.account_provider = write_managed(before, issuer.tenant_id, ref, {"account_key": pem})
     issuer.account_uri = regr.uri or ""
     issuer.account_ref = ref
-    issuer.save(update_fields=["account_uri", "account_ref", "updated_at"])
+    issuer.save(update_fields=["account_uri", "account_ref", "account_provider", "updated_at"])
     return issuer.account_uri
 
 
-def forget_account(issuer: Issuer) -> None:
-    """Remove a deleted issuer's ACME account key from the secret store.
-    Call it after the row's delete: the key goes when that commits, so a
-    delete rolled back keeps it. Best effort: a store that is disabled or
-    unreachable leaves the key behind, logged."""
-    if not issuer.account_uri and not issuer.account_ref:
-        return
-    tenant_id, ref = issuer.tenant_id, _account_ref(issuer)
-
-    def drop():
-        try:
-            require_secret_store().delete(tenant_id, ref)
-        except Exception:  # noqa: BLE001 - store disabled/unreachable
-            log.warning("could not remove the ACME account key %s", ref)
-
-    transaction.on_commit(drop)
+# A deleted issuer's account key leaves the store with it: monitoring.secret_refs.
 
 
 def _client(issuer: Issuer):
@@ -431,8 +747,8 @@ def _client(issuer: Issuer):
     """
     if not issuer.account_uri:
         raise AcmeError("This issuer has no ACME account yet - register it first.")
-    store = require_secret_store()
-    data = store.get(issuer.tenant_id, _account_ref(issuer)) or {}
+    require_secret_store()
+    data = read_managed(issuer.account_provider, issuer.tenant_id, _account_ref(issuer)) or {}
     pem = data.get("account_key")
     if not pem:
         raise AcmeError("The issuer's ACME account key is missing from the secret store.")
@@ -442,7 +758,7 @@ def _client(issuer: Issuer):
         uri=issuer.account_uri, body=messages.Registration()
     )
     net = _network(issuer, jwk, alg, account=regr)
-    directory = client.ClientV2.get_directory(issuer.directory_url, net)
+    directory = _directory(issuer, net)
     return client.ClientV2(directory, net), jwk
 
 
@@ -511,10 +827,8 @@ def _open_order(order: AcmeOrder):
     if not order.request or not order.request.csr_pem:
         raise AcmeError("This order has no certificate request / CSR.")
     acme, jwk = _client(order.issuer)
-    try:
+    with _talking_to_ca(order.issuer, "new order"):
         orderr = acme.new_order(order.request.csr_pem.encode("ascii"))
-    except messages.Error as exc:
-        raise AcmeError(f"ACME newOrder failed: {exc}") from exc
 
     triples = _records_for(orderr, jwk, order.challenge_type)
     records = [rec for _, _, rec in triples]
@@ -550,16 +864,17 @@ def create_order(order: AcmeOrder) -> AcmeOrder:
 
 def _reload_order(acme, order: AcmeOrder):
     """Rebuild an OrderResource from a persisted order URL (POST-as-GET)."""
-    resp = acme._post_as_get(order.order_url)
-    body = messages.Order.from_json(resp.json())
-    authzrs = []
-    for authz_url in body.authorizations:
-        ar = acme._post_as_get(authz_url)
-        authzrs.append(
-            messages.AuthorizationResource(
-                body=messages.Authorization.from_json(ar.json()), uri=authz_url
+    with _talking_to_ca(order.issuer, "order lookup"):
+        resp = acme._post_as_get(order.order_url)
+        body = messages.Order.from_json(resp.json())
+        authzrs = []
+        for authz_url in body.authorizations:
+            ar = acme._post_as_get(authz_url)
+            authzrs.append(
+                messages.AuthorizationResource(
+                    body=messages.Authorization.from_json(ar.json()), uri=authz_url
+                )
             )
-        )
     return messages.OrderResource(
         body=body,
         uri=order.order_url,
@@ -576,33 +891,59 @@ def _finalize_with(acme, jwk, orderr, order: AcmeOrder):
     """
     from . import csr as csr_mod
 
-    for authz in orderr.authorizations:
-        if str(authz.body.status) != str(messages.STATUS_PENDING):
-            continue
-        challb = _challenge_body(authz, order.challenge_type)
-        if challb is None:
-            continue
-        response, _ = challb.chall.response_and_validation(jwk)
-        acme.answer_challenge(challb, response)
+    try:
+        with _talking_to_ca(order.issuer, "challenge answer"):
+            for authz in orderr.authorizations:
+                if str(authz.body.status) != str(messages.STATUS_PENDING):
+                    continue
+                challb = _challenge_body(authz, order.challenge_type)
+                if challb is None:
+                    continue
+                response, _ = challb.chall.response_and_validation(jwk)
+                acme.answer_challenge(challb, response)
+    except AcmeError as exc:
+        _record_failure(order, exc.message)
+        raise
 
     deadline = _dt.datetime.now() + _dt.timedelta(seconds=_POLL_SECONDS)
     try:
+        # Polls the authorizations and the order, finalizes, downloads.
         finalized = acme.poll_and_finalize(orderr, deadline)
     except messages.Error as exc:
+        message = f"The CA refused the finalize: {describe_problem(exc)}"
         order.status = AcmeOrder.Status.INVALID
-        order.error = str(exc)
+        order.error = message
         order.save(update_fields=["status", "error", "updated_at"])
-        raise AcmeError(f"ACME finalize failed: {exc}") from exc
-    except Exception as exc:  # noqa: BLE001 - surface poll timeouts cleanly
-        # A poll timeout (acme.errors.TimeoutError) must land in a terminal
-        # state, not stay PROCESSING - otherwise the UI polls it forever with
-        # no retry. ERRORED (vs INVALID) marks "didn't complete", retryable.
-        order.status = AcmeOrder.Status.ERRORED
-        order.error = str(exc)
-        order.save(update_fields=["status", "error", "updated_at"])
-        raise AcmeError(f"ACME order did not complete: {exc}") from exc
+        raise AcmeUpstreamError(message, code="acme_ca_refused") from exc
+    except Exception as exc:  # noqa: BLE001 - narrowed below
+        if isinstance(exc, acme_errors.Error) and (
+            isinstance(exc, acme_errors.PollError)
+            or not isinstance(exc, acme_errors.ClientError)
+        ):
+            # Validation failed, a poll timed out, or the CA would not issue.
+            # It must land in a terminal state with the CA's reasons, not stay
+            # PROCESSING - otherwise the UI polls it forever with no retry.
+            status, message = _order_failure(acme, orderr, exc)
+            message = message[:_MAX_REASON_CHARS]
+            order.status = status
+            order.error = message
+            order.save(update_fields=["status", "error", "updated_at"])
+            log.info("ACME order %s did not complete: %s", order.pk, message)
+            raise AcmeUpstreamError(message, code="acme_order_failed") from exc
+        err = _explain(exc, order.issuer, "finalize")
+        if err is None:
+            raise
+        log.warning("ACME finalize for order %s failed: %s", order.pk, err.message)
+        _record_failure(order, err.message)
+        raise err from exc
 
-    cert_row = csr_mod.import_issued(order.request, finalized.fullchain_pem)
+    try:
+        cert_row = csr_mod.import_issued(order.request, finalized.fullchain_pem)
+    except csr_mod.CsrError as exc:
+        _record_failure(order, f"The CA's certificate could not be imported: {exc}")
+        raise AcmeUpstreamError(
+            f"The CA's certificate could not be imported: {exc}", code="acme_bad_certificate"
+        ) from exc
     order.issued_certificate = cert_row
     order.status = AcmeOrder.Status.VALID
     order.error = ""
@@ -615,6 +956,97 @@ def _finalize_with(acme, jwk, orderr, order: AcmeOrder):
 
     on_issued(order, finalized.fullchain_pem)
     return cert_row
+
+
+#: At most this many identifiers (and characters) go into an order's error.
+_MAX_REASON_LINES = 20
+_MAX_REASON_CHARS = 4000
+
+
+def _identifier(authzr) -> str:
+    return clean_remote_text(getattr(authzr.body.identifier, "value", "") or "?", 255)
+
+
+def _status_name(status) -> str:
+    return str(getattr(status, "name", None) or status or "")
+
+
+def _authz_reasons(authzrs) -> list[str]:
+    """One line per failed identifier: ``name: http-01 - <the CA's problem>``.
+    The text comes from the CA: cleaned, capped, plain."""
+    lines = []
+    for authzr in list(authzrs)[:_MAX_REASON_LINES]:
+        ident = _identifier(authzr)
+        errs = [
+            f"{clean_remote_text(getattr(c.chall, 'typ', '') or '?', 20)} - "
+            f"{describe_problem(c.error)}"
+            for c in getattr(authzr.body, "challenges", None) or []
+            if getattr(c, "error", None) is not None
+        ]
+        if errs:
+            lines += [f"{ident}: {e}" for e in errs[:3]]
+        elif _status_name(authzr.body.status) not in ("valid", "pending"):
+            lines.append(f"{ident}: {_status_name(authzr.body.status) or 'failed'} - "
+                         "the CA gave no reason")
+    return lines
+
+
+def _fresh_authorizations(acme, orderr) -> list | None:
+    """The order's authorizations as the CA sees them now, or None when they
+    cannot be fetched (the reason then rests on what is known)."""
+    try:
+        out = []
+        for authzr in list(orderr.authorizations)[:_MAX_REASON_LINES]:
+            resp = acme._post_as_get(authzr.uri)
+            out.append(messages.AuthorizationResource(
+                body=messages.Authorization.from_json(resp.json()), uri=authzr.uri))
+        return out
+    except Exception:  # noqa: BLE001 - best effort, the main error stands
+        return None
+
+
+def _names(n: int) -> str:
+    return "1 name" if n == 1 else f"{n} names"
+
+
+def _order_failure(acme, orderr, exc) -> tuple[str, str]:
+    """``(status, message)`` for an order that stopped: which identifiers
+    failed and the CA's reason for each, or what was still pending at a
+    timeout. Never an empty message."""
+    if isinstance(exc, acme_errors.ValidationError):
+        lines = _authz_reasons(exc.failed_authzrs)
+        head = f"The CA could not validate {_names(len(exc.failed_authzrs))}:"
+        return AcmeOrder.Status.INVALID, "\n".join([head, *lines])
+    current = _fresh_authorizations(acme, orderr)
+    failed = _authz_reasons(current) if current else []
+    if isinstance(exc, (acme_errors.TimeoutError, acme_errors.PollError)):
+        pending = [
+            _identifier(a) for a in current or []
+            if _status_name(a.body.status) == "pending"
+        ]
+        if failed:
+            head = f"The CA could not validate {_names(len(failed))}:"
+            return AcmeOrder.Status.INVALID, "\n".join([head, *failed])
+        if pending:
+            return AcmeOrder.Status.ERRORED, (
+                f"The CA had not validated every name after {_POLL_SECONDS} seconds. "
+                f"Still pending: {', '.join(pending)}. Check that the challenge is "
+                "published and reachable from the CA, then finalize again."
+            )
+        if current is None:
+            return AcmeOrder.Status.ERRORED, (
+                f"The CA did not finish the order within {_POLL_SECONDS} seconds, and "
+                "its authorizations could not be read back. Finalize again to retry."
+            )
+        return AcmeOrder.Status.ERRORED, (
+            f"The CA validated every name but had not issued the certificate after "
+            f"{_POLL_SECONDS} seconds. Finalize again to retry."
+        )
+    if isinstance(exc, acme_errors.IssuanceError):
+        head = f"The CA would not issue the certificate: {describe_problem(exc.error)}"
+    else:
+        head = clean_remote_text(exc) or "The CA stopped the order without a reason."
+    return AcmeOrder.Status.INVALID, "\n".join([head, *failed])
 
 
 def finalize_order(order: AcmeOrder):
@@ -644,22 +1076,69 @@ def issue(order: AcmeOrder, publisher: ChallengePublisher | None = None):
     acme, jwk, orderr, records = _open_order(order)
     if publisher is None:
         return None
-    publisher.publish(records)
+    try:
+        publisher.publish(records)
+    except AcmeError:
+        raise
+    except Exception as exc:  # noqa: BLE001 - DNS server errors, mostly
+        raise AcmeError(
+            f"Publishing the {order.challenge_type} records failed: "
+            f"{clean_remote_text(exc, 200) or type(exc).__name__}",
+            code="acme_publish_failed",
+        ) from exc
     try:
         return _finalize_with(acme, jwk, orderr, order)
     finally:
-        publisher.cleanup(records)
+        try:
+            publisher.cleanup(records)
+        except Exception:  # noqa: BLE001 - cleanup is best-effort
+            log.warning("ACME challenge cleanup for order %s failed", order.pk)
 
 
 # --------------------------------------------------------------------------- #
-# RQ job wrapper
+# RQ job wrappers
 # --------------------------------------------------------------------------- #
+def _record_failure(order: AcmeOrder, message: str) -> None:
+    """Store why an order stopped, unless it already reached a final state
+    with its own reason (``invalid`` from the CA, or ``valid``)."""
+    order.refresh_from_db(fields=["status", "error"])
+    if order.status == AcmeOrder.Status.VALID:
+        return
+    if order.status == AcmeOrder.Status.INVALID and order.error:
+        return
+    if order.status != AcmeOrder.Status.INVALID:
+        order.status = AcmeOrder.Status.ERRORED
+    order.error = message or "The ACME order failed and the CA gave no reason."
+    order.save(update_fields=["status", "error", "updated_at"])
+
+
+def run_order_job(order: AcmeOrder, work) -> None:
+    """Run a background ACME step for ``order`` and record any failure on it.
+
+    An :class:`AcmeError` stores its own message; a secret-store failure its
+    own; anything else is logged with its traceback and stored as a generic
+    line - an order never stays ``processing`` because its worker raised.
+    """
+    from .secret_store import SecretStoreError
+
+    try:
+        work()
+    except AcmeError as exc:
+        _record_failure(order, exc.message)
+    except SecretStoreError as exc:
+        _record_failure(order, str(exc) or "The secret store is not available.")
+    except Exception:  # noqa: BLE001 - recorded, never left processing
+        log.exception("ACME job for order %s failed", order.pk)
+        _record_failure(
+            order, "The ACME job failed unexpectedly. The details are in the server log."
+        )
+
+
 def finalize_order_job(order_id) -> None:
     """RQ entry point: finalize a persisted order (polls, so it runs async).
 
     Re-loads the order by id - never trusts an enqueue-time object - and lets
-    :func:`finalize_order` record any failure on the row (it sets ``error`` /
-    ``status`` itself), so a raised :class:`AcmeError` is swallowed here.
+    :func:`run_order_job` record any failure on the row.
     """
     order = (
         AcmeOrder.objects.select_related("issuer", "request")
@@ -668,10 +1147,7 @@ def finalize_order_job(order_id) -> None:
     )
     if order is None:
         return
-    try:
-        finalize_order(order)
-    except AcmeError:
-        pass  # already recorded on the order row
+    run_order_job(order, lambda: finalize_order(order))
 
 
 def issue_order_job(order_id) -> None:
@@ -685,7 +1161,8 @@ def issue_order_job(order_id) -> None:
     )
     if order is None:
         return
-    try:
+
+    def work():
         publisher = publisher_for(order.issuer)
         if publisher is None:
             # No auto-publisher: create the order so its challenges are visible,
@@ -693,9 +1170,5 @@ def issue_order_job(order_id) -> None:
             create_order(order)
             return
         issue(order, publisher)
-    except AcmeError as exc:
-        order.refresh_from_db()
-        if order.status not in (AcmeOrder.Status.INVALID, AcmeOrder.Status.VALID):
-            order.status = AcmeOrder.Status.ERRORED
-            order.error = str(exc)
-            order.save(update_fields=["status", "error", "updated_at"])
+
+    run_order_job(order, work)

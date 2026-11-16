@@ -28,8 +28,10 @@ nav = [
     { "Installation"      = "getting-started/installation.md" },
     { "Deploy with Docker" = "getting-started/docker.md" },
     { "Upgrading"         = "getting-started/upgrading.md" },
+    { "Hardening"         = "getting-started/hardening.md" },
     { "Backup and restore" = "getting-started/backup-restore.md" },
     { "Danbyte's SBOM"    = "getting-started/sbom.md" },
+    { "Dependencies"      = "getting-started/dependencies.md" },
     { "First-time setup"  = "features/onboarding.md" },
     { "Dev workflow"      = "getting-started/dev-workflow.md" },
   ] },
@@ -69,6 +71,7 @@ nav = [
     { "Virtual & aggregate interfaces" = "dcim/virtual-interfaces.md" },
     { "Assigning IP addresses" = "dcim/ip-assignment.md" },
     { "Cabling & connections" = "dcim/cabling.md" },
+    { "Device dependencies" = "dcim/dependencies.md" },
     { "Fibre strands"     = "dcim/fiber.md" },
     { "Interface & cable types" = "dcim/type-taxonomy.md" },
   ] },
@@ -108,6 +111,20 @@ nav = [
     { "Device access (Connect & terminal)" = "features/device-access.md" },
     { "Compliance"        = "features/compliance.md" },
     { "End-of-life data"  = "features/end-of-life-data.md" },
+    { "Known vulnerabilities" = "features/vulnerabilities.md" },
+  ] },
+  { "Discovery" = [
+    { "Overview"          = "features/discovery.md" },
+    { "Getting started"   = "features/discovery-getting-started.md" },
+    { "Package inventory" = "features/discovery-packages.md" },
+    { "Windows hosts"     = "features/discovery-windows.md" },
+    { "Service scan"      = "features/service-discovery.md" },
+    { "Credentials & host keys" = "features/discovery-credentials.md" },
+    { "Scope & safety"    = "features/discovery-safety.md" },
+    { "On an Outpost"     = "features/discovery-outposts.md" },
+    { "Settings"          = "features/discovery-settings.md" },
+    { "API"               = "features/discovery-api.md" },
+    { "Troubleshooting"   = "features/discovery-troubleshooting.md" },
   ] },
   { "Working with data" = [
     "working-with-data/index.md",
@@ -176,6 +193,7 @@ nav = [
       { "Prefix"            = "models/prefix.md" },
       { "IP address"        = "models/ip-address.md" },
       { "Interface"         = "models/interface.md" },
+      { "Device dependency" = "models/device-dependency.md" },
       { "Port reservation"  = "models/port-reservation.md" },
       { "Tag"               = "models/tag.md" },
       { "Routing"           = "models/routing.md" },
@@ -195,6 +213,9 @@ nav = [
 
 [project.theme]
 language = "en"
+# No Google Fonts: the site's CSP refuses the stylesheet anyway (#498), and an
+# air-gapped install cannot reach it. The system font stack stands in.
+font = false
 features = [
   "navigation.instant",
   "navigation.tracking",

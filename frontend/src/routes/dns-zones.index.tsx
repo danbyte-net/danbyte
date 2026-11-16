@@ -104,14 +104,16 @@ function DnsZonesPage() {
       query={query}
       rail={rail}
       search={{ value: q, onChange: setQ, placeholder: "Filter zones…" }}
+      add={
+        canManage && (
+          <Button size="sm" onClick={() => setCreating(true)}>
+            <Plus className="h-3.5 w-3.5" /> Add zone
+          </Button>
+        )
+      }
       actions={
         <>
           <TableActions ioType="dnszone" />
-          {canManage && (
-            <Button size="sm" onClick={() => setCreating(true)}>
-              <Plus className="h-3.5 w-3.5" /> Add zone
-            </Button>
-          )}
         </>
       }
     >

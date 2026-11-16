@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react"
+import { useCallback, useMemo, useState, type ReactNode } from "react"
 import { SiteCell } from "@/components/cells/site-cell"
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useUrlTab } from "@/lib/use-url-tab"
@@ -7,10 +7,9 @@ import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 import {
   ArrowRightLeft,
+  LayoutList,
   ChevronRight,
-  CopyPlus,
   Layers,
-  Pencil,
   Plus,
 } from "lucide-react"
 
@@ -56,7 +55,8 @@ import {
   useDnsEnabled,
 } from "@/components/integrations/dns-records-table"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
-import { ObjectReportButton } from "@/components/object-report"
+import { useObjectReportItem } from "@/components/object-report"
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import {
   formatCustomValue,
@@ -67,6 +67,7 @@ import { useTableFilters, wireFacetColumns } from "@/components/table-filters"
 import { IpRailToggles } from "@/components/ip-rail-toggles"
 import { PrefixDeleteDialog } from "@/components/prefix-delete-dialog"
 import { PrefixRenumberDialog } from "@/components/prefix-renumber-dialog"
+import { PrefixPlanDialog } from "@/components/prefix-plan-dialog"
 import {
   AutoDiscoverButton,
   PrefixScanGroup,
@@ -79,6 +80,12 @@ import { DataTable } from "@/components/data-table"
 import { useMe, objCan } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
 import { VlanBadge } from "@/components/cells/vlan-badge"
+import {
+  CloneMenuItem,
+  DeleteButton,
+  EditButton,
+  MenuLink,
+} from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import {
   Table,
@@ -88,8 +95,19 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { ScrollFrame } from "@/components/table-scroll"
 import { ObjectSlaPanel } from "@/components/monitoring/sla-add"
 import { ApplicationFlowPane } from "@/components/application-flow-pane"
+import { Loading } from "@/components/loading"
+import { EmptyState } from "@/components/empty-state"
+import { NarrowRailSheet } from "@/components/narrow-rail-sheet"
+import {
+  RailModeSwitch,
+  TreeOrFilterRail,
+  narrowTreeRail,
+  usePrefixTreeRail,
+  type PrefixTreeRail,
+} from "@/components/prefix-tree-rail"
 
 export const Route = createFileRoute("/prefixes/$id")({
   component: PrefixDetail,
@@ -124,6 +142,9 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
   const { canDo, humanIds } = useMe()
   const canEditPrefix = objCan(p, "change", canDo("prefix", "change"))
   const canAddPrefix = canDo("prefix", "add")
+  // Children only where the server would accept them: not under shared or
+  // another site's space for a site-limited creator.
+  const canAddChild = canAddPrefix && objCan(p, "add_child", true)
   const canDeletePrefix = objCan(p, "delete", canDo("prefix", "delete"))
   const canAddIp = canDo("ipaddress", "add")
   const [tab, setTab] = useUrlTab<
@@ -148,6 +169,8 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
   const [deletingIp, setDeletingIp] = useState<IPAddress | null>(null)
   const [showPool, setShowPool] = useState(false)
   const [showRenumber, setShowRenumber] = useState(false)
+  const [showPlan, setShowPlan] = useState(false)
+  const report = useObjectReportItem("prefix", p.id, p.cidr)
   const [selectedIps, setSelectedIps] = useState<IPAddress[]>([])
 
   // IP table toggles (the facets live inside the table's own rail).
@@ -165,18 +188,15 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
   })
   const ipRows = ipsQuery.data?.results ?? []
 
-  // Enumerable = small enough to list every host (any family; the backend caps
-  // it). A /64 isn't, so it shows the subnet map instead.
-  // A prefix allocating only from its ranges enumerates those instead, so
-  // the size of the prefix itself stops mattering.
-  const allocationSpans = p.allocation?.ranges.map((r) => ({
-    start: r.start_address,
-    end: r.end_address,
-  }))
-  const canShowAvailable =
-    (p.is_enumerable || (allocationSpans?.length ?? 0) > 0) &&
-    p.status?.name !== "container" &&
-    !p.has_descendants
+  const canShowAvailable = showsAvailable(p)
+
+  // The IPs and Child prefixes tabs' Filters / Tree rail: the branch this
+  // prefix sits in, opened down to it with its siblings around it. A
+  // picked prefix opens its own page; the tabs always show this one.
+  const tree = usePrefixTreeRail("prefix-detail", {
+    focus: p.id,
+    active: tab === "ips" || tab === "children",
+  })
 
   // Open the IP create page pre-seeded with `address` from the
   // "next available" picker. We pass `prefix=` so the create page can
@@ -232,6 +252,21 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
 
   const ipsReturnPath = `/prefixes/${p.id}`
 
+  // The IPs tab's own toggles - in the filter rail, and under the switch
+  // in Tree mode.
+  const ipToggles = (
+    <IpRailToggles
+      showAvailable={showAvailable}
+      onToggleShowAvailable={setShowAvailable}
+      canShowAvailable={canShowAvailable}
+      compact={compact}
+      onToggleCompact={setCompact}
+      hasDhcpPool={(ipsQuery.data?.dhcp_ranges?.length ?? 0) > 0}
+      showDhcpPool={showDhcpPool}
+      onToggleShowDhcpPool={setShowDhcpPool}
+    />
+  )
+
   return (
     <DetailShell
       backTo="/prefixes"
@@ -247,21 +282,62 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
         </>
       }
       presence={{ type: "prefix", id: p.id }}
+      edit={
+        canEditPrefix && (
+          <EditButton to="/prefixes/$id/edit" params={{ id: p.id }} />
+        )
+      }
+      add={
+        canAddIp && (
+          <Button size="sm" asChild>
+            <Link to="/ips/new" search={{ address: undefined, prefix: p.id }}>
+              <Plus className="h-3.5 w-3.5" /> Add IP
+            </Link>
+          </Button>
+        )
+      }
       actions={
         <>
           <AutoDiscoverButton prefixId={p.id} initial={p.auto_discover} />
           <PrefixScanGroup prefixId={p.id} />
-          <ObjectReportButton kind="prefix" id={p.id} name={p.cidr} />
-          {canEditPrefix && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/prefixes/$id/edit" params={{ id: p.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canAddPrefix && (
-            <Button variant="outline" size="sm" asChild>
-              <Link
+        </>
+      }
+      exports={report.item}
+      more={
+        (canAddPrefix || canAddChild || canEditPrefix || canAddIp) && (
+          <>
+            {canAddChild && (
+              <MenuLink
+                to="/prefixes/new"
+                search={{
+                  cidr: undefined,
+                  vrf: p.vrf?.id,
+                  site: undefined,
+                  location: undefined,
+                }}
+                icon={<Plus className="h-3.5 w-3.5" />}
+              >
+                Add child prefix
+              </MenuLink>
+            )}
+            {canAddIp && canShowAvailable && (
+              <DropdownMenuItem onSelect={() => setShowPool(true)}>
+                <Layers className="h-3.5 w-3.5" /> Add pool
+              </DropdownMenuItem>
+            )}
+            {canAddChild &&
+              (p.has_descendants || p.status?.slug === "container") && (
+                <DropdownMenuItem onSelect={() => setShowPlan(true)}>
+                  <LayoutList className="h-3.5 w-3.5" /> Plan subnets…
+                </DropdownMenuItem>
+              )}
+            {canEditPrefix && (
+              <DropdownMenuItem onSelect={() => setShowRenumber(true)}>
+                <ArrowRightLeft className="h-3.5 w-3.5" /> Renumber…
+              </DropdownMenuItem>
+            )}
+            {canAddPrefix && (
+              <CloneMenuItem
                 to="/prefixes/new"
                 search={{
                   cidr: undefined,
@@ -270,62 +346,13 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
                   location: undefined,
                   clone: p.id,
                 }}
-              >
-                <CopyPlus className="h-3.5 w-3.5" /> Clone
-              </Link>
-            </Button>
-          )}
-          {canAddPrefix && (
-            <Button variant="outline" size="sm" asChild>
-              <Link
-                to="/prefixes/new"
-                search={{
-                  cidr: undefined,
-                  vrf: p.vrf?.id,
-                  site: undefined,
-                  location: undefined,
-                }}
-              >
-                <Plus className="h-3.5 w-3.5" /> Add child prefix
-              </Link>
-            </Button>
-          )}
-          {canEditPrefix && (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setShowRenumber(true)}
-            >
-              <ArrowRightLeft className="h-3.5 w-3.5" /> Renumber…
-            </Button>
-          )}
-          {canAddIp && canShowAvailable && (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setShowPool(true)}
-            >
-              <Layers className="h-3.5 w-3.5" /> Add pool
-            </Button>
-          )}
-          {canAddIp && (
-            <Button size="sm" asChild>
-              <Link to="/ips/new" search={{ address: undefined, prefix: p.id }}>
-                <Plus className="h-3.5 w-3.5" /> Add IP
-              </Link>
-            </Button>
-          )}
-          {canDeletePrefix && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeletePrefix(p)}
-            >
-              Delete
-            </Button>
-          )}
-        </>
+              />
+            )}
+          </>
+        )
+      }
+      remove={
+        canDeletePrefix && <DeleteButton onClick={() => setDeletePrefix(p)} />
       }
       hero={
         <DetailHero
@@ -390,23 +417,12 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
       <DetailTab value="ips" bare>
         <PrefixIpsTable
           prefixId={p.id}
-          railExtras={
-            <IpRailToggles
-              showAvailable={showAvailable}
-              onToggleShowAvailable={setShowAvailable}
-              canShowAvailable={canShowAvailable}
-              compact={compact}
-              onToggleCompact={setCompact}
-              hasDhcpPool={(ipsQuery.data?.dhcp_ranges?.length ?? 0) > 0}
-              showDhcpPool={showDhcpPool}
-              onToggleShowDhcpPool={setShowDhcpPool}
-            />
-          }
-          showAvailable={showAvailable}
+          {...ipTreeRail(tree, ipToggles)}
+          showAvailable={showAvailable && canShowAvailable}
           compact={compact}
           showDhcpPool={showDhcpPool}
           cidr={p.cidr}
-          spans={allocationSpans}
+          spans={allocationSpansOf(p)}
           hasDescendants={p.has_descendants}
           onEdit={handleEditIp}
           onDelete={handleDeleteIp}
@@ -421,6 +437,7 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
       <DetailTab value="children" bare>
         <ChildPrefixesPane
           parent={p}
+          tree={tree}
           onEdit={handleEditChild}
           onDelete={handleDeleteChild}
           onSelectedRowsChange={setSelectedChildren}
@@ -430,7 +447,7 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
       </DetailTab>
 
       <DetailTab value="map">
-        <MapPane prefix={p} canAddPrefix={canAddPrefix} canAddIp={canAddIp} />
+        <MapPane prefix={p} canAddPrefix={canAddChild} canAddIp={canAddIp} />
       </DetailTab>
 
       <DetailTab value="monitoring">
@@ -494,6 +511,7 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
       {showRenumber && (
         <PrefixRenumberDialog prefix={p} onOpenChange={setShowRenumber} />
       )}
+      {showPlan && <PrefixPlanDialog prefix={p} onOpenChange={setShowPlan} />}
       {deletingIp && (
         <IpDeleteDialog ip={deletingIp} onOpenChange={closeDeleteIp} />
       )}
@@ -520,8 +538,57 @@ function PrefixDetailBody({ prefix: p }: { prefix: Prefix }) {
           onCleared={clearSelectedChildren}
         />
       )}
+      {report.dialog}
     </DetailShell>
   )
+}
+
+// Enumerable = small enough to list every host (any family; the backend caps
+// it). A /64 isn't, so it shows the subnet map instead. A prefix allocating
+// only from its ranges enumerates those instead, so the size of the prefix
+// itself stops mattering.
+function allocationSpansOf(p: Prefix) {
+  return p.allocation?.ranges.map((r) => ({
+    start: r.start_address,
+    end: r.end_address,
+  }))
+}
+
+/** Whether a prefix's IPs table can show its free addresses. */
+function showsAvailable(p: Prefix): boolean {
+  return (
+    (p.is_enumerable || (allocationSpansOf(p)?.length ?? 0) > 0) &&
+    p.status?.name !== "container" &&
+    !p.has_descendants
+  )
+}
+
+/** The IPs tab's rail props: the Filters / Tree switch over its filter
+ * rail, the tree in its place in Tree mode, and the narrow window's sheet. */
+function ipTreeRail(tree: PrefixTreeRail, toggles: ReactNode) {
+  return {
+    railExtras: (
+      <>
+        <RailModeSwitch mode={tree.mode} onChange={tree.setMode} />
+        {toggles}
+      </>
+    ),
+    renderRail: (rail: ReactNode, active: number) => (
+      <TreeOrFilterRail
+        rail={tree}
+        filterRail={rail}
+        activeFilters={active}
+        treeExtras={toggles}
+      />
+    ),
+    narrowRail: (rail: ReactNode, active: number) =>
+      narrowTreeRail({
+        rail: tree,
+        filterRail: rail,
+        activeFilters: active,
+        treeExtras: toggles,
+      }),
+  }
 }
 
 /** The prefix's attributes, grouped into labelled tables - the detail that used
@@ -689,7 +756,7 @@ function SubnetDetailsCard({
 
 function SubnetDetailsTable({ rows }: { rows: SubnetDetailRow[] }) {
   return (
-    <div className="overflow-hidden rounded-lg border border-border bg-background">
+    <ScrollFrame className="rounded-lg border border-border bg-background">
       <Table>
         <TableHeader>
           <TableRow>
@@ -732,7 +799,7 @@ function SubnetDetailsTable({ rows }: { rows: SubnetDetailRow[] }) {
           ))}
         </TableBody>
       </Table>
-    </div>
+    </ScrollFrame>
   )
 }
 
@@ -744,7 +811,7 @@ function NextAvailableTable({
   onPick: (addr: string) => void
 }) {
   return (
-    <div className="overflow-hidden rounded-lg border border-border bg-background">
+    <ScrollFrame className="rounded-lg border border-border bg-background">
       <Table>
         <TableHeader>
           <TableRow>
@@ -783,7 +850,7 @@ function NextAvailableTable({
           ))}
         </TableBody>
       </Table>
-    </div>
+    </ScrollFrame>
   )
 }
 
@@ -917,6 +984,7 @@ function MapPane({
 
 function ChildPrefixesPane({
   parent,
+  tree,
   onEdit,
   onDelete,
   onSelectedRowsChange,
@@ -924,36 +992,33 @@ function ChildPrefixesPane({
   canDelete,
 }: {
   parent: Prefix
+  /** The prefix tree rail (navigation: it does not scope the list). */
+  tree: PrefixTreeRail
   onEdit: (p: Prefix) => void
   onDelete: (p: Prefix) => void
   onSelectedRowsChange: (rows: Prefix[]) => void
   canEdit: boolean
   canDelete: boolean
 }) {
+  // The prefix and everything inside it, in its VRF, scoped on the server.
   const query = useQuery({
-    queryKey: ["prefixes", "all"],
-    queryFn: () => apiAll<Prefix>("/api/prefixes/"),
+    queryKey: ["prefixes", "within", parent.id],
+    queryFn: () =>
+      apiAll<Prefix>(
+        `/api/prefixes/?${new URLSearchParams({ within: parent.id })}`
+      ),
   })
   const cfQuery = useCustomFieldDefs("prefix")
 
   const rows = useMemo<NestedPrefix[]>(() => {
-    const all = query.data?.results ?? []
-    const parentVrfKey = parent.vrf?.id ?? "global"
-    const parentCidr = parseCidr(parent.cidr)
-    if (!parentCidr) return []
-    const descendants = all.filter((p) => {
-      if (p.id === parent.id) return false
-      if ((p.vrf?.id ?? "global") !== parentVrfKey) return false
-      const c = parseCidr(p.cidr)
-      return c ? contains(parentCidr, c) : false
-    })
-    const nested = annotateNesting([parent, ...descendants])
-    // The parent anchors the tree at depth 0 but isn't shown - shift its
-    // children back to depth 0 so the indent chevrons start at the edge.
+    const nested = annotateNesting(query.data?.results ?? [])
+    const top = nested.find((p) => p.id === parent.id)?._depth ?? 0
+    // The page's prefix anchors the tree but isn't shown - its children
+    // start at the edge.
     return nested
       .filter((p) => p.id !== parent.id)
-      .map((p) => ({ ...p, _depth: Math.max(0, p._depth - 1) }))
-  }, [query.data, parent])
+      .map((p) => ({ ...p, _depth: Math.max(0, p._depth - top - 1) }))
+  }, [query.data, parent.id])
 
   // Filter rail derives from the factory's facet metadata (status, site,
   // utilisation, tags + one facet per tenant custom field) - same machinery as
@@ -980,10 +1045,10 @@ function ChildPrefixesPane({
       }),
     [includeCols, cfDefs]
   )
-  const { rail, filteredRows, toggleValue, selectedValues } = useTableFilters(
-    facetColumns,
-    rows
-  )
+  const { rail, filteredRows, toggleValue, selectedValues, activeCount } =
+    useTableFilters(facetColumns, rows, undefined, {
+      railExtras: <RailModeSwitch mode={tree.mode} onChange={tree.setMode} />,
+    })
   const tagSelection = selectedValues("tags")
 
   // Shared factory - a child-prefix row reads exactly like /prefixes,
@@ -1023,36 +1088,43 @@ function ChildPrefixesPane({
     ]
   )
 
-  if (query.isLoading)
-    return (
-      <p className="p-4 text-sm text-muted-foreground lg:p-6">
-        Loading children…
-      </p>
-    )
-  if (rows.length === 0) {
-    return (
-      <p className="p-4 text-sm text-muted-foreground lg:p-6">
-        No child prefixes - this prefix sits flat.
-      </p>
-    )
-  }
+  const narrow = narrowTreeRail({
+    rail: tree,
+    filterRail: rail,
+    activeFilters: activeCount,
+  })
   return (
     <>
-      {rail}
+      <TreeOrFilterRail
+        rail={tree}
+        filterRail={rail}
+        activeFilters={activeCount}
+      />
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border px-3">
+          <NarrowRailSheet rail={narrow} className="h-7" />
           <span className="num text-[11px] text-muted-foreground">
             {filteredRows.length} row{filteredRows.length === 1 ? "" : "s"}
           </span>
         </div>
         <div className="min-h-0 flex-1 overflow-auto p-3">
-          <DataTable
-            data={filteredRows}
-            columns={columns}
-            flexColumn="description"
-            onSelectedRowsChange={onSelectedRowsChange}
-            embedded
-          />
+          {query.isLoading ? (
+            <Loading />
+          ) : query.isError ? (
+            <QueryError error={query.error} />
+          ) : rows.length === 0 ? (
+            <EmptyState title="No child prefixes.">
+              This prefix sits flat.
+            </EmptyState>
+          ) : (
+            <DataTable
+              data={filteredRows}
+              columns={columns}
+              flexColumn="description"
+              onSelectedRowsChange={onSelectedRowsChange}
+              embedded
+            />
+          )}
         </div>
       </div>
     </>

@@ -12,6 +12,7 @@ import { CARD, PILL, nubRect, pillTop } from "./card-layout"
 import type { CardBox } from "./card-layout"
 import { PhotoNode } from "./photo-node"
 import type { DiagramCardData } from "./types"
+import { IMPACT_RING } from "../what-if"
 
 // A Diagram card: a solid rounded box in the device role's colour, the name
 // bold and centred at the top, the card lines centred under it, and at most
@@ -94,6 +95,7 @@ export const CardNode = memo(function CardNode(props: NodeProps) {
         "relative rounded-lg transition-opacity",
         !fill && "bg-muted text-foreground",
         selected && "outline-2 outline-offset-2 outline-map-accent",
+        d.impact && IMPACT_RING[d.impact],
         d.dimmed && "opacity-30"
       )}
       style={{

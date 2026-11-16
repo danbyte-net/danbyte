@@ -19,7 +19,7 @@ import { ROOM_FONT, textTexture } from "./text-sprite"
 import type { SummaryStore } from "./summary-picker"
 import { applyPlanText, collectPlanText } from "./plan-text-bus"
 import type { PlanTextBus } from "./plan-text-bus"
-import { cellToWorld, floorDeviceBoxM } from "./world"
+import { cellToWorld, floorDeviceBoxM, sceneTileName } from "./world"
 import type { ScenePayload, SceneTile } from "./world"
 
 // Readable (Display > Object size) in the room: every placed object's name
@@ -57,16 +57,7 @@ export function screenScale(px: number, fovDeg: number, viewH: number) {
 }
 
 /** A tile's name as the room shows it (the 2D canvas's order). */
-export function sceneTileName(t: SceneTile): string {
-  return (
-    t.label ||
-    t.rack?.name ||
-    t.cabinet?.name ||
-    t.device_name ||
-    t.type_name ||
-    ""
-  )
-}
+export { sceneTileName }
 
 /** Where a tile's name floats: over its middle, above its top (m). */
 function nameAnchor(plan: ScenePayload["plan"], t: SceneTile): THREE.Vector3 {

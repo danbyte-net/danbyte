@@ -1194,6 +1194,7 @@ export function FaceplateView({
   className,
   fit,
   fill,
+  photoMaxHeight,
   portLabels,
   device,
   facePorts,
@@ -1214,6 +1215,8 @@ export function FaceplateView({
   /** The photo, markers and all, stretched over the wrapper's box (see
    * `ImagePortsFaceplate`). */
   fill?: boolean
+  /** A CSS length a photo faceplate stays under (see `ImagePortsFaceplate`). */
+  photoMaxHeight?: string
   /** The device's own say over port labels: inherit / on / off. */
   portLabels?: DevicePortLabels | null
   /** Data the caller already holds, so the panel makes no request of its
@@ -1245,6 +1248,7 @@ export function FaceplateView({
         legendKey={legendKey}
         className={className}
         fill={fill}
+        maxHeight={photoMaxHeight}
         device={device}
         facePorts={facePorts}
       />
@@ -1324,6 +1328,31 @@ function facePortPart(fp: FacePort): InventoryItemRow {
  * same state color, live SNMP dot, hover card and link as the schematic
  * faceplate. Coexists with it - the caller picks which to show.
  */
+/** The photo box's width: the saved display scale, held under `maxHeight`
+ * by the photo's aspect. */
+export function photoBoxStyle({
+  fill,
+  photoScale,
+  photoW,
+  photoH,
+  maxHeight,
+}: {
+  fill: boolean
+  photoScale: number | null
+  photoW: number | null
+  photoH: number | null
+  maxHeight?: string
+}): React.CSSProperties | undefined {
+  if (fill || !photoW) return undefined
+  const scaled = photoScale != null ? Math.round(photoW * photoScale) : null
+  if (!maxHeight || !photoH)
+    return scaled != null ? { width: scaled } : undefined
+  const aspect = +(photoW / photoH).toFixed(4)
+  return {
+    width: `min(${scaled ?? photoW}px, calc(${maxHeight} * ${aspect}))`,
+  }
+}
+
 export function ImagePortsFaceplate({
   deviceTypeId,
   deviceId,
@@ -1335,6 +1364,7 @@ export function ImagePortsFaceplate({
   legendKey = "panel",
   className,
   fill = false,
+  maxHeight,
   device,
   facePorts: givenFace,
 }: {
@@ -1363,6 +1393,9 @@ export function ImagePortsFaceplate({
   /** Stretch the photo, markers and all, over the wrapper's box, with no
    * frame of its own - a device's body on a cabinet's plate, which sizes it. */
   fill?: boolean
+  /** A CSS length the photo stays under (a popover, a viewer): its width
+   * narrows to keep the aspect, so the markers stay on their ports. */
+  maxHeight?: string
 }) {
   const { faceplateMarkedLit } = useMe()
   const labelStyle = usePortLabelStyle()
@@ -1597,11 +1630,13 @@ export function ImagePortsFaceplate({
             ? "h-full w-full"
             : "inline-block max-w-full rounded-md border border-border bg-muted/30"
         )}
-        style={
-          !fill && photoScale != null && photoW
-            ? { width: Math.round(photoW * photoScale) }
-            : undefined
-        }
+        style={photoBoxStyle({
+          fill,
+          photoScale,
+          photoW,
+          photoH,
+          maxHeight,
+        })}
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
@@ -1624,8 +1659,8 @@ export function ImagePortsFaceplate({
             "block select-none",
             fill
               ? "h-full w-full"
-              : photoScale != null
-                ? "w-full"
+              : photoScale != null || (maxHeight && photoW && photoH)
+                ? "h-auto w-full"
                 : "h-auto max-h-[60vh] w-auto max-w-full"
           )}
           draggable={false}

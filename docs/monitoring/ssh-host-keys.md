@@ -11,6 +11,25 @@ scoped to a device.
     one, and the model refuses to persist anything that looks like key material.
     Upload only the **public** host key.
 
+## Virtual machines and discovery
+
+A VM keeps host keys too (`"virtual_machine": "<vm-id>"` in place of
+`device`, `?virtual_machine=` on the list; the panel is on the VM's
+**Certificates** tab). Drift alerts attach to a device's address, so a VM's
+keys raise none. They pin the VM's [in-browser SSH
+terminal](../features/device-access.md#the-in-browser-ssh-terminal) the same
+way a device's keys pin its own: every recorded key is trusted, any other
+key aborts the session, and a VM with none asks you to accept the new host.
+
+<span id="accepting-many-at-once-and-on-first-use"></span>
+[Discovery](../features/discovery-credentials.md#host-keys) logs in only to
+a host that presents an **accepted** key - uploaded, or observed and then
+accepted - and records the key a refused host presents as observed. Its
+bulk review (**Accept N keys** on a profile's or run's **Host keys** tab)
+and the not-advised **Accept new host keys** on **Run now** are described
+there: [reviewing host keys](../features/discovery-credentials.md#reviewing-host-keys),
+[accept on first use](../features/discovery-credentials.md#accept-new-host-keys-on-first-use).
+
 ## Recording an expected key
 
 `POST /api/monitoring/ssh-host-keys/` with a device and a pasted OpenSSH

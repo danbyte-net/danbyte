@@ -13,6 +13,8 @@ const SRC = join(process.cwd(), "src")
 
 // Page-header Delete buttons carry a text label and are their own pattern.
 const ALLOW = new Set<string>([
+  // The header's labelled DeleteButton (#507) - its label is a prop.
+  "components/action-ribbon.tsx",
   // Bulk bars render a labelled destructive button, not a row icon.
   "components/ip-bulk-bar.tsx",
   "components/prefix-bulk-bar.tsx",
@@ -71,8 +73,8 @@ describe("row delete affordances", () => {
     }
     expect(
       offenders,
-      "Use <RowActions onDelete=…/> (or its treatment: size=\"icon\", " +
-        'h-7 w-7, text-muted-foreground hover:text-destructive) for row trash icons.'
+      'Use <RowActions onDelete=…/> (or its treatment: size="icon", ' +
+        "h-7 w-7, text-muted-foreground hover:text-destructive) for row trash icons."
     ).toEqual([])
   })
 })

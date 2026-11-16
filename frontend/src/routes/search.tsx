@@ -16,6 +16,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { ScrollFrame } from "@/components/table-scroll"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { QueryError } from "@/components/query-error"
 import {
@@ -112,7 +113,7 @@ function SearchResultsPage() {
             {query.data.hits.length === 0 ? (
               <p className="text-sm text-muted-foreground">No matches.</p>
             ) : (
-              <div className="overflow-x-auto rounded-lg border border-border">
+              <ScrollFrame className="rounded-lg border border-border">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -128,7 +129,7 @@ function SearchResultsPage() {
                     ))}
                   </TableBody>
                 </Table>
-              </div>
+              </ScrollFrame>
             )}
             {(cursor > 0 || query.data.next_cursor !== null) && (
               <div className="flex items-center justify-between text-xs text-muted-foreground">

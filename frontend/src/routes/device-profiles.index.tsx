@@ -76,7 +76,7 @@ export function DeviceProfilesPage() {
         onChange: setQ,
         placeholder: "Filter by name, description…",
       }}
-      actions={
+      add={
         canAdd && (
           <Button size="sm" asChild>
             <Link to="/device-profiles/new">Add profile</Link>

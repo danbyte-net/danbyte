@@ -26,6 +26,14 @@ export interface ApplicationFormProps {
   onCancel: () => void
 }
 
+/** One entry per line (or comma), blanks dropped. */
+export function splitPackageNames(text: string): string[] {
+  return text
+    .split(/[\n,]/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+}
+
 function slugify(s: string): string {
   return s
     .toLowerCase()
@@ -56,6 +64,9 @@ export function ApplicationForm({
   const [license, setLicense] = useState(app?.license ?? "")
   const [purlTemplate, setPurlTemplate] = useState(app?.purl_template ?? "")
   const [cpeTemplate, setCpeTemplate] = useState(app?.cpe_template ?? "")
+  const [packageNames, setPackageNames] = useState(
+    (app?.package_names ?? []).join("\n")
+  )
   const [description, setDescription] = useState(app?.description ?? "")
   const [tagIds, setTagIds] = useState<number[]>(
     app?.tags?.map((t) => t.id) ?? []
@@ -74,6 +85,7 @@ export function ApplicationForm({
     setLicense(app.license ?? "")
     setPurlTemplate(app.purl_template ?? "")
     setCpeTemplate(app.cpe_template ?? "")
+    setPackageNames((app.package_names ?? []).join("\n"))
     setDescription(app.description)
     setTagIds(app.tags?.map((t) => t.id) ?? [])
     setCustomFields(app.custom_fields ?? {})
@@ -100,6 +112,7 @@ export function ApplicationForm({
           license: license.trim(),
           purl_template: purlTemplate.trim(),
           cpe_template: cpeTemplate.trim(),
+          package_names: splitPackageNames(packageNames),
           description: description.trim(),
           tag_ids: tagIds,
           custom_fields: customFields,
@@ -219,6 +232,23 @@ export function ApplicationForm({
           mono
           placeholder="cpe:2.3:a:postgresql:postgresql:{version}:*:*:*:*:*:*:*"
           error={fieldErrors.cpe_template}
+        />
+        <FormTextarea
+          label="Package names"
+          info={
+            <>
+              Inventoried packages that are this application, one per line:{" "}
+              <code>deb:nginx</code>, <code>rpm:httpd</code>,{" "}
+              <code>deb:postgresql-*</code>. A name without a type means deb,
+              rpm and apk. Exact names or a <code>*</code> wildcard. Discovery
+              adds the installs and keeps their versions.
+            </>
+          }
+          value={packageNames}
+          onChange={setPackageNames}
+          placeholder={"deb:nginx\nrpm:nginx"}
+          rows={3}
+          error={fieldErrors.package_names}
         />
         <FormTextarea
           label="Description"

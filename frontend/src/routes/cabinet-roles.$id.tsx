@@ -1,13 +1,11 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
-import { Pencil, Trash2 } from "lucide-react"
 import { useCallback, useState } from "react"
 
 import { api } from "@/lib/api"
 import type { CabinetRole } from "@/lib/api"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useMe } from "@/lib/use-me"
-import { Button } from "@/components/ui/button"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { ColorValueCell } from "@/components/cells/color-value-cell"
 import { TimeCell } from "@/components/cells/time-ago"
@@ -16,6 +14,7 @@ import type { KvRow } from "@/components/kv-card"
 import { Loading } from "@/components/loading"
 import { QueryError } from "@/components/query-error"
 import { CabinetRoleDeleteDialog } from "@/components/cabinet-role-delete-dialog"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { EmbeddedCabinetTable } from "@/components/embedded-tables"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
@@ -57,26 +56,15 @@ function Body({ role: r }: { role: CabinetRole }) {
       backLabel="Cabinet roles"
       title={r.name}
       presence={{ type: "cabinetrole", id: r.id }}
-      actions={
-        <>
-          {canDo("cabinetrole", "change") && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/cabinet-roles/$id/edit" params={{ id: r.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDo("cabinetrole", "delete") && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeleting(r)}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
-        </>
+      edit={
+        canDo("cabinetrole", "change") && (
+          <EditButton to="/cabinet-roles/$id/edit" params={{ id: r.id }} />
+        )
+      }
+      remove={
+        canDo("cabinetrole", "delete") && (
+          <DeleteButton onClick={() => setDeleting(r)} />
+        )
       }
       hero={
         <DetailHero

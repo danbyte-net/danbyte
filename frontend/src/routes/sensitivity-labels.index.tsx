@@ -76,14 +76,16 @@ function SensitivityLabelsPage() {
         filters: { snapshot, restore, activeCount },
       }}
       search={{ value: q, onChange: setQ, placeholder: "Filter…" }}
+      add={
+        canAdd && (
+          <Button size="sm" asChild>
+            <Link to="/sensitivity-labels/new">Add label</Link>
+          </Button>
+        )
+      }
       actions={
         <>
           <TableActions ioType="sensitivitylabel" />
-          {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/sensitivity-labels/new">Add label</Link>
-            </Button>
-          )}
         </>
       }
       query={query}

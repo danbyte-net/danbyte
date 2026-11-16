@@ -1,0 +1,11 @@
+# Allowlist for the dependency gate (.github/workflows/dependencies.yml).
+# The scanner leaves an entry's finding out of its report until ignoreUntil;
+# after that the finding is back and fails the gate again. Every entry needs
+# an id, a reason and an ignoreUntil at most 180 days ahead, or the gate
+# refuses the file (scripts/release/osv_gate.py). Prefer an upgrade; see
+# docs/getting-started/dependencies.md.
+#
+# [[IgnoredVulns]]
+# id = "GHSA-xxxx-xxxx-xxxx"
+# ignoreUntil = 2027-01-31
+# reason = "Only reachable through X, which Danbyte does not call; fixed in Y, not released yet."

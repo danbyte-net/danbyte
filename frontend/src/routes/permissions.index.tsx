@@ -76,6 +76,13 @@ function PermissionsPage() {
         onChange: setQ,
         placeholder: "Filter permissions…",
       }}
+      add={
+        canAdd && (
+          <Button size="sm" asChild>
+            <Link to="/permissions/new">Add permission</Link>
+          </Button>
+        )
+      }
       actions={
         <>
           {canAdd && (
@@ -85,11 +92,6 @@ function PermissionsPage() {
               onClick={() => setSiteRoleOpen(true)}
             >
               Site role
-            </Button>
-          )}
-          {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/permissions/new">Add permission</Link>
             </Button>
           )}
         </>

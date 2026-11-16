@@ -38,20 +38,7 @@ export interface ExtraExport {
   onSelect: () => void
 }
 
-/**
- * The round-trip *data* export/import control - distinct from the pretty
- * `Export` dropdown (share with a colleague). Exports include ids + stable keys
- * so the file can be edited and re-uploaded to update rows. Renders nothing
- * unless the backend reports this type as IO-capable for the user.
- */
-export function TableIO({
-  slug,
-  name,
-  selectedIds = [],
-  exportFilter,
-  extraExports = [],
-  prominent = false,
-}: {
+export interface TableIOOptions {
   slug: string
   name?: string
   selectedIds?: string[]
@@ -60,10 +47,22 @@ export function TableIO({
   exportFilter?: Record<string, string>
   /** Further exports listed under the formats. */
   extraExports?: ExtraExport[]
-  /** Render as a full-size header button ("Import / Export") rather than the
-   * compact toolbar control. Use in page headers next to "Add …". */
-  prominent?: boolean
-}) {
+}
+
+/**
+ * The round-trip export/import menu's parts, for a host that draws its own
+ * menu: `items` go inside a `DropdownMenuContent`, `dialog` outside it (a
+ * menu's content unmounts when it closes, and the import dialog must not).
+ * `available` is false until the backend reports the type as IO-capable for
+ * the user - then render neither.
+ */
+export function useTableIO({
+  slug,
+  name,
+  selectedIds = [],
+  exportFilter,
+  extraExports = [],
+}: TableIOOptions) {
   const [importing, setImporting] = useState(false)
   const types = useQuery({
     queryKey: ["io-types"],
@@ -74,14 +73,84 @@ export function TableIO({
     staleTime: 5 * 60_000,
   })
   const meta = types.data?.find((t) => t.slug === slug)
-  if (!meta || (!meta.can_export && !meta.can_import)) return null
-
+  const available = !!meta && (meta.can_export || meta.can_import)
   const ids = selectedIds.length ? selectedIds : undefined
   const fmts: [IOFormat, string][] = [
     ["csv", "CSV (.csv)"],
     ["xlsx", "Excel (.xlsx)"],
     ["json", "JSON (.json)"],
   ]
+
+  const items = meta && (
+    <>
+      {meta.can_export && (
+        <>
+          <DropdownMenuLabel className="text-[10px] tracking-wider uppercase">
+            Export {ids ? `${ids.length} selected` : "all rows"}
+          </DropdownMenuLabel>
+          {fmts.map(([fmt, label]) => (
+            <DropdownMenuItem key={fmt} asChild>
+              <a
+                href={ioExportUrl(slug, { fmt, ids, filter: exportFilter })}
+                download
+              >
+                {label}
+              </a>
+            </DropdownMenuItem>
+          ))}
+          {extraExports.length > 0 && <DropdownMenuSeparator />}
+          {extraExports.map((x) => (
+            <DropdownMenuItem
+              key={x.key}
+              disabled={x.disabled}
+              onSelect={x.onSelect}
+            >
+              {x.label}
+            </DropdownMenuItem>
+          ))}
+        </>
+      )}
+      {meta.can_import && (
+        <>
+          {meta.can_export && <DropdownMenuSeparator />}
+          <DropdownMenuItem onSelect={() => setImporting(true)}>
+            <Upload className="h-3.5 w-3.5" /> Import…
+          </DropdownMenuItem>
+        </>
+      )}
+    </>
+  )
+
+  const dialog = meta && (
+    <TableIODialog
+      slug={slug}
+      name={name}
+      naturalKey={meta.natural_key}
+      open={importing}
+      onOpenChange={setImporting}
+    />
+  )
+
+  return { available, ids, items, dialog }
+}
+
+/**
+ * The round-trip *data* export/import control - distinct from the pretty
+ * `Export` dropdown (share with a colleague). Exports include ids + stable keys
+ * so the file can be edited and re-uploaded to update rows. Renders nothing
+ * unless the backend reports this type as IO-capable for the user.
+ */
+export function TableIO({
+  prominent = false,
+  ...opts
+}: TableIOOptions & {
+  /** Render as a full-size header button ("Import / Export") rather than the
+   * compact toolbar control. Use in page headers next to "Add …". */
+  prominent?: boolean
+}) {
+  const io = useTableIO(opts)
+  if (!io.available) return null
+  const ids = io.ids
 
   return (
     <>
@@ -112,55 +181,13 @@ export function TableIO({
           )}
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-56">
-          {meta.can_export && (
-            <>
-              <DropdownMenuLabel className="text-[10px] tracking-wider uppercase">
-                Export {ids ? `${ids.length} selected` : "all rows"}
-              </DropdownMenuLabel>
-              {fmts.map(([fmt, label]) => (
-                <DropdownMenuItem key={fmt} asChild>
-                  <a
-                    href={ioExportUrl(slug, { fmt, ids, filter: exportFilter })}
-                    download
-                  >
-                    {label}
-                  </a>
-                </DropdownMenuItem>
-              ))}
-              {extraExports.length > 0 && <DropdownMenuSeparator />}
-              {extraExports.map((x) => (
-                <DropdownMenuItem
-                  key={x.key}
-                  disabled={x.disabled}
-                  onSelect={x.onSelect}
-                >
-                  {x.label}
-                </DropdownMenuItem>
-              ))}
-            </>
-          )}
-          {meta.can_import && (
-            <>
-              {meta.can_export && <DropdownMenuSeparator />}
-              <DropdownMenuItem onSelect={() => setImporting(true)}>
-                <Upload className="h-3.5 w-3.5" /> Import…
-              </DropdownMenuItem>
-            </>
-          )}
+          {io.items}
         </DropdownMenuContent>
       </DropdownMenu>
-
-      <TableIODialog
-        slug={slug}
-        name={name}
-        naturalKey={meta.natural_key}
-        open={importing}
-        onOpenChange={setImporting}
-      />
+      {io.dialog}
     </>
   )
 }
-
 function TableIODialog({
   slug,
   name,

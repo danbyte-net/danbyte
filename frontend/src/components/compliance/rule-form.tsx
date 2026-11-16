@@ -38,6 +38,7 @@ import {
   FormSelect,
   FormText,
   FormTextarea,
+  useFieldErrors,
 } from "@/components/forms"
 import type { SelectOption } from "@/components/forms"
 import { ExpressionBuilder, MAX_GROUPS } from "@/components/filter-expression"
@@ -63,6 +64,7 @@ const CHECKS: { value: ComplianceCheck; label: string }[] = [
   { value: "eol_status", label: "End-of-life status" },
   { value: "coverage", label: "Support coverage" },
   { value: "software_target", label: "Software target" },
+  { value: "vulnerabilities", label: "Known vulnerabilities" },
 ]
 // The single-field checks from before conditions: offered only on a rule
 // that already uses one, with Convert to conditions.
@@ -75,11 +77,14 @@ const LEGACY_CHECKS: { value: ComplianceCheck; label: string }[] = [
 ]
 const LEGACY = new Set(LEGACY_CHECKS.map((c) => c.value))
 
-// An end-of-life or software target check reads the platform, so it suits
-// devices and VMs; support coverage is a device's.
+// An end-of-life, software target or known vulnerabilities check reads the
+// platform and installs, so it suits devices and VMs; support coverage is a
+// device's.
 const PLATFORM_TYPES = new Set(["device", "virtualmachine"])
-const suits = (check: ComplianceCheck, types: string[]) =>
-  check === "eol_status" || check === "software_target"
+export const suits = (check: ComplianceCheck, types: string[]) =>
+  check === "eol_status" ||
+  check === "software_target" ||
+  check === "vulnerabilities"
     ? types.every((t) => PLATFORM_TYPES.has(t))
     : check === "coverage"
       ? types.every((t) => t === "device")
@@ -89,6 +94,12 @@ const EOL_FAIL_ON: SelectOption[] = [
   { value: "eol", label: "End of life" },
   { value: "ending", label: "Support ending or ended" },
   { value: "unknown", label: "No end-of-life data" },
+]
+export const VULN_FAIL_ON: SelectOption[] = [
+  { value: "kev", label: "In CISA KEV" },
+  { value: "fix_first", label: "Fix first" },
+  { value: "high", label: "High and above" },
+  { value: "cvss", label: "CVSS at or over" },
 ]
 const COVERAGE_FAIL_ON: SelectOption[] = [
   { value: "expired", label: "Expired or not covered" },
@@ -228,6 +239,17 @@ export function ComplianceRuleForm({
   const [failOnUnknown, setFailOnUnknown] = useState(
     rule?.fail_on_unknown ?? false
   )
+  const [vulnFailOn, setVulnFailOn] = useState<string>(
+    rule?.vuln_fail_on || "kev"
+  )
+  const [cvssMin, setCvssMin] = useState<string>(
+    rule?.cvss_min != null ? String(Number(rule.cvss_min)) : "9"
+  )
+  const {
+    fieldErrors,
+    handleApiError,
+    reset: resetFieldErrors,
+  } = useFieldErrors()
   const [scope, setScopeTree] = useState<TreeGroup>(() => rootOf(rule?.scope))
   const [condition, setConditionTree] = useState<TreeGroup>(() =>
     withRow(rootOf(rule?.condition))
@@ -308,6 +330,7 @@ export function ComplianceRuleForm({
     fail_on_unknown: check === "software_target" && failOnUnknown,
     include_software:
       check === "eol_status" && eolFailOn !== "unknown" && includeSoftware,
+    ...vulnFields(check, vulnFailOn, cvssMin),
   }
 
   const save = useMutation({
@@ -322,6 +345,7 @@ export function ComplianceRuleForm({
             body: JSON.stringify(body),
           }),
     onSuccess: () => {
+      resetFieldErrors()
       qc.invalidateQueries({ queryKey: ["compliance-rules"] })
       qc.invalidateQueries({ queryKey: ["compliance-rule"] })
       invalidateCompliance(qc)
@@ -342,6 +366,11 @@ export function ComplianceRuleForm({
       if (scopeErr || condErr) {
         setErrors({ scope: scopeErr, condition: condErr })
         toast.error("Fix the marked conditions.")
+        return
+      }
+      if (b && ("vuln_fail_on" in b || "cvss_min" in b)) {
+        const msg = handleApiError(err)
+        if (msg) toast.error(msg)
         return
       }
       apiErrorToast(err)
@@ -640,6 +669,32 @@ export function ComplianceRuleForm({
             onChange={setFailOnUnknown}
           />
         )}
+        {check === "vulnerabilities" && (
+          <div className="grid gap-3 @md:grid-cols-2">
+            <FormSelect
+              label="Fails on"
+              required
+              value={vulnFailOn}
+              onChange={(v) => setVulnFailOn(v ?? "kev")}
+              options={VULN_FAIL_ON}
+              hint="An open match no exception covers"
+              error={fieldErrors.vuln_fail_on}
+            />
+            {vulnFailOn === "cvss" && (
+              <FormText
+                label="CVSS"
+                required
+                type="number"
+                min={0.1}
+                max={10}
+                step={0.1}
+                value={cvssMin}
+                onChange={setCvssMin}
+                error={fieldErrors.cvss_min}
+              />
+            )}
+          </div>
+        )}
       </FormSection>
 
       <PreviewStrip body={body} />
@@ -651,6 +706,24 @@ export function ComplianceRuleForm({
       />
     </form>
   )
+}
+
+/** The known vulnerabilities fields of a rule's body: blank for any other
+ * check, and the CVSS score only when the check fails on one. */
+export function vulnFields(
+  check: ComplianceCheck,
+  failOn: string,
+  cvssMin: string
+): { vuln_fail_on: string; cvss_min: number | null } {
+  if (check !== "vulnerabilities") return { vuln_fail_on: "", cvss_min: null }
+  const n = Number(cvssMin)
+  return {
+    vuln_fail_on: failOn,
+    cvss_min:
+      failOn === "cvss" && cvssMin.trim() !== "" && Number.isFinite(n)
+        ? n
+        : null,
+  }
 }
 
 /** "In scope 214 devices · 38 virtual machines - failing 12 · 3", refreshed

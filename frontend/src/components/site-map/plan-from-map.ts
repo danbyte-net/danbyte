@@ -273,6 +273,7 @@ export async function renderMapImage({
   attribution,
   jpeg = false,
   load = loadTile,
+  vector,
 }: {
   bbox: Bbox
   mapZoom: number
@@ -281,7 +282,26 @@ export async function renderMapImage({
   /** Satellite imagery compresses far better as JPEG. */
   jpeg?: boolean
   load?: (url: string) => Promise<TileImage>
+  /** Draw the box from vector tiles instead of `template` (#467): renders
+   * it at the size asked, as one image. */
+  vector?: (bbox: Bbox, width: number, height: number) => Promise<TileImage>
 }): Promise<{ blob: Blob; zoom: number; width: number; height: number }> {
+  if (vector) {
+    const size = vectorImageSize(bbox, mapZoom)
+    const canvas = document.createElement("canvas")
+    canvas.width = size.width
+    canvas.height = size.height
+    const ctx = canvas.getContext("2d")
+    if (!ctx) throw new TileReadError("This browser can't draw the map.")
+    let img: TileImage
+    try {
+      img = await vector(bbox, size.width, size.height)
+    } catch {
+      throw new TileReadError()
+    }
+    ctx.drawImage(img, 0, 0, size.width, size.height)
+    return finishImage(canvas, size.zoom, attribution, jpeg)
+  }
   const zoom = renderZoom(bbox, mapZoom)
   const box = tilesFor(bbox, zoom)
   const { tiles } = box
@@ -327,6 +347,44 @@ export async function renderMapImage({
     }
   }
   await Promise.all(Array.from({ length: 6 }, worker))
+  return finishImage(canvas, zoom, attribution, jpeg)
+}
+
+/** The longest side of a vector render: MapLibre's default canvas limit,
+ * which every WebGL browser can draw. */
+export const MAX_VECTOR_EDGE = 4096
+
+/** A vector render's size: the box at the map's zoom (256-pixel tiles),
+ * brought to between MIN_IMAGE_EDGE and MAX_VECTOR_EDGE on its longest
+ * side - vector tiles are drawn sharp at any scale. `zoom` is the whole
+ * (raster-equivalent) zoom the image has the detail of. */
+export function vectorImageSize(b: Bbox, mapZoom: number) {
+  const p = pixelBox(b, Math.max(0, Math.min(19, mapZoom)))
+  const w = p.x1 - p.x0
+  const h = p.y1 - p.y0
+  const long = Math.max(w, h)
+  const k =
+    long > MAX_VECTOR_EDGE
+      ? MAX_VECTOR_EDGE / long
+      : long < MIN_IMAGE_EDGE
+        ? MIN_IMAGE_EDGE / long
+        : 1
+  return {
+    width: Math.max(1, Math.round(w * k)),
+    height: Math.max(1, Math.round(h * k)),
+    zoom: Math.max(0, Math.min(19, Math.round(mapZoom + Math.log2(k)))),
+  }
+}
+
+async function finishImage(
+  canvas: HTMLCanvasElement,
+  zoom: number,
+  attribution: string,
+  jpeg: boolean
+): Promise<{ blob: Blob; zoom: number; width: number; height: number }> {
+  const { width, height } = canvas
+  const ctx = canvas.getContext("2d")
+  if (!ctx) throw new TileReadError("This browser can't draw the map.")
   const text = plainAttribution(attribution)
   if (text) {
     const size = Math.max(11, Math.round(width / 160))

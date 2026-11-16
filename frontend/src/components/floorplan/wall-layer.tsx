@@ -32,6 +32,7 @@ export function WallShape({
   interactive,
   doorArmed,
   selectedDoor = null,
+  doors = true,
   onBodyDown,
   onSegmentDown,
   onSegmentDoubleClick,
@@ -44,6 +45,9 @@ export function WallShape({
   doorArmed: boolean
   /** The index of the wall's door selected on the plan. */
   selectedDoor?: number | null
+  /** Door thresholds, leaves and swings (off from afar: Detail by zoom);
+   * the gaps stay. */
+  doors?: boolean
   onBodyDown?: (seg: number, e: React.PointerEvent) => void
   /** The Door tool pressed on segment `seg`. */
   onSegmentDown?: (seg: number, e: React.PointerEvent) => void
@@ -96,6 +100,7 @@ export function WallShape({
         />
       ))}
       {openings.map((o, i) => {
+        if (!doors && selectedDoor !== i) return null
         if (!wall.points[o.seg + 1] || o.to <= o.from) return null
         const [x0, y0] = pointAlong(wall.points, o.seg, o.from).map(px)
         const [x1, y1] = pointAlong(wall.points, o.seg, o.to).map(px)

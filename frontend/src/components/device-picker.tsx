@@ -126,6 +126,7 @@ export function DevicePicker({
         : undefined,
       detailEndpoint: (id) => `/api/devices/${id}/`,
       detailQueryKey: (id) => ["device", id],
+      customFieldScope: true,
       listEndpoint: "/api/devices/",
       searchHint: "Search name, serial, asset tag, description…",
       filters: DEVICE_PICKER_FILTERS,

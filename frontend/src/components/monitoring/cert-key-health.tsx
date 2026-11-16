@@ -3,13 +3,8 @@ import { useQuery } from "@tanstack/react-query"
 import { ShieldCheck } from "lucide-react"
 
 import { api } from "@/lib/api"
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { InfoTip } from "@/components/ui/info-tip"
 
 // One tenant-scoped read (`/certificates/health/`) buckets the whole inventory;
 // the client never re-counts. Buckets use the tenant's own expiry thresholds,
@@ -37,40 +32,38 @@ const TONE: Record<string, string> = {
   muted: "text-muted-foreground",
 }
 
-function Tile({
+/** One bucket: its name, then its count - coloured only when there is
+ * something in it - opening the matching list. */
+function Row({
   label,
   value,
   tone,
   to,
   search,
-  emphasize,
 }: {
   label: string
   value: number
   tone: keyof typeof TONE
   to: string
   search?: Record<string, string>
-  emphasize?: boolean
 }) {
   return (
-    <Link
-      to={to}
-      search={search}
-      className={`flex flex-col rounded-lg border p-3 transition-colors hover:bg-muted/50 ${
-        emphasize && value > 0
-          ? "border-red-300 bg-red-50/40 dark:border-red-900/60 dark:bg-red-950/20"
-          : "border-border"
-      }`}
-    >
-      <span
-        className={`text-2xl font-semibold tabular-nums ${
-          value > 0 ? TONE[tone] : "text-muted-foreground"
-        }`}
+    <li>
+      <Link
+        to={to}
+        search={search}
+        className="flex items-center gap-3 px-4 py-1.5 text-[13px] transition-colors hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none"
       >
-        {value.toLocaleString()}
-      </span>
-      <span className="mt-0.5 text-xs text-muted-foreground">{label}</span>
-    </Link>
+        <span className="whitespace-nowrap text-muted-foreground">{label}</span>
+        <span
+          className={`num ml-auto font-medium ${
+            value > 0 ? TONE[tone] : "text-muted-foreground"
+          }`}
+        >
+          {value.toLocaleString()}
+        </span>
+      </Link>
+    </li>
   )
 }
 
@@ -85,74 +78,70 @@ export function CertKeyHealthCard() {
   if (!d || (d.total === 0 && d.ssh_host_key_drift === 0)) return null
 
   return (
-    <Card>
+    <Card size="sm">
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
+        <CardTitle className="flex items-center gap-1.5">
           <ShieldCheck className="h-4 w-4 text-muted-foreground" />
-          Certificate &amp; key health
+          Certificates &amp; keys
+          <InfoTip>
+            Expiry against this tenant&apos;s thresholds (critical ≤{" "}
+            {d.critical_days}d, warning ≤ {d.warning_days}d), plus SSH host-key
+            drift and firing alerts.
+          </InfoTip>
         </CardTitle>
-        <CardDescription>
-          Expiry against this tenant&apos;s thresholds (critical ≤{" "}
-          {d.critical_days}d, warning ≤ {d.warning_days}d), plus SSH host-key
-          drift and firing alerts. Each tile opens the matching list.
-        </CardDescription>
       </CardHeader>
-      <CardContent>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-7">
-          <Tile
+      <CardContent className="px-0">
+        <ul className="divide-y divide-border border-t border-border">
+          <Row
             label="Expired"
             value={d.expired}
             tone="expired"
             to="/certificates"
             search={{ expiry: "expired" }}
-            emphasize
           />
-          <Tile
+          <Row
             label={`Expiring ≤ ${d.critical_days}d`}
             value={d.expiring_critical}
             tone="critical"
             to="/certificates"
             search={{ expiry: "critical" }}
-            emphasize
           />
-          <Tile
+          <Row
             label={`Expiring ≤ ${d.warning_days}d`}
             value={d.expiring_warning}
             tone="warning"
             to="/certificates"
             search={{ expiry: "warning" }}
           />
-          <Tile
+          <Row
             label="Healthy"
             value={d.healthy}
             tone="healthy"
             to="/certificates"
             search={{ expiry: "healthy" }}
           />
-          <Tile
+          <Row
             label="Self-signed"
             value={d.self_signed}
             tone="muted"
             to="/certificates"
             search={{ self_signed: "self" }}
           />
-          <Tile
+          <Row
             label="SSH key drift"
             value={d.ssh_host_key_drift}
             tone="critical"
             to="/alerts"
             search={{ state: "firing", kind: "ssh" }}
-            emphasize
           />
-          <Tile
+          <Row
             label="Firing alerts"
             value={d.firing_alerts}
             tone="expired"
             to="/alerts"
             search={{ state: "firing" }}
-            emphasize
           />
-        </div>
+        </ul>
       </CardContent>
     </Card>
   )

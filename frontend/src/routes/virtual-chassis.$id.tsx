@@ -3,7 +3,7 @@ import { PortUtilizationCard } from "@/components/port-utilization-card"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { invalidatePortCounts } from "@/lib/port-utilization"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Crown, Pencil, Plus, Trash2, Unlink } from "lucide-react"
+import { Crown, Pencil, Plus, Unlink } from "lucide-react"
 import { useCallback, useMemo, useState } from "react"
 import { toast } from "sonner"
 
@@ -35,6 +35,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { ScrollFrame } from "@/components/table-scroll"
 import { TagList } from "@/components/cells/tag-list"
 import { CustomFieldValues } from "@/components/custom-field-display"
 import { KvCard, dash, mono, type KvRow } from "@/components/kv-card"
@@ -61,7 +62,8 @@ import {
 import { VcAddMemberDialog } from "@/components/vc-add-member-dialog"
 import { VcMembershipDialog } from "@/components/vc-membership-dialog"
 import { VcSnmpPane } from "@/components/vc-snmp-pane"
-import { SpecSheetButton } from "@/components/spec-sheet-button"
+import { SpecSheetMenuItems } from "@/components/spec-sheet-button"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
@@ -143,27 +145,16 @@ function Body({ vc }: { vc: VirtualChassis }) {
       backLabel="Virtual chassis"
       title={vc.name}
       presence={{ type: "virtualchassis", id: vc.id }}
-      actions={
-        <>
-          <SpecSheetButton kind="vc" id={vc.id} />
-          {canDo("virtualchassis", "change") && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/virtual-chassis/$id/edit" params={{ id: vc.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDo("virtualchassis", "delete") && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeleting(vc)}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
-        </>
+      edit={
+        canDo("virtualchassis", "change") && (
+          <EditButton to="/virtual-chassis/$id/edit" params={{ id: vc.id }} />
+        )
+      }
+      exports={<SpecSheetMenuItems kind="vc" id={vc.id} />}
+      remove={
+        canDo("virtualchassis", "delete") && (
+          <DeleteButton onClick={() => setDeleting(vc)} />
+        )
       }
       hero={
         <DetailHero
@@ -504,7 +495,7 @@ function MembersTable({
             : "Devices join from their own edit form (Stack membership)."}
         </p>
       ) : (
-        <div className="overflow-hidden rounded-lg border border-border">
+        <ScrollFrame className="rounded-lg border border-border">
           <Table>
             <TableHeader>
               <TableRow>
@@ -635,7 +626,7 @@ function MembersTable({
               ))}
             </TableBody>
           </Table>
-        </div>
+        </ScrollFrame>
       )}
 
       <VcAddMemberDialog

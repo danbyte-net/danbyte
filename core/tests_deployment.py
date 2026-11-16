@@ -1489,6 +1489,82 @@ class DbBehindCodeTests(SimpleTestCase):
             self.assertEqual(version.pending_migrations(), [])
 
 
+class MigrationProbeCacheTests(TestCase):
+    """The health probe's migration answers are cached per process, but only
+    while the migration state reads the same: a migrate or a restore by
+    another process shows on the next probe, not a minute later."""
+
+    def setUp(self):
+        from core import version
+
+        for name in ("_pending_cache", "_drift_cache"):
+            setattr(version, name, None)
+            self.addCleanup(setattr, version, name, None)
+
+    def last_applied(self):
+        from django.db.migrations.recorder import MigrationRecorder
+
+        return MigrationRecorder.Migration.objects.filter(app="core").order_by("-id").first()
+
+    def test_health_turns_degraded_and_back_as_the_database_changes(self):
+        from django.test import Client
+
+        c = Client()
+        self.assertEqual(c.get("/api/health/").json()["status"], "ok")
+        row = self.last_applied()
+        name, applied = row.name, row.applied
+        row.delete()  # as a restore of an older database would
+        body = c.get("/api/health/").json()
+        self.assertEqual(body["status"], "degraded")
+        self.assertTrue(body["db_behind_code"])
+        from django.db.migrations.recorder import MigrationRecorder
+
+        MigrationRecorder.Migration.objects.create(app="core", name=name, applied=applied)
+        body = c.get("/api/health/").json()   # the migrate ran
+        self.assertEqual(body["status"], "ok")
+        self.assertFalse(body["db_behind_code"])
+
+    def test_drift_shows_as_soon_as_the_database_moves_past_the_code(self):
+        from django.db.migrations.recorder import MigrationRecorder
+
+        from core.version import migration_drift
+
+        self.assertEqual(migration_drift(), [])
+        MigrationRecorder.Migration.objects.create(app="core", name="9999_from_the_future")
+        self.assertEqual(migration_drift(), ["core.9999_from_the_future"])
+
+    def test_an_unchanged_state_reuses_the_answer(self):
+        from unittest.mock import patch
+
+        from django.db.migrations import loader as loader_mod
+
+        from core import version
+
+        builds = []
+
+        class Counting(loader_mod.MigrationLoader):
+            def __init__(self, *a, **kw):
+                builds.append(1)
+                super().__init__(*a, **kw)
+
+        self.assertEqual(version.pending_migrations(), [])
+        with patch.object(loader_mod, "MigrationLoader", Counting):
+            self.assertEqual(version.pending_migrations(), [])
+            self.assertEqual(builds, [])
+            # Another tree's migration folders are another state.
+            with patch.object(version, "migration_state", return_value=("other",)):
+                self.assertEqual(version.pending_migrations(), [])
+            self.assertEqual(len(builds), 1)
+
+    def test_the_answer_still_expires(self):
+        from core import version
+
+        self.assertEqual(version.pending_migrations(), [])
+        stamp, state, _ = version._pending_cache
+        version._pending_cache = (stamp - version._PROBE_TTL, state, ["core.stale"])
+        self.assertEqual(version.pending_migrations(), [])
+
+
 class StaticFileModesTests(SimpleTestCase):
     """nginx serves /static/ from disk as another user: collectstatic must
     write world-readable files even though uploads stay private (#227)."""

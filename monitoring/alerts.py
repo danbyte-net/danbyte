@@ -109,6 +109,12 @@ def process_transitions(transitions, now) -> dict:
             id__in={tr.target_ip_id for tr in bad}
         ).prefetch_related(TAGS)
     }
+    # Root cause (#450): which of these devices a down upstream explains,
+    # and which wait for their upstreams. Empty - today's path - without
+    # dependency rows or with the switch off; never raises.
+    from .root_cause import HELD, SENT, WITHHELD, after_batch, prepare
+
+    plan = prepare(bad, clears, ip_map, now)
 
     opened = updated = resolved = 0
     # Newly-opened alerts are grouped per tenant (a burst → one digest);
@@ -129,36 +135,46 @@ def process_transitions(transitions, now) -> dict:
             continue
 
         key = _dedup_key(tr.target_ip_id, tr.template_id)
+        defaults = {
+            "target_ip_id": tr.target_ip_id,
+            "template_id": tr.template_id,
+            "rule_id": rule_id,
+            "kind": tr.kind,
+            "severity": severity,
+            "check_status": tr.to_status,
+            "opened_at": now,
+            "last_status_at": now,
+            "detail": tr.detail or {},
+            "last_notified_at": now,
+            "notify_count": 1,
+            "flapping": _quiet(tr),
+        }
+        decision = plan.get(tr)
+        # A flapping check is quiet anyway: holding it would only delay
+        # nothing.
+        if decision is not None and not (decision.state == HELD and _quiet(tr)):
+            defaults.update(decision.fields())
+            if decision.also:
+                defaults["detail"] = {**defaults["detail"], "also_roots": decision.also}
         alert, created = Alert.objects.get_or_create(
             tenant_id=tr.tenant_id,
             dedup_key=key,
             status=AlertStatus.FIRING,
-            defaults={
-                "target_ip_id": tr.target_ip_id,
-                "template_id": tr.template_id,
-                "rule_id": rule_id,
-                "kind": tr.kind,
-                "severity": severity,
-                "check_status": tr.to_status,
-                "opened_at": now,
-                "last_status_at": now,
-                "detail": tr.detail or {},
-                "last_notified_at": now,
-                "notify_count": 1,
-                "flapping": _quiet(tr),
-            },
+            defaults=defaults,
         )
+        sent = alert.notify_state == SENT
         if created:
             opened += 1
-            if not _quiet(tr):
+            if not _quiet(tr) and sent:
                 opened_by_tenant.setdefault(tr.tenant_id, []).append(alert)
         elif alert.check_status != tr.to_status or alert.severity != severity:
             alert.check_status = tr.to_status
             alert.severity = severity
             alert.rule_id = rule_id
             alert.last_status_at = now
-            alert.last_notified_at = now
-            alert.notify_count = (alert.notify_count or 0) + 1
+            if sent:
+                alert.last_notified_at = now
+                alert.notify_count = (alert.notify_count or 0) + 1
             alert.save(
                 update_fields=[
                     "check_status",
@@ -170,7 +186,7 @@ def process_transitions(transitions, now) -> dict:
                 ]
             )
             updated += 1
-            if not _quiet(tr):
+            if not _quiet(tr) and sent:
                 individual.append((alert, "firing"))
 
     for tr in clears:
@@ -184,14 +200,22 @@ def process_transitions(transitions, now) -> dict:
             alert.status = AlertStatus.RESOLVED
             alert.resolved_at = now
             alert.last_notified_at = now
-            alert.save(
-                update_fields=["status", "resolved_at", "last_notified_at"]
-            )
+            fields = ["status", "resolved_at", "last_notified_at"]
+            # Cleared while held: nothing was ever sent, nothing follows.
+            # Explained: it resolves as silently as it opened.
+            was = alert.notify_state
+            if was == HELD:
+                alert.notify_state = WITHHELD
+                alert.notify_after = None
+                fields += ["notify_state", "notify_after"]
+            alert.save(update_fields=fields)
             resolved += 1
-            if not _quiet(tr):
+            if not _quiet(tr) and was == SENT:
                 individual.append((alert, "resolved"))
 
     _dispatch_notifications(opened_by_tenant, individual)
+    # Held alerts that are due, incident messages and recoveries.
+    after_batch(plan, now)
 
     # Opt-in raw status-change channels (instant mode) get the whole batch,
     # independent of alert rules. Isolated so a delivery error can't fail the
@@ -206,6 +230,14 @@ def process_transitions(transitions, now) -> dict:
     if opened or resolved:
         log.info("alerts: %s opened, %s updated, %s resolved", opened, updated, resolved)
     return {"opened": opened, "updated": updated, "resolved": resolved}
+
+
+def _announced(alert) -> bool:
+    """Whether a closing notice may follow ``alert``: it went out on its
+    own. Held, explained and withheld alerts never did."""
+    from .root_cause import announced
+
+    return announced(alert)
 
 
 def set_acknowledged(alert, acknowledged: bool, *, actor=None, note: str = "", source=None):

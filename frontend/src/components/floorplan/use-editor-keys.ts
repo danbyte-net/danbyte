@@ -28,10 +28,10 @@ import {
 const DRAW_TOOLS: EditorTool[] = ["rect", "polygon", "outline", "label", "door"]
 
 /** The editor's keyboard: E / Esc into and out of Edit, the tool keys,
- * H / Shift+H hide and show, Delete, Escape, arrows, Enter to finish a
- * polyline or polygon, Backspace to take back a polygon's point, Ctrl/⌘+[
- * and ] to restack an area or label, and the document keys (undo, redo,
- * save). */
+ * R to turn the selected tiles 90°, H / Shift+H hide and show, Delete,
+ * Escape, arrows, Enter to finish a polyline or polygon, Backspace to take
+ * back a polygon's point, Ctrl/⌘+[ and ] to restack an area or label, and
+ * the document keys (undo, redo, save). */
 export function useEditorKeys({
   canEdit,
   canToggleEdit = false,
@@ -102,7 +102,14 @@ export function useEditorKeys({
     tool,
     armed,
   } = ed
-  const { deleteTile, changeTileGuarded, moveSelectionBy, save } = edits
+  const {
+    deleteTile,
+    changeTileGuarded,
+    moveSelectionBy,
+    rotateTile,
+    rotateSelectionTurn,
+    save,
+  } = edits
   const { finishDraw } = structure
   const { hidden, setHiddenPref } = prefs
   const selectedShape = shapes.find((s) => s.id === selectedShapeId) ?? null
@@ -163,6 +170,26 @@ export function useEditorKeys({
         e.preventDefault()
         if (!canEdit) onToggleEdit?.(true)
         onPlaceKey()
+        return
+      }
+      // R on a selected tile (or several) turns it 90°; with none, it is
+      // the Room tool.
+      if (
+        bare &&
+        !e.shiftKey &&
+        e.key.toLowerCase() === "r" &&
+        canEdit &&
+        !view3d &&
+        mode === "layout" &&
+        !selectedShape &&
+        (selectedId || multiSel.size > 1)
+      ) {
+        e.preventDefault()
+        if (multiSel.size > 1) rotateSelectionTurn()
+        else {
+          const tile = tiles.find((t) => t.id === selectedId)
+          if (tile) rotateTile(tile)
+        }
         return
       }
       // The tool keys (V, R, Shift+R, T, G, W, C, S).
@@ -371,6 +398,8 @@ export function useEditorKeys({
     plan,
     deleteTile,
     changeTileGuarded,
+    rotateTile,
+    rotateSelectionTurn,
     mode,
     drawPoints,
     finishDraw,

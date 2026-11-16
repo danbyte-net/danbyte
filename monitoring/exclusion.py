@@ -177,10 +177,11 @@ def announce(states, transitions, alerts, *, excluded: bool = True) -> None:
     """After commit: the closing notice per alert, and the live push to the
     pages open on these addresses. A flapping alert is kept quiet, as its
     other changes are. Never raises."""
+    from .alerts import _announced
     from .notify import notify_alert
 
     for a in alerts:
-        if a.flapping:
+        if a.flapping or not _announced(a):
             continue
         try:
             notify_alert(a, "resolved")

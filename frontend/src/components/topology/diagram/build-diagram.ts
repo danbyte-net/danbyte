@@ -7,6 +7,7 @@ import { measureText } from "@/lib/diagram/measure"
 import type { Measure } from "@/lib/diagram/measure"
 import { LABEL } from "@/lib/diagram/theme"
 import { classifyEdges, orientHubToLeaf } from "../edge-semantics"
+import { dependencyEdgeParts } from "../dependency-edge"
 import type { BundleMember, EdgeClass } from "../edge-semantics"
 import {
   bundleStroke,
@@ -252,6 +253,8 @@ export interface DiagramModel {
  * members placed round its frame's centre (chassis.ts). */
 export interface ChassisModel {
   vc: { id: string; name: string }
+  /** A cluster's frame (#517); absent for a virtual chassis. */
+  kind?: "cluster"
   orient: ChassisOrient
   /** The side its name strip runs along. */
   side: Side
@@ -421,6 +424,13 @@ function diagramEdge(
         type: "overlay",
         data: { ...base("bgp", "straight"), bgp: c.raw },
         ...flowEdgeStyle(edgeLook("bgp")),
+      }
+    case "dependency":
+      // A device dependency (#450): the overlay line, arrow downstream.
+      return {
+        ...ends,
+        ...dependencyEdgeParts(c.raw),
+        data: { ...base("dependency", "straight"), dependency: c.raw },
       }
     case "ghost": {
       const ep = c.raw?.pairs?.[0]
@@ -2027,6 +2037,8 @@ const REGROW = 4
 /** What a stack's frame node carries (chassis-node.tsx). */
 export interface ChassisNodeData {
   vc: { id: string; name: string }
+  /** A cluster's frame (#517); absent for a virtual chassis. */
+  kind?: "cluster"
   orient: ChassisOrient
   /** The side its name strip runs along. */
   side: Side
@@ -2044,6 +2056,7 @@ export interface ChassisNodeData {
 function chassisNode(id: string, ch: ChassisModel, f: Rect): Node {
   const data: ChassisNodeData = {
     vc: ch.vc,
+    ...(ch.kind ? { kind: ch.kind } : {}),
     orient: ch.orient,
     side: ch.side,
     members: ch.members,
@@ -2168,6 +2181,7 @@ export function buildDiagram(
     if (members.length < 2 && !placedVcs.has(spec.vc.id)) continue
     chassis.set(spec.id, {
       vc: spec.vc,
+      ...(spec.kind ? { kind: spec.kind } : {}),
       orient: spec.orient,
       side: spec.side,
       members,

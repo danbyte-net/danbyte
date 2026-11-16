@@ -6,11 +6,13 @@ import { toast } from "sonner"
 
 import { api } from "@/lib/api"
 import type { DnsProvider, Issuer, Paginated } from "@/lib/api"
+import { useDateFormat } from "@/lib/datetime"
 import { useMe } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
 import { DataTable } from "@/components/data-table"
 import { ListPageShell } from "@/components/list-page-shell"
 import { EmptyState } from "@/components/empty-state"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { buildIssuerColumns } from "@/components/columns/issuer-columns"
 import { SafeBulkEditBar } from "@/components/safe-bulk-edit-bar"
@@ -22,7 +24,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { FormCheckbox, FormSelect, FormText } from "@/components/forms"
+import {
+  FormCheckbox,
+  FormSelect,
+  FormText,
+  FormTextarea,
+  useFieldErrors,
+} from "@/components/forms"
 
 export const Route = createFileRoute("/certificate-issuers/")({
   component: IssuersPage,
@@ -222,6 +230,10 @@ function IssuerFormDialog({
   const [directoryUrl, setDirectoryUrl] = useState(issuer?.directory_url ?? "")
   const [contactEmail, setContactEmail] = useState(issuer?.contact_email ?? "")
   const [verifyTls, setVerifyTls] = useState(issuer?.verify_tls ?? true)
+  const [caCertificate, setCaCertificate] = useState(
+    issuer?.ca_certificate ?? ""
+  )
+  const { fieldErrors, handleApiError, reset } = useFieldErrors()
   const [enabled, setEnabled] = useState(issuer?.enabled ?? true)
   const [eabKid, setEabKid] = useState(issuer?.eab_kid ?? "")
   const [eabHmac, setEabHmac] = useState("")
@@ -264,6 +276,7 @@ function IssuerFormDialog({
         directory_url: directoryUrl,
         contact_email: contactEmail,
         verify_tls: verifyTls,
+        ca_certificate: caCertificate,
         enabled,
         eab_kid: eabKid,
         dns_provider: dnsProvider,
@@ -282,11 +295,15 @@ function IssuerFormDialog({
           })
     },
     onSuccess: () => {
+      reset()
       toast.success(issuer ? "Issuer saved" : "Issuer created")
       qc.invalidateQueries({ queryKey: ["issuers"] })
       onOpenChange(false)
     },
-    onError: (e) => apiErrorToast(e),
+    onError: (e) => {
+      const msg = handleApiError(e)
+      if (msg) toast.error(msg)
+    },
   })
 
   return (
@@ -303,6 +320,7 @@ function IssuerFormDialog({
             onChange={setDirectoryUrl}
             type="url"
             placeholder="https://acme-v02.api.letsencrypt.org/directory"
+            error={fieldErrors.directory_url}
             required
           />
           <FormText
@@ -315,8 +333,24 @@ function IssuerFormDialog({
             label="Verify the CA's TLS certificate"
             checked={verifyTls}
             onChange={setVerifyTls}
-            hint="Turn off only for an internal CA with a self-signed cert on a trusted network."
+            hint="Keep on. For a private CA, paste its root under CA certificate instead."
           />
+          {verifyTls && (
+            <>
+              <FormTextarea
+                label="CA certificate"
+                value={caCertificate}
+                onChange={setCaCertificate}
+                rows={4}
+                placeholder="-----BEGIN CERTIFICATE-----"
+                error={fieldErrors.ca_certificate}
+                info="The root that signs the CA's TLS certificate, in PEM - for step-ca, its root_ca.crt. Trusted for this issuer in addition to the server's trust store, never instead of it. Leave empty for a public CA or a root already in the server's store."
+              />
+              {issuer && issuer.ca_certificate_info.length > 0 && (
+                <StoredCaCertificates issuer={issuer} />
+              )}
+            </>
+          )}
           <FormCheckbox
             label="Enabled"
             checked={enabled}
@@ -437,5 +471,31 @@ function IssuerFormDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  )
+}
+
+function StoredCaCertificates({ issuer }: { issuer: Issuer }) {
+  const { formatDate } = useDateFormat()
+  return (
+    <ul className="-mt-1 grid gap-1 text-[12px] text-muted-foreground">
+      {issuer.ca_certificate_info.map((c) => (
+        <li
+          key={c.fingerprint_sha256}
+          className="flex min-w-0 items-center gap-2"
+        >
+          <span className="truncate text-foreground">
+            {c.subject_cn || c.subject}
+          </span>
+          <span className="shrink-0 whitespace-nowrap">
+            expires {formatDate(c.not_after)}
+          </span>
+          {c.days_left <= 30 && (
+            <Badge variant={c.days_left <= 7 ? "destructive" : "warning"}>
+              {c.days_left} days left
+            </Badge>
+          )}
+        </li>
+      ))}
+    </ul>
   )
 }

@@ -89,5 +89,6 @@ and environment. Set `SOURCE_DATE_EPOCH` to fix the timestamp.
 
 Releases build the SBOM in `scripts/build-release.sh`, from the build
 environment the wheelhouse is installed into, so it lists the same versions
+as `requirements.lock` ([Dependencies](dependencies.md)) and
 as the bundle. The container image generates its own during
 `docker build`, from the packages installed in the image.

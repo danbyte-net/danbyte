@@ -69,14 +69,16 @@ function ManufacturersPage() {
         onChange: setQ,
         placeholder: "Filter by name, description…",
       }}
+      add={
+        canAdd && (
+          <Button size="sm" asChild>
+            <Link to="/manufacturers/new">Add manufacturer</Link>
+          </Button>
+        )
+      }
       actions={
         <>
           <TableActions ioType="manufacturer" />
-          {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/manufacturers/new">Add manufacturer</Link>
-            </Button>
-          )}
         </>
       }
       query={query}

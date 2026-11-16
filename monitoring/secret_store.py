@@ -53,9 +53,11 @@ class SecretPathError(SecretStoreError):
 #: where tenant folders are a database column rather than part of the path.
 MANAGED_REF_PREFIXES = (
     "device-credentials/",
+    "shared-credentials/",
     "wireless-lans/",
     "ipsec-profiles/",
     "routing-keychains/",
+    "routing-rpki-caches/",
     "fhrp-groups/",
     "csr/",
     "issuer/",
@@ -163,6 +165,10 @@ class LocalFernetSecretStore:
     other stored credential.
     """
 
+    #: Writes join the caller's database transaction, so a delete can happen
+    #: at once and still come back with a rollback (``secret_refs``).
+    transactional = True
+
     def put(self, tenant_id, ref: str, value: dict) -> None:
         from .models import StoredSecret
 
@@ -191,6 +197,21 @@ class LocalFernetSecretStore:
                 f"'{path}' is inside Danbyte's managed namespace; an external "
                 "credential cannot reference a secret Danbyte manages."
             )
+
+    def managed_refs(self, tenant_id=None) -> list[tuple[str, str]]:
+        """``(tenant id, ref)`` of every secret under a managed folder, for
+        the orphan sweep. Never the values."""
+        from django.db.models import Q
+
+        from .models import StoredSecret
+
+        under = Q()
+        for prefix in MANAGED_REF_PREFIXES:
+            under |= Q(ref__startswith=prefix)
+        qs = StoredSecret.objects.filter(under)
+        if tenant_id is not None:
+            qs = qs.filter(tenant_id=tenant_id)
+        return [(str(t), r) for t, r in qs.values_list("tenant_id", "ref")]
 
     def get_at_path(self, tenant_id, path: str) -> dict | None:
         """A ``StoredSecret`` whose ``ref`` equals ``path`` **within this
@@ -299,6 +320,8 @@ register_secret_store(
             "label": "Vault address",
             "type": "text",
             "placeholder": "https://vault.danbyte.lan:8200",
+            # Allowed: a Vault on a trusted LAN often listens on plain HTTP.
+            "warn_http": "Plain HTTP: the token and secrets are not encrypted in transit.",
         },
         {
             "name": "vault_mount",
@@ -383,6 +406,159 @@ def active_secret_store() -> SecretStore | None:
     selected kind is no longer registered (a removed plugin fails closed)."""
     prov = _REGISTRY.get(_provider())
     return prov.factory() if prov is not None else None
+
+
+def store_for(kind: str) -> SecretStore | None:
+    """The store for provider ``kind`` when it is registered and configured,
+    whether or not it is the active one; otherwise ``None``."""
+    prov = _REGISTRY.get((kind or "").strip())
+    return prov.factory() if prov is not None else None
+
+
+def configured_stores() -> list[tuple[str, SecretStore]]:
+    """Every configured store as ``(kind, store)``, the active one first."""
+    active = _provider()
+    kinds = sorted(_REGISTRY, key=lambda k: k != active)
+    out = []
+    for kind in kinds:
+        store = store_for(kind)
+        if store is not None:
+            out.append((kind, store))
+    return out
+
+
+def stores_to_discard(provider: str) -> list[tuple[str, SecretStore]]:
+    """Where to delete a managed secret stamped ``provider`` from: that store
+    when it is configured, and the active one; every configured store when
+    nothing was stamped. Deleting never needs the store to be active - a
+    removed record's secret should go wherever it is."""
+    stamped = (provider or "").strip()
+    if not stamped:
+        return configured_stores()
+    out = []
+    for kind in dict.fromkeys((stamped, _provider())):
+        store = store_for(kind) if kind else None
+        if store is not None:
+            out.append((kind, store))
+    return out
+
+
+def provider_label(kind: str) -> str:
+    prov = _REGISTRY.get((kind or "").strip())
+    return prov.label if prov is not None else (kind or "unknown")
+
+
+# ─── reading from the store a secret was written to (#511) ─────────────────
+# Every managed secret is stamped with the provider that took it. Switching
+# the active store moves nothing, so a secret is read from its stamped store
+# while that is still configured, and the active store is the fallback (a
+# secret copied over by hand). Unstamped secrets (written before stamps) are
+# looked for in the active store first, then every other configured one.
+# With no active store at all everything stays off: Disabled means disabled.
+
+
+def _stores_to_read(provider: str) -> list[tuple[str, SecretStore]]:
+    active_kind = _provider()
+    active = store_for(active_kind)
+    if active is None:
+        require_secret_store()  # raises SecretStoreDisabled
+    stamped = (provider or "").strip()
+    if not stamped:
+        return [(active_kind, active)] + [
+            (k, s) for k, s in configured_stores() if k != active_kind
+        ]
+    if stamped == active_kind:
+        return [(active_kind, active)]
+    own = store_for(stamped)
+    return ([(stamped, own)] if own is not None else []) + [(active_kind, active)]
+
+
+def _not_found_error(provider: str) -> SecretStoreError | None:
+    stamped = (provider or "").strip()
+    if stamped and stamped != _provider() and store_for(stamped) is None:
+        return SecretStoreError(
+            f"This secret is in the {provider_label(stamped)} store, which is no "
+            "longer configured. Configure it again under Settings → Security → "
+            "Secret store, or move the secrets with manage.py migrate_secret_store."
+        )
+    return None
+
+
+def read_managed(provider: str, tenant_id, ref: str) -> dict | None:
+    """A managed secret, from the store stamped ``provider`` when that is
+    configured, else the active one. ``None`` when no store has it; raises
+    :class:`SecretStoreDisabled` with no active store, and a clear
+    :class:`SecretStoreError` when its stamped store is no longer configured
+    and the active one does not have it either."""
+    error: SecretStoreError | None = None
+    for _kind, store in _stores_to_read(provider):
+        try:
+            value = store.get(tenant_id, ref)
+        except SecretPathError:
+            raise
+        except SecretStoreError as exc:
+            error = error or exc
+            continue
+        if value is not None:
+            return value
+    if error is not None:
+        raise error
+    missing = _not_found_error(provider)
+    if missing is not None:
+        raise missing
+    return None
+
+
+def read_external(provider: str, tenant_id, path: str) -> dict | None:
+    """An operator-authored secret at ``path``: from the active store first
+    (where it has always been read), then the store stamped on the record.
+    Each store checks the path against its own managed namespaces before it
+    is read; a path every store refuses raises that refusal."""
+    candidates = _stores_to_read(provider)
+    # Active first: the stamp on an external credential was the picker's
+    # choice, not where Danbyte wrote anything.
+    candidates.sort(key=lambda ks: ks[0] != _provider())
+    if not (provider or "").strip():
+        candidates = candidates[:1]
+    refused: SecretPathError | None = None
+    error: SecretStoreError | None = None
+    for _kind, store in candidates:
+        try:
+            validate_external_path(store, path)
+        except SecretPathError as exc:
+            refused = refused or exc
+            continue
+        try:
+            value = store.get_at_path(tenant_id, path)
+        except SecretPathError as exc:
+            refused = refused or exc
+            continue
+        except SecretStoreError as exc:
+            error = error or exc
+            continue
+        if value is not None:
+            return value
+    if error is not None:
+        raise error
+    if refused is not None:
+        raise refused
+    return None
+
+
+def write_managed(previous_provider: str, tenant_id, ref: str, value: dict) -> str:
+    """Write a managed secret to the active store and return the provider to
+    stamp. A copy left in the store the record was stamped with before goes
+    (local now, any other store after the commit), so a rewrite after a
+    switch does not leave the old value behind."""
+    from .secret_refs import discard_copy
+
+    store = require_secret_store()
+    kind = _provider()
+    store.put(tenant_id, ref, value)
+    previous = (previous_provider or "").strip()
+    if previous and previous != kind:
+        discard_copy(previous, tenant_id, ref)
+    return kind
 
 
 def require_secret_store() -> SecretStore:

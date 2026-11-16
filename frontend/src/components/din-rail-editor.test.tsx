@@ -196,24 +196,31 @@ describe("DinRailEditor", () => {
     })
   })
 
-  it("puts the server's per-rail errors on the rows they were sent as", async () => {
-    answer = () =>
-      json(400, { rails: [{}, { y_mm: ["Overlaps rail R1."] }, {}] })
-    const { onOpenChange } = renderEditor({ rails: [R1, R2] })
-    fireEvent.click(screen.getByRole("button", { name: "Add rail" }))
-    save()
-    await waitFor(() =>
-      expect(within(row(2)).getByText("Overlaps rail R1.")).toBeTruthy()
-    )
-    expect(num(2, "centreline").getAttribute("aria-invalid")).toBe("true")
-    expect(within(row(1)).queryByText("Overlaps rail R1.")).toBeNull()
-    expect(within(row(3)).queryByText("Overlaps rail R1.")).toBeNull()
-    expect(onOpenChange).not.toHaveBeenCalled()
-    // Still savable - and editing the row clears the stale answer.
-    expect(saveButton().disabled).toBe(false)
-    type(num(2, "centreline"), "250")
-    expect(within(row(2)).queryByText("Overlaps rail R1.")).toBeNull()
-  })
+  // DRF keys a nested list's errors by index (0.20); the list form is the
+  // older answer.
+  it.each([
+    ["keyed by index", { "1": { y_mm: ["Overlaps rail R1."] } }],
+    ["as a list", [{}, { y_mm: ["Overlaps rail R1."] }, {}]],
+  ])(
+    "puts the server's per-rail errors on the rows they were sent as (%s)",
+    async (_, rails) => {
+      answer = () => json(400, { rails })
+      const { onOpenChange } = renderEditor({ rails: [R1, R2] })
+      fireEvent.click(screen.getByRole("button", { name: "Add rail" }))
+      save()
+      await waitFor(() =>
+        expect(within(row(2)).getByText("Overlaps rail R1.")).toBeTruthy()
+      )
+      expect(num(2, "centreline").getAttribute("aria-invalid")).toBe("true")
+      expect(within(row(1)).queryByText("Overlaps rail R1.")).toBeNull()
+      expect(within(row(3)).queryByText("Overlaps rail R1.")).toBeNull()
+      expect(onOpenChange).not.toHaveBeenCalled()
+      // Still savable - and editing the row clears the stale answer.
+      expect(saveButton().disabled).toBe(false)
+      type(num(2, "centreline"), "250")
+      expect(within(row(2)).queryByText("Overlaps rail R1.")).toBeNull()
+    }
+  )
 
   it("shows a refusal of the whole set above the rows", async () => {
     answer = () =>

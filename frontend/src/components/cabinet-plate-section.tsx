@@ -39,6 +39,7 @@ import { DinRailEditor } from "@/components/din-rail-editor"
 import { DrawingDisplayMenu } from "@/components/drawing-display-menu"
 import { BarIconButton } from "@/components/map-toolbar"
 import { SegmentedTabs } from "@/components/segmented-tabs"
+import { HScroll } from "@/components/table-scroll"
 import { useLegendCollector } from "@/components/speed-scale"
 
 const MODES: { value: PlateMode; label: string }[] = [
@@ -311,7 +312,7 @@ export function CabinetPlateSection({
               ) : (
                 // Scrolls when the zoom draws it wider than the column; centred
                 // while it is narrower, as the fitted plate always was.
-                <div className="overflow-auto">
+                <HScroll label="Plate">
                   <div
                     ref={drawing}
                     data-part="drawing"
@@ -332,7 +333,7 @@ export function CabinetPlateSection({
                       />
                     )}
                   </div>
-                </div>
+                </HScroll>
               )}
               {faces && !arranging && !legendIsEmpty(legend) && (
                 <FaceplateLegend

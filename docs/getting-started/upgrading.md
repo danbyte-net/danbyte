@@ -128,7 +128,8 @@ current `/opt` layout.
     git checkout vX.Y.Z
 
     # Python deps (uv, or pip inside the venv)
-    uv sync --frozen  ||  .venv/bin/pip install -r requirements.txt
+    VIRTUAL_ENV=$PWD/.venv uv pip install --require-hashes -r requirements.lock \
+      ||  .venv/bin/pip install --require-hashes -r requirements.lock
 
     .venv/bin/python manage.py migrate
     make collectstatic frontend-build
@@ -314,7 +315,10 @@ a drifted install (e.g. a leftover dev `danbyte-backend`/runserver unit).
     requires `"status": "ok"` and the new version from it before anyone else
     is let in. It keeps answering while an upgrade or a restore holds the
     site, with `"maintenance": true`; every other request gets 503 until
-    the flag is cleared.
+    the flag is cleared. Its migration checks (`code_behind_db`,
+    `db_behind_code`) are cached per process only while the applied
+    migrations and the migration folders stay the same, so a migrate or a
+    restore shows on the next probe, whichever process ran it.
 
 !!! note "Admin and API pages without styling (403 on `/static/`)"
 
@@ -369,16 +373,16 @@ release's `scripts/upgrade/stage.sh`, as the service user's
 |---|---|---|
 | preflight | refuses an older release than the one running, inside a Danbyte unit, without Redis, while a restore holds the site, a pip-installed plugin on a new Python, too little disk ([how much](installation.md#disk-space-for-upgrades)), a prefix whose CIDR the upgrade can't repair ([below](#prefixes-the-upgrade-cant-repair)); warns about the ones it rewrites; installs the recovery unit | up |
 | backup | the pre-upgrade backup, with the running code; when the launcher took it before handing over, the step shows that run and its duration | up |
-| prepare | git: `npm ci` and the frontend build in a scratch copy; dependencies resolved (bundle: checked offline); a copy of the virtualenv | up |
+| prepare | git: `npm ci` and the frontend build in a scratch copy; dependencies resolved from the release's `requirements.lock`, every file checked against its sha256 ([how](dependencies.md)); bundle: the wheelhouse checked offline; a copy of the virtualenv | up |
 | quiesce | first, while the system is still installing its own package updates (`apt-daily`, unattended-upgrades - a host that just booted), it waits for them, up to 20 minutes, with everything still up, since a package update can restart PostgreSQL; past that it stops, retryable, with nothing stopped. Then timers stopped (a run in progress may finish, up to 2 minutes), then workers and fast lane, then web, websockets, frontend, docs | maintenance page |
-| swap | the new code, frontend, static files and (bundle) vendor/ in place; the old ones kept aside; files the release no longer ships moved aside; new unit files linked | maintenance page |
+| swap | the new code, frontend, static files and (bundle) vendor/ in place; the old ones kept aside; files the release no longer ships moved aside; new unit files linked, with their [sandboxing drop-ins](hardening.md#systemd-sandboxing) (the folders as they were are kept, and a rollback puts them back) | maintenance page |
 | deps, check | dependencies installed, `manage.py check`, the migration plan | maintenance page |
 | snapshot | `pg_dump` of the database - only when migrations are pending - into the run folder beside the app, which only the service user can read | maintenance page |
 | migrate | every migration in **one transaction** where possible, so a failure leaves the database as it was (not possible when the plan holds a non-atomic migration, such as `api.0262` on an upgrade from before 0.19: then they run one by one and a failure restores the snapshot); the deferred foreign-key checks run after each migration and after each of its data steps, as separate commits would; when the one transaction hits a database limit (too many locks, pending trigger events) it is rolled back and the migrations run one by one on a new connection; a migration that lost its database to a restart and rolled back whole runs once more, and if the database stays away only the code is rolled back | maintenance page |
 | static | `bootstrap` (new seeds; never a superuser), `collectstatic`, static and frontend build files made readable for nginx (a 403 from nginx for one is a warning), checks left claimed by stopped workers released | maintenance page |
 | verify | the new code reads every table and a few list endpoints, before anything serves | maintenance page |
 | start | web, websockets, frontend, docs, workers - while the site still answers 503; `/api/health/` must say `ok` with the new version, the admin page must render, and nothing may keep restarting | 503 |
-| resume | the site opens; the timers that ran before start again (a timer you turned off stays off); a release's new timers are turned on | up |
+| resume | the site opens; the timers that ran before start again (a unit or timer you turned off stays off, including one switched off in `danbyte-admin`); a release's new timers are turned on | up |
 | done | the search index rebuilt in the background, housekeeping, the after-upgrade steps listed; the work folder, the folder an earlier failed run kept for its log, the recovery units and their lock removed, so nothing is left beside the app | up |
 
 **If a step before *resume* fails**, everything goes back as it was and
@@ -391,6 +395,59 @@ reported as a warning. If even the database restore fails, Danbyte stays
 stopped (the maintenance page shows), the digest recipients get a mail, and
 `danbyte-admin upgrade recover` retries it; the pre-upgrade backup is the
 last resort.
+
+### How the database is restored
+
+The restore runs with the code of the release being upgraded *to*, whatever
+release is on disk after the rollback, and needs no change to
+`postgresql.conf`. Dropping a schema of Danbyte's size in one statement needs
+a lock on every table, index and sequence at once (some 3000), more than a
+stock server's lock table holds (`out of shared memory`, *increase
+max_locks_per_transaction*); restores before 0.20 failed that way. So:
+
+1. Every live object moves, one statement at a time, from `public` into a
+   schema named `danbyte_pre_restore`. The extensions' objects (pg_trgm,
+   unaccent) stay where they are.
+2. `pg_restore` loads the snapshot into `public`, one object per
+   transaction. Every table, sequence and index the snapshot lists must then
+   be there.
+3. Only then is `danbyte_pre_restore` dropped, a table per statement.
+
+If step 2 fails, or a table is missing, what was restored is dropped and the
+live objects move back: the database is exactly as the failed upgrade left
+it, never half restored. A restore that was killed part-way is put back by
+the next attempt before it starts. Other sessions on the database are ended
+first (the upgrade has stopped every service already).
+
+### When the restore fails
+
+The Updates page and the status say *Rollback failed - Danbyte is stopped*.
+The previous release's files are back, but its database still has the new
+release's migrations, so its units stay **disabled**, which means nothing
+starts them, not even a reboot. Their unit files stay linked. Recover with:
+
+```bash
+sudo danbyte-admin upgrade recover        # restores the snapshot again, then starts
+```
+
+It restores the snapshot (unless an earlier attempt already did), links
+again any unit file that is missing, enables and starts what ran before,
+and waits for `/api/health/`. It says *recovered* only when every unit is
+there and running. Otherwise it exits with an error that lists the missing
+or stopped units and the commands to start them by hand, as the service
+user:
+
+```bash
+cd ~/danbyte && make install-prod-services     # links every unit file again
+systemctl --user daemon-reload
+systemctl --user enable --now danbyte-web.service danbyte-ws.service …   # the list it printed
+```
+
+If the snapshot itself cannot be restored, restore the pre-upgrade backup
+instead (`danbyte-admin backup restore <id> --yes`, the id is in the error).
+A rollback that restored the database but could not find a unit says so
+too: *rolled back: but the previous release is NOT running*, with the same
+commands.
 
 Downtime is the time from *quiesce* to *resume*: a dump of the database when
 migrations are pending, the migrations, and the checks - the frontend build
@@ -501,6 +558,42 @@ address rows from the backup.
 
 Neither has been rehearsed on a real 0.19 install. Try the restore on a
 copy of the host first.
+
+## Secrets left by deleted credentials (0.20)
+
+Before 0.20, deleting a managed device or shared credential left its password
+or key in the secret store. From 0.20 a delete takes the secret along, but the
+ones left earlier stay until you remove them. The *After an upgrade* card
+offers the step; it hides itself when only the local store is configured and
+it has nothing to remove.
+
+```bash
+.venv/bin/python manage.py cleanup_secret_store                    # list only
+.venv/bin/python manage.py cleanup_secret_store --delete           # local store
+.venv/bin/python manage.py cleanup_secret_store --delete --remote  # Vault / Key Vault too
+```
+
+See [Removing orphaned secrets](../monitoring/certificates.md#removing-orphaned-secrets).
+
+## Unknown list parameters are refused (0.20)
+
+From 0.20 a list endpoint answers `400` to a query parameter it does not
+understand, naming it and the parameters it takes. In 0.19 it ignored the
+parameter and answered the whole list, with only an
+`X-Danbyte-Unknown-Params` header. Scripts, integrations and saved URLs that
+send a misspelt or unsupported filter now fail instead of acting on more
+rows than they asked for. Fix the parameter, have the client send
+`strict=0`, or set `API_STRICT_QUERY_PARAMS=0` in the environment until
+they are fixed ([settings](../reference/settings.md),
+[REST API](../reference/api.md#unknown-query-parameters)).
+
+## Errors of a nested list are keyed by position (0.20)
+
+From 0.20 the errors of a nested list in a `400` (a pipeline's `steps`, a
+cabinet's `rails`) are an object keyed by the failing items' positions
+(`{"steps": {"1": {...}}}`) instead of a list with `{}` for each item that
+passed. A client that reads them by position needs updating
+([Bulk calls](../reference/api.md#bulk-calls)).
 
 ## Upgrading from 0.16 or 0.17.0-dev1
 
@@ -633,6 +726,63 @@ compression](installation.md#frontend-files-and-compression)); the step
 have run. Until then the site works as before, only without that caching. A
 site you manage yourself needs the `/assets/` block and the
 `$danbyte_asset_cache` map from `deploy/nginx/danbyte.prod.conf.template`.
+
+From 0.20 the Site map can draw a [vector
+basemap](../features/site-map.md#vector-basemap-and-label-language). Its
+tiles come over `fetch` and it runs a web worker, so the CSP gains
+`https://vector.openstreetmap.org` in `connect-src` and
+`worker-src 'self' blob:`. The step *Let the Site map load vector tiles*
+stays up until the site's CSP has `worker-src`. Until then a deployment set
+to vector tiles shows the raster tiles. An upgraded install stays on raster
+tiles until an admin picks vector under **Settings → Site map → Basemap**.
+
+Also from 0.20, vulnerability data has a [browser
+mode](../features/vulnerabilities.md#browser-mode): an admin's browser
+fetches NVD, FIRST EPSS and OSV, so `connect-src` gains
+`https://services.nvd.nist.gov https://api.first.org https://api.osv.dev`.
+The step *Let the browser sync vulnerability data* stays up until the site's
+CSP names `services.nvd.nist.gov`; it is only needed for the Browser update
+source, and a mirror host set there must be added by hand.
+
+Also from 0.20, `script-src` in the nginx CSP gains `'wasm-unsafe-eval'`,
+which lets WebAssembly compile and allows no `eval`: a [3D
+model](../dcim/device-catalog.md#3d-models) packed with `gltfpack -c` is
+decoded by WebAssembly, as are **Simplify** and STEP or IGES uploads
+([Hardening →
+Content-Security-Policy](hardening.md#content-security-policy)). The step
+*Let the 3D room decode compressed models* stays up until the site's CSP
+has `'wasm-unsafe-eval'`; until then such a model does not load.
+
+From 0.20 the site pins its own TLS protocols and suites (TLS 1.2 and 1.3,
+forward-secret AEAD suites only; see [Hardening → TLS](hardening.md#tls)).
+The step *Pin modern TLS in nginx* stays up until the site has
+`ssl_protocols` and `ssl_ciphers`. A client that only speaks TLS 1.0 or 1.1
+stops connecting once it does.
+
+Also from 0.20 nginx rate-limits sign-in and the CSP report sink per client
+address ([Hardening → Edge rate limits](hardening.md#edge-rate-limits)).
+The step *Rate-limit sign-in at nginx* stays up until the site has
+`limit_req zone=danbyte_auth`. Behind another proxy, add the `real_ip`
+lines that page shows, or every client shares the proxy's budget.
+
+Also from 0.20 every page carries a script policy with a fresh nonce from
+the frontend server, enforced alongside nginx's ([Hardening →
+Content-Security-Policy](hardening.md#content-security-policy)). It comes
+with the frontend; nginx needs no change for it. If a page stops working
+after the upgrade and the browser console names the Content Security
+Policy, set `DANBYTE_CSP_MODE=report` in `.env`, restart
+`danbyte-frontend-prod`, and report what the console says. The maintenance
+page now has a policy of its own too: the step *Give the maintenance page
+its own CSP* stays up until the site's `@danbyte_maintenance` location
+sends one.
+
+Redis can now take a password (`REDIS_PASSWORD`) or a unix socket, sent by
+the cache, every queue and the WebSocket layer alike. An upgrade never turns
+it on: the step *Optional: give Redis a password* gives the order to do it in
+([Hardening → Redis authentication](hardening.md#redis-authentication)). A
+`.env` whose `REDIS_URL` and `REDIS_HOST`/`REDIS_PORT` name different
+servers now stops Danbyte from starting with a message saying so; the
+installer writes `REDIS_URL` alone, which is never affected.
 
 !!! warning "Root runs only files root owns"
     The app directory belongs to the service account. A script or template

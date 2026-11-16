@@ -26,6 +26,9 @@ UNITS_DEV="danbyte-backend danbyte-frontend"
 UNITS_NEW_OK="danbyte-workers danbyte-fastlane danbyte-docs danbyte-web danbyte-ws danbyte-frontend-prod"
 
 SYSTEMD_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
+# Units an admin switched off in danbyte-admin, one per line: never enabled
+# as new, even when their link went missing and the release links them again.
+UNITS_OFF="${XDG_CONFIG_HOME:-$HOME/.config}/danbyte/units-off"
 CHILD=""
 STEP=""
 STEP_OPEN=0
@@ -352,6 +355,7 @@ wanted() {  # <service|timer> [group units...]
 new_units() {  # <service|timer>
   [ -f "$STATE_DIR/new-links" ] || return 0
   while read -r _l; do
+    grep -qxF "$_l" "$UNITS_OFF" 2>/dev/null && continue
     case "$_l" in
       *.timer) [ "$1" = timer ] && printf '%s\n' "$_l" ;;
       *.service)
@@ -468,6 +472,81 @@ settled() {  # <file from restart_counts>
 link_snapshot() {  # <file>: the danbyte-* unit links in the user's unit dir
   find "$SYSTEMD_DIR" -maxdepth 1 -name 'danbyte-*' -type l 2>/dev/null \
     | sed 's|.*/||' | LC_ALL=C sort >"$1"
+  # and where each points, for relink_units: "<name><TAB><target>"
+  : >"$1.targets"
+  while IFS= read -r _l; do
+    printf '%s\t%s\n' "$_l" "$(readlink "$SYSTEMD_DIR/$_l")" >>"$1.targets"
+  done <"$1"
+}
+
+# Every unit link the install had before the upgrade that is gone now, made
+# again. `systemctl disable` deletes a linked unit's link along with its
+# enablement, and nothing else puts it back. 1 when one cannot be made.
+relink_units() {
+  _rc=0
+  [ -f "$STATE_DIR/links-before" ] || return 0
+  while IFS= read -r _l; do
+    [ -n "$_l" ] || continue
+    if [ -e "$SYSTEMD_DIR/$_l" ] || [ -L "$SYSTEMD_DIR/$_l" ]; then continue; fi
+    _t=$(awk -F "$TAB" -v n="$_l" '$1 == n { print $2; exit }' "$STATE_DIR/links-before.targets" 2>/dev/null)
+    [ -n "$_t" ] || _t="$APP/services/$_l"
+    if [ -f "$_t" ] && ln -sfn "$_t" "$SYSTEMD_DIR/$_l"; then
+      log "linked $_l again"
+    else
+      log "could not link $_l again: $_t is missing"
+      _rc=1
+    fi
+  done <"$STATE_DIR/links-before"
+  sc daemon-reload >/dev/null 2>&1 || :
+  return "$_rc"
+}
+
+# The units that ran before the upgrade and have no unit file now.
+units_missing() {
+  for _u in $(wanted service) $(wanted timer); do
+    unit_loaded "$_u" || printf '%s ' "$_u"
+  done
+  return 0
+}
+
+# The ones of them not running (after a blocking start).
+units_down() {
+  for _u in $(wanted service) $(wanted timer); do
+    [ "$(sc is-active "$_u" 2>/dev/null)" = active ] || printf '%s ' "$_u"
+  done
+  return 0
+}
+
+# What a person runs, as the service user, when the previous release is
+# not up: the links, then the units that ran before.
+manual_start() {
+  if prod_host; then _mk=install-prod-services; else _mk=install-services; fi
+  # shellcheck disable=SC2046
+  printf 'as %s: cd %s && make %s && systemctl --user daemon-reload && systemctl --user enable --now %s' \
+    "$(id -un)" "$APP" "$_mk" "$(printf '%s ' $(wanted service) $(wanted timer) | sed 's/ $//')"
+}
+
+# The units' drop-in folders (the sandboxing drop-ins of #500 and any of the
+# admin's own), kept before link-units rewrites them; the undo puts back
+# exactly what was there, a release before the drop-ins included.
+dropins_save() {
+  j_set dropins_saving 1
+  rm -f "$PREV/dropins.tar"
+  _dd=$(cd "$SYSTEMD_DIR" 2>/dev/null && find . -maxdepth 1 -name 'danbyte-*.service.d' -type d | sed 's|^\./||')
+  if [ -n "$_dd" ]; then
+    # shellcheck disable=SC2086  # folder names: one word each
+    tar -C "$SYSTEMD_DIR" -cf "$PREV/dropins.tar" $_dd || return 1
+  fi
+  j_set dropins_saved 1
+}
+
+dropins_restore() {
+  j_has dropins_saved || return 0
+  for _d in "$SYSTEMD_DIR"/danbyte-*.service.d; do
+    [ -d "$_d" ] && { rm -rf "$_d" || return 1; }
+  done
+  [ -f "$PREV/dropins.tar" ] || return 0
+  tar -C "$SYSTEMD_DIR" -xpf "$PREV/dropins.tar"
 }
 
 # ── health ───────────────────────────────────────────────────────────────────
@@ -529,6 +608,10 @@ http_code() {  # <url> [curl args...]: "000" when nothing answers
 install_recover() {
   mkdir -p "$UPG_ROOT/recover" "$SYSTEMD_DIR" || return 1
   cp -p "$HERE/lib.sh" "$HERE/recover.sh" "$HERE/dbtool.py" "$UPG_ROOT/recover/" || return 1
+  # The database restore of this release, used whatever release is on disk.
+  if [ -f "$HERE/../../backups/pgswap.py" ]; then
+    cp -p "$HERE/../../backups/pgswap.py" "$UPG_ROOT/recover/" || return 1
+  fi
   _before=""
   for _u in $UNITS_WEB $UNITS_WORK; do _before="$_before $_u.service"; done
   cat >"$SYSTEMD_DIR/danbyte-upgrade-recover.service" <<EOF
@@ -702,6 +785,7 @@ rollback_files() {
   if j_has tree_saved; then undo_overlay || _rc=1; fi
   for _d in $(j_list moving | sed '1!G;h;$!d'); do restore_dir "$_d" || _rc=1; done
   if j_has env_saved && [ -f "$PREV/env" ]; then cp -p "$PREV/env" "$APP/.env" || _rc=1; fi
+  dropins_restore || _rc=1
   sc daemon-reload >/dev/null 2>&1 || :
   j_set files_restored "$_rc"
   return "$_rc"
@@ -804,6 +888,7 @@ rollback_all() {
     run 120 "$PY" "$TOOL" maintenance-off || warn "the maintenance flag could not be cleared; it expires by itself"
   fi
   OUT_SVC=running
+  relink_units || :
   if [ "${NO_BLOCK:-0}" = 1 ]; then
     start_recorded 1 || warn "some units did not start"
   else
@@ -812,11 +897,23 @@ rollback_all() {
       wait_health "${DANBYTE_UPGRADE_HEALTH_WAIT:-120}" || { OUT_SVC=unhealthy; warn "the previous release did not come back healthy: $HEALTH"; }
     fi
   fi
+  _gone=$(units_missing)
+  if [ -n "$_gone" ]; then
+    OUT_SVC=stopped
+    warn "these units have no unit file and were not started: $_gone- $(manual_start)"
+  fi
   OUTCOME=restored
-  if [ "$OUT_DB" = restored ]; then
-    ERROR="${ERROR:-failed} - rolled back: the previous release runs again and the database was restored from the snapshot taken before the migration."
+  if [ "$OUT_SVC" = stopped ]; then
+    _then="but the previous release is NOT running (units missing: $_gone) - start it by hand, $(manual_start)"
+  elif [ "$OUT_SVC" = unhealthy ]; then
+    _then="the previous release was started but does not answer healthy ($HEALTH)"
   else
-    ERROR="${ERROR:-failed} - rolled back: the previous release runs again; the database was not changed."
+    _then="the previous release runs again"
+  fi
+  if [ "$OUT_DB" = restored ]; then
+    ERROR="${ERROR:-failed} - rolled back: $_then; the database was restored from the snapshot taken before the migration."
+  else
+    ERROR="${ERROR:-failed} - rolled back: $_then; the database was not changed."
   fi
   j_set rolled_back 1
   remove_recover
@@ -830,12 +927,15 @@ restore_failed() {  # <detail>
   OUT_DB=restore_failed
   OUT_SVC=stopped
   j_set restore_failed 1
-  # Nothing may start on this database, not even at the next boot.
+  # Nothing may start on this database, not even at the next boot. Disabling
+  # a linked unit deletes its link as well, so each is linked again at once:
+  # the recovery has to find the units it starts.
   for _u in $(wanted service) $(wanted timer); do
     sc disable "$_u" >/dev/null 2>&1 && printf '%s\n' "$_u" >>"$STATE_DIR/disabled"
   done
+  relink_units || warn "some unit links could not be made again; the recovery says which"
   _b="${BACKUP_ID:-}"
-  ERROR="${ERROR:-failed} - and the database could not be restored from the snapshot ($1). Danbyte is stopped. Run: danbyte-admin upgrade recover${_b:+ (or restore the pre-upgrade backup $_b)}."
+  ERROR="${ERROR:-failed} - and the database could not be restored from the snapshot ($1). Danbyte is stopped and its units are disabled until then. Run: danbyte-admin upgrade recover${_b:+ (or restore the pre-upgrade backup $_b)}."
   alert_mail "Upgrade to ${VERSION:-?} failed and Danbyte is stopped" "$ERROR"
   finish failed open
 }

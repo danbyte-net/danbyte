@@ -1,16 +1,15 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
-import { Pencil, Trash2 } from "lucide-react"
 import { useCallback, useState } from "react"
 
 import { api, type ClusterType } from "@/lib/api"
-import { Button } from "@/components/ui/button"
 import { KvCard } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { TimeCell } from "@/components/cells/time-ago"
 import { ClusterTypeDeleteDialog } from "@/components/cluster-type-delete-dialog"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { EmbeddedClusterTable } from "@/components/embedded-tables"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
@@ -56,27 +55,12 @@ function Body({ clusterType: m }: { clusterType: ClusterType }) {
       backLabel="Cluster types"
       title={m.name}
       presence={{ type: "clustertype", id: m.id }}
-      actions={
-        <>
-          {canEdit && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/cluster-types/$id/edit" params={{ id: m.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDelete && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeleting(m)}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
-        </>
+      edit={
+        canEdit && (
+          <EditButton to="/cluster-types/$id/edit" params={{ id: m.id }} />
+        )
       }
+      remove={canDelete && <DeleteButton onClick={() => setDeleting(m)} />}
       hero={<DetailHero title={m.name} description={m.description} />}
       tabs={[
         { value: "overview", label: "Overview" },

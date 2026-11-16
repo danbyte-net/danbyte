@@ -77,14 +77,16 @@ function RoomsPage() {
         onChange: setQ,
         placeholder: "Filter by name, code…",
       }}
+      add={
+        canAdd && (
+          <Button size="sm" asChild>
+            <Link to="/rooms/new">Add room</Link>
+          </Button>
+        )
+      }
       actions={
         <>
           <TableActions ioType="room" />
-          {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/rooms/new">Add room</Link>
-            </Button>
-          )}
         </>
       }
       query={query}

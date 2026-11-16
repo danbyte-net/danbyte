@@ -1,0 +1,55 @@
+recog.json is converted from Rapid7 Recog fingerprint data.
+
+Source:   https://github.com/rapid7/recog
+Tag:      v3.3.2 (released 2026-10-12)
+Commit:   1714aaed118861b4567bb6754920b4b929f59380
+Licence:  BSD-2-Clause (the project's LICENSE and COPYING files)
+Built by: scripts/recog_build.py (data only; no Recog code is included)
+
+SHA-256 of the source files (xml/ at the commit above):
+
+a3e608cd8a46a177b6407875d7e31a34157c858cc9e3393920a99405e1f4f4b6  ssh_banners.xml
+c15f0765cda093f7d464c19eac8fcf278b0c65c6abe1f0a4fcd01e78a77d9b85  ftp_banners.xml
+113d82f9334d259c46bfced27fd0d5973a97ef2db5a1da8cff64a37462f31221  smtp_banners.xml
+21710f2207dd001b3e4a8fccf1adf45f11d7dfcecb18f30c217c91ae720fa199  imap_banners.xml
+7823a1c6783402a8d6081adf996ac73f8331e50b899ec403455a125140921b2a  pop_banners.xml
+eed262d7cdbd0126e65310ee805c5ac5700c684549f5871c978d3f36bb9e990f  telnet_banners.xml
+010af0e05688945f669fd804520acf65b0160f89fc7702cc7faf12989a213302  http_servers.xml
+ecb0cfcf854a3d7ea6399db97063acc8d3e3899c2ba51b14f8c24208a73e7017  http_xpoweredby.xml
+588e64f5358420d95d605d369c5a9ddc623d6b9674bac9f3ef6a1bc7d16969b3  html_title.xml
+01fdfefde10cc10049c2924f6d9d4746d398d770af5c133ebced1fc41eaad38a  COPYING
+
+SHA-256 of the converted file:
+
+db9ee3d1820fa70c2e5b17d3463936a35cf3557cd808088c96487660ae6c6176  recog.json
+
+1,529 fingerprints kept, 3 dropped at build time (listed in recog.json
+"dropped"): two whose own examples do not match under Python's regular
+expressions, and one that did not finish within 2 s on a hostile
+512-character input (nested repetition).
+
+Licence of the source data:
+
+Copyright (c) 2014-2015, Rapid7
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without modification,
+are permitted provided that the following conditions are met:
+
+* Redistributions of source code must retain the above copyright notice, this
+  list of conditions and the following disclaimer.
+
+* Redistributions in binary form must reproduce the above copyright notice, this
+  list of conditions and the following disclaimer in the documentation and/or
+  other materials provided with the distribution.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
+ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.

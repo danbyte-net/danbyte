@@ -36,6 +36,9 @@
 # then refused and scripts run under Landlock alone. An existing install that
 # gains bubblewrap here keeps its scripts on Landlock unless .env already
 # chose a script sandbox. --with-script-sandbox is still accepted.
+# --redis-password (fresh installs only) gives the distro's Redis a random
+# password and writes it to .env; without it the distro's Redis is left as
+# it is, and an upgrade never changes it (docs: Hardening).
 set -euo pipefail
 
 # ── Config (env or flags) ────────────────────────────────────────────────────
@@ -53,6 +56,7 @@ SKIP_BACKUP=0
 HOST_ONLY=0
 ADOPT=0
 SCRIPT_SANDBOX=1
+REDIS_AUTH=0
 # Root-only: the copy of this bundle's files the root steps of an upgrade
 # run from, and their summaries.
 HS_BASE=/var/lib/danbyte/installer
@@ -69,6 +73,7 @@ while [ $# -gt 0 ]; do
     --adopt) ADOPT=1; shift ;;
     --with-script-sandbox) SCRIPT_SANDBOX=1; shift ;;
     --without-bubblewrap) SCRIPT_SANDBOX=0; shift ;;
+    --redis-password) REDIS_AUTH=1; shift ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
 done
@@ -124,6 +129,10 @@ if [ -f "$APP/manage.py" ] && [ -f "$APP/.env" ]; then
 fi
 [ -n "$HOST" ] || HOST="$(hostname -I 2>/dev/null | awk '{print $1}')"
 [ -n "$HOST" ] || die "could not determine a host; pass --host <name-or-ip>"
+# An install's Redis password is never changed for it: that would cut off
+# the running workers and the jobs they hold (docs: Hardening).
+[ "$REDIS_AUTH" -eq 0 ] || [ "$EXISTING" -eq 0 ] \
+  || die "--redis-password is for a fresh install; this host already runs Danbyte, whose Redis is left as it is - see the Hardening page, Redis authentication, for turning a password on"
 ADMIN_LOGIN="$(logname 2>/dev/null || echo "${SUDO_USER:-}")"
 
 # ── --host-only: the root steps alone, for the release that runs ────────────
@@ -265,6 +274,35 @@ env_backfill() {  # <key> <value>: appends KEY=VALUE when .env has no KEY
     'v=$(cat); grep -qE "^$2=" "$1" && exit 0; printf "\n%s=%s\n" "$2" "$v" >>"$1"' \
     _ "$APP/.env" "$1" \
     || warn "could not add $1 to $APP/.env as $SERVICE_USER - add it yourself"
+}
+# --redis-password (fresh installs only, #502): the distro's Redis asks for a
+# password. Its redis.conf gains one include line at the end and nothing
+# else; the password is in a file of its own, readable by root and the redis
+# group only. A redis.conf that already sets a password or ACL users is left
+# alone. The password comes on stdin, never on a command line.
+REDIS_CONF="${REDIS_CONF:-/etc/redis/redis.conf}"
+REDIS_GROUP="${REDIS_GROUP:-redis}"
+redis_require_password() {
+  local pw inc _
+  pw=$(cat)
+  inc="$(dirname "$REDIS_CONF")/danbyte-auth.conf"
+  [ -f "$REDIS_CONF" ] || { warn "no $REDIS_CONF"; return 1; }
+  if grep -Eq '^[[:space:]]*(requirepass|aclfile|user)[[:space:]]' "$REDIS_CONF"; then
+    warn "$REDIS_CONF already sets a password or ACL users"; return 1
+  fi
+  ( umask 077 && printf 'requirepass %s\n' "$pw" >"$inc.tmp" ) || return 1
+  chgrp "$REDIS_GROUP" "$inc.tmp" && chmod 640 "$inc.tmp" && mv -f "$inc.tmp" "$inc" \
+    || { rm -f "$inc.tmp"; warn "could not write $inc"; return 1; }
+  grep -qxF "include $inc" "$REDIS_CONF" \
+    || printf '\n# Danbyte (install.sh --redis-password): the password is in its own file.\ninclude %s\n' \
+         "$inc" >>"$REDIS_CONF" || return 1
+  systemctl restart redis-server || { warn "redis-server did not restart"; return 1; }
+  command -v redis-cli >/dev/null 2>&1 || return 0
+  for _ in $(seq 1 40); do
+    REDISCLI_AUTH="$pw" redis-cli ping 2>/dev/null | grep -q PONG && return 0
+    sleep 0.25
+  done
+  warn "Redis does not answer with the new password"; return 1
 }
 # Wait for the user manager (linger spins it up) so systemctl --user works.
 for _ in $(seq 1 20); do [ -S "/run/user/$SVC_UID/bus" ] && break; sleep 0.5; done
@@ -515,6 +553,17 @@ else
   MONITORING_SECRET_KEY="$("$PYGEN" -c 'import secrets;print(secrets.token_urlsafe(50))')"
   DB_PASSWORD="$("$PYGEN" -c 'import secrets,string;print("".join(secrets.choice(string.ascii_letters+string.digits) for _ in range(24)))')"
   ADMIN_PASSWORD="$("$PYGEN" -c 'import secrets,string;print("".join(secrets.choice(string.ascii_letters+string.digits) for _ in range(20)))')"
+  REDIS_ENV="REDIS_URL=redis://localhost:6379/0"
+  if [ "$REDIS_AUTH" -eq 1 ]; then
+    REDIS_PASSWORD="$("$PYGEN" -c 'import secrets;print(secrets.token_hex(32))')"
+    printf '%s' "$REDIS_PASSWORD" | redis_require_password \
+      || die "--redis-password: Redis was not given a password (see above). Re-run without the flag, or set one yourself as the Hardening page describes."
+    echo "  Redis asks for a password ($REDIS_CONF includes $(dirname "$REDIS_CONF")/danbyte-auth.conf)"
+    REDIS_ENV="$REDIS_ENV
+# The Redis password (install.sh --redis-password); the same as in
+# $(dirname "$REDIS_CONF")/danbyte-auth.conf.
+REDIS_PASSWORD=$REDIS_PASSWORD"
+  fi
   umask 077
   # Written by the service user, its own and private from the first byte;
   # the secrets reach it on stdin.
@@ -539,7 +588,7 @@ DB_PASSWORD=$DB_PASSWORD
 DB_HOST=127.0.0.1
 DB_PORT=5432
 
-REDIS_URL=redis://localhost:6379/0
+$REDIS_ENV
 
 DANBYTE_LOG_DIR=$LOG_DIR
 

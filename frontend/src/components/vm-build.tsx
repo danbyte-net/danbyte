@@ -102,6 +102,7 @@ export function hasBuild(vm: VirtualMachine): boolean {
 // ─── Drift: intended vs observed ─────────────────────────────────────────────
 
 interface DriftChange {
+  id: string
   kind: string
   detail: Record<string, unknown>
 }
@@ -111,6 +112,11 @@ interface DriftRow {
   field: string
   intended: unknown
   observed: unknown
+  /** The review item this row belongs to; `first` on its first row, which
+   * carries the item's buttons. */
+  change: string
+  kind: string
+  first: boolean
 }
 
 const FIELD_LABEL: Record<string, string> = {
@@ -129,8 +135,9 @@ const FIELD_LABEL: Record<string, string> = {
 
 /** Flatten spec_change and iface_change rows into field / intent / observed. */
 export function driftRows(changes: DriftChange[]): DriftRow[] {
-  const out: DriftRow[] = []
+  const all: DriftRow[] = []
   for (const c of changes) {
+    const out: Omit<DriftRow, "change" | "kind" | "first">[] = []
     if (c.kind === "spec_change") {
       for (const [k, v] of Object.entries(c.detail as Record<string, Pair>))
         out.push({
@@ -161,8 +168,11 @@ export function driftRows(changes: DriftChange[]): DriftRow[] {
           observed: "missing",
         })
     }
+    out.forEach((r, i) =>
+      all.push({ ...r, change: c.id, kind: c.kind, first: i === 0 })
+    )
   }
-  return out
+  return all
 }
 
 const show = (v: unknown) =>
@@ -172,30 +182,149 @@ const show = (v: unknown) =>
     <span className="font-mono text-xs">{String(v)}</span>
   )
 
+const HELD_COLUMNS: SimpleColumn<DriftRow>[] = [
+  { id: "field", header: "Field", cell: (r) => r.field },
+  { id: "intended", header: "Danbyte", cell: (r) => show(r.intended) },
+  { id: "observed", header: "Hypervisor", cell: (r) => show(r.observed) },
+]
+
 const DRIFT_COLUMNS: SimpleColumn<DriftRow>[] = [
   { id: "field", header: "Field", cell: (r) => r.field },
   { id: "intended", header: "Intended", cell: (r) => show(r.intended) },
   { id: "observed", header: "Hypervisor", cell: (r) => show(r.observed) },
 ]
 
-/** Where an intended VM and its hypervisor disagree. Hidden when they
- * agree. Shares the interfaces pane's query. */
-export function VmDriftCard({ vmId }: { vmId: string }) {
+/** The VM's open drift: where Danbyte and its hypervisor disagree. */
+export function useVmDrift(vmId: string, enabled = true): DriftRow[] {
   const q = useQuery({
     queryKey: ["vm-drift", vmId],
     queryFn: () => apiAll<DriftChange>(`/api/virt-changes/?vm=${vmId}`),
     retry: false,
+    enabled,
   })
-  const rows = driftRows(q.data?.results ?? [])
+  return driftRows(q.data?.results ?? [])
+}
+
+/** Where a VM and its hypervisor disagree, with the two ways to settle
+ * each item: take the hypervisor's values into Danbyte, or keep Danbyte's
+ * and dismiss it. Hidden when they agree. Nothing here writes to the
+ * hypervisor. */
+export function VmDriftCard({
+  vmId,
+  intended = true,
+}: {
+  vmId: string
+  /** An intended VM's own values are its intent; a synced one's are just
+   * what Danbyte holds. */
+  intended?: boolean
+}) {
+  const rows = useVmDrift(vmId)
+  const { canDo } = useMe()
+  const canResolve = canDo("virtchange", "change")
+  const qc = useQueryClient()
+  const [confirm, setConfirm] = useState<DriftRow | null>(null)
+  const resolve = useMutation({
+    mutationFn: ({ id, action }: { id: string; action: "accept" | "ignore" }) =>
+      api(`/api/virt-changes/${id}/${action}/`, { method: "POST", body: "{}" }),
+    onSuccess: (_, { action }) => {
+      toast.success(action === "accept" ? "Change applied" : "Drift ignored")
+      qc.invalidateQueries({ queryKey: ["vm-drift", vmId] })
+      qc.invalidateQueries({ queryKey: ["virtual-machine", vmId] })
+      qc.invalidateQueries({ queryKey: ["virt-changes"] })
+      qc.invalidateQueries({ queryKey: ["vm-interfaces", vmId] })
+    },
+    onError: (e) => apiErrorToast(e),
+  })
   if (rows.length === 0) return null
+  const removes = (r: DriftRow) => r.kind === "iface_extra"
+  const columns: SimpleColumn<DriftRow>[] = [
+    ...(intended ? DRIFT_COLUMNS : HELD_COLUMNS),
+    ...(canResolve
+      ? [
+          {
+            id: "actions",
+            header: "",
+            cell: (r: DriftRow) =>
+              r.first ? (
+                <span className="flex justify-end gap-1 whitespace-nowrap">
+                  <Button
+                    size="sm"
+                    variant={removes(r) ? "destructive" : "outline"}
+                    className="h-7 px-2 text-xs"
+                    disabled={resolve.isPending}
+                    onClick={() =>
+                      // Deleting an interface, or overwriting intent,
+                      // deserves a beat.
+                      removes(r) || intended
+                        ? setConfirm(r)
+                        : resolve.mutate({ id: r.change, action: "accept" })
+                    }
+                  >
+                    {removes(r) ? "Delete interface" : "Use hypervisor's"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 px-2 text-xs"
+                    disabled={resolve.isPending}
+                    onClick={() =>
+                      resolve.mutate({ id: r.change, action: "ignore" })
+                    }
+                  >
+                    {removes(r) ? "Keep" : "Keep Danbyte's"}
+                  </Button>
+                </span>
+              ) : null,
+          } satisfies SimpleColumn<DriftRow>,
+        ]
+      : []),
+  ]
   return (
-    <OverviewTable
-      title="Drift"
-      count={rows.length}
-      columns={DRIFT_COLUMNS}
-      data={rows}
-      getRowKey={(r) => r.key}
-    />
+    <>
+      <OverviewTable
+        title="Drift"
+        count={rows.length}
+        columns={columns}
+        data={rows}
+        getRowKey={(r) => r.key}
+      />
+      <AlertDialog
+        open={!!confirm}
+        onOpenChange={(o) => !o && setConfirm(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {confirm && removes(confirm)
+                ? "Delete these interfaces from Danbyte?"
+                : "Replace the intended values?"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirm && removes(confirm)
+                ? "The hypervisor doesn't report them, so this removes the Danbyte rows, including anything cabled or addressed on them."
+                : "This VM is intended. Its intended values are replaced with the hypervisor's."}{" "}
+              Nothing on the hypervisor is touched.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              variant={confirm && removes(confirm) ? "destructive" : "default"}
+              onClick={(e) => {
+                e.preventDefault()
+                if (confirm)
+                  resolve.mutate({ id: confirm.change, action: "accept" })
+                setConfirm(null)
+              }}
+            >
+              {confirm && removes(confirm)
+                ? "Delete in Danbyte"
+                : "Use hypervisor's"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   )
 }
 

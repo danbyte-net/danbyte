@@ -48,14 +48,16 @@ function RirsPage() {
       title="RIRs"
       count={query.data ? rows.length : undefined}
       search={{ value: q, onChange: setQ, placeholder: "Filter…" }}
+      add={
+        canAdd && (
+          <Button size="sm" asChild>
+            <Link to="/rirs/new">Add RIR</Link>
+          </Button>
+        )
+      }
       actions={
         <>
           <TableActions ioType="rir" />
-          {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/rirs/new">Add RIR</Link>
-            </Button>
-          )}
         </>
       }
       query={query}

@@ -8,7 +8,6 @@ from __future__ import annotations
 import datetime as dt
 import hashlib
 import json
-from unittest import mock
 
 from django.contrib.auth.models import User
 from django.utils import timezone
@@ -163,23 +162,33 @@ class CertificateRequestBulkTests(_Base):
         self.b = CertificateRequest.objects.create(tenant=self.tenant, common_name="b")
         self.theirs = CertificateRequest.objects.create(tenant=self.other, common_name="c")
 
+    def _keys(self):
+        from core.models import DeploymentSettings
+        from monitoring.models import StoredSecret
+
+        dep = DeploymentSettings.load()
+        dep.secrets_provider = "local"
+        dep.save(update_fields=["secrets_provider"])
+        StoredSecret.objects.create(tenant=self.tenant, ref="csr/a", value={"private_key": "k"})
+        StoredSecret.objects.create(tenant=self.other, ref="csr/a", value={"private_key": "k"})
+        return StoredSecret.objects
+
     def test_dry_run_deletes_nothing_and_touches_no_key(self):
-        with mock.patch("monitoring.csr.delete_key") as delete_key:
-            r = self.delete(REQUESTS, [self.a.id, self.b.id], dry_run=True)
+        keys = self._keys()
+        r = self.delete(REQUESTS, [self.a.id, self.b.id], dry_run=True)
         self.assertEqual(r.status_code, 200, r.content)
         self.assertEqual(r.json()["deleted"], 2)
-        delete_key.assert_not_called()
+        self.assertEqual(keys.filter(tenant=self.tenant).count(), 1)
         self.assertEqual(CertificateRequest.objects.filter(tenant=self.tenant).count(), 2)
 
     def test_delete_removes_each_stored_key_as_the_single_delete_does(self):
-        with mock.patch("monitoring.csr.delete_key") as delete_key:
-            r = self.delete(REQUESTS, [self.a.id, self.b.id, self.theirs.id])
+        keys = self._keys()
+        r = self.delete(REQUESTS, [self.a.id, self.b.id, self.theirs.id])
         self.assertEqual(r.status_code, 200, r.content)
         self.assertEqual(r.json()["deleted"], 2)
-        self.assertEqual(
-            sorted(c.args[0].common_name for c in delete_key.call_args_list),
-            ["a.example.net", "b"],
-        )
+        self.assertEqual(keys.filter(tenant=self.tenant).count(), 0)
+        # The same ref in another tenant is that tenant's key.
+        self.assertEqual(keys.filter(tenant=self.other).count(), 1)
         self.assertTrue(CertificateRequest.objects.filter(pk=self.theirs.pk).exists())
         self.assertTrue(self.logged(ChangeAction.DELETE, self.a))
 

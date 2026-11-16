@@ -192,7 +192,7 @@ function VirtualizationSourcesPage() {
       count={query.data ? rows.length : undefined}
       query={query}
       search={{ value: q, onChange: setQ, placeholder: "Filter sources…" }}
-      actions={
+      add={
         canAdd && (
           <Button size="sm" onClick={() => setCreating(true)}>
             <Plus className="h-3.5 w-3.5" /> Add source

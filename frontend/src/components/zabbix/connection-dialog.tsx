@@ -300,7 +300,7 @@ function ConnectionForm({
             <Field
               label="Engines"
               hint={engineOptions.length ? undefined : "None yet"}
-              info="The monitoring engines that read through this connection. Create one of kind Zabbix under Governance → Monitoring engines, then link it here."
+              info="The monitoring engines that read through this connection. Create one of kind Zabbix under Monitoring → Engines, then link it here."
               error={fieldErrors.engines}
             >
               <IdMultiSelect

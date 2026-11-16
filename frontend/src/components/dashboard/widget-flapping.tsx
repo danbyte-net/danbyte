@@ -48,7 +48,7 @@ export function FlappingWidget({ rows }: { rows: FlappingRow[] }) {
       <div className="mt-auto pt-2 text-right">
         <Link
           to="/monitoring"
-          search={{ view: "flapping", status: "all" }}
+          search={{ view: "flapping" }}
           className="text-[11px] text-muted-foreground underline-offset-2 hover:underline"
         >
           All flapping

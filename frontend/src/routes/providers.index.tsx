@@ -126,8 +126,14 @@ function ProvidersPage() {
     ],
     [onDelete, canEdit, canDelete, humanIds]
   )
-  const { rail, filteredRows, snapshot, restore, activeCount, columns: facetColumns } =
-    useUrlTableFilters(columns, rows)
+  const {
+    rail,
+    filteredRows,
+    snapshot,
+    restore,
+    activeCount,
+    columns: facetColumns,
+  } = useUrlTableFilters(columns, rows)
 
   return (
     <ListPageShell
@@ -139,14 +145,16 @@ function ProvidersPage() {
         filters: { snapshot, restore, activeCount },
       }}
       search={{ value: q, onChange: setQ, placeholder: "Filter providers…" }}
+      add={
+        canAdd && (
+          <Button size="sm" asChild>
+            <Link to="/providers/new">Add provider</Link>
+          </Button>
+        )
+      }
       actions={
         <>
           <TableActions ioType="provider" />
-          {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/providers/new">Add provider</Link>
-            </Button>
-          )}
         </>
       }
       query={query}

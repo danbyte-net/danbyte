@@ -200,7 +200,7 @@ containers).
 ## Planned changes
 
 A task can declare **what will change**. Planning is editing: from a linked
-object, "Plan a change" opens **that object's own edit form**, pre-filled with
+object (or its page's **More ▸ Plan a change**) opens **that object's own edit form**, pre-filled with
 real values. Change whatever you want - three fields, the rack, the status - and
 save. Nothing is written; the fields that actually differ are recorded on the
 task as a planned change. "Plan a new interface" opens the interface create form

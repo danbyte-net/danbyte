@@ -32,6 +32,7 @@ import {
   scrollWithin,
   sectionFolding,
   setSearch,
+  warnGutter,
 } from "./cm"
 import { CodeView } from "./code-view"
 import {
@@ -89,6 +90,9 @@ export interface FileViewerProps {
   defaultWrap?: boolean
   /** Shown instead of an empty document. */
   emptyText?: string
+  /** Lines to flag in the file view (1-based): a `!` in the gutter and the
+   * warning tint. The caller lists the messages. */
+  marks?: readonly number[]
   label?: string
   className?: string
 }
@@ -197,6 +201,7 @@ export function FileViewer({
   follow = false,
   defaultWrap = false,
   emptyText = "(empty)",
+  marks,
   label,
   className,
 }: FileViewerProps) {
@@ -256,10 +261,17 @@ export function FileViewer({
     const ext = [lineNumbers(), syntax]
     if (sections.some((s) => s.end > s.line))
       ext.push(...sectionFolding(sections))
-    if (isConfig(hl))
-      ext.push(lineClasses(doc, configLineClasses(lines, sections)))
+    const flagged = new Set(marks ?? [])
+    if (flagged.size) ext.push(warnGutter(flagged))
+    const classes: (string | null)[] = isConfig(hl)
+      ? configLineClasses(lines, sections)
+      : lines.map(() => null)
+    if (flagged.size)
+      for (const n of flagged)
+        if (n >= 1 && n <= classes.length) classes[n - 1] = "cm-fv-warn"
+    if (isConfig(hl) || flagged.size) ext.push(lineClasses(doc, classes))
     return ext
-  }, [text, sections, hl, syntax])
+  }, [text, sections, hl, syntax, marks])
 
   const rows = useMemo<DiffRow[]>(() => {
     if (!hasDiff || !diff || view !== "diff") return []

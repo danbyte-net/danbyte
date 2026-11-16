@@ -90,17 +90,19 @@ function RacksPage() {
         onChange: setQ,
         placeholder: "Filter by name, facility ID…",
       }}
+      add={
+        canAdd && (
+          <Button size="sm" asChild>
+            <Link to="/racks/new">Add rack</Link>
+          </Button>
+        )
+      }
       actions={
         <>
           <TableActions ioType="rack" />
           <Button size="sm" variant="outline" asChild>
             <Link to="/racks/elevations">Elevations</Link>
           </Button>
-          {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/racks/new">Add rack</Link>
-            </Button>
-          )}
         </>
       }
       query={query}

@@ -1,4 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react"
+import type { ReactNode } from "react"
+import { createPortal } from "react-dom"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { cn } from "@/lib/utils"
 import { useDateFormat } from "@/lib/datetime"
@@ -27,6 +36,8 @@ import {
   ChevronDown,
   ChevronRight,
   Download,
+  Pin,
+  PinOff,
 } from "lucide-react"
 
 import { ColumnsMenu } from "@/components/column-menu"
@@ -46,9 +57,25 @@ import type { DcimChoices } from "@/lib/api"
 import { useDeviceFieldVisibility, useListFields } from "@/lib/list-fields"
 import { tableApi } from "@/lib/tables"
 import { useTablePreference } from "@/lib/use-table-preference"
+import {
+  NO_PIN_LAYOUT,
+  UNPINNABLE,
+  lastStuck,
+  pinLayout,
+  pinnedColumns,
+  samePinLayout,
+  togglePin,
+  type PinLayout,
+} from "@/lib/column-pins"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import { useUserPrefs } from "@/lib/use-user-prefs"
 import { coerce, exportTable, type ExportFormat } from "@/lib/table-export"
 import { listCapExportNote, useListCap } from "@/lib/list-cap"
+import { useListToolbar } from "@/lib/list-toolbar"
 import { naturalSortingFn } from "@/lib/natural-sort"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -145,6 +172,9 @@ interface DataTableProps<T> {
   /** Optional per-row tailwind classes (e.g. a status-based background tint).
    * Row hover/selection still win (declared `!important` in tokens.css). */
   rowClassName?: (original: T) => string | undefined
+  /** Rows that only show something between the real ones (the prefix list's
+   * free rows): never selectable, never exported, not counted. */
+  isPlaceholderRow?: (original: T) => boolean
   /** Optional per-row inline style - use for tints derived from user-chosen
    * colors (arbitrary hex) that can't be expressed as a Tailwind class. Row
    * hover/selection still win (declared `!important` in tokens.css). */
@@ -231,7 +261,13 @@ interface DataTableProps<T> {
         get?: (row: T) => unknown
         exclude?: string[]
       }
+  /** Columns can be pinned to the left edge from the Columns menu (on by
+   * default). `false` for a table where a pinned column makes no sense - a
+   * two-column list that never scrolls sideways. */
+  pinnable?: boolean
 }
+
+const NO_PINS: string[] = []
 
 // Headless data table for every list page in Danbyte. Hands the column
 // definitions in - TanStack Table handles sort + filter + group +
@@ -256,6 +292,7 @@ export function DataTable<T>({
   exportName,
   exportTitle,
   rowClassName,
+  isPlaceholderRow,
   rowStyle,
   onRowHover,
   onRowClick,
@@ -268,6 +305,7 @@ export function DataTable<T>({
   serverSorting,
   onAutoFieldsChange,
   autoColumns,
+  pinnable = true,
 }: DataTableProps<T>) {
   const [localSorting, setLocalSorting] = useState<SortingState>([])
   const sorting = serverSorting ? serverSorting.sorting : localSorting
@@ -297,6 +335,19 @@ export function DataTable<T>({
   // that arrived, so it says so (#412). A table that fetches everything for
   // export (`exportAll`) is not cut off.
   const listCap = useListCap()
+  // A list page's toolbar row (ListPageShell, #507): the page's main table
+  // moves its selection, Download and Columns up beside the search box
+  // rather than drawing a second row of controls under it.
+  const listToolbar = useListToolbar()
+  const tableKey = useId()
+  const rootRef = useRef<HTMLDivElement>(null)
+  const claim = listToolbar?.claim
+  useLayoutEffect(() => {
+    if (!claim || embedded || !rootRef.current) return
+    return claim(tableKey, rootRef.current)
+  }, [claim, embedded, tableKey])
+  const toolbarSlot =
+    listToolbar && listToolbar.owner === tableKey ? listToolbar.slot : null
   const exportNote =
     listCap && !exportAll && !serverPagination
       ? listCapExportNote(listCap)
@@ -571,7 +622,11 @@ export function DataTable<T>({
   // changes / re-check boxes; staging a draft and saving once fixes that.)
   // Saved ids that are not mounted right now - a catalog column before the
   // catalog loaded, a data-gated column - are carried through, not dropped.
-  const applyLayout = (order: string[], hidden: string[]) => {
+  const applyLayout = (
+    order: string[],
+    hidden: string[],
+    pinnedIds?: string[]
+  ) => {
     if (pref.isForced) return
     const mounted = new Set(manageableIds)
     const nextOrder = carryUnmounted(order, pref.order, mounted)
@@ -579,8 +634,20 @@ export function DataTable<T>({
       ...hidden,
       ...pref.hidden.filter((id) => !mounted.has(id) && !hidden.includes(id)),
     ]
+    // Pins of columns not mounted right now are carried, like the order.
+    const nextPinned = pinnedIds && [
+      ...pinnedIds,
+      ...pref.pinned.filter(
+        (id) => !mounted.has(id) && !pinnedIds.includes(id)
+      ),
+    ]
     setSessionVisibility({})
-    if (tableId) pref.setLayout({ order: nextOrder, hidden: nextHidden })
+    if (tableId)
+      pref.setLayout({
+        order: nextOrder,
+        hidden: nextHidden,
+        ...(nextPinned ? { pinned: nextPinned } : {}),
+      })
   }
   const resetLayout = () => {
     setSessionVisibility({})
@@ -615,6 +682,35 @@ export function DataTable<T>({
     [tableColumns]
   )
 
+  // ─── Pinned columns ────────────────────────────────────────────────────
+  // Pins live in the saved layout next to order + hidden (session state on a
+  // table without one). A pinned column keeps its place in the table and
+  // sticks to the left edge only once scrolling would carry it past it,
+  // after the pinned columns before it (pinLayout, below). The row tick sticks
+  // too whenever anything is pinned. Nothing is reordered, so exports and
+  // prints keep the table's own column order.
+  const [sessionPins, setSessionPins] = useState<string[]>([])
+  const pinned = !pinnable ? NO_PINS : tableId ? pref.pinned : sessionPins
+  const [frameWidth, setFrameWidth] = useState(0)
+  const canPin = (id: string) =>
+    pinnable && !UNPINNABLE.has(id) && manageableIds.includes(id)
+  const hasSelect = allIds.includes("select")
+  const pinKey = pinned.join(" ")
+  const manageableKey = manageableIds.join(" ")
+  const pinnedSet = useMemo(() => {
+    const manageable = new Set(manageableKey.split(" "))
+    return pinnedColumns(pinKey ? pinKey.split(" ") : [], {
+      hasSelect,
+      isShown: (id) => columnVisibility[id] !== false,
+      canPin: (id) => manageable.has(id),
+      frameWidth,
+    })
+  }, [pinKey, manageableKey, hasSelect, columnVisibility, frameWidth])
+  const setPins = (next: string[]) => {
+    if (!tableId) setSessionPins(next)
+    else if (!pref.isForced) pref.setLayout({ pinned: next })
+  }
+
   const table = useReactTable({
     data,
     getRowId: keyById ? rowIdOf : undefined,
@@ -640,7 +736,9 @@ export function DataTable<T>({
     onRowSelectionChange: setRowSelection,
     onExpandedChange: setExpanded,
     onPaginationChange: setPagination,
-    enableRowSelection: true,
+    enableRowSelection: isPlaceholderRow
+      ? (row) => !isPlaceholderRow(row.original)
+      : true,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
@@ -668,7 +766,12 @@ export function DataTable<T>({
   // Footer figures, in one place for the pager's "is there anything to page"
   // question and the row count's grammar.
   const rowTotal =
-    serverPagination?.totalRows ?? table.getFilteredRowModel().rows.length
+    serverPagination?.totalRows ??
+    (isPlaceholderRow
+      ? table
+          .getFilteredRowModel()
+          .rows.filter((r) => !isPlaceholderRow(r.original)).length
+      : table.getFilteredRowModel().rows.length)
   const pageTotal = serverPagination?.pageCount ?? table.getPageCount()
 
   // A ticked row that leaves the list - deleted, refetched away, or hidden by
@@ -801,10 +904,73 @@ export function DataTable<T>({
 
   const hscroll = useTableScroll(stickyHeader)
 
+  // Where each pinned column sticks: measured from its header cell after
+  // every render (a column resizing, showing or hiding moves the ones after
+  // it), and again whenever the frame or the table changes size.
+  const [pins, setPinLayoutState] = useState<PinLayout>(NO_PIN_LAYOUT)
+  const [, setMeasure] = useState(0)
+  useEffect(() => {
+    const frame = hscroll.frameRef.current
+    if (!frame) return
+    setFrameWidth(frame.clientWidth)
+    if (typeof ResizeObserver === "undefined") return
+    const ro = new ResizeObserver(() => {
+      setFrameWidth(frame.clientWidth)
+      setMeasure((n) => n + 1)
+    })
+    ro.observe(frame)
+    const t = frame.querySelector("table")
+    if (t) ro.observe(t)
+    return () => ro.disconnect()
+  }, [hscroll.frameRef])
+  useLayoutEffect(() => {
+    const frame = hscroll.frameRef.current
+    let next = NO_PIN_LAYOUT
+    if (frame && pinnedSet.size) {
+      // The leaf header row, in display order.
+      const rows = frame.querySelectorAll("thead tr")
+      const last = rows[rows.length - 1]
+      const cols = last
+        ? [...last.querySelectorAll<HTMLElement>("th[data-col]")].map((th) => ({
+            id: th.dataset.col ?? "",
+            width: th.getBoundingClientRect().width,
+          }))
+        : []
+      next = pinLayout(cols, pinnedSet, frame.clientWidth)
+    }
+    setPinLayoutState((prev) => (samePinLayout(prev, next) ? prev : next))
+  })
+  // Which pinned column is stuck furthest right right now - only it carries
+  // the divider, and only while it is actually stuck.
+  const [stuck, setStuck] = useState<string | null>(null)
+  useEffect(() => {
+    const scroller = hscroll.frameRef.current?.querySelector<HTMLElement>(
+      "[data-slot=table-container]"
+    )
+    if (!scroller || !Object.keys(pins.left).length) {
+      setStuck(null)
+      return
+    }
+    const update = () => setStuck(lastStuck(pins, scroller.scrollLeft))
+    update()
+    scroller.addEventListener("scroll", update, { passive: true })
+    return () => scroller.removeEventListener("scroll", update)
+  }, [pins, hscroll.frameRef])
+  /** Sticky props for a pinned column's cell; none for the rest. */
+  const pinProps = (id: string) =>
+    id in pins.left
+      ? {
+          "data-pinned": "",
+          "data-pin-last": stuck === id ? "" : undefined,
+          style: { left: pins.left[id] },
+        }
+      : {}
+
   return (
     // min-w-0: a table placed straight into a flex row may shrink below its
     // columns' width - the frame below then scrolls instead of the row growing.
     <div
+      ref={rootRef}
       className={cn(
         "flex min-w-0 flex-col gap-2",
         stickyHeader && "min-h-0 flex-1"
@@ -831,8 +997,8 @@ export function DataTable<T>({
           the bar only appears there when rows are selected. It wraps rather
           than overflowing, so a narrow pane never cuts Download / Columns off. */}
       {(!embedded || selectedCount > 0) && (
-        <div className="flex min-h-6 flex-wrap items-center justify-between gap-x-2 gap-y-1">
-          <span className="flex items-center gap-2 text-xs text-muted-foreground">
+        <ToolbarBar slot={toolbarSlot}>
+          <span className="flex items-center gap-2 text-xs text-muted-foreground empty:hidden">
             {selectedCount > 0 && (
               <span className="font-medium text-foreground">
                 {selectedCount} selected
@@ -940,12 +1106,18 @@ export function DataTable<T>({
                             .getVisibleLeafColumns()
                             .map((c) => c.columnDef.meta?.prepareExport)
                             .filter((f) => !!f)
-                          if (!all && !prepares.length) {
+                          if (!all && !prepares.length && !isPlaceholderRow) {
                             exportTable(table, fmt, opts)
                             return
                           }
                           void (async () => {
-                            const rows = all ? await all() : undefined
+                            const rows = all
+                              ? await all()
+                              : isPlaceholderRow
+                                ? exportSourceRows(table).filter(
+                                    (r) => !isPlaceholderRow(r)
+                                  )
+                                : undefined
                             const source = rows ?? exportSourceRows(table)
                             await Promise.all(prepares.map((f) => f(source)))
                             exportTable(table, fmt, opts, rows)
@@ -976,6 +1148,9 @@ export function DataTable<T>({
                   onIntent={() => autoApi && setCatalogWanted(true)}
                   onApply={applyLayout}
                   onReset={resetLayout}
+                  pinned={pinned}
+                  canPin={pinnable ? canPin : undefined}
+                  defaultName={pref.presetName}
                 />
               ) : (
                 <DropdownMenu
@@ -998,23 +1173,55 @@ export function DataTable<T>({
                     {table
                       .getAllColumns()
                       .filter((c) => c.getCanHide())
-                      .map((c) => (
-                        <DropdownMenuCheckboxItem
-                          key={c.id}
-                          checked={c.getIsVisible()}
-                          onCheckedChange={(v) => c.toggleVisibility(!!v)}
-                        >
-                          <span className="truncate">
-                            {resolveColumnLabel(c.id, c.columnDef)}
-                          </span>
-                        </DropdownMenuCheckboxItem>
-                      ))}
+                      .map((c) => {
+                        const label = resolveColumnLabel(c.id, c.columnDef)
+                        const isPinned = pinned.includes(c.id)
+                        return (
+                          <div key={c.id} className="flex items-center">
+                            <DropdownMenuCheckboxItem
+                              className="min-w-0 flex-1"
+                              checked={c.getIsVisible()}
+                              onCheckedChange={(v) => c.toggleVisibility(!!v)}
+                            >
+                              <span className="truncate">{label}</span>
+                            </DropdownMenuCheckboxItem>
+                            {canPin(c.id) && c.getIsVisible() && (
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <DropdownMenuItem
+                                    aria-label={`${isPinned ? "Unpin" : "Pin"} ${label}`}
+                                    className={cn(
+                                      "h-7 w-7 shrink-0 justify-center p-0",
+                                      isPinned
+                                        ? "text-foreground"
+                                        : "text-muted-foreground"
+                                    )}
+                                    onSelect={(e) => {
+                                      e.preventDefault()
+                                      setPins(togglePin(pinned, c.id))
+                                    }}
+                                  >
+                                    {isPinned ? (
+                                      <PinOff className="h-3.5 w-3.5" />
+                                    ) : (
+                                      <Pin className="h-3.5 w-3.5" />
+                                    )}
+                                  </DropdownMenuItem>
+                                </TooltipTrigger>
+                                <TooltipContent side="left" variant="default">
+                                  {isPinned ? "Unpin" : "Pin left"}
+                                </TooltipContent>
+                              </Tooltip>
+                            )}
+                          </div>
+                        )
+                      })}
                   </DropdownMenuContent>
                 </DropdownMenu>
               )}
             </div>
           )}
-        </div>
+        </ToolbarBar>
       )}
 
       {/* Table.
@@ -1033,6 +1240,7 @@ export function DataTable<T>({
           sides with more columns - see table-scroll.tsx. */}
       <div
         ref={hscroll.frameRef}
+        data-pins={stuck ? "" : undefined}
         className={cn(
           "relative overflow-x-auto rounded-lg border border-border",
           stickyHeader &&
@@ -1055,6 +1263,8 @@ export function DataTable<T>({
                 {hg.headers.map((h) => (
                   <TableHead
                     key={h.id}
+                    data-col={h.column.id}
+                    {...pinProps(h.column.id)}
                     className={
                       "text-xs " +
                       (flexColumn && h.column.id === flexColumn
@@ -1073,6 +1283,11 @@ export function DataTable<T>({
                       // scroll horizontally, instead of vanishing off the edge.
                       (h.column.id === "actions"
                         ? "sticky right-0 z-20 bg-[color-mix(in_oklab,var(--muted)_40%,var(--background))] shadow-[inset_1px_0_0_var(--border)]"
+                        : "") +
+                      // A pinned column sticks to the left at its measured
+                      // offset (pinProps), over an opaque header tint.
+                      (h.column.id in pins.left
+                        ? " sticky z-20 bg-[color-mix(in_oklab,var(--muted)_40%,var(--background))]"
                         : "")
                     }
                   >
@@ -1111,7 +1326,7 @@ export function DataTable<T>({
                         <button
                           type="button"
                           onClick={row.getToggleExpandedHandler()}
-                          className="inline-flex items-center gap-2 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase hover:text-foreground"
+                          className="sticky left-2 inline-flex items-center gap-2 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase hover:text-foreground"
                         >
                           {row.getIsExpanded() ? (
                             <ChevronDown className="h-3 w-3" />
@@ -1121,7 +1336,11 @@ export function DataTable<T>({
                           {renderGroupHeader && sampleRow ? (
                             renderGroupHeader({
                               value: groupVal,
-                              count: row.subRows.length,
+                              count: isPlaceholderRow
+                                ? row.subRows.filter(
+                                    (r) => !isPlaceholderRow(r.original)
+                                  ).length
+                                : row.subRows.length,
                               sampleRow,
                             })
                           ) : (
@@ -1163,6 +1382,7 @@ export function DataTable<T>({
                     {row.getVisibleCells().map((cell) => (
                       <TableCell
                         key={cell.id}
+                        {...pinProps(cell.column.id)}
                         className={
                           "py-2 text-sm " +
                           // Never truncate. The flex column still absorbs extra
@@ -1182,7 +1402,11 @@ export function DataTable<T>({
                           // (see the header note) so it never scrolls out of reach.
                           (cell.column.id === "actions"
                             ? "sticky right-0 bg-background shadow-[inset_1px_0_0_var(--border)]"
-                            : "")
+                            : "") +
+                          // Pinned: sticky at its offset; styles.css paints
+                          // the row's own stripe / hover / selected tint over
+                          // an opaque base so nothing shows through.
+                          (cell.column.id in pins.left ? " sticky z-[1]" : "")
                         }
                       >
                         {flexRender(
@@ -1319,6 +1543,23 @@ export function DataTable<T>({
 /** What to say under a table holding one capped page of a longer list, or
  * null when it holds the lot. `total` is what the server reported; `shown`
  * is what arrived. */
+/** The table's control bar: its own row, or - for a list page's main table -
+ * portaled into the page's toolbar row beside the search box. */
+function ToolbarBar({
+  slot,
+  children,
+}: {
+  slot: HTMLElement | null
+  children: ReactNode
+}) {
+  if (slot) return createPortal(children, slot)
+  return (
+    <div className="flex min-h-6 flex-wrap items-center justify-between gap-x-2 gap-y-1">
+      {children}
+    </div>
+  )
+}
+
 export function truncationNotice(
   total: number | undefined,
   shown: number,

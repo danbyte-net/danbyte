@@ -1,0 +1,9 @@
+<div class="stats">
+  {% for s in stats %}
+  <div class="stat">
+    <div class="label">{{ s.label }}</div>
+    <div class="value">{{ s.value }}</div>
+    {% if s.hint %}<div class="hint">{{ s.hint }}</div>{% endif %}
+  </div>
+  {% endfor %}
+</div>

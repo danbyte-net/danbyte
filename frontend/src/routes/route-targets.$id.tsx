@@ -1,16 +1,15 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { CustomFieldValues } from "@/components/custom-field-display"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
-import { Pencil, Trash2 } from "lucide-react"
 import { useCallback, useMemo, useState } from "react"
 
 import { api, type Paginated, type RouteTarget, type VRF } from "@/lib/api"
-import { Button } from "@/components/ui/button"
 import { TagList } from "@/components/cells/tag-list"
 import { buildVrfColumns } from "@/components/columns/vrf-columns"
 import { DataTable } from "@/components/data-table"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { KvCard, type KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
@@ -61,26 +60,13 @@ function RtDetailBody({ rt: r }: { rt: RouteTarget }) {
       backLabel="Route Targets"
       title={<span className="font-mono">{r.name}</span>}
       presence={{ type: "routetarget", id: r.id }}
-      actions={
-        <>
-          {canDo("routetarget", "change") && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/route-targets/$id/edit" params={{ id: r.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDo("routetarget", "delete") && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={openDelete}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
-        </>
+      edit={
+        canDo("routetarget", "change") && (
+          <EditButton to="/route-targets/$id/edit" params={{ id: r.id }} />
+        )
+      }
+      remove={
+        canDo("routetarget", "delete") && <DeleteButton onClick={openDelete} />
       }
       hero={
         <DetailHero

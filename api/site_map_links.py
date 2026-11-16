@@ -42,12 +42,23 @@ MAX_LINKS = 50
 _PANEL_KINDS = ("front_port", "rear_port")
 
 
+def _include(request) -> set:
+    raw = request.query_params.get("include") or ""
+    return {token.strip() for token in raw.split(",")}
+
+
 def include_capacity(request) -> bool:
     """``?include=capacity`` - the map page asks for it; the dashboard and
     site-page mini maps share the same endpoints without it, and pay
     nothing for it."""
-    raw = request.query_params.get("include") or ""
-    return "capacity" in {token.strip() for token in raw.split(",")}
+    return "capacity" in _include(request)
+
+
+def include_dependencies(request) -> bool:
+    """``?include=dependencies`` on ``/api/site-map/connections/`` - the
+    map page asks for it while its Dependencies layer is on (#450); see
+    ``api.dependency_maps.site_map_lines``."""
+    return "dependencies" in _include(request)
 
 
 def _positions(kind, port) -> int:

@@ -67,14 +67,16 @@ function PlatformGroupsPage() {
         onChange: setQ,
         placeholder: "Filter by name, description…",
       }}
+      add={
+        canAdd && (
+          <Button size="sm" asChild>
+            <Link to="/platform-groups/new">Add group</Link>
+          </Button>
+        )
+      }
       actions={
         <>
           <TableActions ioType="platformgroup" />
-          {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/platform-groups/new">Add group</Link>
-            </Button>
-          )}
         </>
       }
       query={query}

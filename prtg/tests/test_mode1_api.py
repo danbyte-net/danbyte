@@ -310,10 +310,15 @@ class HookTests(_Base):
         self.assertEqual(self.post()[0].status_code, 404)
 
     def test_rate_limited_per_connection(self):
-        for i in range(RATE_PER_MINUTE):
-            r, _ = self.post(data={"sensorid": str(3000 + i)})
-            self.assertEqual(r.status_code, 202)
-        r, enqueue = self.post(data={"sensorid": "9999"})
+        # A smaller allowance: the window is a minute of real time in the
+        # cache, and sixty posts on a loaded runner outlasted it.
+        limit = 5
+        self.assertGreater(RATE_PER_MINUTE, limit)
+        with mock.patch("prtg.hook.RATE_PER_MINUTE", limit):
+            for i in range(limit):
+                r, _ = self.post(data={"sensorid": str(3000 + i)})
+                self.assertEqual(r.status_code, 202)
+            r, enqueue = self.post(data={"sensorid": "9999"})
         self.assertEqual(r.status_code, 429)
         enqueue.assert_not_called()
 

@@ -81,16 +81,18 @@ function VlansPage() {
         onChange: setQ,
         placeholder: "Filter by ID, name, description…",
       }}
+      add={
+        canAdd && (
+          <Button size="sm" asChild>
+            <Link to="/vlans/new" search={{ vlan_id: undefined }}>
+              Add VLAN
+            </Link>
+          </Button>
+        )
+      }
       actions={
         <>
           <TableActions ioType="vlan" />
-          {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/vlans/new" search={{ vlan_id: undefined }}>
-                Add VLAN
-              </Link>
-            </Button>
-          )}
         </>
       }
       query={query}

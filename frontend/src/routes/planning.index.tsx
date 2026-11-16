@@ -181,6 +181,13 @@ function BoardListPage() {
         ) : undefined
       }
       search={{ value: q, onChange: setQ, placeholder: "Filter…" }}
+      add={
+        canAdd && (
+          <Button size="sm" onClick={() => setCreating(true)}>
+            <Plus className="h-3.5 w-3.5" /> New board
+          </Button>
+        )
+      }
       actions={
         <>
           {selected.length > 0 && canDelete && (
@@ -203,11 +210,6 @@ function BoardListPage() {
               <CalendarDays className="h-3.5 w-3.5" /> Calendar
             </Link>
           </Button>
-          {canAdd && (
-            <Button size="sm" onClick={() => setCreating(true)}>
-              <Plus className="h-3.5 w-3.5" /> New board
-            </Button>
-          )}
         </>
       }
     >

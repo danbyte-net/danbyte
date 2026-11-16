@@ -1,13 +1,11 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { useQuery } from "@tanstack/react-query"
-import { Pencil, Trash2 } from "lucide-react"
 import { useCallback, useState } from "react"
 
 import { api } from "@/lib/api"
 import type { SensitivityLabel } from "@/lib/api"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useMe } from "@/lib/use-me"
-import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { TimeCell } from "@/components/cells/time-ago"
@@ -18,6 +16,7 @@ import { Loading } from "@/components/loading"
 import { QueryError } from "@/components/query-error"
 import { SensitivityBadge } from "@/components/sensitivity-badge"
 import { SensitivityLabelDeleteDialog } from "@/components/sensitivity-label-delete-dialog"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
@@ -62,27 +61,12 @@ function Body({ label: l }: { label: SensitivityLabel }) {
       backLabel="Sensitivity labels"
       title={l.name}
       presence={{ type: "sensitivitylabel", id: l.id }}
-      actions={
-        <>
-          {canChange && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/sensitivity-labels/$id/edit" params={{ id: l.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDelete && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeleting(l)}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
-        </>
+      edit={
+        canChange && (
+          <EditButton to="/sensitivity-labels/$id/edit" params={{ id: l.id }} />
+        )
       }
+      remove={canDelete && <DeleteButton onClick={() => setDeleting(l)} />}
       hero={
         <DetailHero
           title={<SensitivityBadge label={l} />}

@@ -149,7 +149,12 @@ def run_scheduled_sync(connection_id, tenant_id) -> str:
             log.exception("scheduled Oxidized sync of %s failed", conn.name)
             record_sync_failure(conn, str(exc) or exc.__class__.__name__)
             return "error"
-        return "error" if summary.get("error") else "synced"
+        if summary.get("error"):
+            return "error"
+        from .versions import enqueue_read_versions
+
+        enqueue_read_versions(conn)  # the software versions in new backups (#451)
+        return "synced"
     finally:
         try:
             _conn().delete(claim_key(connection_id))

@@ -30,8 +30,8 @@ The four things a permission can allow on a type of object are **view**, **add**
 **change**, and **delete**.
 
 A few extra **capability** verbs apply to specific types and are never implied
-by *change*: **connect** (on devices - open a [Connect launcher or the SSH
-terminal](device-access.md)), **reveal** (on device credentials, wireless
+by *change*: **connect** (on devices and virtual machines, each its own grant -
+open a [Connect launcher or the SSH terminal](device-access.md)), **reveal** (on device credentials, [shared credentials](device-access.md#shared-credentials), wireless
 LANs and IPSec profiles - read the referenced secret), **subscribe** (on notification channels -
 self-service opt-in/out), **view credits** (on SLA agreements - see the
 [service credits](sla.md#service-credits) an agreement owes), **view cost**
@@ -43,7 +43,9 @@ with](topology.md#default-view) for the tenant; tenant admins can without it,
 and its row limits say which views), **view config** (on devices and on virtual
 machines, each its own grant - read the
 [configuration backups from Oxidized](oxidized.md#who-can-read-a-config);
-no built-in group holds it, because a config carries secrets), and **grant
+no built-in group holds it, because a config carries secrets), **scan** (on
+inventory profiles - start a [discovery run](discovery-safety.md#permissions)
+with **Run now**; no built-in group holds it), and **grant
 superuser** (on users - see below). The
 permission form only offers these on the types that use them.
 
@@ -422,6 +424,53 @@ deployment's mail settings, so a tenant's admin doesn't see them in their
 relay. If the deployment has no mail server of its own, they use the
 tenant's instead so they still arrive - set up deployment email to keep
 them out of tenant relays.
+
+## Passwords
+
+### Changing your own password
+
+Anyone with a local Danbyte password changes it under **Preferences →
+Password**: the current password, then the new one twice. The new password
+must pass the same checks as one an administrator sets; each failed rule is
+shown under the field.
+
+- The browser you change it from stays signed in. **Every other session of
+  the account is signed out**, including a sign-in waiting for its second
+  factor.
+- **API tokens keep working.** They are separate credentials: revoke them
+  under **Preferences → API tokens** if you think they leaked too.
+- A wrong current password counts toward the same lockout as a failed
+  sign-in (10 per address and account, 30 per account, for 15 minutes).
+- The change is in the change log as an update to the user, without the
+  password.
+- Only a signed-in browser session can do it. A request made with an API
+  token is refused.
+- Accounts that sign in through the company directory or single sign-on have
+  no Danbyte password: the card says where the password is managed instead.
+
+### Forgot password (reset by email)
+
+Off by default. An administrator turns it on with `PASSWORD_RESET_ENABLED`
+(see [Settings](../reference/settings.md#password-reset-password_reset_enabled)).
+**Forgot password?** then shows on the sign-in page, as long as deployment
+email is enabled with a mail server of its own (**Settings → Email**) and the
+**Public base URL** is set (**Settings → Security → Outbound delivery**).
+
+- Enter your username or email address. The answer is always the same,
+  whether or not the account exists, and the mail goes out in the background.
+- Mail goes only to active accounts with a local password and an email
+  address. Directory, single sign-on, disabled and not-yet-activated accounts
+  get nothing.
+- The link points at the public URL, works once and expires after an hour
+  (`PASSWORD_RESET_LINK_TIMEOUT`). Signing in with the old password also
+  cancels it. One account gets at most one reset mail a minute.
+- Requests have the same limits as sign-in, counted separately.
+- Setting the new password signs out every session of the account and does
+  not sign you in. Sign in with the new password; two-factor sign-in still
+  applies.
+
+An administrator can still send a reset link from the user's page, as
+described under [Inviting people](#inviting-people).
 
 ## Two-factor sign-in (MFA)
 

@@ -25,8 +25,10 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { DevicePicker } from "@/components/device-picker"
+import { Loading } from "@/components/loading"
 import { InfoTip } from "@/components/ui/info-tip"
 import { cardAnchor } from "@/components/settings/settings-card"
+import { HostDiscoverySettings } from "@/components/discovery/host-discovery-settings"
 import { INTERVALS } from "./check-fields"
 import { apiErrorToast } from "@/lib/api-toast"
 import { cn } from "@/lib/utils"
@@ -101,8 +103,7 @@ export function MonitoringSettingsForm() {
     onError: (err) => apiErrorToast(err),
   })
 
-  if (!draft)
-    return <p className="text-sm text-muted-foreground">Loading settings…</p>
+  if (!draft) return <Loading />
 
   const vrfOptions = vrfsQ.data?.results ?? []
 
@@ -164,6 +165,9 @@ export function MonitoringSettingsForm() {
           ),
           group_notifications: draft.group_notifications,
           group_threshold: Number(draft.group_threshold),
+          root_cause_enabled: draft.root_cause_enabled,
+          root_cause_hold_seconds: Number(draft.root_cause_hold_seconds),
+          root_cause_hold_mode: draft.root_cause_hold_mode,
           discovery_enabled: draft.discovery_enabled,
           discovery_min_prefix_length: Number(
             draft.discovery_min_prefix_length
@@ -225,7 +229,8 @@ export function MonitoringSettingsForm() {
               onChange={(v) => set("stale_after_days", v)}
             />
             <NumberField
-              label="Outpost offline after N minutes"
+              label="Outpost offline after"
+              unit="minutes"
               hint="No contact this long → offline alert (0 = 3× its poll interval)"
               value={draft.engine_offline_after_minutes}
               onChange={(v) => set("engine_offline_after_minutes", v)}
@@ -449,19 +454,11 @@ export function MonitoringSettingsForm() {
                   Clear the DNS name when the lookup returns nothing
                 </span>
               </label>
-              <FormText
+              <ListText
                 label="Nameservers"
                 info="IP addresses, comma separated, asked in this order. They are queried directly, so this machine does not need DNS configured itself - which is the point on a split-horizon network where the host resolves the wrong view. Leave empty to use the host's own resolver. Note that PTR lookups always run here, never on an Outpost."
-                value={(draft.dns_resolvers ?? []).join(", ")}
-                onChange={(v) =>
-                  set(
-                    "dns_resolvers",
-                    v
-                      .split(",")
-                      .map((x) => x.trim())
-                      .filter(Boolean)
-                  )
-                }
+                value={draft.dns_resolvers ?? []}
+                onChange={(v) => set("dns_resolvers", v)}
                 placeholder="10.0.0.45, 10.0.0.46"
               />
             </div>
@@ -491,6 +488,43 @@ export function MonitoringSettingsForm() {
                 hint="New alerts in a batch before grouping"
                 value={draft.group_threshold}
                 onChange={(v) => set("group_threshold", v)}
+              />
+            </div>
+          )}
+
+          {/* Root cause (#450) */}
+          <div className="flex items-center gap-2">
+            <Checkbox
+              id="root-cause-enabled"
+              checked={draft.root_cause_enabled}
+              onCheckedChange={(v) => set("root_cause_enabled", !!v)}
+            />
+            <Label
+              htmlFor="root-cause-enabled"
+              className="text-sm font-medium whitespace-nowrap"
+            >
+              Root-cause alerting
+            </Label>
+            <InfoTip>
+              A device whose upstream is down is explained by it: its alerts
+              stay on the Alerts page but are not sent, and one root-cause
+              message goes out instead, with one more on recovery. Does nothing
+              until device dependencies exist.
+            </InfoTip>
+          </div>
+          {draft.root_cause_enabled && (
+            <div className="ml-6 grid max-w-sm grid-cols-2 gap-3">
+              <NumberField
+                label="Hold"
+                unit="s"
+                min={0}
+                info="How long an alert of a device with upstreams waits for its upstreams' checks before it is sent. 0 sends at once."
+                value={draft.root_cause_hold_seconds}
+                onChange={(v) => set("root_cause_hold_seconds", v)}
+              />
+              <HoldModeSelect
+                value={draft.root_cause_hold_mode}
+                onChange={(v) => set("root_cause_hold_mode", v)}
               />
             </div>
           )}
@@ -658,8 +692,8 @@ export function MonitoringSettingsForm() {
         </Section>
 
         <Section
-          title="Discovery & cleanup"
-          hint="Opt-in subnet lifecycle. Turn on discovery per prefix from its Monitoring tab; these are the deployment-wide switches."
+          title="Address discovery"
+          hint="The ping sweep that finds live addresses in prefixes and records them, and the cleanup of discovered ones. Turn it on per prefix from its Monitoring tab."
         >
           <label className="flex items-start gap-2">
             <Checkbox
@@ -738,6 +772,17 @@ export function MonitoringSettingsForm() {
               />
             </div>
           )}
+        </Section>
+
+        {/* Beside the sweep on purpose: both are "discovery", and an
+            operator looking for one should find the other. Host discovery
+            saves as it changes and holds no <form>, so it can sit in this
+            one. */}
+        <Section
+          title="Host discovery"
+          hint="Package inventory and service scans of devices and VMs, run by discovery profiles. Saved as you change it."
+        >
+          <HostDiscoverySettings />
         </Section>
 
         <Section
@@ -847,6 +892,52 @@ export function MonitoringSettingsForm() {
 /** One titled group. A card rather than a border-t divider, so the groups can
  * flow into a masonry grid and use the page width instead of stacking in one
  * narrow column. */
+const parseList = (text: string) =>
+  text
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean)
+
+/**
+ * A comma-separated list typed as free text. The text is kept as typed -
+ * rebuilding it from the parsed list on every keystroke would swallow the
+ * comma the moment it is typed - and only follows `value` when that changes
+ * to something the text does not already say (a load, a reset).
+ */
+function ListText({
+  label,
+  info,
+  value,
+  onChange,
+  placeholder,
+}: {
+  label: string
+  info?: ReactNode
+  value: readonly string[]
+  onChange: (v: string[]) => void
+  placeholder?: string
+}) {
+  const [text, setText] = useState(value.join(", "))
+  const joined = value.join(",")
+  useEffect(() => {
+    setText((t) => (parseList(t).join(",") === joined ? t : value.join(", ")))
+    // `joined` stands for `value`: a new array with the same items is no change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [joined])
+  return (
+    <FormText
+      label={label}
+      info={info}
+      value={text}
+      onChange={(v) => {
+        setText(v)
+        onChange(parseList(v))
+      }}
+      placeholder={placeholder}
+    />
+  )
+}
+
 function Section({
   title,
   hint,
@@ -936,6 +1027,53 @@ function NumberField({
           {hint}
         </p>
       )}
+    </div>
+  )
+}
+
+/** When a root-cause hold applies (#450). */
+function HoldModeSelect({
+  value,
+  onChange,
+}: {
+  value: MonitoringSettings["root_cause_hold_mode"]
+  onChange: (v: MonitoringSettings["root_cause_hold_mode"]) => void
+}) {
+  const id = useId()
+  return (
+    <div className="space-y-1">
+      <span className="flex items-center gap-1">
+        <Label
+          id={`${id}-label`}
+          htmlFor={id}
+          className="text-xs whitespace-nowrap"
+        >
+          Hold when
+        </Label>
+        <InfoTip>
+          Smart holds only while an upstream is failing or has not been
+          confirmed up within the hold, and asks for that upstream to be checked
+          again. Always holds every alert of a device with upstreams.
+        </InfoTip>
+      </span>
+      <Select
+        value={value}
+        onValueChange={(v) =>
+          onChange(v as MonitoringSettings["root_cause_hold_mode"])
+        }
+      >
+        <SelectTrigger
+          id={id}
+          aria-labelledby={`${id}-label ${id}`}
+          className="h-8 text-sm"
+        >
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="smart">Upstream unconfirmed</SelectItem>
+          <SelectItem value="always">Always</SelectItem>
+        </SelectContent>
+      </Select>
     </div>
   )
 }

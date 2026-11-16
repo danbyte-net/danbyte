@@ -18,10 +18,7 @@ import {
   AvailabilityFramePicker,
   useSlaStatus,
 } from "@/components/monitoring/sla-status"
-import {
-  availabilityColumn,
-  slaColumn,
-} from "@/components/columns/sla-column"
+import { availabilityColumn, slaColumn } from "@/components/columns/sla-column"
 import { StatusBadge } from "@/components/status-badge"
 import { Button } from "@/components/ui/button"
 import { DataTable, SortHeader, selectionColumn } from "@/components/data-table"
@@ -151,9 +148,7 @@ function VirtualChassisPage() {
         // The members' distinct statuses, so uniform stacks sort together.
         accessorFn: (r) => stackStatus(r),
         header: ({ column }) => <SortHeader column={column} label="Status" />,
-        cell: ({ row }) => (
-          <MemberStatusCell members={row.original.members} />
-        ),
+        cell: ({ row }) => <MemberStatusCell members={row.original.members} />,
         meta: {
           facet: {
             kind: "enum",
@@ -264,8 +259,14 @@ function VirtualChassisPage() {
       sla.frame,
     ]
   )
-  const { rail, filteredRows, snapshot, restore, activeCount, columns: facetColumns } =
-    useUrlTableFilters(columns, rows)
+  const {
+    rail,
+    filteredRows,
+    snapshot,
+    restore,
+    activeCount,
+    columns: facetColumns,
+  } = useUrlTableFilters(columns, rows)
 
   return (
     <ListPageShell
@@ -277,15 +278,17 @@ function VirtualChassisPage() {
         filters: { snapshot, restore, activeCount },
       }}
       search={{ value: q, onChange: setQ, placeholder: "Filter by name…" }}
+      add={
+        canAdd && (
+          <Button size="sm" asChild>
+            <Link to="/virtual-chassis/new">Add virtual chassis</Link>
+          </Button>
+        )
+      }
       actions={
         <>
           <AvailabilityFramePicker value={sla.frame} onChange={sla.setFrame} />
           <TableActions ioType="virtualchassis" />
-          {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/virtual-chassis/new">Add virtual chassis</Link>
-            </Button>
-          )}
         </>
       }
       query={query}
@@ -326,7 +329,6 @@ function VirtualChassisPage() {
   )
 }
 
-
 /** Sum member rollups; null when nothing is monitored. */
 function mergeRollups(
   entries: Array<BulkStatusEntry | undefined>
@@ -351,11 +353,7 @@ function stackStatus(r: VirtualChassis): string {
     .join(", ")
 }
 
-function MemberStatusCell({
-  members,
-}: {
-  members: VirtualChassis["members"]
-}) {
+function MemberStatusCell({ members }: { members: VirtualChassis["members"] }) {
   const present: { status: StatusMini; n: number }[] = []
   for (const m of members) {
     if (!m.status) continue

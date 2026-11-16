@@ -5,13 +5,15 @@ whole list: ``GET /api/ips/?device_id=<uuid>`` returned every address in the
 tenant because the filter is called ``device``. A client that trusted the
 narrowed list could act on the wrong object.
 
-Every list endpoint now says which parameters it ignored:
+Every list endpoint now refuses or names the parameters it ignored:
 
-* ``X-Danbyte-Unknown-Params: device_id, foo`` and
+* Strict mode (the default from 0.20: the ``API_STRICT_QUERY_PARAMS``
+  setting, ``?strict=1`` or the ``X-Danbyte-Strict: 1`` header) answers 400,
+  naming each one with a "did you mean" hint and the parameters the list
+  read.
+* Otherwise (``?strict=0``, or the setting off) the list answers as usual
+  with ``X-Danbyte-Unknown-Params: device_id, foo`` and
   ``Warning: 299 - "Unknown query parameters ignored: device_id, foo"``.
-* Strict mode (``?strict=1``, the ``X-Danbyte-Strict: 1`` header, or the
-  ``API_STRICT_QUERY_PARAMS`` setting) answers 400 instead, with a "did you
-  mean" hint per parameter.
 
 What a list understands is learned while it runs: the request's
 ``query_params`` records every name the view, its filters, its paginator and
@@ -45,6 +47,14 @@ GLOBAL_QUERY_PARAMS = frozenset({"page", "page_size", "format", "strict", "_"})
 UNKNOWN_HEADER = "X-Danbyte-Unknown-Params"
 STRICT_HEADER = "HTTP_X_DANBYTE_STRICT"
 _MAX_HEADER_NAMES = 20
+# Bytes, after encoding: one name, and the whole value of either header (the
+# Warning adds its wrapper). Two large headers outgrew nginx's default
+# proxy_buffer_size and the request became a 502 (#503).
+_MAX_NAME_BYTES = 64
+_MAX_HEADER_BYTES = 512
+_SAFE = "-_.~[]:"
+_CUT = quote("…")  # a cut name ends in an encoded "…"
+_WARNING = '299 - "Unknown query parameters ignored: {}"'
 _TRUE = ("1", "true", "yes", "on")
 _FALSE = ("0", "false", "no", "off")
 
@@ -166,7 +176,7 @@ def is_strict(request) -> bool:
             return True
         if v in _FALSE:
             return False
-    return bool(getattr(settings, "API_STRICT_QUERY_PARAMS", False))
+    return bool(getattr(settings, "API_STRICT_QUERY_PARAMS", True))
 
 
 def hint_for(name: str, candidates) -> str | None:
@@ -179,11 +189,63 @@ def hint_for(name: str, candidates) -> str | None:
     return match[0] if match else None
 
 
+def _quote(text: str) -> str:
+    return quote(text, safe=_SAFE, errors="replace")
+
+
+def _header_name(name: str) -> str:
+    """``name`` percent-encoded (ASCII, no CR/LF), at most _MAX_NAME_BYTES;
+    a longer one is cut on a character and ends in an encoded "…"."""
+    enc = _quote(name)
+    if len(enc) <= _MAX_NAME_BYTES:
+        return enc
+    out, room = [], _MAX_NAME_BYTES - len(_CUT)
+    for ch in name:
+        piece = _quote(ch)
+        if len(piece) > room:
+            break
+        out.append(piece)
+        room -= len(piece)
+    return "".join(out) + _CUT
+
+
 def _header_value(names) -> str:
-    shown = [quote(n, safe="-_.~[]:") for n in names[:_MAX_HEADER_NAMES]]
-    if len(names) > _MAX_HEADER_NAMES:
-        shown.append("...")
+    """The names for the headers: at most _MAX_HEADER_NAMES of them, and
+    short enough that the Warning stays within _MAX_HEADER_BYTES, then
+    "+N more" for the rest. The strict-mode 400 lists them all."""
+    budget = _MAX_HEADER_BYTES - len(_WARNING.format(""))
+    shown: list[str] = []
+    for i, name in enumerate(names[:_MAX_HEADER_NAMES]):
+        enc = _header_name(name)
+        rest = len(names) - i - 1
+        tail = len(f", +{rest} more") if rest else 0
+        if len(", ".join([*shown, enc])) + tail > budget:
+            break
+        shown.append(enc)
+    if len(shown) < len(names):
+        shown.append(f"+{len(names) - len(shown)} more")
     return ", ".join(shown)
+
+
+_DETAIL_NAMES = 10
+
+
+def strict_detail(unknown, hints, allowed) -> str:
+    """The strict-mode 400's message: the unknown names (each with its "did
+    you mean"), what the list takes, and how to send it anyway. The body's
+    ``unknown`` and ``allowed`` carry the full lists."""
+    def name(n):
+        short = n if len(n) <= _MAX_NAME_BYTES else n[:_MAX_NAME_BYTES] + "…"
+        return f"{short} (did you mean {hints[n]}?)" if n in hints else short
+
+    shown = [name(n) for n in unknown[:_DETAIL_NAMES]]
+    if len(unknown) > _DETAIL_NAMES:
+        shown.append(f"+{len(unknown) - _DETAIL_NAMES} more")
+    takes = ", ".join(a for a in allowed if a != "strict")
+    return (
+        f"Unknown query parameter{'s' if len(unknown) != 1 else ''}: {', '.join(shown)}. "
+        f"This list takes: {takes}. Send strict=0 to ignore unknown parameters."
+    )
 
 
 def check_response(request, response, view_cls, tracked: TrackedQueryDict, original_keys):
@@ -201,11 +263,17 @@ def check_response(request, response, view_cls, tracked: TrackedQueryDict, origi
             h = hint_for(name, known)
             if h:
                 hints[name] = h
+        allowed = sorted(k for k in known if k not in ("_",))
         return JsonResponse(
-            {"detail": "Unknown query parameters", "unknown": unknown, "hint": hints},
+            {
+                "detail": strict_detail(unknown, hints, allowed),
+                "unknown": unknown,
+                "hint": hints,
+                "allowed": allowed,
+            },
             status=400,
         )
     value = _header_value(unknown)
     response[UNKNOWN_HEADER] = value
-    response["Warning"] = f'299 - "Unknown query parameters ignored: {value}"'
+    response["Warning"] = _WARNING.format(value)
     return response

@@ -89,15 +89,17 @@ function CircuitsPage() {
         onChange: setQ,
         placeholder: "Filter by circuit ID…",
       }}
+      add={
+        canAdd && (
+          <Button size="sm" asChild>
+            <Link to="/circuits/new">Add circuit</Link>
+          </Button>
+        )
+      }
       actions={
         <>
           <AvailabilityFramePicker value={sla.frame} onChange={sla.setFrame} />
           <TableActions ioType="circuit" />
-          {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/circuits/new">Add circuit</Link>
-            </Button>
-          )}
         </>
       }
       query={query}

@@ -62,14 +62,16 @@ function CabinetTypesPage() {
         onChange: setQ,
         placeholder: "Filter by name, manufacturer…",
       }}
+      add={
+        canAdd && (
+          <Button size="sm" asChild>
+            <Link to="/cabinet-types/new">Add cabinet type</Link>
+          </Button>
+        )
+      }
       actions={
         <>
           <TableActions ioType="cabinettype" />
-          {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/cabinet-types/new">Add cabinet type</Link>
-            </Button>
-          )}
         </>
       }
       query={query}

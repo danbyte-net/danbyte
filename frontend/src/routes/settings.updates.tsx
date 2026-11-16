@@ -872,6 +872,8 @@ function outcomeTitle(st: SystemUpgradeStatus): string {
     case "unchanged":
       return "Upgrade failed - nothing was changed"
     case "restored":
+      if (o.services === "stopped")
+        return "Rolled back - but the previous release is not running"
       return o.database === "restored"
         ? "Rolled back - the database was restored"
         : "Rolled back - the database was not changed"

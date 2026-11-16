@@ -315,6 +315,8 @@ export function StatBand({ d }: { d: DashboardData }) {
     value: number | string
     to?: string
     tone?: "ok" | "warn" | "bad"
+    /** A muted note after the number ("+3 explained"). */
+    note?: string
   }[] = [
     { label: "Sites", value: d.counts.sites ?? 0, to: "/sites" },
     { label: "Prefixes", value: d.counts.prefixes ?? 0, to: "/prefixes" },
@@ -339,6 +341,8 @@ export function StatBand({ d }: { d: DashboardData }) {
       value: alerts,
       to: "/alerts",
       tone: alerts > 0 ? "bad" : undefined,
+      // Explained by a down upstream (#450): counted apart.
+      note: d.alerts_explained ? `+${d.alerts_explained} explained` : undefined,
     },
   ]
   const tone = {
@@ -356,6 +360,11 @@ export function StatBand({ d }: { d: DashboardData }) {
               className={`num mt-1 text-2xl font-semibold tracking-tight tabular-nums ${c.tone ? tone[c.tone] : ""}`}
             >
               {typeof c.value === "number" ? c.value.toLocaleString() : c.value}
+              {c.note && (
+                <span className="ml-1.5 text-xs font-normal text-muted-foreground">
+                  {c.note}
+                </span>
+              )}
             </div>
           </>
         )

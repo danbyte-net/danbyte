@@ -25,7 +25,7 @@ function EditSlaTemplatePage() {
     <EditPageShell
       wide
       crumbs={[
-        { label: "Monitoring", to: "/monitoring" },
+        { label: "SLAs", to: "/monitoring/sla" },
         {
           label: q.data?.name ?? "…",
           to: "/monitoring/sla/templates/$id",

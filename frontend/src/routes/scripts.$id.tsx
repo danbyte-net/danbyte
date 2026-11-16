@@ -18,6 +18,7 @@ import { QueryError } from "@/components/query-error"
 import { SimpleTable } from "@/components/ui/simple-table"
 import { TimeCell } from "@/components/cells/time-ago"
 import { CodeEditor } from "@/components/code-editor"
+import { TextVersionsPanel } from "@/components/text-versions-panel"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { RunStatusBadge } from "@/components/script-run-status"
@@ -32,6 +33,7 @@ const TABS = [
   "runs",
   "schedule",
   "sharing",
+  "versions",
   "journal",
   "history",
 ] as const
@@ -109,6 +111,7 @@ function ScriptDetailPage() {
         { value: "runs", label: "Runs", count: script.run_count },
         { value: "schedule", label: "Schedule" },
         { value: "sharing", label: "Sharing" },
+        { value: "versions", label: "Versions" },
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },
       ]}
@@ -244,6 +247,15 @@ function ScriptDetailPage() {
 
       <DetailTab value="sharing">
         <ScriptSharingPanel script={script} canEdit={canEdit} />
+      </DetailTab>
+
+      <DetailTab value="versions">
+        <TextVersionsPanel
+          endpoint={`/api/scripts/${script.id}`}
+          filename={`${script.slug || "script"}.py`}
+          canRestore={canEditCode}
+          invalidate={[["script", id], ["scripts"]]}
+        />
       </DetailTab>
 
       <DetailTab value="journal">

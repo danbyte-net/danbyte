@@ -2,7 +2,8 @@
 
 OIDC providers are DB-driven (:class:`auth_api.models.IdentityProvider`). We
 discover endpoints from the issuer's ``/.well-known/openid-configuration``, run
-the standard authorization-code flow with ``state`` + ``nonce``, validate the ID
+the standard authorization-code flow with ``state``, ``nonce`` and PKCE (S256),
+validate the ID
 token against the IdP's JWKS, then match - or, when ``jit_provisioning`` is on,
 create - the Danbyte user and re-sync their group membership from the asserted
 groups via :class:`SsoGroupMapping`. Only *mapped* IdP groups grant anything.
@@ -14,10 +15,14 @@ internal IdP is normal) but logged as a warning on discovery.
 """
 from __future__ import annotations
 
+import base64
+import hashlib
 import logging
+import secrets
 import time
 from urllib.parse import urlencode
 
+import jwt
 import requests
 
 from core.ssrf import warn_if_private
@@ -61,7 +66,15 @@ def discover(issuer: str) -> dict:
     return doc
 
 
-def build_authorize_url(provider, redirect_uri, state, nonce) -> str:
+def new_pkce_pair() -> tuple[str, str]:
+    """A PKCE code verifier and its S256 challenge (RFC 7636)."""
+    verifier = secrets.token_urlsafe(64)
+    digest = hashlib.sha256(verifier.encode("ascii")).digest()
+    challenge = base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
+    return verifier, challenge
+
+
+def build_authorize_url(provider, redirect_uri, state, nonce, code_challenge) -> str:
     """The IdP authorization URL to redirect the browser to."""
     doc = discover(provider.oidc_issuer)
     params = {
@@ -71,11 +84,13 @@ def build_authorize_url(provider, redirect_uri, state, nonce) -> str:
         "scope": provider.oidc_scopes or "openid email profile",
         "state": state,
         "nonce": nonce,
+        "code_challenge": code_challenge,
+        "code_challenge_method": "S256",
     }
     return f"{doc['authorization_endpoint']}?{urlencode(params)}"
 
 
-def exchange_code(provider, code, redirect_uri, nonce) -> dict:
+def exchange_code(provider, code, redirect_uri, nonce, code_verifier) -> dict:
     """Exchange the authorization code for tokens and return the validated ID-
     token claims (merged with userinfo when groups aren't in the ID token)."""
     doc = discover(provider.oidc_issuer)
@@ -88,6 +103,7 @@ def exchange_code(provider, code, redirect_uri, nonce) -> dict:
                 "redirect_uri": redirect_uri,
                 "client_id": provider.oidc_client_id,
                 "client_secret": provider.client_secret,
+                "code_verifier": code_verifier,
             },
             headers={"Accept": "application/json"},
             timeout=HTTP_TIMEOUT,
@@ -110,19 +126,52 @@ def exchange_code(provider, code, redirect_uri, nonce) -> dict:
     return claims
 
 
-def _validate_id_token(id_token, provider, doc, nonce) -> dict:
-    from authlib.jose import JsonWebKey, jwt
-    from authlib.jose.errors import JoseError
+#: The signing algorithms an ID token may use: asymmetric only, so neither
+#: ``none`` nor an HMAC keyed with a public key is ever accepted.
+ID_TOKEN_ALGORITHMS = (
+    "RS256", "RS384", "RS512", "PS256", "PS384", "PS512",
+    "ES256", "ES384", "ES512", "EdDSA",
+)
+#: Seconds of clock skew allowed on exp / iat / nbf.
+ID_TOKEN_LEEWAY = 60
 
+
+def _signing_key(jwks: dict, header: dict):
+    """The JWKS key that signed the token: by ``kid``, or the only signing
+    key of the token's type when the token names none."""
+    keys = [
+        k for k in jwt.PyJWKSet.from_dict(jwks).keys
+        if k.public_key_use in (None, "sig")
+    ]
+    kid = header.get("kid")
+    if kid:
+        keys = [k for k in keys if k.key_id == kid]
+    if len(keys) != 1:
+        raise SsoError("ID token signing key not found in the provider's JWKS.")
+    return keys[0]
+
+
+def _validate_id_token(id_token, provider, doc, nonce) -> dict:
     jwks_uri = doc.get("jwks_uri")
     if not jwks_uri:
         raise SsoError("OIDC discovery document has no jwks_uri.")
     try:
+        header = jwt.get_unverified_header(id_token)
+        alg = header.get("alg")
+        if alg not in ID_TOKEN_ALGORITHMS:
+            raise SsoError(f"ID token signed with an unsupported algorithm ({alg}).")
         jwks = requests.get(jwks_uri, timeout=HTTP_TIMEOUT).json()
-        key = JsonWebKey.import_key_set(jwks)
-        claims = jwt.decode(id_token, key)
-        claims.validate()  # exp / iat / nbf
-    except (requests.RequestException, JoseError, ValueError, KeyError) as exc:
+        key = _signing_key(jwks, header)
+        # iss / aud / azp / nonce are checked below, against the discovery
+        # document and the provider.
+        claims = jwt.decode(
+            id_token,
+            key.key,
+            algorithms=[alg],
+            leeway=ID_TOKEN_LEEWAY,
+            options={"verify_aud": False, "verify_iss": False, "require": ["exp", "iat"]},
+        )
+    except (requests.RequestException, jwt.PyJWTError, ValueError, KeyError) as exc:
         raise SsoError(f"ID token validation failed: {exc}") from exc
 
     if claims.get("iss") != doc.get("issuer"):
@@ -138,7 +187,7 @@ def _validate_id_token(id_token, provider, doc, nonce) -> dict:
             raise SsoError("ID token azp mismatch.")
     if nonce and claims.get("nonce") != nonce:
         raise SsoError("ID token nonce mismatch - possible replay.")
-    return dict(claims)
+    return claims
 
 
 def _userinfo(doc, access_token) -> dict:

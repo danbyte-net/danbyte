@@ -75,26 +75,26 @@ function RackTypesPage() {
         onChange: setQ,
         placeholder: "Filter by name, manufacturer…",
       }}
+      add={
+        canAdd && (
+          <Button size="sm" asChild>
+            <Link to="/rack-types/new">Add rack type</Link>
+          </Button>
+        )
+      }
       actions={
         <>
           <TableActions ioType="racktype" />
-          {canAdd && (
-            <>
-              {/* The NetBox library's rack-types folder, through the same
-                  import the device types use. */}
-              {canImport && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setImporting(true)}
-                >
-                  Import from library
-                </Button>
-              )}
-              <Button size="sm" asChild>
-                <Link to="/rack-types/new">Add rack type</Link>
-              </Button>
-            </>
+          {/* The NetBox library's rack-types folder, through the same
+              import the device types use. */}
+          {canAdd && canImport && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setImporting(true)}
+            >
+              Import from library
+            </Button>
           )}
         </>
       }

@@ -1,0 +1,5 @@
+{% if elevation %}
+<div class="elevation">
+  {% for im in elevation %}<div class="strip"><img src="{{ im.src }}" alt=""><div class="cap">{{ im.caption }}</div></div>{% endfor %}
+</div>
+{% endif %}

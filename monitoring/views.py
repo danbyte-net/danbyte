@@ -1705,6 +1705,27 @@ def check_run_view(request, run_id):
             location=OpenApiParameter.QUERY,
             description="Filter to alerts on IPs at this site.",
         ),
+        OpenApiParameter(
+            name="explained",
+            type=OpenApiTypes.STR,
+            location=OpenApiParameter.QUERY,
+            enum=["include", "exclude", "only"],
+            description="Alerts a down upstream explains (#450): include "
+            "(default), exclude, or only them.",
+        ),
+        OpenApiParameter(name="kind", type=OpenApiTypes.STR, location=OpenApiParameter.QUERY,
+                         description="Filter by check kind."),
+        OpenApiParameter(name="ip", type=OpenApiTypes.UUID, location=OpenApiParameter.QUERY,
+                         description="Alerts on this IP."),
+        OpenApiParameter(name="device", type=OpenApiTypes.UUID,
+                         location=OpenApiParameter.QUERY,
+                         description="Alerts on IPs assigned to this device."),
+        OpenApiParameter(name="template", type=OpenApiTypes.UUID,
+                         location=OpenApiParameter.QUERY,
+                         description="Alerts of this check template."),
+        OpenApiParameter(name="root_cause", type=OpenApiTypes.UUID,
+                         location=OpenApiParameter.QUERY,
+                         description="Alerts a root-cause incident explains."),
     ],
     responses=OpenApiResponse(
         response=OpenApiTypes.OBJECT,
@@ -1730,10 +1751,22 @@ def alerts_view(request):
     }
     for sev in ("critical", "warning", "info"):
         counts[sev] = base.filter(status="firing", severity=sev).count()
+    # Root cause (#450): firing alerts a down upstream explains, and those
+    # waiting for their upstreams. ``firing`` still counts every one.
+    counts["explained"] = base.filter(status="firing", notify_state="explained").count()
+    counts["held"] = base.filter(status="firing", notify_state="held").count()
 
-    qs = base.select_related("target_ip", "template", "acknowledged_by").prefetch_related(
-        "target_ip__tags"
-    )
+    qs = base.select_related(
+        "target_ip", "template", "acknowledged_by", "root_cause__device"
+    ).prefetch_related("target_ip__tags")
+    explained = request.query_params.get("explained", "include")
+    if explained == "exclude":
+        qs = qs.exclude(notify_state="explained")
+    elif explained == "only":
+        qs = qs.filter(notify_state="explained")
+    root_cause = request.query_params.get("root_cause")
+    if root_cause:
+        qs = qs.filter(root_cause_id=root_cause)
     status = request.query_params.get("status", "firing")
     if status in ("firing", "resolved"):
         qs = qs.filter(status=status)

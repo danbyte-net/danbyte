@@ -1,10 +1,17 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react"
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { MonitoringSettingsForm } from "./settings-form"
 import type { MonitoringSettings } from "@/lib/api"
+import { TooltipProvider } from "@/components/ui/tooltip"
 
 const { apiMock } = vi.hoisted(() => ({
   apiMock: vi.fn<(path: string, init?: RequestInit) => Promise<unknown>>(),
@@ -12,6 +19,12 @@ const { apiMock } = vi.hoisted(() => ({
 vi.mock("@/lib/api", async (orig) => ({
   ...(await orig<object>()),
   api: apiMock,
+}))
+vi.mock("@tanstack/react-router", async (orig) => ({
+  ...(await orig<object>()),
+  Link: ({ children, to }: { children: React.ReactNode; to: string }) => (
+    <a href={to}>{children}</a>
+  ),
 }))
 // The ARP-source picker stands in for its multi-pick hand-over: one button
 // that ticks an already-listed device and two new ones.
@@ -83,6 +96,9 @@ const SETTINGS: MonitoringSettings = {
   fast_lane_max_checks: 0,
   group_notifications: false,
   group_threshold: 10,
+  root_cause_enabled: true,
+  root_cause_hold_seconds: 60,
+  root_cause_hold_mode: "smart",
   discovery_enabled: false,
   discovery_min_prefix_length: 22,
   discovery_interval_minutes: 30,
@@ -246,6 +262,50 @@ describe("MonitoringSettingsForm - Poll devices every", () => {
   })
 })
 
+describe("MonitoringSettingsForm - Nameservers", () => {
+  it("keeps a typed comma and saves every address", async () => {
+    apiMock.mockImplementation(async (path, init) => {
+      if (path === "/api/monitoring/settings/" && !init?.method)
+        return {
+          ...SETTINGS,
+          dns_sync_enabled: true,
+          dns_resolvers: ["10.0.0.45"],
+        }
+      if (init?.method === "PATCH") return JSON.parse(String(init.body))
+      return { results: [] }
+    })
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    render(
+      <QueryClientProvider client={qc}>
+        <MonitoringSettingsForm />
+      </QueryClientProvider>
+    )
+    const input = (await screen.findByLabelText(
+      "Nameservers"
+    )) as HTMLInputElement
+    expect(input.value).toBe("10.0.0.45")
+    // The comma stays while the next address is still to come.
+    fireEvent.change(input, { target: { value: "10.0.0.45," } })
+    expect(input.value).toBe("10.0.0.45,")
+    fireEvent.change(input, { target: { value: "10.0.0.45, 10.0.0.46" } })
+    expect(input.value).toBe("10.0.0.45, 10.0.0.46")
+    fireEvent.click(
+      screen.getByRole("button", { name: "Save monitoring settings" })
+    )
+    await vi.waitFor(() =>
+      expect(
+        apiMock.mock.calls.some(([, init]) => init?.method === "PATCH")
+      ).toBe(true)
+    )
+    const [, init] = apiMock.mock.calls.find(([, i]) => i?.method === "PATCH")!
+    expect(JSON.parse(String(init?.body))).toMatchObject({
+      dns_resolvers: ["10.0.0.45", "10.0.0.46"],
+    })
+  })
+})
+
 describe("MonitoringSettingsForm - accessible names (#461)", () => {
   it("names every input and select by its visible label", async () => {
     const qc = new QueryClient({
@@ -280,5 +340,114 @@ describe("MonitoringSettingsForm - accessible names (#461)", () => {
         screen.queryAllByRole(role, { name: "" }).map((el) => el.outerHTML)
       ).toEqual([])
     }
+  })
+})
+
+describe("MonitoringSettingsForm - discovery", () => {
+  // #451: host discovery's settings live here, beside the address sweep,
+  // and nowhere else.
+  it("holds host discovery's controls next to address discovery", async () => {
+    apiMock.mockImplementation((path) => {
+      if (path === "/api/monitoring/settings/") return Promise.resolve(SETTINGS)
+      if (path === "/api/discovery/status/")
+        return Promise.resolve({
+          deployment_enabled: true,
+          deployment: {
+            enabled: true,
+            source: "setting",
+            changed_by: "",
+            changed_at: null,
+            can_change: true,
+          },
+          enabled: true,
+          active: true,
+          can_manage: true,
+          first_use_keys_allowed: true,
+        })
+      if (path === "/api/discovery/settings/")
+        return Promise.resolve({
+          deny_subnets: [],
+          transports: { ssh_key: true, ssh_password: true, winrm: false },
+          winrm: { available: true, label: "", reason: "" },
+          nmap: {
+            available: true,
+            enabled: false,
+            path: "/usr/bin/nmap",
+            version: "7.98",
+            label: "nmap 7.98 at /usr/bin/nmap",
+            reason: "",
+          },
+          can_change: true,
+          updated_at: "2026-11-11T00:00:00Z",
+        })
+      return Promise.resolve({ count: 0, results: [] })
+    })
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    render(
+      <QueryClientProvider client={qc}>
+        <TooltipProvider>
+          <MonitoringSettingsForm />
+        </TooltipProvider>
+      </QueryClientProvider>
+    )
+    expect(await screen.findByText("Address discovery")).toBeTruthy()
+    expect(screen.getByText("Host discovery")).toBeTruthy()
+    await waitFor(() =>
+      expect(screen.getByRole("switch", { name: "SSH key login" })).toBeTruthy()
+    )
+    const names = screen
+      .getAllByRole("switch")
+      .map((s) => s.getAttribute("aria-label"))
+    for (const n of [
+      "This deployment",
+      "SSH key login",
+      "SSH password login",
+      "WinRM over HTTPS",
+      "nmap",
+    ])
+      expect(names).toContain(n)
+    expect(screen.getByRole("textbox", { name: "Deny subnets" })).toBeTruthy()
+  })
+})
+
+describe("MonitoringSettingsForm - root cause", () => {
+  // #450: the switch, the hold and when it applies, saved together.
+  it("saves the switch, hold seconds and hold mode", async () => {
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    render(
+      <QueryClientProvider client={qc}>
+        <TooltipProvider>
+          <MonitoringSettingsForm />
+        </TooltipProvider>
+      </QueryClientProvider>
+    )
+    const box = await screen.findByRole("checkbox", {
+      name: "Root-cause alerting",
+    })
+    expect(box.getAttribute("data-state")).toBe("checked")
+    const hold = screen.getByRole("spinbutton", { name: "Hold" })
+    fireEvent.change(hold, { target: { value: "90" } })
+    expect(screen.getByRole("combobox", { name: /^Hold when/ })).toBeTruthy()
+    fireEvent.click(
+      screen.getByRole("button", { name: "Save monitoring settings" })
+    )
+    await waitFor(() =>
+      expect(
+        apiMock.mock.calls.some(([, init]) => init?.method === "PATCH")
+      ).toBe(true)
+    )
+    const [, init] = apiMock.mock.calls.find(([, i]) => i?.method === "PATCH")!
+    expect(JSON.parse(String(init?.body))).toMatchObject({
+      root_cause_enabled: true,
+      root_cause_hold_seconds: 90,
+      root_cause_hold_mode: "smart",
+    })
+    // Off hides the hold.
+    fireEvent.click(box)
+    expect(screen.queryByRole("spinbutton", { name: "Hold" })).toBeNull()
   })
 })

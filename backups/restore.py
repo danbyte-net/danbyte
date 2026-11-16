@@ -4,15 +4,15 @@ uploaded plugins in place while the site sits behind the maintenance flag.
 Runs inside the RQ worker on every platform. Nothing is restarted: Django
 holds no schema state between requests, the worker closes its own
 connection before the schema is replaced, and every other session is
-terminated so the drop can proceed. A safety backup of the current state
-is always taken first.
+terminated. The live schema is set aside, not dropped, until the dump is
+in and checked (backups.pgswap). A safety backup of the current state is
+always taken first.
 """
 from __future__ import annotations
 
 import logging
 import os
 import shutil
-import subprocess
 import tarfile
 import tempfile
 
@@ -24,15 +24,13 @@ from django.utils import timezone
 from core.errors import public_error
 from core.upgrade import _acquire_upgrade_lock, _release_upgrade_lock, _upgrade_running
 
-from . import maintenance
+from . import maintenance, pgswap
 from .archive import ArchiveError, KeyMismatch, Reader
 from .engine import (
     COMPONENTS,
     adopt_orphans,
     create_backup,
     media_roots,
-    pg_args,
-    pg_env,
     run_backup,
     work_dir,
 )
@@ -40,8 +38,6 @@ from .models import Backup, BackupSchedule, BackupTarget, RestoreRun
 from .storage import StorageError
 
 logger = logging.getLogger(__name__)
-
-PG_RESTORE_TIMEOUT = 3600
 
 
 class RestoreError(RuntimeError):
@@ -165,45 +161,17 @@ def enqueue_restore(run: RestoreRun) -> None:
         raise
 
 
-def terminate_other_sessions() -> int:
-    with connection.cursor() as c:
-        c.execute(
-            "SELECT count(pg_terminate_backend(pid)) FROM pg_stat_activity "
-            "WHERE datname = current_database() AND pid <> pg_backend_pid()"
-        )
-        return int(c.fetchone()[0])
-
-
-def replace_schema() -> None:
-    with connection.cursor() as c:
-        c.execute("DROP SCHEMA public CASCADE")
-        c.execute("CREATE SCHEMA public")
-
-
-def pg_restore(dump: str) -> None:
-    db = settings.DATABASES["default"]
-    if shutil.which("pg_restore") is None:
-        raise RestoreError("pg_restore is not installed on this host.")
-    cmd = ["pg_restore", "-w", "--no-owner", "--no-privileges", "--exit-on-error",
-           *pg_args(db), "-d", db["NAME"], dump]
-    try:
-        res = subprocess.run(cmd, env=pg_env(), capture_output=True, text=True, timeout=PG_RESTORE_TIMEOUT)
-    except subprocess.TimeoutExpired as exc:
-        raise RestoreError(f"pg_restore timed out after {PG_RESTORE_TIMEOUT}s") from exc
-    if res.returncode != 0:
-        raise RestoreError(f"pg_restore failed: {(res.stderr or '').strip()[-800:]}")
-
-
 def replace_database(dump: str) -> None:
-    """Drop and recreate the public schema, then load the dump - with the
-    worker's own connection closed first and every other session ended."""
+    """Make the public schema the dump's (backups.pgswap: set the live one
+    aside, restore, check, then drop the old one), with the worker's own
+    connection closed first and every other session ended. On failure the
+    database is as it was and RestoreError says why."""
     for conn in connections.all():
         conn.close()
-    terminate_other_sessions()
-    replace_schema()
-    for conn in connections.all():
-        conn.close()
-    pg_restore(dump)
+    try:
+        pgswap.replace_public(dump, connection, say=lambda msg: logger.info("restore: %s", msg))
+    except pgswap.SwapError as exc:
+        raise RestoreError(str(exc)) from exc
     for conn in connections.all():
         conn.close()
     from django.contrib.contenttypes.models import ContentType

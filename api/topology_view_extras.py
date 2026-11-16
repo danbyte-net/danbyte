@@ -2,11 +2,12 @@
 and the Routing tab, add to a topology view's ``state``, checked the way
 ``TopologyViewSerializer.validate_state`` checks the other Diagram keys:
 
-* ``chassis`` - per virtual chassis id, how the Diagram draws it:
-  ``{orient: "v" | "h", off: true, side: "T" | "B" | "L" | "R"}``, each
-  optional (``v`` stacks the members top to bottom, ``h`` left to right;
-  ``off`` draws them apart; ``side`` is the side its name strip runs
-  along);
+* ``chassis`` - per virtual chassis or cluster id, how the Diagram draws
+  it: ``{orient: "v" | "h", off: true, side: "T" | "B" | "L" | "R",
+  open: true}``, each optional (``v`` stacks the members top to bottom,
+  ``h`` left to right; ``off`` draws them apart; ``side`` is the side its
+  name strip runs along; ``open`` draws a cluster's hosts in a frame
+  instead of one card, #517);
 * ``filters.chassis`` - the virtual chassis placed on a hand-picked map,
   by id: their members are on it as they are now;
 * ``filters.diagram.chassis`` - the view's stacking: ``off``, ``v`` or ``h``;
@@ -47,7 +48,7 @@ STRIP_SIDES = ("T", "B", "L", "R")
 MAX_CHASSIS_SETTINGS = 10_000
 #: Chassis one hand-picked map may place (the map's ``chassis`` query).
 MAX_PLACED_CHASSIS = 1_000
-_SETTING_KEYS = frozenset({"orient", "off", "side"})
+_SETTING_KEYS = frozenset({"orient", "off", "side", "open"})
 #: The Routing tab's card modes and card lines.
 ROUTING_MODES = ("simple", "detailed")
 ROUTING_FIELDS = ("role", "router_id", "asn", "loopback", "site", "primary_ip", "status")
@@ -87,8 +88,11 @@ def _chassis_settings(settings):
             )
         _choice(entry.get("orient"), ORIENTS, f"{where}.orient")
         _choice(entry.get("side"), STRIP_SIDES, f"{where}.side")
-        if "off" in entry and not isinstance(entry["off"], bool):
-            raise serializers.ValidationError(f"{where}.off must be true or false")
+        for flag in ("off", "open"):
+            if flag in entry and not isinstance(entry[flag], bool):
+                raise serializers.ValidationError(
+                    f"{where}.{flag} must be true or false"
+                )
 
 
 def _placed(ids):

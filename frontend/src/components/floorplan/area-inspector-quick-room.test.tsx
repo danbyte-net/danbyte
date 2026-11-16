@@ -56,6 +56,7 @@ if (!("ResizeObserver" in globalThis)) {
 
 const plan = {
   id: "p1",
+  state: {},
   cell_mm: 600,
   site: { id: "s1", name: "AMS" },
   location: { id: "loc1", name: "Hall", slug: "hall" },
@@ -180,7 +181,11 @@ describe("the room colour", () => {
     inspect(inRoom)
     expect(screen.getByText("Room colour")).toBeTruthy()
     expect(screen.queryByDisplayValue("#22c55e")).toBeNull()
-    expect(screen.queryByLabelText("Open color picker")).toBeNull()
+    // Only the name's own colour picker: none for the room's.
+    const name = screen.getByText("Room colour").closest("aside")!
+    const pickers = name.querySelectorAll('[aria-label="Open color picker"]')
+    expect(pickers).toHaveLength(1)
+    expect(pickers[0].closest('[data-part="area-name-style"]')).not.toBeNull()
   })
 
   it("a location link edits the location's colour", async () => {
@@ -195,5 +200,44 @@ describe("the room colour", () => {
     fireEvent.keyDown(hex, { key: "Enter" })
     await waitFor(() => expect(apiMock).toHaveBeenCalled())
     expect(apiMock.mock.calls[0][0]).toBe("/api/locations/l2/")
+  })
+})
+
+describe("the name's look", () => {
+  it("sets a position from the grid, the plan's default shown first", () => {
+    const onChange = vi.fn()
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <TooltipProvider>
+          <AreaInspector
+            plan={plan}
+            area={area}
+            onChange={onChange}
+            onRestack={vi.fn()}
+            onDelete={vi.fn()}
+            nameDefault={{ position: "center", size: "l" }}
+          />
+        </TooltipProvider>
+      </QueryClientProvider>
+    )
+    const grid = screen.getByRole("group", { name: "Name position" })
+    expect(within(grid).getByLabelText("Centre").dataset.state).toBe("on")
+    fireEvent.click(within(grid).getByLabelText("Bottom right"))
+    expect(onChange).toHaveBeenLastCalledWith({
+      name_style: { position: "bottom-right" },
+    })
+    fireEvent.click(screen.getByLabelText("Backplate"))
+    expect(onChange).toHaveBeenLastCalledWith({ name_style: { plate: true } })
+  })
+
+  it("goes back to the plan's default", () => {
+    const onChange = inspect({ ...area, name_style: { size: "s" } })
+    fireEvent.click(screen.getByText("Use plan default"))
+    expect(onChange).toHaveBeenLastCalledWith({ name_style: {} })
+  })
+
+  it("is not offered while the name is hidden", () => {
+    inspect({ ...area, show_name: false })
+    expect(screen.queryByRole("group", { name: "Name position" })).toBeNull()
   })
 })

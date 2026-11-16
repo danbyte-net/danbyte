@@ -264,6 +264,59 @@ class UserPreference(TimestampedModel):
         return f"{scope}·{self.table_id}"
 
 
+class LayoutPreset(TimestampedModel):
+    """A named set of table column layouts an administrator shares as the
+    default for users, groups or the whole tenant.
+
+    ``layouts`` maps a table id (``lib/tables.ts``) to the same shape a
+    :class:`UserPreference` row stores: ``{"order": [...], "hidden": [...],
+    "pinned": [...]}``. A preset is a *default*: a user's own saved layout for
+    a table still wins (see ``column_prefs._effective_pref`` for the order).
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        "core.Tenant", on_delete=models.CASCADE, related_name="layout_presets"
+    )
+    name = models.CharField(max_length=100)
+    description = models.TextField(blank=True, default="", db_default="")
+    layouts = models.JSONField(default=dict, blank=True, db_default={})
+    everyone = models.BooleanField(
+        default=False,
+        db_default=False,
+        help_text="Applies to every member of the tenant.",
+    )
+    weight = models.PositiveSmallIntegerField(
+        default=100,
+        db_default=100,
+        help_text="Lower wins when two presets at the same level cover a table.",
+    )
+    users = models.ManyToManyField(
+        settings.AUTH_USER_MODEL, blank=True, related_name="layout_presets"
+    )
+    groups = models.ManyToManyField(
+        "auth.Group", blank=True, related_name="layout_presets"
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+    )
+
+    class Meta:
+        ordering = ["weight", "name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "name"], name="uniq_layout_preset_tenant_name"
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+
 class LDAPGroupMapping(TimestampedModel):
     """Links a directory group (by DN) to a Danbyte ``auth.Group``. On each LDAP
     login a user's Danbyte group membership is re-synced from the directory

@@ -225,6 +225,10 @@ const RESERVED_PARAMS = new Set([
   "page",
   "view",
   "ordering",
+  // The prefix tree rail (components/prefix-tree-rail.tsx).
+  "rail",
+  "within",
+  "tree_vrf",
 ])
 
 /** The URL param each facet is kept under: the facet's id, `tag` for a tags

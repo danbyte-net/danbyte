@@ -792,7 +792,15 @@ ceiling, underfloor runs sit beneath the slab) and zones tint the floor.
   turned with it, or centred in a polygon - in the same ink as 2D (the
   area's own colour over a light fill, black or white over a strong one,
   on a halo where the fill is light), with its type's icon first; an area
-  with **Show the name** off stays unnamed. The 2D **Zone labels** switch
+  with **Show the name** off stays unnamed. A room's, an area's or a
+  zone's name always stays inside its own floor: a wall's thickness in
+  from the area's edges and clear of every wall on the level. Where the
+  2D place would put it against or under a wall it slides in; where the
+  room is too small for it, it moves to the roomiest spot (turned along a
+  narrow room if that holds it whole) and shrinks to fit, and a room too
+  small for a readable name shows none. **Readable** grows a name only as
+  far as its room allows, and a standing name is no wider than its room
+  along the line it stands on. The 2D **Zone labels** switch
   also writes the zones' names on the 3D floor. What the eyes hide is
   hidden here too. Seen from low down, where flat text no longer reads,
   each piece stands up and faces the camera instead, lying back down as
@@ -858,7 +866,13 @@ ceiling, underfloor runs sit beneath the slab) and zones tint the floor.
   racks as they land. In 3D, non-rack tiles render as translucent ghost
   boxes so the planned room reads as a room rather than empty floor. Each
   carries a camera-facing name tag - the tile's label, else its linked
-  device's name, else the type name. Scroll-zoom dollies **toward the pointer**, so
+  device's name, else the type name. A ghost box is clickable as a rack
+  or device is: a tile linked to a power panel, power feed or cooling
+  source (CRAH, CRAC, in-row), and an unlinked or Hidden tile, is
+  selected (drawn stronger) and its popover pins at the pointer, as a
+  click on the 2D plan pins it - it names the linked object, carries its
+  figures and links to its page. A click on empty floor or Esc deselects
+  it and closes the popover. Scroll-zoom dollies **toward the pointer**, so
   getting close to a far corner of a big hall is one scroll, not a slow
   W-key flight.
 - **Airflow** (View menu, 3D): draws each device's cooling direction as
@@ -1270,7 +1284,7 @@ At its foot, **Free placement** switches the plan between the grid and
 | Place a tile | Click a palette entry to arm it, then click a cell (default size) or drag a rectangle (walls, aisles) |
 | Move | Drag a tile - snaps to cells |
 | Resize | Drag the corner handle of the selected tile |
-| Rotate | The rotate button - swaps width/height in 90° steps and turns the icon; grid occupancy stays honest. A thin bar just inside the tile marks the edge its front faces |
+| Rotate | The rotate button or ++r++ on the selected tile (or tiles) - swaps width/height in 90° steps and turns the icon; grid occupancy stays honest. A thin bar just inside the tile marks the edge its front faces. A [free plan](#free-placement) also turns by the handle or by degrees |
 | Label / color / status | The inspector panel (label overrides the linked object's name; status renders planned/reserved dashed, decommissioning faded) |
 | Link to an object | Inspector → Link: rack, cabinet and device use the advanced pickers (cabinets of the plan's site only), power panel/feed, cooling source and nested plans a searchable dropdown. When a cabinet's outer width × depth does not match the tile, **Fit to cabinet** resizes the tile to it, turned with the tile's facing |
 | Delete | Select + `Delete`, or the inspector button |
@@ -1286,7 +1300,7 @@ dashboard's floor-plan widget. A second finger landing stops what the first
 one started: a tile drag ends where the tile is, and a half-drawn paint or
 selection sweep is dropped.
 
-**Tiles never stack.** Placing, dragging, resizing, or rotating a tile onto
+**Tiles never stack** on a grid plan. Placing, dragging, resizing, or rotating a tile onto
 occupied cells is blocked - the tile stays where it was. Background **zones**
 are the exception: they may cover anything, and anything may sit on them.
 
@@ -1323,6 +1337,15 @@ Under **Display**: **Color by** heads the menu - see [below](#color-by);
 **Muted background** greys the background image and a street base map so
 the plan reads over them - a satellite map keeps its colours
 (on unless the plan turns it off; see [Background image](#site-wide-floor-plans));
+**Tile icons** draws each tile as a solid block with an icon of what it is
+(on unless the plan turns it off - see [Tile icons](#tile-icons));
+**Detail** chooses how much the plan draws as you zoom - **Auto** (the
+default) shows rooms from afar, rows closer and every rack up close,
+**Always full** draws everything at every zoom (see
+[Detail by zoom](#detail-by-zoom));
+**Area names** sets the plan's default look for room and area names -
+position, size, colour, backplate - which an area can override in its
+inspector (see [Rooms and areas](#rooms-and-areas));
 **Fit labels to tiles** auto-sizes each tile's text to its footprint (so
 single-cell tiles keep readable names) - the preference is saved on the plan;
 **Camera FOV cones** shows/hides the camera views and **Camera coverage**
@@ -1381,9 +1404,15 @@ you zoom or pan. In order:
    keep clear of it). With [Callouts](#callouts) on, a name that does not
    fit in its tile is named by its [row](#row-names) or in a callout,
    placed before the cable and tray names, which keep off them.
-6. **Room and area names**. A rectangle's name starts in its top-left
-   corner and moves to another free spot inside it - a corner, the middle -
-   off the racks, rather than sit on a tray's name or a rack.
+6. **Room and area names**. A rectangle's name starts at its
+   [name look's](#rooms-and-areas) position (top left unless set) at its
+   size, plate included, and moves to another free spot inside it - a
+   corner, the middle - off the racks, rather than sit on a tray's name or
+   a rack; with nowhere free it hides. It keeps
+   inside the walls drawn along the room's edges: the inset is each wall's
+   drawn half thickness (its offset from the edge included) plus a small
+   pad, so a thick outer or inner wall never runs through the name at any
+   zoom. The paper export places names the same way.
 7. **Raised-floor captions**.
 
 Tray names, room and area names, raised-floor captions and a zone's name
@@ -1424,6 +1453,47 @@ the canvas as you see it.
 Like the other Display choices, Object size is saved on the plan for those
 who may edit it. A viewer without change rights can switch it for
 themselves; it lasts for the session and is not saved.
+
+#### Tile icons {#tile-icons}
+
+**Tile icons** (on unless the plan turns it off) makes a tile say what it
+is at a glance:
+
+- **Fill.** The tile is a solid block in the colour [Color by](#color-by)
+  gives it - its type's or its role's under Type, its rack's role, status
+  or capacity level otherwise - with a thin border a shade of that colour.
+  A tile with no colour of its own is mid grey. A planning tile (linked to
+  nothing) is the same colour lighter in the light theme and deeper in the
+  dark one, so what is built and what is planned read apart, as in the 3D
+  room. While the plan is coloured by a rack measure, tiles that are not
+  racks stay pale so the racks stand out. Zones and photo tiles are not
+  changed.
+- **Icon.** In the middle of the tile, the icon of what it is: a device's
+  own icon or its device type's, else the tile type's (a UPS's battery, a
+  CRAH's snowflake, a camera, a generator), else the role's, else the
+  kind's (a rack's container, a cabinet's rails). It is white where white
+  reads on the fill (3 : 1 at least) and near-black on light colours such
+  as sky or amber; the tile's name, front edge and figure take the same
+  ink. The icon grows with the tile - up to 30 px on a rack-sized tile,
+  more on a big one such as a generator - and is not drawn under 10 px.
+  It keeps clear of the front-edge marker, the capacity bar and its
+  figure, a cabinet's device count and a riser's arrows.
+- **Name.** The name rules do not change: a name that fits stays in the
+  tile, with the icon above it or beside it (a short name on a one-cell
+  rack sits beside its icon); where both do not fit the name wins. A name
+  that does not fit is named along its row or in a callout as before, and
+  the tile then shows its icon alone. With **Callouts** off, such a name
+  goes under the tile first, as a caption. No second caption is added
+  under a tile: it would compete with the row names and callouts for the
+  same aisle.
+- **From afar and on paper.** The symbol Readable draws and the icon tile
+  of **Icons when zoomed out** take the same solid colour and ink, and the
+  [PDF and SVG export](#export) prints the tiles the same way, from the
+  same layout. Each icon is drawn once per plan (an SVG sprite) and reused
+  by every tile that wears it, so a hall of hundreds of racks stays light.
+
+Off, tiles are the pale tint with the name they always were, a placed
+object's role icon in the corner.
 
 #### Icons when zoomed out {#icon-tiles}
 
@@ -1519,6 +1589,99 @@ A spread keeps a row in its order: two icons side by side (or one above
 the other) never end up the other way round from the racks they stand
 for, so a row of R-A01 to R-A04 still reads left to right.
 
+#### Detail by zoom {#detail-by-zoom}
+
+A floor plan holds a lot: rooms, racks, cooling units, aisles, cameras,
+doors, trays. Drawn all at once it is a tangle from afar. **Display →
+Detail: Auto** (the default) draws one clear picture per zoom and adds
+detail as you come closer. **Always full** draws everything at every zoom,
+as plans looked before. The choice is saved on the plan with the other
+Display choices; a viewer can switch it for the session. While you edit
+the plan it always draws everything.
+
+The level follows how big a metre of the plan is on screen, with a wider
+threshold back so a zoom that rests near one does not flicker:
+
+| Level | When | What the plan draws |
+| --- | --- | --- |
+| **Overview** | a metre under **11 px** (back under 9 px): the floor or the building on screen | Rooms only. Each room a flat block in its area type's colour, its walls, and one label in its middle: the room's name and, where something stands in it, one muted line of facts - **72 racks · 61% full**, **3 UPS**, **6 cooling units**. No tiles, rows, callouts, aisles, camera cones, hatching, trays, cables, raised floors or door swings. |
+| **Room** | up to **60 px** a metre (back under 50 px): a hall fills much of the screen | Rows of racks as bars or racks without names, each row named once along it ([rows from afar](#rows-from-afar)). Cooling units, UPS and the rest as their icon tiles with no callouts. Aisles a light wash. Door swings come back. |
+| **Detail** | from 60 px a metre: racks big enough to read | Every tile with its icon and a **short name**. The rest as below. |
+
+A plan with no rooms or areas drawn on it has nothing to sum up from afar:
+it stops at the room level, its racks and icons still there.
+
+- **Room labels.** A label always sits upright where it can: inside its
+  room with its facts and badge; else without its facts; else upright
+  and centred on the room though wider than it (a tall narrow building
+  on a campus), as long as it keeps clear of the other labels and stays
+  on the plan. Only as the last resort does the **name alone** turn along
+  the room; its facts and badge then show on hover. A badge never turns.
+  A room under 24 px on screen gets no label; hover it and its name (and
+  what its label left out) shows in a tooltip. Of two labels that would
+  touch, the bigger room's stays. A room inside a room
+  (a cage in its hall, a fit-out zone) is named in a lighter weight. An
+  area drawn round other rooms - a building's or a site's outline - is
+  named by its rooms, not over them.
+- **Facts.** What stands in the room, its inner rooms included: its racks
+  and how full they are (units used of their height, from the rack figures
+  or the live poll), else its two most numerous kinds by tile type or
+  object kind. Aisles and other zones are not counted, nor a lone tile the
+  room is named for (the stairs in *Stair N*).
+- **Alarms.** A room with a rack or a device down, stale or degraded shows
+  it on its label as a badge in that colour - **2 down**; closer in, the
+  tiles carry their own alarm rings.
+- **Room names** never overlap at the room and detail levels either: a
+  name that runs past its room, or onto a bigger room's name, is left out
+  and shows on hover.
+- **The base map** is blanked inside the building - the outer walls'
+  outline and every area - so the map's own words never show through the
+  rooms. Outside it the map stays as it is (muted, with **Muted
+  background**).
+- **Short names.** At the detail level a rack in a row drops what its row
+  already says: `DH5-A01` reads **A01** beside **Row A**. The hovered and
+  selected rack, its popover, the rack table, search and every export keep
+  the full name.
+- **Capacity bars** show on the hovered and selected rack, or on every
+  rack while **Color by** is a capacity measure. The front-edge marker
+  stays, fainter.
+- **Camera cones** (with **Camera FOV cones** on) draw for the hovered or
+  selected camera only, or for every camera while **Camera coverage** is
+  on. By default you see the camera's icon.
+- **Hatching** (an area type's pattern) is left out from afar and drawn
+  fine and faint up close.
+- **Plan labels** too small to read from afar (a row's letter) are left
+  out at the overview; a label that opens a plan always shows.
+- The selected tile, a tile pointed at from the rack table, and one found
+  by search always draw, whatever the level.
+- With **Detail: Auto** a hall's rows never fold into one room summary
+  plate: from afar the room's label says it.
+- The level is worked out when a zoom settles. **Export PDF** and the SVG
+  are not affected: they print the full detail at the paper's scale, with
+  full names. The 3D view has its own levels.
+
+##### Click to zoom {#click-to-zoom}
+
+While viewing with **Detail: Auto**, at the overview and the room level:
+
+- **Click a room or area** and the view eases (the 3D view's fly-to
+  easing) to fit it, at least to the room level. Of the rooms round the
+  point it picks the biggest that is still a zoom in, so a campus opens
+  building by building: the building, then its hall, then a cage in it.
+  When the room already fills the screen (and at the detail level) a
+  click does what it always did - opens the area's panel.
+- **Click a row's bar** and it eases to the row, close enough to read its
+  racks (the detail level).
+- The room a click would zoom to lights its outline under the pointer,
+  with a pointer cursor. Rooms take the keyboard focus (++tab++); ++enter++
+  zooms to the focused one.
+- **Double-click empty plan**, or press ++0++ or ++home++, to ease back to
+  the whole plan.
+- An area that **Opens** another plan keeps that apart: its link mark (a
+  button, large enough to press from afar) opens the plan; a plain click
+  on the area zooms. A plan label that opens a plan opens it as before.
+- Editing keeps its selection behaviour: a click selects, nothing zooms.
+
 #### Callouts {#callouts}
 
 From afar a row of racks is a row of shapes a few pixels apart, and a name
@@ -1545,6 +1708,13 @@ upside down, on a plate beside the row (the aisle side), else over it.
 Hover it to list the row's members; click it to zoom until they read.
 The selected or hovered rack of a named row gets its own callout. Rows
 are found from the tiles' places alone; nothing is stored.
+
+In the **3D** room, with Callouts on **Auto**, each row's name is written on
+the floor beside it, along the row, as the room's other floor text is: it
+stays inside the room the row stands in, clear of the walls, stands up as
+a billboard when seen from low down, and gives way to labels, tray names
+and name plates in the one name layout. With Callouts **Off** the 3D rows
+are not named.
 
 ##### Rows from afar {#rows-from-afar}
 
@@ -1717,6 +1887,23 @@ to **Select** and the inspector shows the new area:
   there and white in the dark theme. Where a black or white name sits on a
   halo (a Readable name grown far out), the halo is the other one, so the
   letters keep a sharp edge over the map or the plan.
+- **Name look** (shown while **Show the name** is on): **Position** - a
+  3 × 3 grid: top left, top, top right, left, centre, right, bottom left,
+  bottom, bottom right - **Size** (**S**, **M**, **L**: 10, 12 and 16 plan
+  px; M is the size names always had), **Colour** (blank is Auto, the
+  theme-aware ink above; a chosen colour is drawn as it is, in both themes
+  and on paper) and **Backplate**, the same plate as a
+  [label's](#labels): the theme's background with a hairline, sized to the
+  name with an even pad. Each of the four starts from the plan's default
+  (Display → **Area names**, saved on the plan for editors as
+  `state.area_names`) and only what the area sets here overrides it
+  (stored on the area as `name_style`); **Use plan default** clears the
+  area's own. A plan never styled draws names as before: top left, M,
+  Auto, no plate. The position is inside the walls along the room's edges
+  (see [the label pass](#one-label-pass)); **Centre** is the middle of
+  that inner box. A polygon's name stays at its centre (size, colour and
+  plate apply); a turned rectangle's sits at its position in its own,
+  turned box.
 
 Areas draw over the background, the drawing and the zone tiles, and under
 every other tile. They may overlap - a cage inside a hall is real. Each has a
@@ -1920,7 +2107,12 @@ paper), an optional **plate** behind the text so it reads over lines, and a
 rotation. The plate has a **Plate colour** of its own from the same palette
 (**Default** is the theme's background); over a coloured plate the text
 turns black or white, whichever reads, unless the label has a colour of its
-own. The PDF draws the same. Labels draw over the tiles. A label can
+own. The plate is sized from the text as the browser measures it in the
+plan's font (glyph widths where it cannot), so capitals and wide letters
+keep the same pad either side; spaces at the ends of the text are not
+drawn and do not widen it. A label whose width was set narrower than its
+text gets a plate wide enough for the text, grown from its aligned side.
+The PDF draws the same. Labels draw over the tiles. A label can
 [open another plan](#opens-links).
 
 ### Right-click on the plan
@@ -1949,6 +2141,7 @@ floor**, and with the trays tool a tray the same as a wall, less the door.
 | ++e++ | View / Edit |
 | ++p++ | Place… - in View too, for those who may edit: it switches to Edit and opens the picker |
 | ++v++ ++r++ ++shift+r++ ++o++ ++t++ ++g++ ++w++ ++c++ ++s++ | The tools |
+| ++r++ (a tile selected) | Turn the selected tile, or tiles, 90° - with none selected it is the Room tool |
 | Arrows | Move the selected area or label half a cell (a cell on a free plan, a tenth with ++alt++) |
 | ++delete++ | Delete the selected area or label - or wall, door, tray or raised floor |
 | ++d++ | The Door tool |
@@ -2002,8 +2195,13 @@ the foot of the tool rail switches the plan to free at once. On a free plan:
   stops wherever you let go - positions and sizes are kept to a thousandth of
   a cell;
 - a selected tile shows the same eight resize handles and turn handle as an
-  area, and turns to any whole degree;
-- tiles may overlap;
+  area, and turns to any whole degree: the round handle above it turns it
+  freely, settling on a quarter turn when near one (++shift++ for 15° steps,
+  ++alt++ for no settling, as on an area); **Rotation** in the inspector
+  takes degrees, and ++r++ or the rotate button turns it 90°. Each turn is
+  one undo step and saves like a move;
+- its popover opens under it, so the handles above stay free to grab;
+- tiles may overlap - moved, resized or turned onto another;
 - arrows nudge a cell, ++alt++ + arrow a tenth of one.
 
 A turned tile is stored at its nearest quarter turn (a quarter turn swaps
@@ -3105,7 +3303,8 @@ click empty floor, or press **Esc** to clear. No Cables mode is needed - it
 works in any mode while the links are on.
 
 **Trace on map from a cable** - the **cable detail page** has a *Trace on
-map* button that jumps to the plan showing that cable, with its route already
+map* button (a *Floor plan* entry under *Show on* when the cable is also on
+the topology or the site map) that jumps to the plan showing that cable, with its route already
 highlighted and the view fitted to it. The **rack/device deep-view** (click a
 rack or device tile) shows each device's end-to-end paths: a ⟿ next to the
 origin traces the **whole run** (all its cables, through patch panels), and
@@ -3451,6 +3650,7 @@ floors.
     opens the [cable panel](#the-cable-panel); a tray lights up and is
     framed; an area is selected or opened. In 3D the room flies to the pick.
     Hidden tiles and ends are not offered.
+- **Filter** (the bar, beside Find) - see [Filters and saved views](#filters-and-saved-views).
 - **Fit to view** (the ⤢ button) recentres the whole plan after you've zoomed around.
 - **Hover** any tile for a popover: name, type, status, a link straight to the
   linked object, and (racks) utilization / power / weight / device count / live
@@ -3491,10 +3691,12 @@ floors.
   the old rack row" is part of how a plan is shaped for its readers; hiding
   never changes the plan's contents. Keyboard: ++h++ hides the selected
   tile(s); ++shift+h++ shows all.
-- **Show on floor plan** - the Rack, Cabinet and Device detail pages carry a button
-  that opens the plan zoomed onto the tile; placed on several plans (its own
-  tile and its rack's, or a cloned what-if plan), the button becomes a menu
-  listing them. The Rack and Device detail pages carry a button
+- **Show on floor plan** - the Rack, Cabinet, Device and Room detail pages carry a
+  button that opens the plan zoomed onto the tile (a room: onto its area, at
+  `?area=<area id>`); placed on several plans (its own tile and its rack's, a
+  cloned what-if plan, a room drawn on several floors), the button becomes a
+  menu listing them. Nothing placed: no button. On a device with coordinates
+  the same control also offers the **Site map** and reads *Show on*. The Rack and Device detail pages carry a button
   that jumps to where they're placed (a device falls back to *its rack's* or
   *its cabinet's* plan, marked "via rack" or "via cabinet").
 
@@ -3504,6 +3706,43 @@ floors.
     supply, the figure the rack page shows, so the two agree, and the rack
     panel's heading (*Contents & trace*) reads the same figure. Large figures
     read in kW.
+
+### Filters and saved views {#filters-and-saved-views}
+
+**Filter ▾** on the bar picks what the plan shows, with the list pages'
+facets: **Kind** (rack, cabinet, device, power panel, … and each planning
+tile type), **Device role**, **Device type**, **Status** (the object's,
+else the tile's own *planned* / *reserved* …), **Tags**, **Rack role** and
+**Area type** (the tiles inside an area of that type; the other areas
+fade). Values tick OR within a facet and AND across facets, each with its
+count on this plan; **Advanced** takes the lists' filter expression over
+the same fields (`role = AP and status = planned`, `tags ~ core`). Find
+on plan stays the text search. A tile whose object you may not view
+counts only by its kind.
+
+- What the filter keeps draws as ever, **at every zoom**. From afar (the
+  overview) it is drawn as its icon tiles on the rooms, clustered where
+  they crowd - *show only APs* on a campus - and nothing else is.
+- Closer in the rest **recedes** (faded, as the rack table's filter fades
+  racks), or with **Hide others** on is not drawn at all.
+- The rooms' facts count what it keeps, by what it picks: **12 APs**,
+  **3 cameras**.
+- While a filter is on, a chip on the bar says what it keeps and how many
+  show, with **Clear**.
+- The filter is in the page's address (`?pf=`), so a link shares it, and
+  it stays on as you go from floor to floor.
+- **Views** beside it saves the filter (Hide others included) as a named
+  view, exactly like a list's [saved views](saved-views.md): yours are
+  private until you share them with the tenant, only you can change
+  yours, and a shared view re-runs on what each reader may see. They are
+  kept under the object type `floorplan`, so a floor plan's views are the
+  same on every floor plan and never on a list's menu. There are no
+  built-in presets: save the views you use.
+- **3D**: what the filter leaves out is ghosted, as focus ghosts it, or
+  with Hide others left out.
+- **Export**: the PDF of the current view (and the plan PDF) prints the
+  filter as on screen - faded, or left out with Hide others; the PNG is
+  the screen.
 
 ## Snapshots
 
@@ -3714,6 +3953,16 @@ chosen (the menu shows it) and opens it in the browser's viewer to print.
   landscape (A3 landscape until you choose; kept for next time).
 - **Include** - **Plan drawing** (on by default), **Cable schedule**,
   **Inventory** and **Ports summary**.
+- **Cables** (with the plan drawing) - **As on screen** (the default: the
+  cables as the Display menu draws them) or **Bundles**: the sheets go
+  without their cables and the server draws them as
+  [bundles](#bundles-on-paper), with their legend in the sheet's strip
+  instead of the cables' legend.
+- **Trace pages** (with the cable schedule) - a page per cable picked, as
+  in the [cable schedule](#trace-pages); cables selected on the plan when
+  the dialog opens are picked already. Only cables of this floor that the
+  report lists can be traced (one outside the scope is left out, with a
+  note).
 
 The PDF has, in order:
 
@@ -3735,7 +3984,9 @@ The PDF has, in order:
    outline). For a building a cable is listed once, under the first level
    that has it, its route and computed length joined across the levels
    (`B1: OH-1 → R1 to Ground | Ground: R1 → CT-1`); grouped by room (by
-   level and room for a building), with the totals per type;
+   level and room for a building), with the totals per type. Its tables
+   are the schedule's [tighter tables](#the-tables) under the report's
+   headings, then its trace pages;
 4. the **inventory** - the racks, cabinets and devices in scope: each rack
    or cabinet, then the devices in it (top unit first), then devices on
    their own, with the role and status as square badges in their
@@ -3765,7 +4016,7 @@ levels is refused.
 
 | Endpoint | |
 |---|---|
-| `POST /api/floor-plans/{id}/export/report/` | The report as a PDF. Body: `scope` (`view`, `floor`, `area` or `building`), `box` (`scope=view`: `[x, y, w, h]` in plan px), `area` (`scope=area`: the area's id), `include` (`plan`, `cables`, `inventory`, `ports`), `paper` (`{size, orientation}`; A3 landscape by default), `hidden_tiles` (tile ids left out of this floor's inventory) and `sheets` (with `plan`: per sheet `{floor, svg, legend, cable_legend, area_legend}`, the drawing as `plan-svg.ts` draws it for the sheet's box and scale; at most 24). `?print=1` answers `{url}`, a five-minute link. |
+| `POST /api/floor-plans/{id}/export/report/` | The report as a PDF. Body: `scope` (`view`, `floor`, `area` or `building`), `box` (`scope=view`: `[x, y, w, h]` in plan px), `area` (`scope=area`: the area's id), `include` (`plan`, `cables`, `inventory`, `ports`), `paper` (`{size, orientation}`; A3 landscape by default), `hidden_tiles` (tile ids left out of this floor's inventory), `sheets` (with `plan`: per sheet `{floor, svg, legend, cable_legend, area_legend}`, the drawing as `plan-svg.ts` draws it for the sheet's box and scale; at most 24), `cables` (`lines` or `bundles`, as the schedule PDF's, for the sheets), `trace` (with `cables` in `include`: cable ids of this floor that the report lists, for trace pages; any other is refused) and `trace_svgs` (this floor drawn without cables per trace page, by cable id; the boxes come from `cable-schedule/closeups/?trace=…&closeups=off` at the report's paper). `?print=1` answers `{url}`, a five-minute link. |
 | `POST /api/floor-plans/{id}/export/report/tables/` | The same scope's tables as JSON: `cables` (the cable schedule's shape), `inventory` (`groups` of `{name, rows}`, each row `{kind, id, name, parent, role, type, status, holder, position, serial, asset_tag, room, level}`; `count`; `hidden_count`), `ports` (`rows` of `{device, port, cable, far}`; `hidden_count`; `truncated`), with `title`, `scope` and `levels`. |
 
 ### The one-sheet PDF
@@ -3832,9 +4083,10 @@ a device you may not view reads **Hidden**.
 **PDF** is laid out on the server on **A4**, **A3**, **Letter** or
 **Tabloid** (landscape), a table per group with its header repeated on
 every page, under the plan's title; **Plan on the first page** puts the
-plan with its routes on top, as the Display menu draws it - framed to
-what is drawn on the plan (not the whole grid), with hatches and cables
-sized for the paper so they stay crisp. Under it go the plan's
+plan with its routes on top - framed to what is drawn on the plan (not the
+whole grid), with hatches and cables sized for the paper so they stay
+crisp. **Cables** chooses how they print: **Bundles** (the default, below)
+or **Each cable**, every cable drawn as the Display menu draws it. Under it go the plan's
 **background image** and its **CAD drawing**, added on the server as the
 floor-plan PDF adds them: the image cut to the framed part (a live view's
 part of its source's image), at most 200 dpi on paper and under the
@@ -3872,17 +4124,100 @@ Names of devices you may not view are left out. The overview carries a
 labelled frame for each page (A, B, … in reading order), and the
 schedule's table gains a **Detail** column naming the pages a cable is on.
 At most 20 close-ups, those with the most cable ends kept; the caption says
-how many were left out. The schedule's tables follow
-the close-ups. **CSV** and
-**XLSX** are the same rows as a table (one line per cable in each group,
-then the totals) - the table export's files. The PDF obeys the floor-plan
-PDF's limits. Anyone who can view the plan can make it:
+how many were left out. A close-up lists its cables (label, ends, length)
+when it has at most 20; with more it says how many, and the schedule's
+**Detail** column names the page for each. The trace pages and the
+schedule's tables follow the close-ups.
+
+#### Bundles on paper
+
+With **Cables: Bundles** the page posts the plan without its cables and
+the server draws them from what it stores, so a few hundred cables in a
+few trays read as bundles instead of lines on top of each other:
+
+- **One stroke per stretch.** Each listed cable's run - its stored route
+  (documented), else a route through its trays, else an elbow between its
+  tiles (inferred) - is cut where other runs join or leave it. Each piece
+  of a tray, drop or hop is one stroke carrying every cable that rides all
+  of it: a cable riding several trays counts on each, a breakout's legs
+  count once on their shared trunk.
+- **Width by count**, in steps: 1, 2–3, 4–7, 8–15, 16–31, 32–63 and 64+
+  cables (0.3 mm to 2.6 mm on paper). On a print where a cell is under
+  2 mm (an overview of a big plan) the strokes narrow with it, to half
+  width at most.
+- **Colour by type** when a stroke carries one cable type - the plan's
+  Color by Type colours, most common type first - else a neutral grey.
+- **Documented solid, inferred dashed**; a stretch carrying both draws two
+  strokes side by side.
+- **Counts** on a small white shield on the stroke (`24`; on a mixed stroke
+  the count per type in the types' colours, `18·6`). A stretch too short
+  on paper for its shield gets none, nor does one where the shield would
+  cover a tile, a name or another count; the same cables are counted again
+  only 60 mm further on. Single cables are not counted.
+- **Stubs.** A cable with one end here and no run: one short dashed arrow
+  per tile and side, out of the tile away from the plan's middle, with the
+  count when there are several.
+
+A **legend** under the overview and on each close-up gives what that page
+draws: the width steps, the type colours with their cable counts (and
+*Mixed*), and the line styles. The interactive plan is drawn as before;
+this is the paper's mode.
+
+#### Trace pages
+
+**Trace pages** adds a page per cable picked (at most 20; the caption says
+how many more were asked for). The picker lists this schedule's cables
+only; cables selected on the plan (traced, or picked in a bundle) when the
+dialog opens are picked already. Each page is the plan framed to the
+cable's route and both end tiles with a margin, page-shaped and scaled as
+a close-up is (between 3 and 12 mm a cell, or smaller to fit), with:
+
+- the other cables as faint bundles, and the cable over them in its
+  type's colour, solid when documented, dashed when inferred;
+- its **A** and **B** end tiles outlined and named (`A · device · port`;
+  **Hidden** for a device you may not view);
+- a **facts strip**: label and colour, type, status, the A and B ends with
+  their rooms, the trays in travel order, the riser, the lengths (computed,
+  stored and where that came from) and notes.
+
+The schedule's **Detail** column names a cable's trace page (`T1`) after
+its close-ups. The server checks every cable asked for: it must be a
+listed row of this schedule - in the plan's tenant, on this plan, and one
+you may view. Any other id - another tenant's, one not on the plan, a
+hidden one - is refused with the same answer, so none is told apart.
+
+#### The tables
+
+The tables say each thing once:
+
+- **Hoisted values.** A value the same for every cable of a group - type,
+  status, length source, A or B room - goes in the group's heading
+  (`Room: Data Hall 1 · 114 cables · Computed lengths`) and its column is
+  left out of that group; one the same for the whole schedule goes in the
+  subtitle under the title (`All 314 cables: Connected · B room Meet-me
+  room`) instead. A room the group is named after is not repeated. A
+  column empty for every cable (notes, say) is left out.
+- **Route bands.** In a group where cables share a route, each route is a
+  band row (`Route DH1 row A → DH1 spine → … · 4 cables`) with its cables
+  under it, and the Route column goes; when every route's cables share a
+  type, the type moves into the band too. Cables with no route come last,
+  under *No route*. A group where no two cables share a route keeps the
+  Route column.
+- **Widths.** Each column is as wide as its texts need: labels and ends on
+  one line where they fit, wrapped only between words; the spare width
+  goes to the ends, the route and the notes.
+
+The label, A end, B end, Detail, lengths and notes always stay. **CSV** and
+**XLSX** are data exports and stay flat: one row per cable in each group
+with every column (type, colour, status, rooms, route, both lengths and
+the source), then the totals - the table export's files. The PDF obeys the
+floor-plan PDF's limits. Anyone who can view the plan can make it:
 
 | Endpoint | |
 |---|---|
 | `GET /api/floor-plans/{id}/cable-schedule/?group=room\|tray` | The schedule: `rows` (`[{id, label, type, type_display, color, status, a, b, trays, route, route_source, riser, computed_m, length, length_unit, length_m, length_source, notes, rooms}]`, each end `{device, port, room, on_floor, hidden}`), `groups` (`[{name, rows}]`, row ids), `totals` (`[{type, label, count, metres, unmeasured}]`), `total` and `hidden_count`. |
-| `POST /api/floor-plans/{id}/cable-schedule/pdf/` | The schedule as a PDF. Body: `group`, `paper` (`{size, orientation}`; A4 landscape by default), `svg` (optional: the plan drawing for the first page, sanitised as the plan PDF's; the background image and CAD drawing are added on the server), `closeup_svgs` (optional: the plan drawn for each close-up, by label, framed to its box at its scale; a drawing whose viewBox is not the page's box is left out; at most 20) and `closeups` (`auto`, the default: close-ups when a cell prints under 2 mm or the cable ends form several groups; `on`: whenever a close-up prints larger than the plan; `off`). `?print=1` answers `{url}`, a five-minute link. |
-| `GET /api/floor-plans/{id}/cable-schedule/closeups/?box=x,y,w,h` | The close-up pages the PDF will have for an overview framed to `box` (plan px, the overview's viewBox), with `size`, `orientation` and `closeups` as for the PDF: `pages` (`[{label, box, mm_per_px, cables}]`, `box` in plan px, `mm_per_px` paper mm per plan px), `overview_mm_per_px` and `dropped` (groups over the cap of 20). The page asks for it, draws each close-up, then posts the PDF. |
+| `POST /api/floor-plans/{id}/cable-schedule/pdf/` | The schedule as a PDF. Body: `group`, `paper` (`{size, orientation}`; A4 landscape by default), `svg` (optional: the plan drawing for the first page, sanitised as the plan PDF's; the background image and CAD drawing are added on the server), `closeup_svgs` (optional: the plan drawn for each close-up, by label, framed to its box at its scale; a drawing whose viewBox is not the page's box is left out; at most 20), `closeups` (`auto`, the default: close-ups when a cell prints under 2 mm or the cable ends form several groups; `on`: whenever a close-up prints larger than the plan; `off`), `cables` (`lines`, the default: the cables as the posted drawings have them; `bundles`: the drawings are posted without cables and the server draws the bundles), `trace` (cable ids for trace pages, in order, at most 200; the first 20 get a page; an id that is not a listed row of this schedule is refused with 400 `{"trace": ["Not a cable of this schedule."]}`) and `trace_svgs` (the plan drawn without cables for each trace page, by cable id, framed to its box at its scale; at most 20). `?print=1` answers `{url}`, a five-minute link. |
+| `GET /api/floor-plans/{id}/cable-schedule/closeups/?box=x,y,w,h` | The close-up pages the PDF will have for an overview framed to `box` (plan px, the overview's viewBox; not needed with `closeups=off`), with `size`, `orientation` and `closeups` as for the PDF: `pages` (`[{label, box, mm_per_px, cables}]`, `box` in plan px, `mm_per_px` paper mm per plan px), `overview_mm_per_px` and `dropped` (groups over the cap of 20). With `trace=id,id,…` (checked as the PDF's `trace`): `traces` (`[{label, cable, box, mm_per_px}]`, the first 20) and `traces_dropped`. The page asks for it, draws each close-up and trace page, then posts the PDF. |
 
 ### Try it: the demo floor plan
 
@@ -4055,6 +4390,12 @@ uses the type's photo with its mapped ports when there are any, the plain
 uploaded photo when the type has a picture but no ports mapped on that side,
 and the drawn panel otherwise, and offers a **rear** toggle when the type has a rear
 image.
+
+The panel is fitted to the popover's width and kept to a modest height. Click
+the photo, or the expand button under it, to see it large - fitted to the
+screen, with the same **front** / **rear** toggle. A popover never runs off
+screen: it is no taller than the room it has, its rows scroll, and its name
+and **Details** stay in reach.
 
 It applies to tiles linked to a **device**; a rack tile has an elevation rather
 than a faceplate, so the row is skipped there. Unlike the other rows, this one

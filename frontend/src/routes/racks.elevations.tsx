@@ -16,6 +16,7 @@ import {
   type RackFace,
 } from "@/components/rack-elevation"
 import { SegmentedTabs } from "@/components/segmented-tabs"
+import { HScroll } from "@/components/table-scroll"
 import { FormCheckbox } from "@/components/forms"
 
 export const Route = createFileRoute("/racks/elevations")({
@@ -133,8 +134,12 @@ function RackElevationsPage() {
       ) : !devicesQ.isSuccess ? (
         <Loading />
       ) : (
-        /* One column per rack, aligned at the top like a datacenter row. */
-        <div className="flex items-start gap-8 overflow-x-auto pb-4">
+        /* One column per rack, aligned at the top like a datacenter row. The
+           row's scrollbar floats at the bottom of the view (HScroll). */
+        <HScroll
+          className="flex items-start gap-8 pb-4"
+          label="Rack elevations"
+        >
           {racks.map((r) => (
             <div key={r.id} className="shrink-0">
               <div className="mb-2 flex items-baseline gap-2">
@@ -164,7 +169,7 @@ function RackElevationsPage() {
               />
             </div>
           ))}
-        </div>
+        </HScroll>
       )}
     </ListPageShell>
   )

@@ -358,3 +358,55 @@ class UnknownQueryParamsMiddleware:
         request.GET = tracked
         request._danbyte_query_check = (view_cls, tracked, keys)
         return None
+
+
+class AcmeChallengeMiddleware:
+    """HTTP-01 answers for the site's own certificate, for any ``Host``.
+
+    A CA validates ``http://<name>/.well-known/acme-challenge/<token>`` with
+    the certificate's name as the Host. A name not (yet) in ALLOWED_HOSTS
+    would get Django's 400 before any view ran, so this sits first in
+    MIDDLEWARE and answers exactly that path without ever calling
+    ``request.get_host()``: GET or HEAD only, a token of 22-128 base64url
+    characters (RFC 8555: at least 128 bits), ``text/plain``, no session,
+    CSRF or auth. Only the key authorization of a live pending HTTP-01
+    challenge is returned; any other token is a 404, so nothing can be
+    listed. Every other path - including a malformed token - goes on down
+    the stack, where host validation applies as before.
+    """
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        from django.http import HttpResponse
+
+        from core.site_tls import ACME_CHALLENGE_PATH, challenge_content
+
+        # path_info comes from the WSGI environ; it never reads the Host.
+        match = ACME_CHALLENGE_PATH.fullmatch(request.path_info)
+        if match is None:
+            return self.get_response(request)
+        if request.method not in ("GET", "HEAD"):
+            response = HttpResponse("Method not allowed.\n", status=405,
+                                    content_type="text/plain; charset=utf-8")
+            response["Allow"] = "GET, HEAD"
+        else:
+            from django.db import DatabaseError
+
+            try:
+                content = challenge_content(match.group(1))
+            except DatabaseError:
+                content, status = "Try again.\n", 503
+            else:
+                status = 200 if content is not None else 404
+                content = content if content is not None else "Not found.\n"
+            response = HttpResponse(content, status=status,
+                                    content_type="text/plain; charset=utf-8")
+        response["Cache-Control"] = "no-store"
+        response["X-Content-Type-Options"] = "nosniff"
+        if request.method == "HEAD":
+            length = len(response.content)
+            response.content = b""
+            response["Content-Length"] = str(length)
+        return response

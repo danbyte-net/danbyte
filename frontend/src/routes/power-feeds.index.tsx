@@ -74,14 +74,16 @@ function PowerFeedsPage() {
         filters: { snapshot, restore, activeCount },
       }}
       search={{ value: q, onChange: setQ, placeholder: "Filter feeds…" }}
+      add={
+        canAdd && (
+          <Button size="sm" asChild>
+            <Link to="/power-feeds/new">Add feed</Link>
+          </Button>
+        )
+      }
       actions={
         <>
           <TableActions ioType="powerfeed" />
-          {canAdd && (
-            <Button size="sm" asChild>
-              <Link to="/power-feeds/new">Add feed</Link>
-            </Button>
-          )}
         </>
       }
       query={query}

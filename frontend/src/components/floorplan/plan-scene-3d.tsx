@@ -1,13 +1,21 @@
-import { Suspense, useMemo } from "react"
+import { Suspense, useEffect, useMemo, useRef } from "react"
 import type { ReactNode } from "react"
 import { X } from "lucide-react"
 
-import type { FloorPlan, FloorPlanLiveState } from "@/lib/api"
+import type {
+  FloorPlan,
+  FloorPlanLiveState,
+  FloorPlanTile,
+  FloorplanPopoverConfig,
+} from "@/lib/api"
 import { Loading } from "@/components/loading"
 
 import type { Building3D } from "@/components/floorplan3d/scene"
 
 import type { CameraView } from "./camera-view"
+import { LinkedObjectLink } from "./linked-object-link"
+import { TilePopover } from "./tile-popover"
+import type { useTilePopover } from "./tile-popover"
 import type { PlanShape } from "./shapes"
 import type { PlanCapacity } from "./use-plan-capacity"
 import type { CadDrawingState } from "./use-cad-drawing"
@@ -24,6 +32,7 @@ export function PlanScene3D({
   plan,
   liveState,
   hiddenTileIds,
+  recedeTileIds = null,
   traceCableId,
   onOpenCable,
   onOpenDevice,
@@ -39,7 +48,18 @@ export function PlanScene3D({
   onDismissHint,
   building = null,
   cameraViews,
+  tiles,
+  popover,
+  popoverFields,
+  onSelectTile,
 }: {
+  /** The plan's tiles, popover and its fields: a power, cooling, unlinked
+   * or Hidden tile clicked in the room pins its popover, as on 2D. */
+  tiles: FloorPlanTile[]
+  popover: ReturnType<typeof useTilePopover>
+  popoverFields: FloorplanPopoverConfig["fields"]
+  /** Such a tile clicked (null: deselected) - the plan's selection. */
+  onSelectTile: (tileId: string | null) => void
   /** The cameras' views on show (Display > Camera FOV cones). */
   cameraViews?: readonly CameraView[]
   /** An aligned floor plan: the building around this level. */
@@ -50,6 +70,8 @@ export function PlanScene3D({
   plan: FloorPlan
   liveState: FloorPlanLiveState | null
   hiddenTileIds: Set<string>
+  /** The plan's filter leaves these out: ghosted. */
+  recedeTileIds?: ReadonlySet<string> | null
   traceCableId: string | null
   /** A cable run clicked: the plan's cable panel (null: clicked away). */
   onOpenCable?: (cableId: string | null) => void
@@ -77,6 +99,10 @@ export function PlanScene3D({
     () => areas?.filter((s) => s.kind === "label"),
     [areas]
   )
+  // A popover pinned on the 2D canvas has no place in the room.
+  const closeRef = useRef(popover.close)
+  closeRef.current = popover.close
+  useEffect(() => closeRef.current(), [])
   const drawing = cad.drawing
   const placement = cad.placement
   const drawingFloor = useMemo(
@@ -114,9 +140,16 @@ export function PlanScene3D({
           cameraViews={cameraViews}
           liveState={liveState}
           hiddenTileIds={hiddenTileIds}
+          recedeTileIds={recedeTileIds}
           traceCableId={traceCableId}
           onOpenCable={onOpenCable}
           onOpenDevice={onOpenDevice}
+          onOpenTile={(tileId, at) => {
+            const tile = tileId ? tiles.find((t) => t.id === tileId) : null
+            if (tile && at) popover.pinAt(tile, at)
+            else popover.close()
+            onSelectTile(tile ? tile.id : null)
+          }}
           focusTarget={focusTarget}
           showUNumbers={prefs.show3dU}
           showNames={prefs.show3dNames}
@@ -147,6 +180,17 @@ export function PlanScene3D({
           drawingFloor={drawingFloor}
         />
       </Suspense>
+      <TilePopover
+        target={popover.target}
+        live={
+          popover.target ? liveState?.tiles[popover.target.tile.id] : undefined
+        }
+        fields={popoverFields}
+        onOpenChange={(open) => !open && popover.close()}
+        renderLinked={(tile) =>
+          tile.linked ? <LinkedObjectLink linked={tile.linked} /> : null
+        }
+      />
       {colorLegend}
       {showHint && (
         <div className="absolute right-3 bottom-3 flex items-center gap-2 rounded-md border border-border bg-popover/90 px-2.5 py-1.5 text-[11px] text-muted-foreground shadow backdrop-blur">

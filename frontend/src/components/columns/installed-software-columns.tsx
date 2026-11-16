@@ -148,12 +148,29 @@ export function buildInstalledSoftwareColumns<
       id: "version",
       accessorKey: "version",
       header: ({ column }) => <SortHeader column={column} label="Version" />,
-      cell: ({ row }) =>
-        row.original.version ? (
-          <span className="font-mono text-xs">{row.original.version}</span>
-        ) : (
-          dash
-        ),
+      cell: ({ row }) => {
+        const r = row.original
+        // A person's install the package inventory reads differently (#451).
+        const drift =
+          !!r.observed_version &&
+          r.source !== "discovery" &&
+          r.observed_version !== r.version
+        if (!r.version && !drift) return dash
+        return (
+          <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+            {r.version ? (
+              <span className="font-mono text-xs">{r.version}</span>
+            ) : (
+              dash
+            )}
+            {drift && (
+              <Badge variant="warning">
+                Discovery reads {r.observed_version}
+              </Badge>
+            )}
+          </span>
+        )
+      },
     }),
     cycle: () => ({
       id: "cycle",

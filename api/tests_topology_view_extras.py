@@ -52,6 +52,11 @@ class ValidatorTests(SimpleTestCase):
         self.bad({"chassis": {VC: {"side": "top"}}}, "side must be one of T, B, L, R")
         self.bad({"chassis": {VC: {"color": "red"}}}, "unknown key(s) color")
 
+    def test_a_cluster_opened_into_its_frame(self):
+        # Group clusters (#517): a cluster's look shares the chassis map.
+        self.ok({"chassis": {VC: {"open": True, "orient": "h"}}})
+        self.bad({"chassis": {VC: {"open": "yes"}}}, "open must be true or false")
+
     def test_the_caps(self):
         many = {f"00000000-0000-4000-8000-{i:012d}": {} for i in range(10_001)}
         self.bad({"chassis": many}, "at most 10,000")

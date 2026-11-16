@@ -130,3 +130,34 @@ class SavedFilterTests(APITestCase):
     def test_a_name_is_required(self):
         self._as(self.alice)
         self.assertEqual(self._create(name="   ").status_code, 400)
+
+    def test_a_floor_plans_views_are_saved_views_like_a_lists(self):
+        """The floor plan's filter saves under its own object type, with
+        the same sharing, tenancy and ownership as a list's."""
+        floor = {"q": "", "facets": {"role": ["ap-role"], "hide": "1"}}
+        self._as(self.alice)
+        mine = self._create(object_type="floorplan", name="APs", query=floor)
+        self.assertEqual(mine.status_code, 201, mine.content)
+        self._create(object_type="floorplan", name="Cameras", shared=True, query=floor)
+        listing = self.client.get("/api/saved-filters/?object_type=floorplan").json()
+        self.assertEqual(sorted(f["name"] for f in listing["results"]), ["APs", "Cameras"])
+        self.assertEqual(listing["results"][0]["query"], floor)
+        # Not on a list's menu.
+        self.assertEqual(
+            self.client.get("/api/saved-filters/?object_type=device").json()["results"], []
+        )
+
+        self._as(self.bob)
+        rows = self.client.get("/api/saved-filters/?object_type=floorplan").json()["results"]
+        self.assertEqual([f["name"] for f in rows], ["Cameras"])
+        self.assertEqual(
+            self.client.patch(
+                f"/api/saved-filters/{rows[0]['id']}/", {"name": "Mine now"}, format="json"
+            ).status_code,
+            403,
+        )
+
+        self._as(self.mallory, self.other)
+        self.assertEqual(
+            self.client.get("/api/saved-filters/?object_type=floorplan").json()["results"], []
+        )

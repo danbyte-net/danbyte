@@ -7,7 +7,7 @@ Layout of a file::
 Every chunk is ``12-byte nonce + AES-256-GCM(plaintext, aad=index) + tag``
 over at most 1 MiB of a tar stream; the last chunk carries ``aad=b"final"``
 so a file cut at a chunk boundary is still detected. The key is
-HKDF-SHA256 of the deployment's ``MONITORING_SECRET_KEY`` with the archive's
+HKDF-SHA256 of the deployment's newest ``MONITORING_SECRET_KEY`` with the archive's
 salt, and the key check is an HMAC of a fixed string under that key: a
 restore on a host with another key fails here, loudly, instead of quietly
 restoring credentials that decrypt to nothing.
@@ -54,26 +54,39 @@ class KeyMismatch(ArchiveError):
     """Made under a different MONITORING_SECRET_KEY."""
 
 
-def _secret(explicit: str | None) -> bytes:
+def _secrets(explicit: str | None) -> list[bytes]:
     """The same rule the encrypted fields follow (``monitoring/secrets.py``):
     ``MONITORING_SECRET_KEY``, else - only with DEBUG on - ``SECRET_KEY``.
-    Whatever protects the stored credentials protects the archive."""
+    Whatever protects the stored credentials protects the archive. A
+    comma-separated key list (#493) gives every key, newest first: a new
+    archive uses the first, a restore tries each."""
+    from danbyte.secret_keys import parse_monitoring_keys
+
     if explicit is not None:
         raw = explicit
     else:
         from django.conf import settings
 
         raw = settings.MONITORING_SECRET_KEY or (settings.SECRET_KEY if settings.DEBUG else "")
-    if not raw:
+    try:
+        keys = parse_monitoring_keys(raw)
+    except ValueError as exc:
+        raise ArchiveError(str(exc)) from None
+    if not keys:
         raise ArchiveError("MONITORING_SECRET_KEY is not set; backups cannot be encrypted.")
-    return raw.encode()
+    return [k.encode() for k in keys]
+
+
+def _derive(salt: bytes, secret: bytes) -> bytes:
+    return HKDF(algorithm=hashes.SHA256(), length=32, salt=salt, info=b"danbyte-backup").derive(
+        secret
+    )
 
 
 def derive_key(salt: bytes, secret: str | None = None) -> bytes:
-    """32-byte AES key for this archive from the deployment secret."""
-    return HKDF(
-        algorithm=hashes.SHA256(), length=32, salt=salt, info=b"danbyte-backup"
-    ).derive(_secret(secret))
+    """32-byte AES key for this archive from the deployment secret (the
+    newest key when several are configured)."""
+    return _derive(salt, _secrets(secret)[0])
 
 
 def key_check(key: bytes) -> bytes:
@@ -233,13 +246,14 @@ def open_header(src: BinaryIO, secret: str | None = None) -> bytes:
         raise Corrupt("not a Danbyte backup (.dbk)")
     salt = head[len(MAGIC) : len(MAGIC) + SALT_LEN]
     check = head[len(MAGIC) + SALT_LEN :]
-    key = derive_key(salt, secret)
-    if not hmac.compare_digest(check, key_check(key)):
-        raise KeyMismatch(
-            "This backup was made under a different MONITORING_SECRET_KEY. "
-            "Copy the key from the host that made it before restoring."
-        )
-    return key
+    for secret_key in _secrets(secret):
+        key = _derive(salt, secret_key)
+        if hmac.compare_digest(check, key_check(key)):
+            return key
+    raise KeyMismatch(
+        "This backup was made under a different MONITORING_SECRET_KEY. "
+        "Copy the key from the host that made it before restoring."
+    )
 
 
 class Reader:

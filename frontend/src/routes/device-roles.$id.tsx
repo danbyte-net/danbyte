@@ -1,12 +1,10 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
-import { Pencil, Trash2 } from "lucide-react"
 import { useCallback, useState } from "react"
 
 import { api, type DeviceRole } from "@/lib/api"
 import { cssColor } from "@/lib/utils"
-import { Button } from "@/components/ui/button"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { NamedIcon } from "@/components/dynamic-icon"
 import { TileBadge } from "@/components/floorplan/tile-badge"
@@ -15,6 +13,7 @@ import { KvCard, dash } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { DeviceRoleDeleteDialog } from "@/components/device-role-delete-dialog"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { EmbeddedDeviceTable } from "@/components/embedded-device-table"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
@@ -60,26 +59,15 @@ function Body({ role: r }: { role: DeviceRole }) {
       backLabel="Device roles"
       title={r.name}
       presence={{ type: "devicerole", id: r.id }}
-      actions={
-        <>
-          {canDo("devicerole", "change") && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/device-roles/$id/edit" params={{ id: r.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDo("devicerole", "delete") && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeleting(r)}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
-        </>
+      edit={
+        canDo("devicerole", "change") && (
+          <EditButton to="/device-roles/$id/edit" params={{ id: r.id }} />
+        )
+      }
+      remove={
+        canDo("devicerole", "delete") && (
+          <DeleteButton onClick={() => setDeleting(r)} />
+        )
       }
       hero={
         <>

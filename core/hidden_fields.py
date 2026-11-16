@@ -107,6 +107,12 @@ GATED_RELATIONS: dict[str, tuple[tuple[str, str], ...]] = {
         ("destination_range", "iprange"),
         ("destination_prefix", "prefix"),
     ),
+    # A dependency is its downstream's site's; its upstream may be another
+    # site's device, and a peer's either end (#450).
+    "api.devicedependency": (
+        ("upstream", "device"),
+        ("downstream", "device"),
+    ),
     # An intake is its device's; its feed or the CDU outflow it hangs off
     # may be another site's (#453).
     "api.coolingintake": (

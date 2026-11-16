@@ -13,7 +13,8 @@ from django.utils.text import slugify
 from drf_spectacular.utils import extend_schema_serializer
 from rest_framework import serializers
 
-from api.models import Device, DeviceRole, DeviceType, IPAddress, Status, Prefix, VRF
+from api.models import Device, DeviceRole, DeviceType, IPAddress, Platform, Prefix, Site, Status, VRF
+from core.models import Tag
 from api.serializers import TenantScopedModelSerializer, TenantScopedPrimaryKeyRelatedField
 
 from .checkers import CheckConfigError, get_checker
@@ -21,6 +22,7 @@ from .worker import _split_resolver
 from .models import (
     PortUtilizationRule,
     Alert,
+    RootCauseIncident,
     AlertRule,
     AcmeOrder,
     Certificate,
@@ -36,6 +38,7 @@ from .models import (
     CheckTemplate,
     ConnectProtocol,
     DeviceCredential,
+    SharedCredential,
     DeviceSnmp,
     MonitoringEngine,
     MonitoringDenySubnet,
@@ -282,6 +285,9 @@ class SSHHostKeySerializer(serializers.ModelSerializer):
     device_name = serializers.CharField(
         source="device.name", read_only=True, default=None
     )
+    virtual_machine_name = serializers.CharField(
+        source="virtual_machine.name", read_only=True, default=None
+    )
     public_key_line = serializers.CharField(
         write_only=True, required=False, trim_whitespace=False,
         help_text="An OpenSSH public-key line: 'ssh-ed25519 AAAA… comment'.",
@@ -290,15 +296,16 @@ class SSHHostKeySerializer(serializers.ModelSerializer):
     class Meta:
         model = SSHHostKey
         fields = [
-            "id", "device", "device_name", "key_type", "public_key",
+            "id", "device", "device_name", "virtual_machine",
+            "virtual_machine_name", "key_type", "public_key",
             "fingerprint_sha256", "comment", "bits", "origin", "observed",
             "uploaded", "first_seen", "last_seen", "created_at", "updated_at",
             "public_key_line",
         ]
         # Every fact is derived from the pasted key or the collector; the client
-        # only supplies device + public_key_line.
+        # only supplies device (or virtual_machine) + public_key_line.
         read_only_fields = [
-            "id", "device", "key_type", "public_key", "fingerprint_sha256",
+            "id", "device", "virtual_machine", "key_type", "public_key", "fingerprint_sha256",
             "comment", "bits", "origin", "observed", "uploaded", "first_seen",
             "last_seen", "created_at", "updated_at",
         ]
@@ -323,6 +330,9 @@ class DeviceCredentialSerializer(TenantScopedModelSerializer):
     device_name = serializers.CharField(
         source="device.name", read_only=True, default=None
     )
+    virtual_machine_name = serializers.CharField(
+        source="virtual_machine.name", read_only=True, default=None
+    )
     # Write-only secret material - accepted on create/update, never returned.
     password = serializers.CharField(
         write_only=True, required=False, allow_blank=True, trim_whitespace=False
@@ -331,6 +341,10 @@ class DeviceCredentialSerializer(TenantScopedModelSerializer):
         write_only=True, required=False, allow_blank=True, trim_whitespace=False
     )
     passphrase = serializers.CharField(
+        write_only=True, required=False, allow_blank=True, trim_whitespace=False
+    )
+    #: A WinRM certificate credential's client certificate (PEM).
+    certificate = serializers.CharField(
         write_only=True, required=False, allow_blank=True, trim_whitespace=False
     )
     secret_set = serializers.SerializerMethodField()
@@ -343,15 +357,24 @@ class DeviceCredentialSerializer(TenantScopedModelSerializer):
     class Meta:
         model = DeviceCredential
         fields = [
-            "id", "device", "device_name", "name", "kind", "username", "port",
+            "id", "device", "device_name", "virtual_machine",
+            "virtual_machine_name", "name", "kind", "username", "port",
             "scheme", "secret_managed", "secret_provider", "secret_path",
-            "secret_set", "password", "private_key", "passphrase",
+            "secret_set", "password", "private_key", "passphrase", "certificate",
             "description", "created_at", "updated_at",
         ]
         read_only_fields = ["id", "secret_set", "created_at", "updated_at"]
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
+        # Exactly one host: a device or (#451) a VM.
+        device = attrs.get("device", getattr(self.instance, "device", None))
+        vm = attrs.get("virtual_machine", getattr(self.instance, "virtual_machine", None))
+        if (device is None) == (vm is None):
+            raise serializers.ValidationError(
+                {"device": "Give a device or a virtual machine, not both."}
+            )
+        require_ssh_user_name(self, attrs)
         managed = attrs.get(
             "secret_managed",
             getattr(self.instance, "secret_managed", True),
@@ -362,6 +385,8 @@ class DeviceCredentialSerializer(TenantScopedModelSerializer):
             # credential turned from external to managed drops its old path
             # until a secret is typed.
             attrs.pop("secret_path", None)
+            # The store is stamped when the secret is written (#511).
+            attrs.pop("secret_provider", None)
             if self.instance is not None and not self.instance.secret_managed:
                 attrs["secret_path"] = ""
             return attrs
@@ -387,6 +412,154 @@ class DeviceCredentialSerializer(TenantScopedModelSerializer):
             active_secret_store,
             validate_external_path,
         )
+
+        try:
+            validate_external_path(active_secret_store(), path)
+        except SecretPathError as exc:
+            raise serializers.ValidationError({"secret_path": str(exc)}) from exc
+        return attrs
+
+
+def require_ssh_user_name(serializer, attrs) -> None:
+    """An SSH credential names its user: nothing guesses ``root``. Checked on
+    create and whenever the kind or the user name is written, so an older
+    row without one still loads and can have other fields changed."""
+    inst = serializer.instance
+    if inst is not None and "kind" not in attrs and "username" not in attrs:
+        return
+    kind = attrs.get("kind", getattr(inst, "kind", ""))
+    username = attrs.get("username", getattr(inst, "username", "")) or ""
+    if kind in (DeviceCredential.Kind.SSH_PASSWORD, DeviceCredential.Kind.SSH_KEY):
+        if not username.strip():
+            raise serializers.ValidationError({"username": "Required for an SSH login."})
+
+
+def shared_credential_site_limit(user, tenant, action: str):
+    """The sites a person's ``sharedcredential`` grant for ``action`` is
+    limited to: ``None`` = any (superuser, or one grant without sites),
+    else the union of the granting permissions' sites. A shared credential
+    is not one site's row (its sites are a match scope), so this is checked
+    by the serializer and viewset rather than through a site path."""
+    if user is None or user.is_superuser:
+        return None
+    from auth_api import rbac
+
+    perms = rbac._granting_perms(user, tenant, "sharedcredential", action)
+    if not perms:
+        return None  # not granted at all: the RBAC gate refuses it first
+    ids: set = set()
+    for perm in perms:
+        sids = {s.pk for s in perm.sites.all()}
+        if not sids:
+            return None
+        ids |= sids
+    return ids
+
+
+class SharedCredentialSerializer(TenantScopedModelSerializer):
+    """A shared login. Write-only secret fields as on a device credential
+    (``password``, ``private_key``, ``passphrase``); reads carry
+    ``secret_set`` only. Scope ids resolve inside the active tenant."""
+
+    password = serializers.CharField(
+        write_only=True, required=False, allow_blank=True, trim_whitespace=False)
+    private_key = serializers.CharField(
+        write_only=True, required=False, allow_blank=True, trim_whitespace=False)
+    passphrase = serializers.CharField(
+        write_only=True, required=False, allow_blank=True, trim_whitespace=False)
+    certificate = serializers.CharField(
+        write_only=True, required=False, allow_blank=True, trim_whitespace=False)
+    secret_set = serializers.SerializerMethodField()
+    role_ids = TenantScopedPrimaryKeyRelatedField(
+        source="roles", many=True, required=False, queryset=DeviceRole.objects.all())
+    device_type_ids = TenantScopedPrimaryKeyRelatedField(
+        source="device_types", many=True, required=False, queryset=DeviceType.objects.all())
+    platform_ids = TenantScopedPrimaryKeyRelatedField(
+        source="platforms", many=True, required=False, queryset=Platform.objects.all())
+    site_ids = TenantScopedPrimaryKeyRelatedField(
+        source="sites", many=True, required=False, queryset=Site.objects.all())
+    tag_ids = TenantScopedPrimaryKeyRelatedField(
+        source="tags", many=True, required=False, queryset=Tag.objects.all())
+    scope = serializers.SerializerMethodField()
+
+    class Meta:
+        model = SharedCredential
+        fields = [
+            "id", "name", "kind", "username", "port", "secret_managed",
+            "secret_provider", "secret_path", "secret_set", "password", "private_key",
+            "passphrase", "certificate", "description", "enabled", "weight", "fall_through",
+            "applies_to_devices", "applies_to_vms", "all_hosts", "role_ids",
+            "device_type_ids", "platform_ids", "site_ids", "tag_ids", "scope",
+            "created_at", "updated_at",
+        ]
+        read_only_fields = ["id", "secret_set", "scope", "created_at", "updated_at"]
+
+    def get_secret_set(self, obj) -> bool:
+        return bool(obj.secret_path)
+
+    def get_scope(self, obj) -> dict:
+        return {
+            "roles": [{"id": str(r.pk), "name": r.name, "color": getattr(r, "color", "")}
+                      for r in obj.roles.all()],
+            "device_types": [{"id": str(d.pk), "name": d.name or d.model}
+                             for d in obj.device_types.all()],
+            "platforms": [{"id": str(p.pk), "name": p.name} for p in obj.platforms.all()],
+            "sites": [{"id": str(x.pk), "name": x.name} for x in obj.sites.all()],
+            "tags": [{"id": str(t.pk), "name": t.name, "color": getattr(t, "color", "")}
+                     for t in obj.tags.all()],
+        }
+
+    def validate_name(self, value):
+        value = (value or "").strip()
+        if not value:
+            raise serializers.ValidationError("Required.")
+        return value
+
+    def validate_weight(self, value):
+        if not 0 <= value <= 10000:
+            raise serializers.ValidationError("From 0 to 10000.")
+        return value
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        inst = self.instance
+
+        def cur(name, m2m=False):
+            if name in attrs:
+                return attrs[name]
+            if inst is None:
+                return [] if m2m else None
+            return list(getattr(inst, name).all()) if m2m else getattr(inst, name)
+
+        require_ssh_user_name(self, attrs)
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        from api.views import _get_active_tenant
+
+        tenant = _get_active_tenant(request) if request is not None else None
+        limit = shared_credential_site_limit(
+            user, tenant, "change" if inst is not None else "add")
+        if limit is not None:
+            sites = {s.pk for s in cur("sites", m2m=True)}
+            if cur("all_hosts") or not sites or not sites <= limit:
+                raise serializers.ValidationError(
+                    {"site_ids": "Name only sites you manage; a site role cannot share a "
+                                 "credential tenant-wide."})
+        # Managed / external secret: the DeviceCredential rules.
+        managed = attrs.get("secret_managed", getattr(inst, "secret_managed", True))
+        if managed:
+            attrs.pop("secret_path", None)
+            attrs.pop("secret_provider", None)
+            if inst is not None and not inst.secret_managed:
+                attrs["secret_path"] = ""
+            return attrs
+        path = attrs.get("secret_path", getattr(inst, "secret_path", ""))
+        if not path:
+            raise serializers.ValidationError(
+                {"secret_path": "Required for an external-reference credential."})
+        if inst is not None and not inst.secret_managed and path == inst.secret_path:
+            return attrs
+        from .secret_store import SecretPathError, active_secret_store, validate_external_path
 
         try:
             validate_external_path(active_secret_store(), path)
@@ -561,16 +734,38 @@ class IssuerSerializer(serializers.ModelSerializer):
     )
     tsig_secret_set = serializers.SerializerMethodField()
     account_registered = serializers.SerializerMethodField()
+    # The private CA's certificate(s), PEM. Public, so read and written in the
+    # clear; normalized to the certificates alone on save.
+    ca_certificate = serializers.CharField(
+        required=False, allow_blank=True, trim_whitespace=False,
+        max_length=64 * 1024 + 1024,
+    )
+    ca_certificate_info = serializers.SerializerMethodField()
 
     class Meta:
         model = Issuer
         fields = [
             "id", "name", "kind", "enabled", "directory_url", "contact_email",
-            "eab_kid", "eab_hmac", "eab_hmac_set", "verify_tls",
+            "eab_kid", "eab_hmac", "eab_hmac_set", "verify_tls", "ca_certificate",
+            "ca_certificate_info",
             "dns_provider", "dns_settings", "tsig_secret", "tsig_secret_set",
             "account_registered", "created_at", "updated_at",
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
+
+    def validate_ca_certificate(self, value: str) -> str:
+        from .acme_trust import CaCertificateError, normalize
+
+        try:
+            return normalize(value)
+        except CaCertificateError as exc:
+            raise serializers.ValidationError(str(exc)) from exc
+
+    def get_ca_certificate_info(self, obj) -> list[dict]:
+        """Subject, expiry and fingerprint of each stored CA certificate."""
+        from .acme_trust import describe
+
+        return describe(obj.ca_certificate) if obj.ca_certificate else []
 
     # Write-only secrets → the encrypted ``secrets`` map, keyed by field name.
     _SECRET_FIELDS = {"eab_hmac": "eab_hmac", "tsig_secret": "tsig_secret"}
@@ -668,6 +863,10 @@ class CheckTemplateSerializer(SecretParamsMergeMixin, serializers.ModelSerialize
     has_secrets = serializers.SerializerMethodField()
     usage_count = serializers.SerializerMethodField()
     secret_params = serializers.JSONField(write_only=True, required=False)
+    # Not the model's CheckKind choices: those are only the built-ins, and a
+    # registered kind (zabbix, a plugin) would be refused before validate_kind
+    # checks the registry.
+    kind = serializers.CharField(max_length=32)
 
     class Meta:
         model = CheckTemplate
@@ -1018,6 +1217,7 @@ class MonitoringSettingsSerializer(TenantScopedModelSerializer):
             "auto_clear_flapping", "auto_clear_flapping_after_minutes",
             "fast_lane_max_checks",
             "group_notifications", "group_threshold",
+            "root_cause_enabled", "root_cause_hold_seconds", "root_cause_hold_mode",
             "discovery_enabled", "discovery_min_prefix_length",
             "discovery_interval_minutes", "discovery_all_prefixes",
             "cleanup_enabled", "cleanup_after_days",
@@ -1062,6 +1262,7 @@ class AlertSerializer(serializers.ModelSerializer):
     acknowledged = serializers.SerializerMethodField()
     acknowledged_by_name = serializers.SerializerMethodField()
     silenced = serializers.SerializerMethodField()
+    root_cause = serializers.SerializerMethodField()
 
     class Meta:
         model = Alert
@@ -1070,7 +1271,8 @@ class AlertSerializer(serializers.ModelSerializer):
             "status", "check_status", "opened_at", "last_status_at",
             "resolved_at", "detail", "acknowledged", "acknowledged_at",
             "acknowledged_by_name", "ack_note", "silenced", "flapping",
-            "escalated", "notify_count",
+            "escalated", "notify_count", "notify_state", "notify_after",
+            "root_cause",
         ]
 
     def get_acknowledged(self, obj) -> bool:
@@ -1086,6 +1288,55 @@ class AlertSerializer(serializers.ModelSerializer):
         # Set by the view via an annotation/attribute to avoid N+1 silence
         # queries per row; defaults to False when not pre-computed.
         return bool(getattr(obj, "_silenced", False))
+
+    def get_root_cause(self, obj) -> dict | None:
+        """The incident explaining this alert (#450) and its root device."""
+        rc = obj.root_cause if obj.root_cause_id else None
+        if rc is None:
+            return None
+        return {
+            "id": str(rc.id),
+            "status": rc.status,
+            "device": {"id": str(rc.device_id), "name": rc.device.name},
+        }
+
+
+class RootCauseIncidentSerializer(serializers.ModelSerializer):
+    """A root-cause incident (#450): the root device, its lifecycle and
+    counts. ``root_alerts`` is the root's own firing alert count."""
+
+    device = serializers.SerializerMethodField()
+    acknowledged = serializers.SerializerMethodField()
+    acknowledged_by_name = serializers.SerializerMethodField()
+    merged_into = serializers.SerializerMethodField()
+
+    class Meta:
+        model = RootCauseIncident
+        fields = [
+            "id", "device", "status", "opened_at", "recovering_since",
+            "resolved_at", "announced_at", "recovery_announced_at",
+            "explained_count", "already_alerted_count", "reduced_count",
+            "merged_into", "acknowledged", "acknowledged_at",
+            "acknowledged_by_name", "ack_note", "detail",
+        ]
+
+    def get_device(self, obj) -> dict:
+        return {"id": str(obj.device_id), "name": obj.device.name}
+
+    def get_acknowledged(self, obj) -> bool:
+        return obj.acknowledged_at is not None
+
+    def get_acknowledged_by_name(self, obj):
+        u = obj.acknowledged_by
+        if u is None:
+            return None
+        return u.get_full_name() or u.get_username()
+
+    def get_merged_into(self, obj):
+        m = obj.merged_into if obj.merged_into_id else None
+        if m is None:
+            return None
+        return {"id": str(m.id), "device": {"id": str(m.device_id), "name": m.device.name}}
 
 
 class SilenceSerializer(TenantScopedModelSerializer):
@@ -1479,11 +1730,13 @@ class MonitoringEngineSerializer(serializers.ModelSerializer):
             "ssh_host_key", "ssh_configured",
             "dns_resolve_locally", "dns_resolvers",
             "last_seen_at", "stale_since", "agent_version", "agent_hostname", "agent_ip",
+            "agent_capabilities",
             "binding_count", "check_count", "created_at", "updated_at",
         ]
         read_only_fields = [
             "id", "token_set", "is_local", "ssh_configured",
             "last_seen_at", "stale_since", "agent_version", "agent_hostname", "agent_ip",
+            "agent_capabilities",
             "created_at", "updated_at",
         ]
 

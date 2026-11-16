@@ -122,3 +122,50 @@ describe("ShowOnFloorPlan by way of a container", () => {
     ).toBeTruthy()
   })
 })
+
+const drawn = (id: string, planId: string, plan: string, stack?: string) => ({
+  id,
+  name: "Server room",
+  color: "",
+  floor_plan: {
+    id: planId,
+    name: plan,
+    stack: stack ? { id: `s-${stack}`, name: stack } : null,
+  },
+})
+
+describe("ShowOnFloorPlan on a room's page", () => {
+  it("opens the plan zoomed onto the room's area", async () => {
+    mount({ roomAreas: [drawn("a1", "p1", "Basement")] })
+    const link = await screen.findByRole("link", {
+      name: "Show on floor plan",
+    })
+    expect(hrefOf(link)).toBe("/floorplans/p1?area=a1")
+  })
+
+  it("lists every floor the room is drawn on", async () => {
+    mount({
+      roomAreas: [
+        drawn("a1", "p1", "Basement", "HQ"),
+        drawn("a2", "p2", "What-if"),
+      ],
+    })
+    fireEvent.pointerDown(
+      await screen.findByRole("button", { name: /Show on floor plan/ }),
+      { button: 0, ctrlKey: false }
+    )
+    const items = await screen.findAllByRole("menuitem")
+    expect(items.map((i) => i.textContent)).toEqual([
+      "HQ · Basement",
+      "What-if",
+    ])
+    expect(hrefOf(items[1])).toBe("/floorplans/p2?area=a2")
+  })
+
+  it("is not there while the room is drawn on no plan", async () => {
+    mount({ roomAreas: [] })
+    // The router renders the page a tick later.
+    await new Promise((r) => setTimeout(r, 50))
+    expect(screen.queryByText(/floor plan/)).toBeNull()
+  })
+})

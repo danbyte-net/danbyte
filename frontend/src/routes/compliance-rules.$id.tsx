@@ -3,13 +3,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
-import {
-  BookOpenText,
-  ListFilter,
-  Pencil,
-  RefreshCw,
-  Trash2,
-} from "lucide-react"
+import { BookOpenText, ListFilter, RefreshCw } from "lucide-react"
 
 import {
   api,
@@ -30,6 +24,7 @@ import { Markdown } from "@/components/markdown"
 import { EmptyState } from "@/components/empty-state"
 import { Loading } from "@/components/loading"
 import { QueryError } from "@/components/query-error"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { TimeCell } from "@/components/cells/time-ago"
 import { useEolSettings } from "@/components/cells/eol-cell"
@@ -100,27 +95,12 @@ function Body({ rule: r }: { rule: ComplianceRule }) {
       backLabel="Compliance"
       title={r.name}
       presence={{ type: "compliancerule", id: r.id }}
-      actions={
-        <>
-          {canEdit && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/compliance-rules/$id/edit" params={{ id: r.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDelete && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeleting(r)}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
-        </>
+      edit={
+        canEdit && (
+          <EditButton to="/compliance-rules/$id/edit" params={{ id: r.id }} />
+        )
       }
+      remove={canDelete && <DeleteButton onClick={() => setDeleting(r)} />}
       hero={
         <DetailHero
           title={r.name}

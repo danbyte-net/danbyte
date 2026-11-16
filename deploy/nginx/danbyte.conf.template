@@ -49,6 +49,14 @@ server {
     ssl_certificate     @@CERT@@;
     ssl_certificate_key @@KEY@@;
 
+    # Mozilla "intermediate" TLS, as the production template (#497).
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305;
+    ssl_prefer_server_ciphers off;
+    ssl_session_timeout 1d;
+    ssl_session_cache shared:DanbyteSSL:10m;
+    ssl_session_tickets off;
+
     # Allow reasonably large API payloads (bulk imports etc.).
     client_max_body_size 512m;
 
@@ -147,6 +155,9 @@ server {
         root @@MAINTENANCE_ROOT@@;
         internal;
         add_header Retry-After 30 always;
+        # Its own add_header drops the server's; a page with no script needs
+        # nothing but its inline <style>.
+        add_header Content-Security-Policy "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'" always;
         # nginx serves a static file for GET and HEAD only; a POST that lands
         # here (an API call whose backend just died) would come back as its
         # bare "405 Not Allowed" page. Say what happened instead.

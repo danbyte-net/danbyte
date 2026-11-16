@@ -1,13 +1,11 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
-import { Pencil, Trash2 } from "lucide-react"
 import { useCallback, useMemo, useState } from "react"
 
 import { api, type Aggregate, type Paginated, type RIR } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import { DataTable } from "@/components/data-table"
 import { buildAggregateColumns } from "@/components/columns/aggregate-columns"
 import { TimeCell } from "@/components/cells/time-ago"
@@ -15,6 +13,7 @@ import { KvCard } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
 import { RirDeleteDialog } from "@/components/rir-delete-dialog"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
@@ -56,26 +55,15 @@ function Body({ rir: r }: { rir: RIR }) {
       backLabel="RIRs"
       title={r.name}
       presence={{ type: "rir", id: r.id }}
-      actions={
-        <>
-          {canDo("rir", "change") && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/rirs/$id/edit" params={{ id: r.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDo("rir", "delete") && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeleting(r)}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
-        </>
+      edit={
+        canDo("rir", "change") && (
+          <EditButton to="/rirs/$id/edit" params={{ id: r.id }} />
+        )
+      }
+      remove={
+        canDo("rir", "delete") && (
+          <DeleteButton onClick={() => setDeleting(r)} />
+        )
       }
       hero={
         <DetailHero

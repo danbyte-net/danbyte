@@ -367,12 +367,17 @@ The server checks every upload, whichever way it arrives:
   [`DEVICE_MODEL_MAX_BYTES`](../reference/settings.md#device-3d-models-device_model_max_bytes);
 - every buffer and image is inside the file (the binary chunk, a buffer view,
   or a `data:` URI). A model can't refer to anything outside itself, so it
-  can't make a viewer's browser fetch from elsewhere;
+  can't make a viewer's browser fetch from elsewhere. The one data-less
+  buffer allowed is a meshopt fallback buffer, which `gltfpack -c` writes
+  and the room never reads;
 - any extension it **requires** is one the room reads without a decoder from
   elsewhere: the `KHR_materials_*` family, `KHR_texture_transform`,
   `KHR_mesh_quantization`, `KHR_lights_punctual`, `EXT_meshopt_compression`,
   `EXT_mesh_gpu_instancing`, `EXT_texture_webp` and `EXT_texture_avif`.
   Draco (`KHR_draco_mesh_compression`) and Basis textures are refused.
+  A meshopt-compressed model is decoded by bundled WebAssembly, which the
+  page policy allows with `'wasm-unsafe-eval'` ([Hardening →
+  Content-Security-Policy](../getting-started/hardening.md#content-security-policy)).
 
 The file is stored under the media folder but never served from `/media/`:
 only through the type's (or device's) `model/` endpoint, to a signed-in user
@@ -407,7 +412,7 @@ templates, draw the [faceplate](#faceplate-builder), place the photo-port
 markers on the rear image, find the vendor OID that reports drive health. All of
 it is knowledge about the **model** - identical for everyone who owns that box.
 
-A **bundle** is that work in one file. On a device type, **Export bundle**
+A **bundle** is that work in one file. On a device type, **Export ▸ Bundle**
 downloads everything that makes the model work:
 
 - the type's own fields - height, width, depth, airflow, cooling method and
@@ -451,7 +456,7 @@ the markers land correctly.
 
 #### Photos in a bundle {#bundle-photos}
 
-A type with photos asks on **Export bundle** whether to include them; the box
+A type with photos asks on **Export ▸ Bundle** whether to include them; the box
 is ticked. The photos travel inside the file as base64, so the far side gets
 the same pictures the markers and the [calibration](#photo-ports) were
 placed on. Without them a bundle is a small text file you can read and diff.
@@ -498,6 +503,11 @@ outlets, **Cooling intakes**, **Cooling outflows**, Rear ports, Front ports,
 sub-tabs with counts. The open sub-tab is part of the URL
 (`?tab=components&sub=power-port`), so you can link someone straight at one
 kind, and reload or back/forward without losing your place.
+
+Device bay, module bay, inventory item, antenna and cooling templates have no
+**type**; their API endpoints neither take nor return one, and ignore a `type`
+sent anyway (before 0.20, adding a device bay template failed with a server
+error).
 
 **Aux ports** are the catch-all for connectors the other kinds don't cover: USB
 (A/B/C/mini/micro), video outputs (HDMI, VGA, DVI, DisplayPort), SD/microSD
@@ -547,8 +557,8 @@ Notes:
 ### Sync an existing device to its type
 
 Editing a device type's templates doesn't touch devices that already exist. To
-push the changes onto one, open the device and click **Sync from type** (top-
-right, next to Edit). It opens a **preview** first - no changes until you
+push the changes onto one, open the device and pick **More ▸ Sync from type** (top-
+right). It opens a **preview** first - no changes until you
 confirm:
 
 - **Add** (safe, always applied on confirm) - components the type defines that
@@ -1067,7 +1077,7 @@ for configuration rendering.
 
 A platform also carries a **Target version** and a **Version pattern** - the
 regular expression that reads the running version out of SNMP `sysDescr`
-for devices and VMs on it; see [Software
+and Oxidized configurations for devices and VMs on it; see [Software
 target](../features/lifecycle.md#software-target) and [Version
 pattern](../features/lifecycle.md#version-pattern). Its **License** is
 the OS's SPDX licence expression (`license` in the API and import), reported

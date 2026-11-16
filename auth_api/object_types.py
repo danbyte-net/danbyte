@@ -24,7 +24,7 @@ from django.apps import apps
 # so a wildcard grant covers every verb.
 CRUD_ACTIONS = ["view", "add", "change", "delete"]
 ACTIONS = [*CRUD_ACTIONS, "connect", "reveal", "subscribe", "grant_superuser", "run", "trust",
-           "view_credits", "set_default", "view_config", "view_cost", "provision"]
+           "view_credits", "set_default", "view_config", "view_cost", "provision", "scan"]
 
 # Types an "all object types" ("*") grant does NOT reach. Adding or changing
 # these IS administration - accounts, group membership and the grants
@@ -52,6 +52,12 @@ def grant_covers(object_types, slug: str) -> bool:
 # only governs what the picker surfaces.
 CAPABILITY_VERBS: dict[str, list[str]] = {
     "devicecredential": ["reveal"],
+    # A shared credential reveals like a device credential.
+    "sharedcredential": ["reveal"],
+    # Start a discovery run (#451): Danbyte logs in to the profile's hosts
+    # with their stored credentials. Never implied by change, and no
+    # built-in role carries it.
+    "inventoryprofile": ["scan"],
     # Execute a script, and mark one trusted (trusted scripts reach the
     # database directly, so that verb is its own grant).
     "script": ["run", "trust"],
@@ -71,7 +77,9 @@ CAPABILITY_VERBS: dict[str, list[str]] = {
     # The same for a virtual router modelled as a VM (#384).
     # Send an intended VM to an automation runner to be built. Danbyte
     # never calls a hypervisor's write API; the runner does the build.
-    "virtualmachine": ["view_config", "provision"],
+    # connect: the in-browser SSH terminal to the VM, as for a device. No
+    # built-in role carries it, for either type.
+    "virtualmachine": ["connect", "view_config", "provision"],
     # Self-service opt-in/opt-out on the Notifications page.
     "notificationchannel": ["subscribe"],
     # An agreement's service credits are money; seeing them is its own grant.
@@ -219,6 +227,9 @@ _ENTRIES: list[tuple[str, str, str]] = [
     ("profiles.DeviceProfileAssignment", "Device profile assignments", "DCIM"),
     # Application flows (#163).
     ("api.ApplicationFlow", "Application flows", "DCIM"),
+    # Device dependencies and the media catalog they use (#450).
+    ("api.DeviceDependency", "Device dependencies", "DCIM"),
+    ("api.DependencyMedium", "Dependency media", "DCIM"),
     # Flows with variable ends ("the hosts of an application"); the resolver
     # documents them as generated flows. A tenant-wide catalog; the
     # exclusions are part of their requirement.
@@ -301,6 +312,7 @@ _ENTRIES: list[tuple[str, str, str]] = [
     # Device credentials link a device to an externally-stored secret. Danbyte
     # holds only the reference; revealing the secret is its own `reveal` verb.
     ("monitoring.DeviceCredential", "Device credentials", "Monitoring"),
+    ("monitoring.SharedCredential", "Shared credentials", "Monitoring"),
     ("monitoring.ConnectProtocol", "Connect protocols", "Monitoring"),
     ("monitoring.SnmpSensor", "SNMP sensors", "Monitoring"),
     ("monitoring.WatchedEndpoint", "Watched endpoints", "Monitoring"),
@@ -343,6 +355,10 @@ _ENTRIES: list[tuple[str, str, str]] = [
     # public catalog lacks. Tenant-wide like applications and platforms; the
     # sources' catalog rows (tenant NULL) are not reachable through it.
     ("compliance.EolProduct", "End-of-life products", "Governance"),
+    # A decision about one vulnerability record (#451): not applicable or
+    # risk accepted, for a device, VM, platform, application or the tenant.
+    # Site scope follows the host; the rest is tenant-wide.
+    ("vulnerabilities.VulnerabilityException", "Vulnerability exceptions", "Governance"),
     # ─── Customize ──────────────────────────────────────────────────
     ("api.Status", "Statuses", "Customize"),
     ("api.SensitivityLabel", "Sensitivity labels", "Customize"),
@@ -383,6 +399,10 @@ _ENTRIES: list[tuple[str, str, str]] = [
     ("integrations.VirtNetwork", "Virtualization networks", "Integrations"),
     ("integrations.VirtPlacementRule", "Virtualization placement rules",
      "Integrations"),
+    # Built-in discovery (#451): what to read and who authorised it. Runs
+    # and their host results read with the profile's view.
+    # Labelled as the UI names them; the slug stays ``inventoryprofile``.
+    ("discovery.InventoryProfile", "Discovery profiles", "Integrations"),
     # ─── Planning ───────────────────────────────────────────────────
     ("planning.Board", "Boards", "Planning"),
     ("planning.TaskStatus", "Task statuses", "Planning"),

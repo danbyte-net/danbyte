@@ -76,6 +76,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu"
 import {
   Popover,
   PopoverContent,
@@ -1293,27 +1294,21 @@ export function reportExport(
   }
 }
 
-/** A detail page's **PDF report…** button. */
-export function ObjectReportButton({
-  kind,
-  id,
-  name,
-}: {
-  kind: ReportKind
-  id: string
+/** A detail page's **PDF report…**: `item` for the header's Export menu
+ * (#507), `dialog` for the page - outside the menu, which unmounts its
+ * items when it closes. */
+export function useObjectReportItem(
+  kind: ReportKind,
+  id: string,
   name: string
-}) {
+) {
   const { openReport, dialog } = useObjectReport(kind)
-  return (
-    <>
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={() => openReport({ ids: [id], scope: "one", name })}
-      >
-        <FileText className="h-3.5 w-3.5" /> PDF report…
-      </Button>
-      {dialog}
-    </>
+  const item = (
+    <DropdownMenuItem
+      onSelect={() => openReport({ ids: [id], scope: "one", name })}
+    >
+      <FileText className="h-3.5 w-3.5" /> PDF report…
+    </DropdownMenuItem>
   )
+  return { item, dialog }
 }

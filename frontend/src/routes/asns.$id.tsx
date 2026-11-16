@@ -2,14 +2,13 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { CustomFieldValues } from "@/components/custom-field-display"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
-import { Pencil, Trash2 } from "lucide-react"
 import { useCallback, useState } from "react"
 
 import { api, type ASN } from "@/lib/api"
 import { TagList } from "@/components/cells/tag-list"
 import { TimeCell } from "@/components/cells/time-ago"
+import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
-import { Button } from "@/components/ui/button"
 import { KvCard, dash } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
@@ -54,26 +53,15 @@ function Body({ asn: a }: { asn: ASN }) {
       backLabel="ASNs"
       title={<span className="font-mono">AS{a.asn}</span>}
       presence={{ type: "asn", id: a.id }}
-      actions={
-        <>
-          {canDo("asn", "change") && (
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/asns/$id/edit" params={{ id: a.id }}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Link>
-            </Button>
-          )}
-          {canDo("asn", "delete") && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDeleting(a)}
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </Button>
-          )}
-        </>
+      edit={
+        canDo("asn", "change") && (
+          <EditButton to="/asns/$id/edit" params={{ id: a.id }} />
+        )
+      }
+      remove={
+        canDo("asn", "delete") && (
+          <DeleteButton onClick={() => setDeleting(a)} />
+        )
       }
       hero={
         <DetailHero

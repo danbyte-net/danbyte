@@ -493,13 +493,14 @@ the fields and their values are unchanged.
 | **IPs**        | Every address the device uses: assigned to it, to one of its interfaces, or set as its primary, OOB or secondary address while assigned elsewhere. **Designation** shows the slot; **Assigned to** shows *This device*, the interface (a link to Components) or the other object, with a hover note on an address that is here only through a slot. The tab count and the Overview's **IP addresses** count the same set (`?device=` on [the IP list](../models/ip-address.md#addresses-a-device-or-vm-uses)). |
 | **Components** | Seven sub-tabs, each with its count: **Interfaces** (add, edit, and nest ports and attach IPs - see [Interfaces](interfaces.md)), **Console**, **Power**, **Cooling** (intakes and outflows - see [Cooling](../features/cooling.md#cooling-intakes-and-outflows)), **Front ports** and **Rear ports** (a patch panel's jacks and its back), and **Hardware** (device bays for child devices, module bays for line cards, antennas and serial-tracked inventory items). See [Component tables](#component-tables). |
 | **Services**   | Application services running on the device.                                                     |
+| **Dependencies** | What the device depends on and what depends on it, as trees, its peer links, and **What if this fails?** - see [Device dependencies](dependencies.md#the-dependencies-tab). Shown with view on device dependencies. |
 | **Software**   | Applications installed on the device, each at a version - add, edit and remove them here, or assign an [application group](../features/applications.md#application-groups). The tab shows the count (`install_count` on the device, list and detail). See [Applications & installed software](../features/applications.md). |
 | **Flows**      | [Application flows](../features/application-flows.md) with an end at one of the device's addresses, or at a prefix or range that holds one. |
 | **Sensors**    | Only when [PRTG monitoring](../features/prtg.md#sensors) is on, with the sensor count: a status strip, a card per PRTG sensor, and a panel with each sensor's channels as gauges and state bars. Before PRTG has sensors for the device it shows where it stands - excluded, not in PRTG, planned (with **Add to PRTG now**), needs attention, being added, or in PRTG without sensors - see [Registering devices and VMs](../features/prtg.md#registering-devices-and-vms). The **Monitoring** tab gets one **PRTG** row linking here; its chevron opens whether the device is in PRTG, whether Danbyte made it, what registers it and what is planned, with **Register in PRTG** and **Add to PRTG now** - see [Planned changes](../features/prtg.md#planned-changes). |
 | **Contacts**   | People responsible for the device.                                                              |
 | **Config**     | Configuration context and rendered config, and the [Oxidized backup](../features/oxidized.md) when that is on. The config context lists its sources in merge order, the device's [local context data](#local-context-data) last. |
 | **Journal**    | Free-form notes and a running log you write.                                                    |
-| **Change log** | An automatic record of changes - who changed what, when.                                               |
+| **Change log** | An automatic record of changes - who changed what, when. Also lists the changes to the device's [dependencies](dependencies.md), with an **Object** column. |
 
 ## Status
 
@@ -707,7 +708,7 @@ audited in the change log like any other edit. Edit and Delete send more than
 
 ## Spec sheet
 
-**Spec sheet** in the page actions opens a printable PDF datasheet of the
+**Export → Spec sheet** in the page header opens a printable PDF datasheet of the
 device - stat boxes, details, modules, interfaces with cable peers, comments
 and images - or, from the same menu, the **hardware sheet**: CPU, memory and
 storage totals first, then one table of parts per kind with the slot each
@@ -716,7 +717,7 @@ device and its serial number. See [Spec sheets](../features/spec-sheets.md).
 
 ## PDF report
 
-**PDF report…** in the page actions prints the device with the sections you
+**Export → PDF report…** in the page header prints the device with the sections you
 pick - overview and custom fields, interfaces, IP addresses, cables,
 installed software, power and console ports, lifecycle, monitoring, journal
 and change log - each with its own columns. The device list's **Import /

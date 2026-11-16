@@ -206,8 +206,18 @@ class IPv6RenumberTests(_Base):
         before = self._snapshot()
         r = self.post(self.root, "2001:db8:1230::/60", dry_run=False)
         self.assertEqual(r.status_code, 403)
-        self.assertIn("static routes", r.json()["detail"])
+        # A kind they can't view is counted, not named (#504).
+        self.assertIn("1 object you can't view", r.json()["detail"])
+        self.assertNotIn("static routes", r.json()["detail"])
         self.assertEqual(self._snapshot(), before)
+        # Allowed to view routes, not change them: named.
+        route_view = ObjectPermission.objects.create(
+            name="routes", object_types=["staticroute"], actions=["view"])
+        route_view.users.add(user)
+        route_view.tenants.add(self.tenant)
+        r = self.post(self.root, "2001:db8:1230::/60", dry_run=False)
+        self.assertEqual(r.status_code, 403)
+        self.assertIn("1 of 1 static routes", r.json()["detail"])
         # With the route grant too, it goes through.
         perm.object_types = [*perm.object_types, "staticroute"]
         perm.save()
@@ -234,7 +244,9 @@ class SiteLimitTests(_Base):
         self.login(user)
         r = self.post(root, "10.2.0.0/16")
         self.assertEqual(r.status_code, 403)
-        self.assertIn("1 of 3 prefixes", r.json()["detail"])
+        # Site B's child is not theirs to view: counted, not named (#504).
+        self.assertIn("1 object you can't view", r.json()["detail"])
+        self.assertNotIn("10.1.2.0/24", r.json()["detail"])
 
 
 class IPv4RenumberTests(_Base):

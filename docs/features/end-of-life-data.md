@@ -85,6 +85,19 @@ Saving copies the cycle's facts onto the mapping:
 tenant), and creating, changing or removing one is recorded in the
 [change log](change-log.md).
 
+### From a package inventory
+
+A platform has **one** cycle, so name platforms per release (*Debian 13*,
+*Ubuntu 22.04*) to get end of life per host; a per-OS *Debian* platform
+cannot carry 12 and 13 at once. A [package
+inventory](discovery-packages.md#platform-proposals) helps: a host read as
+Debian 13 whose platform does not fit gets a **Set platform** finding, and
+accepting it puts the host on *Debian 13*, created and mapped here to the
+product and cycle the read gives when the cached catalog has them. The
+host's running version is set from the same read, so the OS bars and *End of
+life* columns fill without anyone typing a date. Windows hosts are not
+mapped this way.
+
 ## Map an application
 
 [Applications](applications.md) map to a **product only**: on an
@@ -99,6 +112,12 @@ each cycle with its status and end of life. A mapping goes when its last
 install goes or moves to another cycle, and **Remove** clears the product and
 every cycle with it. The daily refresh and an import update application
 mappings like platform mappings. All of it is in the change log.
+
+An application created from Discovery's **Add application** finding is
+mapped to its endoflife.date product (nginx, postgresql, php, redis, …) when
+the cached catalog has it, so each [install made from a
+package](discovery-packages.md#applications-from-packages) picks its cycle from the
+package's version.
 
 ## Custom products
 

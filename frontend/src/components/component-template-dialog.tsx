@@ -388,7 +388,7 @@ export function ComponentTemplateDialog({
         payload.media = invKind === "disk" ? invMedia : ""
         payload.capacity_bytes = unitToBytes(invCapacity, invCapacityUnit)
         payload.speed = invSpeed.trim()
-      } else {
+      } else if (kind === "front-port") {
         payload.type = type.trim()
         payload.rear_port_template_id = rearPortTemplateId
         payload.rear_port_position = Number(rearPortPosition || 1)
