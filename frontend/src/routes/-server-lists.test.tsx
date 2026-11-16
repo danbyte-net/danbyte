@@ -371,3 +371,54 @@ describe.each(CASES)(
     })
   }
 )
+
+// A pinned saved view (#523): a bare visit waits for it and asks for the
+// filtered page first; a link that carries a search or filter wins.
+describe("the device list's pinned view", { timeout: 20_000 }, () => {
+  const c = CASES[0]
+  const pinned = {
+    id: "v1",
+    object_type: "device",
+    name: "Planned",
+    description: "",
+    query: { q: "", facets: { status: ["st-p"] } },
+    shared: false,
+    owner: "me",
+    mine: true,
+    is_default: true,
+    is_tenant_default: false,
+  }
+  beforeEach(() => {
+    apiMock.mockReset()
+    apiMock.mockImplementation(async (path) =>
+      new URL(path, "http://x").pathname === "/api/saved-filters/"
+        ? { count: 1, next: null, previous: null, results: [pinned] }
+        : answer(c, path)
+    )
+  })
+
+  it("asks for the pinned view's page, never the whole list first", async () => {
+    mountRoute(c.path, c.component)
+    await screen.findByText(c.first, undefined, { timeout: 8000 })
+    const calls = pageCalls(c)
+    expect(calls.length).toBeGreaterThan(0)
+    for (const params of calls) expect(params.get("f_status")).toBe("st-p")
+    const facets = apiMock.mock.calls
+      .map(([p]) => new URL(p, "http://x"))
+      .filter((u) => u.pathname === "/api/devices/facets/")
+    expect(facets.length).toBeGreaterThan(0)
+    for (const u of facets) expect(u.searchParams.get("f_status")).toBe("st-p")
+  })
+
+  it("leaves a link with a search alone", async () => {
+    mountRoute(c.path, c.component, `${c.path}?q=dev`)
+    await screen.findByText(c.first, undefined, { timeout: 8000 })
+    await settle()
+    const calls = pageCalls(c)
+    expect(calls.length).toBeGreaterThan(0)
+    for (const params of calls) {
+      expect(params.get("f_status")).toBeNull()
+      expect(params.get("search")).toBe("dev")
+    }
+  })
+})

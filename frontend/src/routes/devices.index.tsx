@@ -136,6 +136,7 @@ function DevicesPage() {
     queryKey: "devices",
     columns: facetColumns,
     facets: DEVICE_FACETS,
+    savedViews: "device",
   })
   const { query, rows } = list
 
@@ -231,7 +232,7 @@ function DevicesPage() {
       toggleValue,
     ]
   )
-  const { rail, snapshot, restore, activeCount, allIds, search, total } = list
+  const { rail, allIds, search, total } = list
   // The SBOM covers every device the list's filters match, on any page.
   const sbomFilter = useCallback(
     async () => ({ device: await allIds() }),
@@ -256,10 +257,7 @@ function DevicesPage() {
       title="Devices"
       count={query.data ? total : undefined}
       rail={rail}
-      savedViews={{
-        objectType: "device",
-        filters: { snapshot, restore, activeCount },
-      }}
+      savedViews={list.savedViews}
       search={{
         value: q,
         onChange: setQ,

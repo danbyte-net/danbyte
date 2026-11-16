@@ -978,6 +978,50 @@ class SavedFilter(TimestampedModel):
         return self.name
 
 
+class SavedFilterDefault(TimestampedModel):
+    """The saved view a list opens with (#523): one per list, per person
+    (``user`` set) or for the whole tenant (``user`` empty - everyone without
+    a default of their own). A personal default is a preference like the
+    filter itself; the tenant's is change-logged.
+
+    The view must be one its readers can open: your own or a shared one for
+    yourself, a shared one for the tenant. Unsharing a view drops the defaults
+    other people had on it (``core.saved_filters``)."""
+
+    from django.conf import settings as _settings
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        "core.Tenant", on_delete=models.CASCADE, related_name="saved_filter_defaults"
+    )
+    object_type = models.SlugField(max_length=64)
+    #: Empty: the tenant's default.
+    user = models.ForeignKey(
+        _settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="saved_filter_defaults",
+    )
+    saved_filter = models.ForeignKey(
+        SavedFilter, on_delete=models.CASCADE, related_name="defaults"
+    )
+
+    class Meta:
+        ordering = ["object_type"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "object_type", "user"],
+                name="uniq_saved_filter_default",
+                nulls_distinct=False,
+            ),
+        ]
+
+    def __str__(self) -> str:
+        whose = self.user.get_username() if self.user_id else "tenant"
+        return f"{self.object_type} default ({whose})"
+
+
 class BookmarkFolder(TimestampedModel):
     """A per-user folder for saved page links. Folders are self-nesting so the
     sidebar can present a compact favourites tree without tenant coupling."""

@@ -98,6 +98,8 @@ export function ListPageShell({
     /** RBAC object slug, e.g. "device". */
     objectType: string
     filters: SavedViewsProps["filters"]
+    /** The pinned view as the page resolved it (`useServerList`). */
+    defaultView?: SavedViewsProps["defaultView"]
   }
   /** Drives the body's loading/error switch. When loading or errored, the
    * children are not rendered. Omit to always render children. */
@@ -205,6 +207,7 @@ export function ListPageShell({
                     q={search.value}
                     onQ={search.onChange}
                     filters={savedViews.filters}
+                    defaultView={savedViews.defaultView}
                   />
                 )}
                 {search && (

@@ -136,6 +136,7 @@ function RecordsView({ viewSwitch }: { viewSwitch: ReactNode }) {
     columns: facetColumns,
     facets: RECORD_FACETS,
     extraFacets: VULN_EXTRA_FACETS,
+    savedViews: "vulnerability",
   })
   const { selectedValues, toggleValue } = list
   const columns = useMemo(
@@ -147,14 +148,7 @@ function RecordsView({ viewSwitch }: { viewSwitch: ReactNode }) {
       title="Vulnerabilities"
       count={list.query.data ? list.total : undefined}
       rail={list.rail}
-      savedViews={{
-        objectType: "vulnerability",
-        filters: {
-          snapshot: list.snapshot,
-          restore: list.restore,
-          activeCount: list.activeCount,
-        },
-      }}
+      savedViews={list.savedViews}
       search={{
         value: q,
         onChange: setQ,
@@ -189,6 +183,7 @@ function MatchesView({ viewSwitch }: { viewSwitch: ReactNode }) {
     columns: facetColumns,
     facets: MATCH_FACETS,
     extraFacets: VULN_EXTRA_FACETS,
+    savedViews: "vulnerabilitymatch",
   })
   const { selectedValues, toggleValue } = list
   const columns = useMemo(
@@ -200,14 +195,7 @@ function MatchesView({ viewSwitch }: { viewSwitch: ReactNode }) {
       title="Vulnerabilities"
       count={list.query.data ? list.total : undefined}
       rail={list.rail}
-      savedViews={{
-        objectType: "vulnerabilitymatch",
-        filters: {
-          snapshot: list.snapshot,
-          restore: list.restore,
-          activeCount: list.activeCount,
-        },
-      }}
+      savedViews={list.savedViews}
       search={{
         value: q,
         onChange: setQ,

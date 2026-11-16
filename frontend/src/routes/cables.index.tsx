@@ -43,6 +43,7 @@ function CablesPage() {
     queryKey: "cables",
     columns: facetColumns,
     facets: CABLE_FACETS,
+    savedViews: "cable",
   })
   const { query, rows, selectedValues, toggleValue } = list
 
@@ -103,17 +104,14 @@ function CablesPage() {
       toggleValue,
     ]
   )
-  const { rail, snapshot, restore, activeCount } = list
+  const { rail } = list
 
   return (
     <ListPageShell
       title="Cables"
       count={query.data ? list.total : undefined}
       rail={rail}
-      savedViews={{
-        objectType: "cable",
-        filters: { snapshot, restore, activeCount },
-      }}
+      savedViews={list.savedViews}
       search={{
         value: q,
         onChange: setQ,

@@ -40,6 +40,7 @@ vi.mock("@tanstack/react-router", () => ({
   Link: ({ children }: { children: React.ReactNode }) => <a>{children}</a>,
 }))
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
+vi.mock("@/lib/use-me", () => ({ useMe: () => ({ canManage: false }) }))
 
 beforeAll(() => {
   Element.prototype.scrollIntoView = () => {}

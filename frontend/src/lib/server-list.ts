@@ -7,6 +7,7 @@ import type { Paginated } from "@/lib/api"
 import { decodeText, useListSearch, useSearchWriter } from "@/lib/url-filters"
 import { useUserPrefs } from "@/lib/use-user-prefs"
 import { useServerTableFilters } from "@/components/table-filters"
+import { useDefaultView } from "@/components/saved-views"
 import type { ServerFacetExtra, ServerFacets } from "@/components/table-filters"
 
 // ─── A list paged, sorted and filtered on the server (#482, #487) ────────
@@ -51,6 +52,10 @@ export interface ServerListOpts<T> {
   params?: Record<string, string | undefined>
   /** The search box's URL param. */
   searchKey?: string
+  /** The list's saved-view object type (`"device"`): a visit with no
+   * filter in the URL waits for the pinned view and opens with it (#523).
+   * Returns `savedViews` for `ListPageShell`. */
+  savedViews?: string
 }
 
 const str = (v: unknown) => decodeText(v)
@@ -88,7 +93,7 @@ export function useServerList<T extends { id: string }>(
   const page = Math.max(1, Math.floor(Number(str(search.page)) || 1))
   const ordering = str(search.ordering)
 
-  const { values: prefs, setPref } = useUserPrefs()
+  const { values: prefs, setPref, isLoading: prefsLoading } = useUserPrefs()
   const prefSize = Number(prefs.page_size) || 25
   const pageSize = prefSize > 0 ? Math.min(prefSize, MAX_PAGE) : MAX_PAGE
 
@@ -118,6 +123,25 @@ export function useServerList<T extends { id: string }>(
     return p.toString()
   }, [fixed, q, filters.apiParams])
 
+  // The pinned view, applied before the first request: a big list's
+  // unfiltered page is exactly what the pin is there to skip (#523).
+  const searchKey = opts.searchKey ?? "q"
+  const writeQ = useCallback(
+    (v: string) =>
+      write((prev) => ({ ...prev, [searchKey]: v === "" ? undefined : v })),
+    [write, searchKey]
+  )
+  const defaultView = useDefaultView({
+    objectType: opts.savedViews ?? "",
+    q,
+    onQ: writeQ,
+    filters,
+    enabled: !!opts.savedViews,
+  })
+  // The page size is a preference too: asking before it is in fetched the
+  // first page twice, at 25 and then at the real size.
+  const ready = !defaultView.holding && !prefsLoading
+
   const facetsQuery = useQuery({
     queryKey: [queryKey, "facets", filterParams],
     queryFn: () =>
@@ -126,6 +150,7 @@ export function useServerList<T extends { id: string }>(
       ),
     placeholderData: keepPreviousData,
     staleTime: 30_000,
+    enabled: ready,
   })
   useEffect(() => setCounts(facetsQuery.data), [facetsQuery.data])
 
@@ -165,6 +190,7 @@ export function useServerList<T extends { id: string }>(
     queryKey: [queryKey, "page", pageUrl(page, pageSize)],
     queryFn: () => api<Paginated<T>>(pageUrl(page, pageSize)),
     placeholderData: keepPreviousData,
+    enabled: ready,
   })
   const data = query.data
   useEffect(() => setRows(data?.results ?? []), [data])
@@ -246,7 +272,9 @@ export function useServerList<T extends { id: string }>(
 
   return {
     rows: data?.results ?? [],
-    query,
+    // Waiting for the pin or the page size reads as loading, not as an
+    // empty list.
+    query: ready ? query : { ...query, isLoading: true },
     facetsQuery,
     total,
     search: q,
@@ -264,5 +292,17 @@ export function useServerList<T extends { id: string }>(
     snapshot: filters.snapshot,
     restore: filters.restore,
     activeCount: filters.activeCount,
+    /** `ListPageShell`'s `savedViews`, when the list has them. */
+    savedViews: opts.savedViews
+      ? {
+          objectType: opts.savedViews,
+          filters: {
+            snapshot: filters.snapshot,
+            restore: filters.restore,
+            activeCount: filters.activeCount,
+          },
+          defaultView,
+        }
+      : undefined,
   }
 }

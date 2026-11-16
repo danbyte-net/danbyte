@@ -102,6 +102,7 @@ function VirtualMachinesPage() {
     columns: facetColumns,
     facets: VM_FACETS,
     params: { device },
+    savedViews: "virtualmachine",
   })
   const { query, rows, selectedValues, toggleValue } = list
 
@@ -161,7 +162,7 @@ function VirtualMachinesPage() {
     ]
   )
 
-  const { rail, snapshot, restore, activeCount, allIds, total } = list
+  const { rail, allIds, total } = list
   // The SBOM covers every VM the list's filters match, on any page.
   const sbomFilter = useCallback(
     async () => ({ virtual_machine: await allIds() }),
@@ -175,10 +176,7 @@ function VirtualMachinesPage() {
       title="Virtual machines"
       count={query.data ? total : undefined}
       rail={rail}
-      savedViews={{
-        objectType: "virtualmachine",
-        filters: { snapshot, restore, activeCount },
-      }}
+      savedViews={list.savedViews}
       search={{
         value: q,
         onChange: setQ,

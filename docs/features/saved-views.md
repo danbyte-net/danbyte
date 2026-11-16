@@ -66,6 +66,28 @@ If you change the filters after applying a view, the button says **Edited** -
 what you're looking at is no longer what the view describes. **Update** writes
 the current filters back to it (your own views only).
 
+## Pinning a default view
+
+A pinned view is what a list opens with. Hover a view in the **Views** menu
+and click its pin (**Pin as default**): from then on, opening that list with
+no search and no filter in the address applies the view - on a big list, the
+unfiltered first page is never fetched. One view per list is pinned; pinning
+another moves the pin, and the pin again (**Unpin**) removes it.
+
+While the list shows its pinned view, a chip next to **Views** says so, with
+the pin and the view's name. **Show all** opens the list unfiltered this
+once; the pin stays. A link or bookmark that carries a search or filters
+always wins over the pin, and changing the filters hides the chip.
+
+Administrators can pin a shared view for everyone in the tenant: **Pin for
+everyone** in the view's **⋯** menu. It applies to everyone who has not
+pinned a view of their own on that list, and the menu marks it *Default for
+everyone*. Setting, moving or removing it is recorded in the change log.
+Unsharing a view drops the pins other people (and the tenant) had on it;
+deleting a view drops all of its pins.
+
+Every list with a **Views** menu can be pinned.
+
 ## Sharing
 
 Views are **private until you share them**. A shared view is visible to everyone
@@ -80,6 +102,13 @@ site-scoped engineer fewer devices than it shows an administrator, never more.
 
 Devices, IPs, prefixes, VLANs, racks, sites, locations, circuits, cables,
 clusters, device types, certificates, tunnels, wireless LANs and power feeds.
+
+Views are stored per tenant at `/api/saved-filters/` (`?object_type=device`
+lists one list's). Each view says `is_default` (your pin) and
+`is_tenant_default` (the tenant's). `POST /api/saved-filters/<id>/pin/` pins
+it - `{"scope": "me"}` (the default) for you, `{"scope": "tenant"}` for
+everyone, which needs administrator rights and a shared view;
+`DELETE /api/saved-filters/<id>/pin/?scope=me|tenant` unpins it.
 
 A list gets saved views by handing the control its object type and its filter
 handle - the filters themselves come from the columns the list renders, so

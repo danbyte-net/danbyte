@@ -49,7 +49,7 @@ export function ShellStub({
 }
 
 /** Mount `component` at `path` in a memory router. */
-export function mountRoute(path: string, component: unknown) {
+export function mountRoute(path: string, component: unknown, entry = path) {
   const root = createRootRoute()
   const page = createRoute({
     getParentRoute: () => root,
@@ -58,7 +58,7 @@ export function mountRoute(path: string, component: unknown) {
   })
   const router = createRouter({
     routeTree: root.addChildren([page]),
-    history: createMemoryHistory({ initialEntries: [path] }),
+    history: createMemoryHistory({ initialEntries: [entry] }),
   })
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
