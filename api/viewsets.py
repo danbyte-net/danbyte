@@ -7165,7 +7165,7 @@ class ModuleBayViewSet(_DevicePortViewSet):
     # the choices lookup instead of returning a 400.
     bulk_str_fields = ("description",)
     queryset = (
-        ModuleBay.objects.select_related("device")
+        ModuleBay.objects.select_related("device__device_type__manufacturer")
         .prefetch_related(TAGS, "module__module_type", "module__status")
         .order_by(natural("device__name"), NATURAL_NAME)
     )
@@ -7208,7 +7208,7 @@ class ModuleViewSet(TenantScopedViewSet):
             )
         # create() runs in a transaction: a refused install rolls the module
         # row back with it.
-        serializer.save()
+        self._created_module = serializer.save()
         # Stamp the module's interfaces and power ports onto the host device;
         # with adopt_components, take over same-named components it has.
         adopt = self._flag("adopt_components")
@@ -7218,6 +7218,15 @@ class ModuleViewSet(TenantScopedViewSet):
 
     def _flag(self, name) -> bool:
         return self.request.data.get(name) in (True, "true", "1", 1)
+
+    @staticmethod
+    def _suggestion_warnings(module) -> list[str]:
+        """A module type outside its bay's suggestions is installed, with a
+        note to say so (api.module_suggestions) - never refused."""
+        from .module_suggestions import install_warning
+
+        note = install_warning(module.module_bay, module.module_type)
+        return [note] if note else []
 
     @staticmethod
     def _install(fn, module):
@@ -7239,6 +7248,9 @@ class ModuleViewSet(TenantScopedViewSet):
             resp.data["created_interfaces"] = rep["created"]["interfaces"]
             resp.data["created_power_ports"] = rep["created"]["power_ports"]
             resp.data["adopted"] = rep["adopted"]
+            module = getattr(self, "_created_module", None)
+            if module is not None:
+                resp.data["warnings"] = self._suggestion_warnings(module)
         return resp
 
     def perform_update(self, serializer):
@@ -7271,12 +7283,18 @@ class ModuleViewSet(TenantScopedViewSet):
                 )
             except ModuleRemovalUnconfirmed as exc:
                 raise ValidationError({"confirm_remove": str(exc)}) from exc
+        if (module.module_type_id != before["module_type_id"]
+                or module.module_bay_id != before["module_bay_id"]):
+            self._warnings = self._suggestion_warnings(module)
 
     def update(self, request, *args, **kwargs):
         self._interface_report = None
+        self._warnings = None
         resp = super().update(request, *args, **kwargs)
         if resp.status_code == 200 and self._interface_report is not None:
             resp.data["interfaces"] = self._interface_report
+        if resp.status_code == 200 and self._warnings is not None:
+            resp.data["warnings"] = self._warnings
         return resp
 
     def perform_destroy(self, instance):

@@ -233,6 +233,20 @@ def positionize(name: str) -> str:
     return _SLOT_RE.sub(_sub, name, count=1)
 
 
+def bay_modules(row: dict, notes: list[str] | None = None) -> list[str]:
+    """A ``module-bays`` entry's ``modules`` - Danbyte's extension: the part
+    numbers of the module types that fit the bay (api.module_suggestions).
+    An unreadable list is left out, with a note."""
+    from .module_suggestions import clean
+
+    try:
+        return clean(row.get("modules"))
+    except ValueError as exc:
+        if notes is not None:
+            notes.append(f"module bay {row.get('name')}: modules - {exc} Skipped.")
+        return []
+
+
 def _get_or_create_manufacturer(tenant, name: str, owning_site=None):
     m = Manufacturer.objects.filter(tenant=tenant, name__iexact=name).first()
     if m is not None:
@@ -434,6 +448,7 @@ def import_devicetype_yaml(
         ModuleBayTemplate(
             device_type=dt, name=name_of(r),
             position=str(r.get("position") or "").strip(),
+            suggested_modules=bay_modules(r, skipped),
         )
         for r in rows("module-bays") if r.get("name")
     ]

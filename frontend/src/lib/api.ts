@@ -4698,6 +4698,12 @@ export interface ModuleBayRow {
   description: string
   /** Installed module, or null when the bay is empty. */
   module: InstalledModuleMini | null
+  /** Part numbers of the module types that fit, from the type's bay
+   * template - offered first on install. */
+  suggested_modules?: string[]
+  /** The chassis' manufacturer: its module types come first when the bay
+   * suggests none. */
+  chassis_manufacturer?: { id: string; name: string } | null
   tags: Tag[]
 }
 

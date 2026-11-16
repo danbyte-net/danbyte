@@ -50,6 +50,32 @@ model3d:
 | `leds` | Which data each status light shows. See [Status LEDs](#status-leds). |
 | `renders` | Device types: rack-face photos rendered in Blender. See [Rendered photos](#rendered-photos). |
 
+### Suggested modules
+
+Danbyte extends a device type's `module-bays:` entries with `modules:`, the
+part numbers of the module types known to fit the bay:
+
+```yaml
+module-bays:
+  - name: PS-A
+    position: A
+    modules: [PWR-C1-350WAC-P, PWR-C1-715WAC-P, PWR-C1-1100WAC-P]
+  - name: PS-B
+    position: B
+    modules: [PWR-C1-350WAC-P, PWR-C1-715WAC-P, PWR-C1-1100WAC-P]
+  - name: Network Module
+    position: '1'
+    modules: [C9300-NM-8X, C9300-NM-2Q, C9300-NM-4M]
+```
+
+The list becomes the bay template's
+[suggested modules](device-catalog.md#suggested-modules): the install
+picker offers the tenant's module types with these part numbers first.
+Other tools reading the YAML ignore the key. A list, or one comma-separated
+string, of at most 100 part numbers; repeats are dropped, ignoring case.
+A part number the pack doesn't ship is fine - another pack or the library
+may bring it - and the checker only warns.
+
 ## Names the models carry
 
 The models name the nodes Danbyte reads, exactly, in the glTF file:
@@ -84,8 +110,41 @@ and the ports placed on generated photos.
 - A model may spell the token itself, `port:GigabitEthernet{position}/0/1`.
 - An anchor that matches two templates (`Gi{position}/0/1` and
   `Gi{position:1}/0/1`) matches neither, and the scan warns.
-- Names never match across members or by case: `port:GigabitEthernet2/0/1`
-  is not member 1's port.
+- Names never match across members: `port:GigabitEthernet2/0/1` is not
+  member 1's port.
+
+### Short interface names
+
+A type may spell its ports short, the way the switch's CLI and SNMP do
+(`Gi1/0/1`, `Te1/1/1`), under a model that spells them long
+(`port:GigabitEthernet1/0/1`), or the other way round. The interface family
+at the front of the name matches either spelling, ignoring case; the
+numbers after it must still agree exactly:
+
+| Long | Short |
+| --- | --- |
+| FastEthernet | Fa |
+| GigabitEthernet | Gi, Gig |
+| TwoGigabitEthernet | Tw, TwoGigE |
+| FiveGigabitEthernet | Fi, FiveGigE |
+| TenGigabitEthernet | Te, TenGigE |
+| TwentyFiveGigE | Twe, TwentyFiveGigabitEthernet |
+| FortyGigabitEthernet | Fo, FortyGigE |
+| HundredGigE | Hu, HundredGigabitEthernet, HundredGigEthernet |
+| AppGigabitEthernet | Ap |
+| Port-channel | Po, PortChannel |
+| Ethernet | Eth, Et |
+| Management | Mgmt, Ma |
+
+This is the last step: an exact name wins, then the stack-member match
+above, and only then the other spelling. Two names that are the same port
+spelled two ways (`Gi1/0/1` and `GigabitEthernet1/0/1` on one type) are
+ambiguous for `port:Gig1/0/1`, and the scan warns. It applies wherever
+anchors meet interfaces: the scan's warnings, the device's 3D ports, port
+LEDs, port covers, the ports placed on generated photos and a photo
+marker's port. Any other prefix (`ge-0/0/0`, `Vlan10`) matches only as
+written. The pack checker still compares a pack's own models and YAML
+exactly.
 
 ### Port sizes
 
@@ -428,6 +487,7 @@ render's module part number may then be a module type the tenant has.
 | Names | `bay:` with no module bay in the YAML; `bay:` in a module; `empty:` without its `bay:`; `port:` with no interface or other port (console, power, aux, front or rear port) in the YAML, `led:port:` with no interface (module names with `{module}`, as written); a name twice; an LED not on the `LED` material; the far copy missing a `bay:`, `empty:` or `led:` of the full model. | A module bay without a `bay:`; interfaces without a `port:`. |
 | LEDs | A `leds:` entry that doesn't parse or names no `led:` in the model; on a module type, a `led:` without an entry. | On a chassis, a `led:` without an entry (it stays off); a glob matching nothing. |
 | Port sizes | | Ports without `danbyte_w` / `danbyte_h`. |
+| Suggested modules | A `module-bays` entry's `modules` that isn't a list of part numbers. | A part number in neither the pack nor the tenant. |
 | Renders | A file missing, not a WebP or PNG, or without a transparent background; a front or rear not exactly the type's face frame at 2,000 px across; `model_sha256` missing or not the `.glb`'s; `modules` naming a bay the YAML or the model lacks, or a part number in neither the pack nor the tenant. | No front or rear render; renders on a module type. |
 
 The in-app check runs the same checker, with the tenant.
@@ -475,6 +535,9 @@ A pack can also be imported with a management command, from a folder or a
 - The matched or created type gets the pack's model and far model,
   replacing what it had, with the scan's report per type. A hand-made port
   mapping on the replaced model is cleared.
+- A matched device type's bays gain the YAML's
+  [suggested modules](#suggested-modules): the pack's part numbers are
+  added to the bay's own, and none is removed.
 - The run is a **dry run** unless `--apply` is given: everything is read,
   checked and scanned, the report printed, and nothing kept.
 - Models no YAML names are listed and not imported.

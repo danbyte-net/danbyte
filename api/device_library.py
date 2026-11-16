@@ -87,7 +87,7 @@ COMPONENT_SPECS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ("front_ports", "front_port_templates",
      ("name", "description", "type", "rear_port_position", "positions")),
     ("module_bays", "module_bay_templates",
-     ("name", "description", "position")),
+     ("name", "description", "position", "suggested_modules")),
     ("device_bays", "device_bay_templates", ("name", "description")),
     ("inventory_items", "inventory_item_templates",
      ("name", "description", "part_id", "kind", "media", "capacity_bytes",
@@ -588,6 +588,12 @@ def _import_components(dt, comps: dict, report: dict) -> None:
                     )
                     continue
                 kwargs["rear_port_template"] = rear
+            elif key == "module_bays" and "suggested_modules" in kwargs:
+                from .devicetype_import import bay_modules
+
+                kwargs["suggested_modules"] = bay_modules(
+                    {"name": row["name"], "modules": kwargs["suggested_modules"]},
+                    report["warnings"])
             elif key == "inventory_items" and row.get("manufacturer"):
                 from .devicetype_import import _get_or_create_manufacturer
 

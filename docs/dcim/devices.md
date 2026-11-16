@@ -394,9 +394,12 @@ type, its status, serial and position; a right-click offers, on a module, **Open
 module type**, **Edit…** (status and serial), **Replace…** (another module
 type - the device's interfaces and power ports are re-stamped, and dropping
 any asks again)
-and **Remove from bay…**, and on an empty bay **Install module…**, its
-picker listing the chassis maker's module types first (all of them when it
-has none). These are the Hardware tab's
+and **Remove from bay…**, and on an empty bay **Install module…**. Its
+picker lists the bay's [suggested modules](device-catalog.md#suggested-modules)
+first, under **Suggested**, then **All module types**; a bay without
+suggestions lists the chassis maker's module types first. Every surface
+that installs a module (the Hardware tab, a photo face, the 3D viewer and
+the 3D room) uses the same picker. These are the Hardware tab's
 [module](device-catalog.md#module-types) dialogs, gated by module add /
 change / delete, and the model re-assembles as soon as the change saves.
 

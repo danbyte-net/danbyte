@@ -5381,11 +5381,21 @@ class ModuleBayTemplateSerializer(_ComponentTemplateSerializer):
         source="default_module_type", queryset=ModuleType.objects.all(),
         write_only=True, required=False, allow_null=True,
     )
+    suggested_modules = serializers.JSONField(required=False)
+
+    def validate_suggested_modules(self, value):
+        from .module_suggestions import clean
+
+        try:
+            return clean(value)
+        except ValueError as exc:
+            raise serializers.ValidationError(str(exc)) from exc
 
     class Meta(_ComponentTemplateSerializer.Meta):
         model = ModuleBayTemplate
         fields = _ComponentTemplateSerializer.Meta.fields + [
             "position", "default_module_type", "default_module_type_id",
+            "suggested_modules",
         ]
 
 
@@ -6085,12 +6095,42 @@ class ModuleBaySerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, 
             "serial_number": m.serial_number,
         }
 
+    # Part numbers of the module types that fit, read through the device
+    # type's bay template (api.module_suggestions): the install picker
+    # offers them first.
+    suggested_modules = serializers.SerializerMethodField()
+
+    @extend_schema_field({"type": "array", "items": {"type": "string"}})
+    def get_suggested_modules(self, obj):
+        from .module_suggestions import for_bays
+
+        cache = self.context.setdefault("_bay_suggestions", {})
+        if obj.id not in cache:
+            # A list serializes a page of bays: resolve the page at once.
+            page = getattr(getattr(self, "parent", None), "instance", None)
+            batch = list(page) if isinstance(page, (list, tuple, QuerySet)) else []
+            if obj not in batch:
+                batch = [obj]
+            cache.update(for_bays(batch))
+        return cache.get(obj.id, [])
+
+    # The chassis' manufacturer: without suggestions, its module types are
+    # offered first.
+    chassis_manufacturer = serializers.SerializerMethodField()
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_chassis_manufacturer(self, obj):
+        dt = obj.device.device_type
+        m = dt.manufacturer if dt is not None else None
+        return {"id": str(m.id), "name": m.name} if m is not None else None
+
     cf_model = "modulebay"
 
     class Meta:
         model = ModuleBay
         fields = ["id", "device", "device_id", "name", "position",
-                  "description", "module", "tags", "tag_ids",
+                  "description", "module", "suggested_modules",
+                  "chassis_manufacturer", "tags", "tag_ids",
                   "custom_fields",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]

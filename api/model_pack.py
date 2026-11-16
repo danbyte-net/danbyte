@@ -741,6 +741,37 @@ def _match(model_cls, tenant, data):
     return (hits[0] if hits else None), None
 
 
+def apply_bay_modules(dt, data: dict) -> list[str]:
+    """Add a matched device type's ``module-bays: - modules: [...]`` to its
+    bay templates (api.module_suggestions). The pack's part numbers join
+    the bay's own - one added by hand is never dropped. A created type got
+    them from api.devicetype_import already."""
+    from .devicetype_import import bay_modules, positionize
+
+    rows = data.get("module-bays")
+    rows = [r for r in rows if isinstance(r, dict)] if isinstance(rows, list) else []
+    notes: list[str] = []
+    bays = {b.name: b for b in dt.module_bay_templates.all()}
+    added = 0
+    for r in rows:
+        parts = bay_modules(r, notes)
+        name = str(r.get("name") or "").strip()
+        bay = bays.get(name) or bays.get(positionize(name))
+        if not parts or bay is None:
+            continue
+        have = list(bay.suggested_modules or [])
+        known = {p.lower() for p in have}
+        new = [p for p in parts if p.lower() not in known]
+        if new:
+            bay.suggested_modules = have + new
+            bay.save(update_fields=["suggested_modules", "updated_at"])
+            added += 1
+    if added:
+        notes.append(f"module bays: suggested modules added to {added} "
+                     f"bay{'s' if added != 1 else ''}.")
+    return notes
+
+
 def import_pack(tenant, files: PackFiles, *, dry_run: bool = True,
                 replace_photos: bool = False, label: str = "",
                 progress=None) -> PackResult:
@@ -829,6 +860,8 @@ def import_pack(tenant, files: PackFiles, *, dry_run: bool = True,
                     # ports gains the inlets its YAML names.
                     if kind == "module-type" and (n := add_module_power_ports(obj, data)):
                         tr.notes.append(f"power-ports: added {n}.")
+                    if kind == "device-type":
+                        tr.notes += apply_bay_modules(obj, data)
                 if not dry_run:
                     tr.id = str(obj.pk)
                 tr.notes += apply_model3d(obj, block, files, dry_run=dry_run) or [

@@ -1021,7 +1021,9 @@ The workflow:
    each bay names the slot and sets its position. Optionally pick a **Default
    module** on a bay template: a module of that type is pre-installed when the
    bay is stamped onto a new device, and seated into an empty matching bay when
-   you **sync from type** on an existing device (see below).
+   you **sync from type** on an existing device (see below). List the bay's
+   [suggested modules](#suggested-modules) to have the install picker offer
+   them first.
 2. Devices of the type get concrete bays stamped at creation, with any default
    modules already seated.
 3. On the device page's **Hardware** tab, **Install…** a module type into an
@@ -1135,6 +1137,29 @@ A **default module** only decides what's *pre-seated* - it never locks a bay.
 Sync-from-type fills empty matching bays with the default but **never
 overwrites** a module you installed (or deliberately left out until the next
 sync), so hand-placed hardware is safe.
+
+### Suggested modules
+
+A module bay template may list **Suggested modules**: the part numbers of
+the module types that fit it, for a C9300's `PS-A` the three PSUs
+`PWR-C1-350WAC-P, PWR-C1-715WAC-P, PWR-C1-1100WAC-P`. Set them in the bay
+template's dialog, comma-separated (`suggested_modules` in the API, a list),
+or from a YAML or [model pack](model-packs.md#suggested-modules) import.
+
+- **Install picker.** Installing or replacing a module in the bay, from the
+  Hardware tab, a photo face, the 3D viewer or the 3D room, lists the
+  tenant's module types with those part numbers under **Suggested**, then
+  every other type under **All module types**. Part numbers compare ignoring
+  case. A bay with no suggestions (or none the tenant has) lists the
+  chassis manufacturer's module types first, as before.
+- **Devices.** A device's bay reads the list through its type's template
+  (`suggested_modules` on `/api/module-bays/`, read-only), so a change on
+  the type reaches every device of it at once, built before the change or
+  after. A stack member's `Uplink {position}` template is its `Uplink 2`.
+- **Not a rule.** Any module type can still be installed. One outside a
+  non-empty list installs with a warning: the `POST /api/modules/` (and a
+  `PATCH` changing the type or bay) response carries it under `warnings`,
+  shown as a toast.
 
 Module types have their own **Faceplate** tab - the same drag-and-drop
 builder device types get, with the module's interface templates as the

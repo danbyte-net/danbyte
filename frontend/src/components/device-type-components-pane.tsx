@@ -241,6 +241,18 @@ const EXTRA_COLUMNS: Record<TemplateKind, ColumnDef<AnyTemplate>[]> = {
           dash
         ),
     },
+    {
+      id: "suggested_modules",
+      header: "Suggested modules",
+      cell: ({ row }) =>
+        row.original.suggested_modules?.length ? (
+          <span className="font-mono text-xs">
+            {row.original.suggested_modules.join(", ")}
+          </span>
+        ) : (
+          dash
+        ),
+    },
   ],
   "power-port": [
     typeCol,

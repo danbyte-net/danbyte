@@ -293,6 +293,8 @@ class _Checker:
         row = Part(kind=kind, path=path,
                    part=str(data.get("part_number") or data.get("model") or ""))
         self.report.parts.append(row)
+        if kind == "device-type":
+            self.bay_modules(path, data, module_parts, row)
         block = data.get("model3d")
         if block in (None, "", {}):
             self.add("warning", path, "No model3d block.", row)
@@ -473,6 +475,29 @@ class _Checker:
                 where = "the pack or the tenant" if self.tenant is not None else "the pack"
                 self.add("error", path, f"renders.modules.{bay}: module type {pn} is not in "
                                         f"{where}.", row)
+
+    def bay_modules(self, path, data, module_parts, row):
+        """``module-bays: - modules: [...]``: a list of part numbers; one
+        the pack doesn't ship (nor the tenant hold) only warns - another
+        pack, or the library, may bring it."""
+        from .module_suggestions import clean
+
+        bays = data.get("module-bays")
+        for r in bays if isinstance(bays, list) else ():
+            if not isinstance(r, dict) or "modules" not in r:
+                continue
+            try:
+                parts = clean(r.get("modules"))
+            except ValueError as exc:
+                self.add("error", path, f"module-bays.{r.get('name')}.modules: {exc}", row)
+                continue
+            missing = [p for p in parts if p not in module_parts and not self._in_tenant(p)]
+            if missing:
+                where = "the pack or the tenant" if self.tenant is not None else "the pack"
+                self.add("warning", path, f"module-bays.{r.get('name')}.modules: "
+                                          f"{', '.join(missing[:3])}"
+                                          f"{', …' if len(missing) > 3 else ''} not in {where}.",
+                         row)
 
     def _in_tenant(self, pn: str) -> bool:
         if self.tenant is None:

@@ -61,6 +61,7 @@ import { useMe } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
 import { invalidatePortCounts } from "@/lib/port-utilization"
 import { useSaveObject } from "@/lib/save-object"
+import { moduleTypePicks } from "@/lib/module-suggestions"
 
 /** The statuses a module may wear: the catalog's, offered to modules. */
 function useModuleStatuses(enabled = true) {
@@ -331,11 +332,14 @@ export function RemoveModuleDialog({
 }
 
 /** What a module save answers: an install's created counts, a replace's
- * re-stamp report, and the components taken over either way. */
+ * re-stamp report, the components taken over either way, and a note when
+ * the type is outside the bay's suggestions. */
 interface InstallResult {
   created_interfaces?: number
   adopted?: string[]
   interfaces?: { adopted?: string[] }
+  /** A type outside the bay's suggestions, installed anyway. */
+  warnings?: string[]
 }
 
 /** The module in a bay, for the dialog's replace and edit modes. */
@@ -369,8 +373,8 @@ export function InstallModuleDialog({
    * re-stamps its interfaces), `edit` changes its status and serial. */
   seated?: SeatedModule | null
   mode?: "install" | "replace" | "edit"
-  /** Offer this manufacturer's module types first: the chassis' own. All
-   * types show when it has none. */
+  /** Offer this manufacturer's module types first when the bay suggests
+   * none - by default the chassis' own, read from the bay. */
   manufacturerId?: string | null
 }) {
   const qc = useQueryClient()
@@ -413,19 +417,32 @@ export function InstallModuleDialog({
     enabled: !!bay && mode !== "edit",
     staleTime: 10 * 60_000,
   })
+  // The bay as the Modules pane lists it (the same request and cache): its
+  // suggested part numbers and the chassis' manufacturer, whichever surface
+  // opened the dialog.
+  const bays = useQuery({
+    queryKey: ["device-module-bays", deviceId],
+    queryFn: () => apiAll<ModuleBayRow>(`/api/module-bays/?device=${deviceId}`),
+    enabled: !!bay && mode !== "edit",
+  })
+  const bayRow = bays.data?.results.find((b) => b.id === bay?.id)
+  const chassis = bayRow?.chassis_manufacturer
+  const make = manufacturerId ?? chassis?.id ?? null
   const ownMake = useQuery({
-    queryKey: ["module-types-picker", { manufacturer: manufacturerId }],
+    queryKey: ["module-types-picker", { manufacturer: make }],
     queryFn: () =>
       apiAll<ModuleTypeOption>(
-        `/api/module-types/?picker=1&manufacturer=${manufacturerId}`
+        `/api/module-types/?picker=1&manufacturer=${make}`
       ),
-    enabled: !!bay && mode !== "edit" && !!manufacturerId,
+    enabled: !!bay && mode !== "edit" && !!make,
     staleTime: 10 * 60_000,
   })
-  const typeOptions =
-    manufacturerId && ownMake.data?.results.length
-      ? ownMake.data.results
-      : (types.data?.results ?? [])
+  const typeOptions = moduleTypePicks(
+    types.data?.results ?? [],
+    bayRow?.suggested_modules,
+    make ? ownMake.data?.results : null,
+    chassis && chassis.id === make ? chassis.name : undefined
+  )
 
   const install = useMutation({
     mutationFn: () => {
@@ -474,6 +491,8 @@ export function InstallModuleDialog({
         toast.success(
           (mode === "replace" ? "Module replaced" : "Module saved") + took
         )
+      // Installed anyway: a type outside the bay's suggestions only warns.
+      for (const w of r.warnings ?? []) toast.warning(w)
       onInstalled?.()
       onOpenChange(false)
     },
@@ -542,10 +561,7 @@ export function InstallModuleDialog({
               placeholder="Pick a module type"
               searchPlaceholder="Search module types…"
               emptyText="No module types - import or add them under DCIM → Catalog → Module types."
-              options={typeOptions.map((t) => ({
-                value: t.id,
-                label: t.part_number ? `${t.name} (${t.part_number})` : t.name,
-              }))}
+              options={typeOptions}
               error={fieldErrors.module_type_id}
             />
           )}

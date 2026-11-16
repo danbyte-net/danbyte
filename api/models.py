@@ -1050,6 +1050,14 @@ class ModuleBayTemplate(_ComponentTemplate):
         "onto a new device, and into an empty matching bay on sync-from-type. "
         "Fully replaceable afterwards - this only decides what's pre-seated.",
     )
+    # Part numbers of the module types known to fit the bay (a pack's
+    # ``module-bays: - modules: [...]``). The install picker offers the
+    # tenant's module types with these part numbers first; a device's bay
+    # reads them through its type's template (api.module_suggestions).
+    suggested_modules = models.JSONField(
+        default=list, blank=True, db_default=models.Value([], models.JSONField()),
+        help_text="Part numbers of the module types that fit this bay.",
+    )
 
     class Meta:
         unique_together = ("device_type", "name")

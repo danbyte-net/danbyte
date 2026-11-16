@@ -122,6 +122,8 @@ export type AnyTemplate = ComponentTemplateBase &
   Partial<{
     position: string
     default_module_type: { id: string; name: string } | null
+    /** Part numbers of the module types that fit the bay. */
+    suggested_modules: string[]
   }> & // module-bay
   Partial<{
     antenna_type: string
@@ -208,6 +210,8 @@ export function ComponentTemplateDialog({
   const [defaultModuleTypeId, setDefaultModuleTypeId] = useState<string | null>(
     null
   )
+  // Part numbers offered first in the bay's install picker, comma-separated.
+  const [suggestedModules, setSuggestedModules] = useState("")
   // Inventory-item extras
   const [manufacturerId, setManufacturerId] = useState<string | null>(null)
   const [partId, setPartId] = useState("")
@@ -258,6 +262,7 @@ export function ComponentTemplateDialog({
     )
     setBayPosition(template?.position ?? "")
     setDefaultModuleTypeId(template?.default_module_type?.id ?? null)
+    setSuggestedModules((template?.suggested_modules ?? []).join(", "))
     setManufacturerId(template?.manufacturer?.id ?? null)
     setPartId(template?.part_id ?? "")
     const inv = template as
@@ -374,6 +379,10 @@ export function ComponentTemplateDialog({
       } else if (kind === "module-bay") {
         payload.position = bayPosition.trim()
         payload.default_module_type_id = defaultModuleTypeId
+        payload.suggested_modules = suggestedModules
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean)
       } else if (kind === "antenna") {
         payload.antenna_type = antType
         payload.gain_dbi = antGain.trim() === "" ? null : antGain.trim()
@@ -679,6 +688,15 @@ export function ComponentTemplateDialog({
                 }))}
                 hint="Pre-installed on new devices and on sync into an empty bay - replaceable per device"
                 error={fieldErrors.default_module_type_id}
+              />
+              <FormText
+                label="Suggested modules"
+                value={suggestedModules}
+                onChange={setSuggestedModules}
+                mono
+                placeholder="PWR-C1-350WAC-P, PWR-C1-715WAC-P"
+                hint="Part numbers, comma-separated"
+                error={fieldErrors.suggested_modules}
               />
             </div>
           ) : kind === "rear-port" || kind === "front-port" ? (
