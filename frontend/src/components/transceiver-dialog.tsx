@@ -382,14 +382,14 @@ export function TransceiverValue({
     onError: (err) => apiErrorToast(err),
   })
   return (
-    <span className="flex flex-wrap items-center gap-2">
+    <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
       {t ? (
         <span className="font-mono text-[13px]">{transceiverText(t)}</span>
       ) : (
         <span className="text-muted-foreground">-</span>
       )}
       {canEdit && (
-        <>
+        <span className="flex shrink-0 items-center gap-1">
           <Button
             type="button"
             size="xs"
@@ -410,7 +410,7 @@ export function TransceiverValue({
             </Button>
           )}
           <TransceiverDialog iface={iface} open={open} onOpenChange={setOpen} />
-        </>
+        </span>
       )}
     </span>
   )
