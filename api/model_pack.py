@@ -716,13 +716,26 @@ class PackResult:
 
 def _match(model_cls, tenant, data):
     """The existing type a YAML doc describes: same manufacturer (by name)
-    and part number - or, without a part number, the same name. Returns
+    and part number - or, without a part number, the same name; failing
+    both, a type with no part number named after the pack's model or part
+    number. Returns
     (type, None) or (None, why-not) when ambiguous."""
     mfr = str(data.get("manufacturer") or "").strip()
     pn = str(data.get("part_number") or "").strip()
     name = str(data.get("model") or "").strip()
     qs = model_cls.objects.filter(tenant=tenant, manufacturer__name__iexact=mfr)
     hits = list(qs.filter(part_number=pn)[:2]) if pn else list(qs.filter(name=name)[:2])
+    if not hits and pn:
+        # A type made by hand before packs carried part numbers: no part
+        # number of its own, and the pack's model or part number as its name
+        # (or a device type's model). Without this the import would try to
+        # create a second type and hit the name clash.
+        from django.db.models import Q
+
+        same = Q(name__iexact=name) | Q(name__iexact=pn)
+        if any(f.name == "model" for f in model_cls._meta.fields):
+            same |= Q(model__iexact=name) | Q(model__iexact=pn)
+        hits = list(qs.filter(part_number="").filter(same)[:2])
     if len(hits) > 1:
         return None, f"more than one {mfr} type has part number {pn or name} - skipped."
     return (hits[0] if hits else None), None

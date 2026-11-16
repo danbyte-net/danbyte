@@ -16,7 +16,7 @@ from pathlib import Path
 from django.conf import settings
 from django.contrib.auth.models import User
 from django.core.management import call_command
-from django.test import SimpleTestCase
+from django.test import SimpleTestCase, TestCase
 from PIL import Image
 
 from auth_api.models import ObjectPermission, UserProfile
@@ -414,3 +414,37 @@ class ProvenanceTests(_Pack):
         out = self.run_import("--apply")
         self.assertIn("renders.modules.FAN 1: no module type NM-X.", out)
         self.assertIsNone(self.dt_x1().model_reference)
+
+
+class MatchHandMadeTypeTests(TestCase):
+    """A pack matches a type made by hand without a part number, rather than
+    creating a second one and hitting the name clash."""
+
+    def setUp(self):
+        from core.models import Organization, Tenant
+
+        org = Organization.objects.create(name="O", slug="o-match")
+        self.tenant = Tenant.objects.create(org=org, name="T", slug="t-match")
+        self.mfr = Manufacturer.objects.create(tenant=self.tenant, name="Cisco", slug="cisco")
+
+    def test_blank_part_number_type_named_after_the_model_matches(self):
+        from api.model_pack import _match
+
+        dt = DeviceType.objects.create(tenant=self.tenant, manufacturer=self.mfr,
+                                       name="Catalyst 9300-48P", model="C9300-48P")
+        hit, why = _match(DeviceType, self.tenant, {
+            "manufacturer": "Cisco", "model": "Catalyst 9300-48P", "part_number": "C9300-48P"})
+        self.assertEqual(hit, dt)
+        self.assertIsNone(why)
+
+    def test_a_typed_part_number_still_wins(self):
+        from api.model_pack import _match
+
+        DeviceType.objects.create(tenant=self.tenant, manufacturer=self.mfr,
+                                  name="Catalyst 9300-48P", model="C9300-48P")
+        real = DeviceType.objects.create(tenant=self.tenant, manufacturer=self.mfr,
+                                         name="C9300-48P (library)", model="C9300-48P-lib",
+                                         part_number="C9300-48P")
+        hit, _ = _match(DeviceType, self.tenant, {
+            "manufacturer": "Cisco", "model": "Catalyst 9300-48P", "part_number": "C9300-48P"})
+        self.assertEqual(hit, real)
