@@ -260,6 +260,64 @@ export function conversionMatrix(unit: ModelUnit, up: ModelUp): THREE.Matrix4 {
   return m
 }
 
+/** The UV sets a converted model keeps: TEXCOORD_0 and the baked-AO
+ * TEXCOORD_1 (export spec v1.8). */
+const UV_SETS = ["uv", "uv1"] as const
+
+const TEXTURE_SLOTS = [
+  "map",
+  "aoMap",
+  "lightMap",
+  "normalMap",
+  "bumpMap",
+  "roughnessMap",
+  "metalnessMap",
+  "emissiveMap",
+  "alphaMap",
+] as const
+
+/** `mat`, or a copy without the textures whose UV set `geo` lacks: a map
+ * read through a missing set samples one texel everywhere (baked AO would
+ * darken the whole part). */
+export function fitMaterialToUvs(
+  mat: THREE.Material,
+  geo: THREE.BufferGeometry
+): THREE.Material {
+  const slots = mat as unknown as Record<string, unknown>
+  const missing = TEXTURE_SLOTS.filter((k) => {
+    const t = slots[k]
+    return (
+      t instanceof THREE.Texture &&
+      !geo.hasAttribute(t.channel === 0 ? "uv" : `uv${t.channel}`)
+    )
+  })
+  if (missing.length === 0) return mat
+  const copy = mat.clone() as unknown as Record<string, unknown>
+  for (const k of missing) copy[k] = null
+  return copy as unknown as THREE.Material
+}
+
+/** A copy of `geo` with only the attributes a converted model keeps, each
+ * as plain floats: a packed glb's quantized, normalized or interleaved
+ * attributes would neither take a baked transform nor merge with float
+ * ones. */
+export function floatGeometry(geo: THREE.BufferGeometry): THREE.BufferGeometry {
+  const out = new THREE.BufferGeometry()
+  for (const name of ["position", "normal", ...UV_SETS]) {
+    if (!geo.hasAttribute(name)) continue
+    const a = geo.getAttribute(name)
+    const n = a.itemSize
+    const arr = new Float32Array(a.count * n)
+    for (let i = 0; i < a.count; i++)
+      for (let c = 0; c < n; c++) arr[i * n + c] = a.getComponent(i, c)
+    out.setAttribute(name, new THREE.BufferAttribute(arr, n))
+  }
+  if (geo.index) out.setIndex(geo.index.clone())
+  for (const grp of geo.groups)
+    out.addGroup(grp.start, grp.count, grp.materialIndex)
+  return out
+}
+
 function materialsOf(mesh: THREE.Mesh): THREE.Material {
   return Array.isArray(mesh.material) ? mesh.material[0] : mesh.material
 }
@@ -282,13 +340,12 @@ export function prepare(
     if (!(o instanceof THREE.Mesh)) return
     const mesh = o
     const mat = materialsOf(mesh)
-    const g = mesh.geometry.clone()
+    const g = floatGeometry(mesh.geometry)
     g.applyMatrix4(new THREE.Matrix4().multiplyMatrices(conv, mesh.matrixWorld))
-    // Merging needs one attribute set: position + normal (+ uv where all
-    // parts of that material have it), all indexed.
+    // Merging needs one attribute set: position + normal (+ uv and the
+    // baked-AO uv1 where all parts of that material have them), all
+    // indexed.
     if (!g.hasAttribute("normal")) g.computeVertexNormals()
-    for (const name of Object.keys(g.attributes))
-      if (!["position", "normal", "uv"].includes(name)) g.deleteAttribute(name)
     if (!g.index) {
       const n = g.getAttribute("position").count
       const idx = new Uint32Array(n)
@@ -302,14 +359,15 @@ export function prepare(
   })
   const out = new THREE.Group()
   for (const [mat, geos] of byMaterial) {
-    const allUv = geos.every((g) => g.hasAttribute("uv"))
-    if (!allUv) for (const g of geos) g.deleteAttribute("uv")
+    for (const uv of UV_SETS)
+      if (!geos.every((g) => g.hasAttribute(uv)))
+        for (const g of geos) g.deleteAttribute(uv)
     // mergeGeometries answers null on mismatched attributes (typed as never).
     const merged = (
       geos.length === 1 ? geos[0] : mergeGeometries(geos, false)
     ) as THREE.BufferGeometry | null
     if (!merged) continue
-    out.add(new THREE.Mesh(merged, mat))
+    out.add(new THREE.Mesh(merged, fitMaterialToUvs(mat, merged)))
   }
   // Stand it on the origin.
   const box = boundsOf(out)
@@ -335,7 +393,7 @@ export async function simplify(
     const mesh = child as THREE.Mesh
     let g = mesh.geometry.clone()
     g.deleteAttribute("normal")
-    g.deleteAttribute("uv")
+    for (const uv of UV_SETS) g.deleteAttribute(uv)
     g = mergeVertices(g, 1e-6)
     const idx = new Uint32Array(g.index!.array)
     const pos = new Float32Array(g.getAttribute("position").array)
@@ -348,7 +406,8 @@ export async function simplify(
     }
     g.setIndex(new THREE.BufferAttribute(next, 1))
     g.computeVertexNormals()
-    out.add(new THREE.Mesh(g, mesh.material))
+    // Its textures lost their UVs with the simplification.
+    out.add(new THREE.Mesh(g, fitMaterialToUvs(materialsOf(mesh), g)))
   }
   return out
 }

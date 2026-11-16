@@ -69,7 +69,9 @@ export interface StudioPanel {
  * (a softbox key over the front right, a fill card left, a low rim strip
  * behind, a top light, a broad dim card facing the front and a floor
  * bounce) - at `environment` strength, which is what metal reflects; a
- * low ambient; one key light from the front right and a dim fill.
+ * low ambient; one key light from the front right, a dim fill, and a
+ * close top softbox over the back (`top`) whose falloff gives a lid its
+ * gradient.
  *
  * Right and left are the viewer's, facing the front (−Z): the key stands
  * at −X, across from the three-quarter camera (+X), so a glossy lid or a
@@ -88,20 +90,82 @@ export const STUDIO_LIGHTS = {
   exposure: 1.35,
   /** The environment's world colour (linear gray). */
   world: 0.06,
-  environment: 0.8,
+  environment: 0.9,
   panels: [
     { position: [-3, 3.5, -4], size: [3.5, 2.5], intensity: 5 },
     { position: [5, 1.5, -1.5], size: [2.5, 3], intensity: 1.4 },
     { position: [0, 0.8, 6], size: [7, 0.6], intensity: 3 },
     { position: [0, 5, 0.5], size: [4, 3], intensity: 1.8 },
-    { position: [0, 0, -6], size: [9, 3], intensity: 0.4 },
+    { position: [0, 0, -6], size: [9, 3], intensity: 0.7 },
     { position: [0, -4, 0], size: [8, 8], intensity: 0.15 },
   ] as StudioPanel[],
-  ambient: 0.12,
-  key: { position: [-2.5, 4, -3] as V3, intensity: 1.6 },
+  ambient: 0.15,
+  key: { position: [-2.5, 3.2, -4] as V3, intensity: 1.6 },
   fill: { position: [2, 1, 3] as V3, intensity: 0.35 },
+  /** A softbox close over the back of the model, a spot light that falls
+   * off with distance: the lid's soft gradient, brightest toward the back,
+   * that a directional key cannot give. `position` is in the model's
+   * radii from its centre; `intensity` is what it gives at the centre. */
+  top: { position: [-0.3, 2, 0.9] as V3, intensity: 1.3 },
   /** The soft ground shadow under a three-quarter view. */
   shadow: { opacity: 0.45 },
+}
+
+/** The top softbox (STUDIO_LIGHTS.top) for a model whose bounding sphere
+ * is `radius` around `center`: a spot light, decay 2, aimed at the centre,
+ * whose cone just takes in the sphere and whose intensity gives
+ * `top.intensity` at the centre whatever the model's size. It casts
+ * shadows: without them it would light port cages from inside. */
+export function studioTopLight(
+  center: V3,
+  radius: number
+): {
+  position: V3
+  intensity: number
+  angle: number
+  near: number
+  far: number
+} {
+  const r = Math.max(radius, 1e-3)
+  const [x, y, z] = STUDIO_LIGHTS.top.position
+  const d = Math.hypot(x, y, z) * r
+  return {
+    position: [center[0] + x * r, center[1] + y * r, center[2] + z * r],
+    intensity: STUDIO_LIGHTS.top.intensity * d * d,
+    angle: Math.min(Math.asin(Math.min(r / d, 1)) * 1.15, Math.PI / 2.2),
+    near: Math.max(d - r * 1.1, d * 0.05),
+    far: d + r * 1.1,
+  }
+}
+
+/** A top-softbox light (studioTopLight), shadows on, its target to be
+ * placed by the caller. */
+export function makeTopLight(): THREE.SpotLight {
+  const l = new THREE.SpotLight(0xffffff, 0, 0, Math.PI / 4, 1, 2)
+  l.castShadow = true
+  l.shadow.mapSize.set(1024, 1024)
+  l.shadow.radius = 4
+  l.shadow.bias = -0.002
+  return l
+}
+
+/** Put `light` where studioTopLight says, aimed at `center`. */
+export function placeTopLight(
+  light: THREE.SpotLight,
+  center: V3,
+  radius: number
+): void {
+  const t = studioTopLight(center, radius)
+  light.position.set(...t.position)
+  light.intensity = t.intensity
+  light.angle = t.angle
+  light.target.position.set(...center)
+  light.shadow.camera.near = t.near
+  light.shadow.camera.far = t.far
+  light.shadow.normalBias = radius * 0.008
+  light.shadow.camera.updateProjectionMatrix()
+  light.updateMatrixWorld()
+  light.target.updateMatrixWorld()
 }
 
 /** The studio environment as a scene to bake: the gray world and the
@@ -515,6 +579,9 @@ export async function renderStudio(src: StudioSource): Promise<StudioResult> {
       scene.add(l)
       scene.add(l.target)
     }
+    const top = makeTopLight()
+    scene.add(top)
+    scene.add(top.target)
     scene.updateMatrixWorld(true)
 
     const box = new THREE.Box3().setFromObject(placed)
@@ -545,6 +612,14 @@ export async function renderStudio(src: StudioSource): Promise<StudioResult> {
     }
     fill.target.position.copy(centre)
     fill.target.updateMatrixWorld()
+    /** The top softbox over the model's back; a rear face turns it. */
+    const topAt = (rear: boolean) => {
+      placeTopLight(top, vec(centre), size.length() / 2)
+      if (rear) {
+        top.position.z = 2 * centre.z - top.position.z
+        top.updateMatrixWorld()
+      }
+    }
     // The ground: only its shadow shows, and only under the ¾ view.
     ground.rotation.x = -Math.PI / 2
     ground.position.set(centre.x, box.min.y - radius * 1e-4, centre.z)
@@ -596,6 +671,7 @@ export async function renderStudio(src: StudioSource): Promise<StudioResult> {
       ]
       const keyAt = turn(STUDIO_LIGHTS.key.position)
       const fillAt = turn(STUDIO_LIGHTS.fill.position)
+      topAt(face === "rear")
       acc.render(
         scene,
         cam,
@@ -633,6 +709,7 @@ export async function renderStudio(src: StudioSource): Promise<StudioResult> {
     Object.assign(iso, { left: l, right: r, top: t, bottom: b })
     iso.updateProjectionMatrix()
     ground.visible = true
+    topAt(false)
     acc.render(
       scene,
       iso,

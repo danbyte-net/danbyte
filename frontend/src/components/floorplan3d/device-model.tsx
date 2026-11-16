@@ -107,6 +107,34 @@ function disposeScene(obj: THREE.Object3D) {
   })
 }
 
+/**
+ * A binary glTF parsed as the room uses it: meshopt and quantized
+ * attributes decoded, every node tagged with its glTF name. A pack's baked
+ * ambient occlusion (`occlusionTexture` on TEXCOORD_1, export spec v1.8)
+ * comes out as the material's `aoMap` on UV channel 1 and the geometry's
+ * `uv1`; the assembly, LED, cover and instancing paths share both.
+ */
+export async function parseModel(buf: ArrayBuffer): Promise<THREE.Group> {
+  const loader = new GLTFLoader()
+  loader.setMeshoptDecoder(MeshoptDecoder)
+  const gltf = await loader.parseAsync(buf, "")
+  keepNodeNames(gltf)
+  const scene = gltf.scene
+  scene.updateMatrixWorld(true)
+  return scene
+}
+
+/** Whether any material in `obj` carries a baked ambient occlusion map. */
+export function hasBakedAo(obj: THREE.Object3D | null | undefined): boolean {
+  let found = false
+  obj?.traverse((o) => {
+    if (found || !(o instanceof THREE.Mesh)) return
+    const mats = Array.isArray(o.material) ? o.material : [o.material]
+    if (mats.some((m) => (m as THREE.MeshStandardMaterial).aoMap)) found = true
+  })
+  return found
+}
+
 function load(url: string, slot: CacheSlot) {
   const done = (patch: Partial<ModelEntry>) => {
     slot.entry = { ...slot.entry, ...patch }
@@ -117,15 +145,8 @@ function load(url: string, slot: CacheSlot) {
       if (!r.ok) throw new Error(String(r.status))
       return r.arrayBuffer()
     })
-    .then((buf) => {
-      const loader = new GLTFLoader()
-      loader.setMeshoptDecoder(MeshoptDecoder)
-      return loader.parseAsync(buf, "")
-    })
-    .then((gltf) => {
-      keepNodeNames(gltf)
-      const scene = gltf.scene
-      scene.updateMatrixWorld(true)
+    .then((buf) => parseModel(buf))
+    .then((scene) => {
       done({
         status: "ready",
         scene,

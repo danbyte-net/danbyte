@@ -313,7 +313,10 @@ like a photo), **3D** (the perspective three-quarter view), **Fit**,
 **Ports** (the [mapped ports](#model-ports), outlined in one neutral
 colour - a type has no port state; hovering one names it) and
 **Fullscreen**. A module type's Overview has the same viewer. The type's rack-face
-photos stay in their own section below the cards.
+photos stay in their own section below the cards. The viewer lights the
+model like a studio product shot - soft shadows, ambient occlusion in port
+cages and vents on a capable graphics card, a pack's baked occlusion - see
+[How the viewer lights a model](model-packs.md#how-the-viewer-lights-a-model).
 
 The **3D model** card manages it - **Upload** / **Replace** and **Remove**,
 then:

@@ -245,12 +245,14 @@ viewer - and shows what it made before anything is stored:
 **Light.** The viewer and the generated images share one studio light:
 AgX tone mapping (Blender's default view), a built-in photo-studio
 environment of soft light panels for metal to reflect (no image files),
-one key light from the front right and a dim fill. The images average many
-renders with the key moved across its softbox and a light moved across the
-sky, for soft shadows and contact shading in recesses. **Front** and
-**Rear** keep a transparent background with no ground; the **3D** view and
-the viewer's 3D preset stand the model on a soft shadow. The 3D room keeps
-its own light.
+one key light from the front right, a dim fill, and a softbox close over
+the model's back whose falloff gives a lid its soft gradient. The images
+average many renders with the key moved across its softbox and a light
+moved across the sky, for soft shadows and contact shading in recesses.
+**Front** and **Rear** keep a transparent background with no ground; the
+**3D** view and the viewer's 3D preset stand the model on a soft shadow.
+The 3D room keeps its own light. How the live viewer draws it is under
+[How the viewer lights a model](#how-the-viewer-lights-a-model).
 
 **What the bays show.** By default each bay shows its cover. **Modules** →
 **Edit** on the card picks a module type per bay - a *reference
@@ -277,6 +279,40 @@ type's can **Render faces** on its 3D model card: the same render with its
 own modules, to view and download. **Save photo ports** keeps the port map
 as the device's [photo-port override](devices.md); a device keeps drawing
 its type's images.
+
+## How the viewer lights a model
+
+The **3D model** viewer (a type's, a module type's or a device's Overview,
+and its fullscreen) aims for a studio product shot rather than a flat
+preview:
+
+- **Studio light.** The [studio light](#generated-images) above, with the
+  key light and the top softbox casting soft shadows. Their shadow cameras
+  are fitted to the model, so modules shade the chassis and ears shade the
+  bezel without the blocky edges a room-sized shadow would have.
+- **Ambient occlusion.** On a capable graphics card the viewer adds
+  screen-space ambient occlusion: port cages, vents, seams and the gaps
+  between modules darken a little, as they do in a ray-traced render. Port
+  markers, bay outlines, lit LEDs, glass and the ground shadow draw over
+  it with their exact colours. A software
+  renderer, a browser without WebGL 2 float targets or a device with less
+  than 4 GB of memory gets the plain render, shadows and all. To force
+  either in one browser, set `danbyte:viewer-look` in its local storage to
+  `full` or `plain`.
+- **Baked occlusion from packs.** A model that carries its own baked
+  ambient occlusion - an `occlusionTexture` on a second UV set
+  (`TEXCOORD_1`), export spec v1.8 - uses it everywhere it is drawn: the
+  viewer, the generated images, the room and its racks (full and far
+  copies alike), modules and covers included; a lit LED glows over it. It
+  darkens the light a part takes from its surroundings (the studio
+  environment and ambient light), which is most of the studio's. The viewer's screen-space occlusion is
+  then lighter, so the two don't add up to soot. gltfpack's `-cc`
+  compression keeps both UV sets; nothing needs to change on import.
+
+The room and its racks keep plain rendering: hundreds of devices at once
+can't afford the extra passes. Uploading a model through the converter
+(STEP, OBJ, …) keeps a glb's second UV set; **Simplify** drops the UV sets
+and so the textures that use them.
 
 ## Rendered photos
 

@@ -389,7 +389,7 @@ export function slotMatrix(
   return out.multiplyMatrices(_slot, _fit)
 }
 
-interface PartMesh {
+export interface PartMesh {
   mesh: THREE.Mesh
   /** Its matrix in the assembled root's frame. */
   local: THREE.Matrix4
@@ -404,7 +404,7 @@ const HIDDEN = new THREE.Matrix4().makeScale(0, 0, 0)
 /** The visible meshes of an assembled copy, each with its matrix in the
  * copy's frame, the LED it lights and the port cover it is part of, if
  * any. */
-function partMeshes(root: THREE.Object3D): PartMesh[] {
+export function partMeshes(root: THREE.Object3D): PartMesh[] {
   root.updateMatrixWorld(true)
   const inv = new THREE.Matrix4().copy(root.matrixWorld).invert()
   const leds = new Map<THREE.Mesh, { name: string; bay: string | null }>()
@@ -436,6 +436,26 @@ function partMeshes(root: THREE.Object3D): PartMesh[] {
   return out
 }
 
+/** One instanced mesh per part mesh, `count` instances each. Geometry and
+ * material are the cached model's own - its UV sets and any baked ambient
+ * occlusion included - except a lit LED's, which colours per instance. */
+export function farInstances(
+  meshes: readonly PartMesh[],
+  count: number
+): THREE.InstancedMesh[] {
+  return meshes.map((pm) => {
+    const im = new THREE.InstancedMesh(
+      pm.mesh.geometry,
+      pm.led ? LED_INSTANCE_MATERIAL : pm.mesh.material,
+      count
+    )
+    im.raycast = () => {}
+    im.receiveShadow = true
+    im.castShadow = false
+    return im
+  })
+}
+
 /** One instanced group: every device in a rack drawing the same far copy
  * with the same parts and covers. */
 function InstanceGroup({
@@ -465,21 +485,7 @@ function InstanceGroup({
     // The group key stands for the chassis, parts and covers.
   }, [first.groupKey])
   const count = draws.length
-  const instanced = useMemo(
-    () =>
-      meshes.map((pm) => {
-        const im = new THREE.InstancedMesh(
-          pm.mesh.geometry,
-          pm.led ? LED_INSTANCE_MATERIAL : pm.mesh.material,
-          count
-        )
-        im.raycast = () => {}
-        im.receiveShadow = true
-        im.castShadow = false
-        return im
-      }),
-    [meshes, count]
-  )
+  const instanced = useMemo(() => farInstances(meshes, count), [meshes, count])
   useEffect(() => () => instanced.forEach((im) => im.dispose()), [instanced])
   const posesKey = draws
     .map((d) => `${d.pose.position.join(":")}:${d.pose.rotY}:${d.fit.scale}`)

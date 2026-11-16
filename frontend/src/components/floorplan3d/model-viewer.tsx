@@ -34,6 +34,7 @@ import type { ModelPortsDoc, V3 } from "@/lib/model-ports"
 import {
   PlacedModel,
   fittedModel,
+  hasBakedAo,
   readyParts,
   useDeviceModel,
   useDeviceModels,
@@ -49,6 +50,7 @@ import { BayHits } from "./bay-hits"
 import { PortPickPrecedence } from "./port-pick"
 import { Studio, StudioLights } from "./model-preview"
 import { STUDIO_LIGHTS } from "./studio"
+import { AO_INTENSITY, ViewerAo, aoRadiusFor, viewerLook } from "./viewer-look"
 import { modelTargetM } from "./world"
 
 /**
@@ -77,9 +79,14 @@ import { modelTargetM } from "./world"
  *
  * The light is the studio's (STUDIO_LIGHTS), what generated images are
  * rendered with: AgX tone mapping, the procedural studio environment, one
- * key light from the front and a dim fill. The three-quarter view stands
- * the model on a soft contact shadow, drawn once per model and parts set
- * rather than on every frame; the face views have none, like a drawing.
+ * key light from the front and a dim fill. The key casts soft shadows
+ * from a shadow camera fitted to the model, so modules shade the chassis
+ * and ears the bezel. On a capable GPU, screen-space ambient occlusion
+ * (viewer-look) darkens port cages, vents and seams - lighter when the
+ * model brings baked occlusion of its own; a software renderer or a weak
+ * device gets the plain render. The three-quarter view stands the model on
+ * a soft contact shadow, drawn once per model and parts set rather than on
+ * every frame; the face views have none, like a drawing.
  */
 
 export type ViewPreset = "front" | "rear" | "top" | "iso"
@@ -241,6 +248,24 @@ function Fitted({
   )
   const size = useMemo(() => fit.size as V3, [fit])
   const shadow = useMemo(() => contactShadowFor(size), [size])
+  // The key's shadow and the AO, fitted to the model's upright box.
+  const keyShadow = useMemo(
+    () => ({
+      center: [0, size[1] / 2, 0] as V3,
+      radius: Math.max(Math.hypot(...size) / 2, 1e-3),
+    }),
+    [size]
+  )
+  const clip = useMemo(
+    () =>
+      new THREE.Box3(
+        new THREE.Vector3(-size[0] / 2, 0, -size[2] / 2),
+        new THREE.Vector3(size[0] / 2, size[1], size[2] / 2)
+      ),
+    [size]
+  )
+  const gl = useThree((s) => s.gl)
+  const look = useMemo(() => viewerLook(gl), [gl])
   // A new parts set re-draws the shadow (its key).
   const partsKey = parts.map((p) => `${p.bay}:${p.position}`).join(",")
   // A device's status LEDs, polled; a type's model shows them dark.
@@ -252,8 +277,19 @@ function Fitted({
   const bays = props.model.bays?.length ? props.model.bays : null
   const { selection } = pickers
   const pickBays = !!props.deviceId && !!bays && !!pickers.onSelectBay
+  // A model with its own baked occlusion needs less of the screen's.
+  const baked =
+    hasBakedAo(entry.scene) || parts.some((p) => hasBakedAo(p.entry.scene))
   return (
     <>
+      <StudioLights shadow={keyShadow} />
+      {look === "full" && (
+        <ViewerAo
+          radius={aoRadiusFor(size)}
+          intensity={baked ? AO_INTENSITY.withBaked : AO_INTENSITY.screen}
+          clip={clip}
+        />
+      )}
       <PlacedModel
         entry={entry}
         fit={fit}
@@ -475,6 +511,7 @@ export default function ModelViewer(props: ModelViewerProps) {
         dpr={[1, 2]}
         camera={{ fov: 35, position: [1, 1, -2] }}
         gl={{ antialias: true }}
+        shadows={{ type: THREE.PCFShadowMap }}
         fallback={<Loading />}
         onPointerMissed={(e) => {
           if (e.button === 0) setSelection(null)
@@ -482,7 +519,6 @@ export default function ModelViewer(props: ModelViewerProps) {
       >
         <PortPickPrecedence />
         <Studio />
-        <StudioLights />
         <Model props={props} pickers={pickers} />
         <OrbitControls makeDefault enableDamping={false} />
       </Canvas>
