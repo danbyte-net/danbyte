@@ -36,6 +36,7 @@ import {
 } from "@/components/device-faceplate"
 
 import { PORT_MARKERS_KEY } from "./port-pick"
+import { KeepInView } from "./keep-in-view"
 
 /**
  * The ports mapped onto a floor device's 3D model, each drawn as its own
@@ -434,7 +435,7 @@ function MarkerMesh<TPick extends Shaped>({
           zIndexRange={[20, 0]}
           style={{ pointerEvents: "none" }}
         >
-          {card(hot)}
+          <KeepInView>{card(hot)}</KeepInView>
         </Html>
       )}
     </>
