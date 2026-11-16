@@ -10,7 +10,13 @@ from pathlib import Path
 from django.conf import settings
 from django.test import SimpleTestCase
 
-from .anchor_names import NameMatcher, authored, interface_name
+from .anchor_names import (
+    INTERFACE_ABBREVIATIONS,
+    NameMatcher,
+    authored,
+    interface_name,
+    long_form,
+)
 from .model_anchors import interface_matcher, mismatches
 from .model_projection import image_ports_from_anchors
 from .models import (
@@ -35,6 +41,19 @@ class MatcherCaseTests(SimpleTestCase):
         for name, want in CASES["authored"]:
             with self.subTest(name=name):
                 self.assertEqual(authored(name), want)
+
+    def test_long_form(self):
+        for name, want in CASES["long_form"]:
+            with self.subTest(name=name):
+                self.assertEqual(long_form(name), want)
+
+    def test_the_abbreviation_tables_agree(self):
+        ts = (Path(settings.BASE_DIR) / "frontend/src/lib/anchor-names.ts").read_text()
+        for family, spellings in INTERFACE_ABBREVIATIONS.items():
+            key = f'"{family}"' if "-" in family else family
+            row = f"{key}: [{', '.join(json.dumps(s) for s in spellings)}],"
+            with self.subTest(family=family):
+                self.assertIn(row, ts)
 
     def test_match(self):
         for c in CASES["match"]:
@@ -164,6 +183,67 @@ class StackMemberPortTests(_Base):
         self.assertEqual(
             mismatches(anchors, None, interface_matcher(self.dev, ifaces)),
             ["2 interfaces without a port: anchor (first: Te2/0/2)."])
+
+
+class AbbreviatedNameTests(_Base):
+    """A real type spelling its ports long (``TenGigabitEthernet1/0/1``)
+    under the test model's short ``port:Te1/0/1`` - and a standalone device,
+    which needs the type's templates as much as a stack member does."""
+
+    def setUp(self):
+        super().setUp()
+        InterfaceTemplate.objects.filter(device_type=self.dt).delete()
+        for i in (1, 2, 3):
+            InterfaceTemplate.objects.create(device_type=self.dt,
+                                             name=f"TenGigabitEthernet1/0/{i}")
+        ModuleInterfaceTemplate.objects.filter(module_type=self.mt).update(
+            name="TenGigabitEthernet1/{module}/1")
+        res = self._upload(f"/api/device-types/{self.dt.id}/model/", chassis())
+        self.report = res.json()["model_scan"]
+        self._upload(f"/api/module-types/{self.mt.id}/model/", module_glb())
+        self.dev = Device.objects.create(tenant=self.tenant, name="sw1", device_type=self.dt,
+                                         site=self.site)
+        materialize_device_components(self.dev)
+        self.bays = {b.name: b for b in self.dev.module_bays.all()}
+
+    def test_scan_matches_the_long_names(self):
+        warnings = [w for w in self.report["warnings"] if "interface" in w]
+        self.assertEqual(warnings, ["1 interface without a port: anchor "
+                                    "(first: TenGigabitEthernet1/0/3)."])
+
+    def test_ports_are_the_devices_own(self):
+        from .model_ports import effective_model_ports
+
+        install_module(Module.objects.create(device=self.dev, module_bay=self.bays["FAN 1"],
+                                             module_type=self.mt))
+        doc = effective_model_ports(Device.objects.get(pk=self.dev.pk))
+        self.assertEqual(sorted(p["name"] for p in doc["ports"]),
+                         ["TenGigabitEthernet1/0/1", "TenGigabitEthernet1/0/2",
+                          "TenGigabitEthernet1/1/1"])
+
+    def test_face_ports_resolve_the_interfaces(self):
+        res = self.client.get(f"/api/devices/{self.dev.id}/face-ports/")
+        self.assertEqual(res.status_code, 200, res.content)
+        model = {e["name"]: e for e in res.json()["model"]}
+        self.assertEqual(set(model), {"TenGigabitEthernet1/0/1", "TenGigabitEthernet1/0/2"})
+        self.assertTrue(all(e["id"] for e in model.values()))
+
+    def test_a_short_photo_marker_finds_the_long_interface(self):
+        self.dt.image_ports = {"front": [{"kind": "interface", "name": "Te1/0/3",
+                                          "x": 0.5, "y": 0.5, "w": 0.01, "h": 0.1}]}
+        self.dt.save()
+        res = self.client.get(f"/api/devices/{self.dev.id}/face-ports/")
+        want = str(self.dev.interfaces.get(name="TenGigabitEthernet1/0/3").id)
+        self.assertEqual([e["id"] for e in res.json()["front"]], [want])
+
+
+class AbbreviatedLedTests(_LedBase):
+    def test_port_led_of_a_short_named_device(self):
+        InterfaceTemplate.objects.create(device_type=self.dt, name="TenGigabitEthernet1/0/1")
+        Interface.objects.create(device=self.dev, name="TenGigabitEthernet1/0/1")
+        self._snmp(self.dev, [{"name": "TenGigabitEthernet1/0/1", "oper_status": "up"}])
+        leds = self._leds(self.dev)[str(self.dev.id)]["leds"]
+        self.assertEqual(leds.get("port:Te1/0/1"), "green")
 
 
 class StackMemberLedTests(_LedBase):

@@ -31,7 +31,8 @@ devices at once, with a constant number of queries:
   doesn't poll at all shows what Danbyte records instead: green for an
   enabled port that is cabled or marked connected, else off. The name is
   matched as a port anchor's is (api.anchor_names): on stack member 2 a
-  model's ``port:Gi1/0/1`` is the member's ``Gi2/0/1``.
+  model's ``port:Gi1/0/1`` is the member's ``Gi2/0/1``, and a model's
+  ``port:GigabitEthernet1/0/1`` is a short-named type's ``Gi1/0/1``.
 * ``device.locate`` - the locate beacon (``Device.locate_until``): blinking
   blue while it is on.
 * ``none`` - a light Danbyte does not drive; always off.

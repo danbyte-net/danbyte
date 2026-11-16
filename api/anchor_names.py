@@ -13,8 +13,13 @@ prefix carries no digit: ``Gi{position}/0/1``, ``ge-{position:0}/0/0``,
 import. Matching, for one anchor over a set of names:
 
 1. the same string, which always wins;
-2. else the names whose authored spelling equals the anchor's. One is a
-   match; several are ambiguous and match nothing.
+2. else the names whose authored spelling equals the anchor's;
+3. else the names whose authored spelling equals the anchor's with the
+   interface family spelled either way (``long_form``): ``Gi1/0/1`` and
+   ``GigabitEthernet1/0/1`` are one port.
+
+At each step one name is a match; several are ambiguous and match nothing
+(a later step is not tried).
 
 ``NameMatcher`` is the matcher; frontend/src/lib/anchor-names.ts is its twin
 (``anchor-names.cases.json`` holds cases both test suites run).
@@ -31,6 +36,40 @@ from __future__ import annotations
 import re
 
 LEADING_POSITION_RE = re.compile(r"^([^\d{}]*)\{position(?::(\d+))?\}")
+
+#: Interface families and the short spellings that stand for them - Cisco's
+#: ``show interfaces status`` / SNMP ifName forms (and Arista's, Nexus')
+#: beside the long names the device library writes. Keys and spellings are
+#: compared lower-case. The lib/anchor-names.ts twin holds the same table.
+INTERFACE_ABBREVIATIONS: dict[str, tuple[str, ...]] = {
+    "fastethernet": ("fa",),
+    "gigabitethernet": ("gi", "gig"),
+    "twogigabitethernet": ("tw", "twogige"),
+    "fivegigabitethernet": ("fi", "fivegige"),
+    "tengigabitethernet": ("te", "tengige"),
+    "twentyfivegige": ("twe", "twentyfivegigabitethernet"),
+    "fortygigabitethernet": ("fo", "fortygige"),
+    "hundredgige": ("hu", "hundredgigabitethernet", "hundredgigethernet"),
+    "appgigabitethernet": ("ap",),
+    "port-channel": ("po", "portchannel"),
+    "ethernet": ("eth", "et"),
+    "management": ("mgmt", "ma"),
+}
+_FAMILY = {s: k for k, v in INTERFACE_ABBREVIATIONS.items() for s in (k, *v)}
+# The family prefix: letters (and a hyphen, Port-channel) up to the first
+# number or token, an optional space between (``TenGigabitEthernet 1/1``).
+_PREFIX_RE = re.compile(r"^([A-Za-z][A-Za-z-]*)\s?(?=[\d{])")
+
+
+def long_form(name: str) -> str:
+    """``name`` with a known interface family prefix in its long, lower-case
+    spelling (``Gi1/0/1`` → ``gigabitethernet1/0/1``); any other name as it
+    is. Only the prefix: the numbers must still agree exactly."""
+    m = _PREFIX_RE.match(name)
+    family = _FAMILY.get(m.group(1).lower()) if m is not None else None
+    if family is None:
+        return name
+    return family + name[m.end():]
 
 
 def authored(name: str) -> str:
@@ -51,26 +90,39 @@ class NameMatcher:
     concrete interfaces (``Gi2/0/1``) answer to a model authored as member 1.
     """
 
-    __slots__ = ("names", "_exact", "_forms")
+    __slots__ = ("names", "_exact", "_forms", "_long")
 
     def __init__(self, names, aliases: dict | None = None):
         self.names = list(dict.fromkeys(str(n) for n in names))
         self._exact = set(self.names)
         forms: dict[str, list[str]] = {}
+        longs: dict[str, list[str]] = {}
+
+        def add(spelling: str, n: str) -> None:
+            for table, key in ((forms, authored(spelling)),
+                               (longs, long_form(authored(spelling)))):
+                row = table.setdefault(key, [])
+                if n not in row:
+                    row.append(n)
+
         for n in self.names:
-            forms.setdefault(authored(n), []).append(n)
+            add(n, n)
         for spelling, n in (aliases or {}).items():
-            row = forms.setdefault(authored(spelling), [])
-            if n not in row:
-                row.append(n)
+            add(spelling, n)
         self._forms = forms
+        self._long = longs
 
     def candidates(self, anchor: str) -> list[str]:
         """The names ``anchor`` matches: itself when it is one of them, else
-        every name of the same authored spelling."""
+        every name of the same authored spelling, else every name of that
+        spelling with the interface family written either way."""
         if anchor in self._exact:
             return [anchor]
-        return list(self._forms.get(authored(anchor), ()))
+        spelled = authored(anchor)
+        found = self._forms.get(spelled)
+        if found:
+            return list(found)
+        return list(self._long.get(long_form(spelled), ()))
 
     def resolve(self, anchor: str) -> str | None:
         """The one name ``anchor`` matches, or None (none, or ambiguous)."""
@@ -102,9 +154,9 @@ def prime(devices) -> None:
     id): NameMatcher}``. Module types come from the devices'
     ``_installed_parts`` (api.model_3d.installed_parts calls this).
 
-    Only a stack member needs them. Standalone, a template renders to its
-    authored spelling, so the anchor (with any token of its own rendered) is
-    already the interface's name. Every device gets its types' other
+    Every device needs them: a stack member for its own member number, and
+    a standalone one whose type spells its ports short (``Gi1/0/1``) under a
+    model that spells them long. Every device also gets its types' other
     port-like template names (``_anchor_kinds``), in two more queries."""
     from .models import InterfaceTemplate, ModuleInterfaceTemplate
 
@@ -114,8 +166,7 @@ def prime(devices) -> None:
         if hasattr(d, "_anchor_matchers"):
             continue
         d._anchor_matchers = {}
-        if d.vc_position is not None:
-            wanted.append(d)
+        wanted.append(d)
     if not wanted:
         return
     dt_ids = {d.device_type_id for d in wanted if d.device_type_id}
@@ -252,7 +303,7 @@ def module_port(device, module_type, anchor: str, bay_position: str) -> tuple[st
 
 
 def _matcher(device, key: str, type_obj) -> NameMatcher | None:
-    if device.vc_position is None or type_obj is None:
+    if type_obj is None:
         return None
     cache = device.__dict__.setdefault("_anchor_matchers", {})
     k = (key, type_obj.id)

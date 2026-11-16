@@ -112,11 +112,156 @@
       "resolve": "TenGigabitEthernet{position}/1/2"
     },
     {
-      "why": "case is not folded here",
-      "names": ["GigabitEthernet{position}/0/1"],
-      "anchor": "gigabitethernet1/0/1",
+      "why": "case is not folded outside an interface family",
+      "names": ["Port{position}/1"],
+      "anchor": "port1/1",
       "candidates": [],
       "resolve": null
+    },
+    {
+      "why": "a family's spelling folds case",
+      "names": ["GigabitEthernet{position}/0/1"],
+      "anchor": "gigabitethernet1/0/1",
+      "candidates": ["GigabitEthernet{position}/0/1"],
+      "resolve": "GigabitEthernet{position}/0/1"
+    },
+    {
+      "why": "a long anchor finds a short name",
+      "names": ["Gi1/0/1", "Gi1/0/2"],
+      "anchor": "GigabitEthernet1/0/1",
+      "candidates": ["Gi1/0/1"],
+      "resolve": "Gi1/0/1"
+    },
+    {
+      "why": "a short anchor finds a long name",
+      "names": ["TenGigabitEthernet1/1/1", "TenGigabitEthernet1/1/2"],
+      "anchor": "Te1/1/2",
+      "candidates": ["TenGigabitEthernet1/1/2"],
+      "resolve": "TenGigabitEthernet1/1/2"
+    },
+    {
+      "why": "abbreviation over a {position} template",
+      "names": ["Gi{position}/0/1", "Te{position}/1/1"],
+      "anchor": "GigabitEthernet1/0/1",
+      "candidates": ["Gi{position}/0/1"],
+      "resolve": "Gi{position}/0/1"
+    },
+    {
+      "why": "abbreviation keeps {module} as written",
+      "names": ["Te1/{module}/1"],
+      "anchor": "TenGigabitEthernet1/{module}/1",
+      "candidates": ["Te1/{module}/1"],
+      "resolve": "Te1/{module}/1"
+    },
+    {
+      "why": "Twe is TwentyFiveGigE, Tw is TwoGigabitEthernet",
+      "names": ["Tw1/0/1", "Twe1/0/1"],
+      "anchor": "TwentyFiveGigE1/0/1",
+      "candidates": ["Twe1/0/1"],
+      "resolve": "Twe1/0/1"
+    },
+    {
+      "why": "Tw is TwoGigabitEthernet",
+      "names": ["Tw1/0/1", "Twe1/0/1"],
+      "anchor": "TwoGigabitEthernet1/0/1",
+      "candidates": ["Tw1/0/1"],
+      "resolve": "Tw1/0/1"
+    },
+    {
+      "why": "HundredGigE and HundredGigabitEthernet are Hu",
+      "names": ["Hu1/0/49"],
+      "anchor": "HundredGigabitEthernet1/0/49",
+      "candidates": ["Hu1/0/49"],
+      "resolve": "Hu1/0/49"
+    },
+    {
+      "why": "Fo, Fi and Fa are three families",
+      "names": ["Fo1/1/1", "Fi1/1/1", "Fa1/1/1"],
+      "anchor": "FiveGigabitEthernet1/1/1",
+      "candidates": ["Fi1/1/1"],
+      "resolve": "Fi1/1/1"
+    },
+    {
+      "why": "Po is Port-channel",
+      "names": ["Po1", "Po2"],
+      "anchor": "Port-channel2",
+      "candidates": ["Po2"],
+      "resolve": "Po2"
+    },
+    {
+      "why": "Eth is Ethernet",
+      "names": ["Eth1/1"],
+      "anchor": "Ethernet1/1",
+      "candidates": ["Eth1/1"],
+      "resolve": "Eth1/1"
+    },
+    {
+      "why": "Ap is AppGigabitEthernet",
+      "names": ["Ap1/0/1"],
+      "anchor": "AppGigabitEthernet1/0/1",
+      "candidates": ["Ap1/0/1"],
+      "resolve": "Ap1/0/1"
+    },
+    {
+      "why": "mgmt and Mgmt",
+      "names": ["mgmt0"],
+      "anchor": "Mgmt0",
+      "candidates": ["mgmt0"],
+      "resolve": "mgmt0"
+    },
+    {
+      "why": "a space after the family",
+      "names": ["TenGigabitEthernet 1/1"],
+      "anchor": "Te1/1",
+      "candidates": ["TenGigabitEthernet 1/1"],
+      "resolve": "TenGigabitEthernet 1/1"
+    },
+    {
+      "why": "the numbers still agree exactly",
+      "names": ["Gi1/0/1"],
+      "anchor": "GigabitEthernet1/0/10",
+      "candidates": [],
+      "resolve": null
+    },
+    {
+      "why": "an unknown family is not abbreviated",
+      "names": ["xe-0/0/0"],
+      "anchor": "XE-0/0/0",
+      "candidates": [],
+      "resolve": null
+    },
+    {
+      "why": "the exact name wins over an abbreviation",
+      "names": ["Gi1/0/1", "GigabitEthernet1/0/1"],
+      "anchor": "GigabitEthernet1/0/1",
+      "candidates": ["GigabitEthernet1/0/1"],
+      "resolve": "GigabitEthernet1/0/1"
+    },
+    {
+      "why": "the authored spelling wins over an abbreviation",
+      "names": ["GigabitEthernet{position}/0/1", "Gi1/0/1"],
+      "anchor": "GigabitEthernet1/0/1",
+      "candidates": ["GigabitEthernet{position}/0/1"],
+      "resolve": "GigabitEthernet{position}/0/1"
+    },
+    {
+      "why": "two spellings of one port are ambiguous",
+      "names": ["Gi1/0/1", "GigabitEthernet1/0/1"],
+      "anchor": "Gig1/0/1",
+      "candidates": ["Gi1/0/1", "GigabitEthernet1/0/1"],
+      "resolve": null
     }
+  ],
+  "long_form": [
+    ["Gi1/0/1", "gigabitethernet1/0/1"],
+    ["GigabitEthernet1/0/1", "gigabitethernet1/0/1"],
+    ["Twe1/1/1", "twentyfivegige1/1/1"],
+    ["HundredGigE1/0/49", "hundredgige1/0/49"],
+    ["Port-channel10", "port-channel10"],
+    ["TenGigabitEthernet 1/1", "tengigabitethernet1/1"],
+    ["Te{position}/1/1", "tengigabitethernet{position}/1/1"],
+    ["ge-0/0/0", "ge-0/0/0"],
+    ["Vlan10", "Vlan10"],
+    ["{module}/1", "{module}/1"]
   ]
 }
