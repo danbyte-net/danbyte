@@ -226,6 +226,9 @@ VULN_EXCEPTIONS = importlib.import_module(
 DEPENDENCIES = importlib.import_module(
     "auth_api.migrations.0054_site_roles_device_dependencies"
 )
+MODULE_POWER = importlib.import_module(
+    "auth_api.migrations.0055_site_roles_module_power_ports"
+)
 
 
 class SiteRoleUpgradeTests(TestCase):
@@ -414,6 +417,7 @@ class SiteRoleCatalogUpgradeTests(SiteRoleUpgradeTests):
                 + OUTLINES.NEW_CATALOGS + AREA_TYPES.NEW_CATALOGS
                 + ROUTING_ROWS.NEW_CATALOGS + RPKI.NEW_CATALOGS
                 + SENSITIVITY.NEW_CATALOGS + DEPENDENCIES.NEW_CATALOGS
+                + MODULE_POWER.NEW_CATALOGS
             ),
             sorted(site_role_catalog_types()),
         )
@@ -900,5 +904,32 @@ class SiteRoleDependencyUpgradeTests(SiteRoleRoutingRowsUpgradeTests):
         self.assertNotIn("dependencymedium", edit.object_types)
         self.assertIn("dependencymedium", catalog.object_types)
         self.assertNotIn("devicedependency", catalog.object_types)
+        self.assertEqual(len(view.object_types), len(set(view.object_types)))
+        self.assertEqual(custom.object_types, ["device", "prefix"])
+
+
+class SiteRoleModulePowerUpgradeTests(SiteRoleRoutingRowsUpgradeTests):
+    """0055 gives the viewers and the editors' catalog view module power
+    port templates; editors do not write them."""
+
+    def test_roles_gain_module_power_port_templates(self):
+        view = self._role("A - site view", ["view"])
+        edit = self._role("B - site edit", ["view", "add", "change", "delete"])
+        catalog = ObjectPermission.objects.create(
+            name="B - catalog view", actions=["view"],
+            object_types=sorted(CATALOG_MIGRATION.ROLE_CATALOGS + OUTLINES.NEW_CATALOGS
+                                + AREA_TYPES.NEW_CATALOGS),
+        )
+        catalog.sites.set([self.site_a])
+        custom = self._old("Ops - site view", ["view"], types=["device", "prefix"])
+        for mod in (ROUTING_ROWS, RPKI, SENSITIVITY, VULN_EXCEPTIONS, DEPENDENCIES):
+            mod.forwards(django_apps, None)
+        MODULE_POWER.forwards(django_apps, None)
+        MODULE_POWER.forwards(django_apps, None)
+        for perm in (view, edit, catalog, custom):
+            perm.refresh_from_db()
+        self.assertIn("modulepowerporttemplate", view.object_types)
+        self.assertNotIn("modulepowerporttemplate", edit.object_types)
+        self.assertIn("modulepowerporttemplate", catalog.object_types)
         self.assertEqual(len(view.object_types), len(set(view.object_types)))
         self.assertEqual(custom.object_types, ["device", "prefix"])
