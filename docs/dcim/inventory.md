@@ -54,9 +54,13 @@ another type or bay keeps its interfaces, and with them their transceivers.
 On an interface of a pluggable type, the Overview's **Interface** card has a
 **Transceiver** row: the part ID, serial and standard of the optic in it.
 
-- **Set** opens a dialog that either picks one of the device's free
+- **Set** opens a dialog that either picks one of the device's spare
   transceivers (**From inventory**) or creates one in place (**New**: name,
-  part ID, serial, standard, connector, wavelength, reach).
+  part ID, serial, standard, connector, wavelength, reach). It opens on
+  **New** when the device has no spare ones. In **New**, **Pluggable** picks
+  a transceiver from [Pluggables](pluggables.md) - those that fit the port
+  first - and fills in its part number, standard, connector, wavelength and
+  reach, so only the serial is left to type.
 - **Change** does the same for a port that has one; the old one comes out
   and stays in the inventory.
 - **Remove** takes it out of the port. The item stays on the device.

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
-import { useMutation, useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
 import {
@@ -8,12 +8,15 @@ import {
   TRANSCEIVER_STANDARDS,
 } from "@/lib/api"
 import type {
+  AccessoryType,
   Interface,
   InterfaceTransceiver,
   InventoryItemRow,
   TransceiverConnector,
 } from "@/lib/api"
+import { apiAll } from "@/lib/api-all"
 import { apiErrorToast } from "@/lib/api-toast"
+import { useMe } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -92,7 +95,6 @@ export function factsPayload(f: TransceiverFacts) {
     reach_m: int(f.reach),
   }
 }
-
 
 /** Standard, connector, wavelength and reach. */
 export function TransceiverFactFields({
@@ -183,16 +185,53 @@ function useFreeTransceiverSpec(
   }, [deviceId])
 }
 
+/** A pluggable's facts as the form's: its first part number names it, and
+ * an MPO receptacle is the common 12-fibre one. */
+export function pluggableFacts(a: AccessoryType): {
+  partId: string
+  facts: TransceiverFacts
+} {
+  const known = new Set<string>(
+    TRANSCEIVER_CONNECTOR_OPTIONS.map((o) => o.value)
+  )
+  const c = a.connector === "mpo" ? "mpo-12" : a.connector
+  return {
+    partId: a.parts[0] ?? a.name,
+    facts: {
+      standard: a.standard,
+      connector: known.has(c) ? c : c ? "other" : "",
+      wavelength: a.wavelength_nm != null ? String(a.wavelength_nm) : "",
+      reach: a.reach_m != null ? String(a.reach_m) : "",
+    },
+  }
+}
+
+/** Transceiver pluggables as select groups: those that fit `portType`
+ * first, then the rest (a 25G cage also takes 10G and 1G optics). */
+export function pluggableGroups(
+  parts: readonly AccessoryType[],
+  portType: string
+) {
+  const opt = (a: AccessoryType) => ({ value: a.id, label: a.name })
+  const fit = parts.filter((a) => a.fits.includes(portType))
+  const rest = parts.filter((a) => !a.fits.includes(portType))
+  return [
+    { label: "Fits this port", options: fit.map(opt) },
+    { label: "Other", options: rest.map(opt) },
+  ].filter((g) => g.options.length > 0)
+}
+
 /**
  * Set the transceiver in a port: one of the device's free transceivers, or
- * a new one created in place.
+ * a new one created in place - from a pluggable, which fills in its part
+ * number and facts. Opens on New when the device has no free ones.
  */
 export function TransceiverDialog({
   iface,
   open,
   onOpenChange,
 }: {
-  iface: Pick<Interface, "id" | "name" | "device" | "transceiver">
+  iface: Pick<Interface, "id" | "name" | "type" | "device" | "transceiver">
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
@@ -205,11 +244,31 @@ export function TransceiverDialog({
   const [partId, setPartId] = useState("")
   const [serial, setSerial] = useState("")
   const [facts, setFacts] = useState<TransceiverFacts>(NO_FACTS)
+  const [pluggable, setPluggable] = useState<string | null>(null)
   const spec = useFreeTransceiverSpec(iface.device.id)
+  const { canDo } = useMe()
+  const free = useQuery({
+    queryKey: ["free-transceivers", iface.device.id, "count"],
+    queryFn: () =>
+      api<{ count: number }>(
+        `/api/inventory-items/?device=${iface.device.id}&kind=transceiver&in_port=false&page_size=1`
+      ),
+    enabled: open,
+  })
+  const parts = useQuery({
+    queryKey: ["accessory-types", "transceivers"],
+    queryFn: () =>
+      apiAll<AccessoryType>("/api/accessory-types/?kind=transceiver"),
+    enabled: open && canDo("accessorytype", "view"),
+    staleTime: 10 * 60_000,
+  })
+  const partList = parts.data?.results ?? []
+  const noneFree = free.data?.count === 0
 
   useEffect(() => {
     if (!open) return
     setMode("pick")
+    setPluggable(null)
     setPicked(null)
     setName(`${iface.name} optic`)
     setPartId("")
@@ -217,7 +276,21 @@ export function TransceiverDialog({
     setFacts(NO_FACTS)
     reset()
   }, [open, iface.name, reset])
+  // Nothing spare on the device: start on New.
+  useEffect(() => {
+    if (open && noneFree) setMode("new")
+  }, [open, noneFree])
 
+  const pickPluggable = (id: string | null) => {
+    setPluggable(id)
+    const a = partList.find((p) => p.id === id)
+    if (!a) return
+    const { partId: pid, facts: f } = pluggableFacts(a)
+    setPartId(pid)
+    setFacts(f)
+  }
+
+  const chosen = partList.find((p) => p.id === pluggable) ?? null
   const save = useMutation({
     mutationFn: async () => {
       const seat = (id: string, interfaceId: string | null) =>
@@ -239,6 +312,10 @@ export function TransceiverDialog({
             serial_number: serial.trim(),
             interface_id: current ? null : iface.id,
             ...factsPayload(facts),
+            // A generic part stands for no part number: name it by hand.
+            ...(chosen && chosen.parts.length === 0
+              ? { accessory_type_id: chosen.id }
+              : {}),
           }),
         })
         if (!current) return made
@@ -290,11 +367,21 @@ export function TransceiverDialog({
               value={picked}
               onChange={setPicked}
               placeholder="Select a transceiver…"
-              emptyText="No free transceivers on this device."
+              emptyText="No spare transceivers on this device."
               error={fieldErrors.interface_id}
             />
           ) : (
             <>
+              {partList.length > 0 && (
+                <FormSelect
+                  label="Pluggable"
+                  value={pluggable}
+                  onChange={pickPluggable}
+                  groups={pluggableGroups(partList, iface.type)}
+                  options={[]}
+                  noneLabel="-"
+                />
+              )}
               <FormText
                 label="Name"
                 required
@@ -361,7 +448,7 @@ export function TransceiverValue({
   iface,
   canEdit,
 }: {
-  iface: Pick<Interface, "id" | "name" | "device" | "transceiver">
+  iface: Pick<Interface, "id" | "name" | "type" | "device" | "transceiver">
   canEdit: boolean
 }) {
   const qc = useQueryClient()
