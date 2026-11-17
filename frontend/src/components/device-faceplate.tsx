@@ -2323,10 +2323,13 @@ export function FaceplateLegend({
   observed,
   hardware,
   content,
+  trunk = true,
 }: {
   className?: string
   /** Also explain the live SNMP dot. */
   observed?: boolean
+  /** Key the trunk mark (the 2D faceplate draws it; the 3D markers don't). */
+  trunk?: boolean
   /** The faceplate carries hardware markers → add the status key. Ignored when
    * `content` is given, which knows this for itself. */
   hardware?: boolean
@@ -2341,12 +2344,14 @@ export function FaceplateLegend({
       <SpeedScale
         live={observed}
         extras={
-          <span className="inline-flex items-center gap-1">
-            <span className="relative h-2.5 w-3 rounded-[2px] border border-border bg-muted/40">
-              <span className="absolute inset-x-0.5 top-0 h-[2px] rounded-b bg-foreground/60" />
+          trunk ? (
+            <span className="inline-flex items-center gap-1">
+              <span className="relative h-2.5 w-3 rounded-[2px] border border-border bg-muted/40">
+                <span className="absolute inset-x-0.5 top-0 h-[2px] rounded-b bg-foreground/60" />
+              </span>
+              trunk
             </span>
-            trunk
-          </span>
+          ) : undefined
         }
       />
       {hasHardware && <HardwareStatusKey statusIds={content?.partStatusIds} />}

@@ -700,6 +700,10 @@ source of truth stays yours.
 
 ### The panel's key
 
+The key sits under the Photo and Rendered panels and under the **3D** view,
+where the port markers use the same colours. The 3D key leaves out the trunk
+mark, which only the 2D faceplate draws.
+
 The **speed ramp is always the full scale**, <100M → 400G+, at a fixed width. It's a
 scale, and a scale only means something if it reads identically on every page -
 so it doesn't shrink to the speeds on the panel in front of you. (It briefly did.

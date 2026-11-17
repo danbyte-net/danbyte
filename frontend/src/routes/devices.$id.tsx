@@ -1835,6 +1835,11 @@ function DeviceFrontPanel({
             }}
             note={model.source === "type" ? "From type" : "Own model"}
           />
+          <FaceplateLegend
+            className="border-t border-border px-4 py-2"
+            observed={!!observed}
+            trunk={false}
+          />
         </div>
       ) : (
         <div
