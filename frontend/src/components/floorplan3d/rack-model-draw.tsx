@@ -371,6 +371,8 @@ const Y_AXIS = new THREE.Vector3(0, 1, 0)
 const LED_INSTANCE_MATERIAL = new THREE.MeshBasicMaterial({
   color: "#ffffff",
   toneMapped: false,
+  // Flat LEDs wound either way stay visible, as the pack's own material.
+  side: THREE.DoubleSide,
 })
 
 /** A device's slot and fit as one matrix: the model's frame in the rack. */

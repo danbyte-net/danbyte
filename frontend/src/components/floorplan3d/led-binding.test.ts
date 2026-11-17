@@ -82,6 +82,8 @@ describe("applyLeds", () => {
         .material as THREE.MeshStandardMaterial
     expect(mat("SYS")).toBe(ledMaterial(ledLook("green")))
     expect(mat("SYS").emissive.getHexString()).toBe("22e55c")
+    // A lit LED shows from both sides, as the pack's own LED material.
+    expect(mat("SYS").side).toBe(THREE.DoubleSide)
     expect(mat("PS_OK")).toBe(ledMaterial(ledLook("red")))
     expect(mat("port:Te1/1/9")).toBe(DARK)
     // Two copies share one material per look.

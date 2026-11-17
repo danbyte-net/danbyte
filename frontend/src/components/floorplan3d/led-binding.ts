@@ -93,6 +93,9 @@ export function ledMaterial(look: LedLook): THREE.MeshStandardMaterial | null {
       emissive: new THREE.Color(look.color),
       emissiveIntensity: look.strength,
       toneMapped: false,
+      // An LED is a flat quad or triangle; packs mark its material double
+      // sided, and one wound the other way must not vanish once lit.
+      side: THREE.DoubleSide,
     })
     materials.set(key, m)
     if (look.blink) {
