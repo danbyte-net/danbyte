@@ -34,6 +34,7 @@ vi.mock("@/lib/api-all", () => ({
 }))
 vi.mock("@tanstack/react-router", () => ({
   Link: ({ children }: { children: ReactNode }) => <a href="#">{children}</a>,
+  createLink: (component: unknown) => component,
   useNavigate: () => () => Promise.resolve(),
 }))
 vi.mock("@/components/floorplan/plan-canvas", () => ({

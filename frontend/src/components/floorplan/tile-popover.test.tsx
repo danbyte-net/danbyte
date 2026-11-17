@@ -29,6 +29,7 @@ vi.mock("@/lib/api", async (importOriginal) => ({
   api: (await import("@/lib/test-page-size")).stripPageSize(apiMock),
 }))
 vi.mock("@tanstack/react-router", () => ({
+  createLink: (component: unknown) => component,
   Link: ({
     children,
     to,
