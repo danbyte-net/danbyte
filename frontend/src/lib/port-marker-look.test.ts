@@ -173,6 +173,19 @@ describe("geometry helpers", () => {
     expect(rimWidth(0.05, 0.05)).toBe(0.0012)
   })
 
+  it("thickens the rim while the overlay is on", () => {
+    // An SFP cage: about twice the quiet rim, within its bounds.
+    expect(rimWidth(0.014, 0.0095, true)).toBeCloseTo(0.001425)
+    expect(rimWidth(0.002, 0.002, true)).toBe(0.0008)
+    expect(rimWidth(0.05, 0.05, true)).toBe(0.0025)
+    for (const [w, h] of [
+      [0.014, 0.0095],
+      [0.002, 0.002],
+      [0.05, 0.05],
+    ])
+      expect(rimWidth(w, h, true)).toBeGreaterThan(rimWidth(w, h))
+  })
+
   it("groups openings of one size", () => {
     expect(shapeKey({ w: 0.0142, h: 0.0095, r: 0 })).toBe(
       shapeKey({ w: 0.014200001, h: 0.0095, r: 0 })

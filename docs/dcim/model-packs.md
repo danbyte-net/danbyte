@@ -718,6 +718,30 @@ close ports it bends as tightly as it must. A fibre run with a cord takes
 the `FIBRE` colour. An end without a cord drawn - a far copy, or a device
 without a model - starts at the port as before.
 
+### Show, ghost or hide {#pluggables-show-ghost-hide}
+
+The seated parts are the **Pluggables**. Each viewer chooses how they draw,
+in the device viewer's toolbar (**Pluggables**) or the 3D room's View menu
+(**Pluggables**, under Cables). The choice is kept in this browser and
+shared by the device viewer, a rack's 3D view and the room.
+
+| Choice | What draws |
+|---|---|
+| **Show** (default) | The transceivers, cords and plugs as they are. |
+| **Ghost** | The same parts at a quarter opacity, greyed, so the port markers read through them. |
+| **Hide** | No parts: the bare faceplate. Cable runs start at the port again. Port covers stay hidden on ports in use. |
+
+While the device viewer's **Ports** is on, the parts ghost for as long as
+it is on, unless they are hidden. The hovered or selected port keeps its
+own part solid.
+
+With the parts ghosted, each port's [marker](../features/floor-plans.md#port-markers-on-3d-models)
+draws its wash on the front of the part in it - the transceiver's nose, or
+the cord's mating face - instead of at the cage mouth behind it, and the
+rims draw about twice as thick. A hovered or selected port's wash moves to
+the front in every mode. The markers keep their depth test, so they never
+show through the chassis from behind or the side.
+
 **Cost.** Each part loads once for the whole room and draws instanced: 48
 SFPs with 48 cords cost the meshes of two parts, not 96 copies. Parts show
 only on a device's full model: in its 3D viewer and in the 3D room up

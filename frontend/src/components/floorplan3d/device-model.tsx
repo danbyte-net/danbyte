@@ -9,6 +9,7 @@ import type { ModelBay, ModelEmptyMode } from "@/lib/api"
 import { ledsKey, prefersReducedMotion } from "@/lib/led-state"
 import type { DeviceLeds } from "@/lib/led-state"
 import { coversKey } from "@/lib/port-covers"
+import type { PluggablesMode } from "@/lib/pluggables-pref"
 
 import { applyLeds, findLeds, useLedBlink } from "./led-binding"
 import { anchorNames, assembleModel } from "./model-assembly"
@@ -327,6 +328,7 @@ export function PlacedModel({
   emptyMode = "filler",
   leds,
   showPlugs = false,
+  pluggables = "show",
   deviceId,
   overlay,
 }: {
@@ -347,6 +349,10 @@ export function PlacedModel({
   /** Seat the plugs `leds` names in its cabled ports (port-plugs) - the
    * full model up close, never a far copy. Skipped while ghosted. */
   showPlugs?: boolean
+  /** How the plugs draw: as they are, ghosted (see-through, so the port
+   * markers read through them) or not at all - port covers stay hidden
+   * on the ports in use either way. */
+  pluggables?: PluggablesMode
   /** The device drawn: in the 3D room its cords' cable ends are published
    * under it (cord-ends), so its cable runs start at them. */
   deviceId?: string
@@ -435,8 +441,17 @@ export function PlacedModel({
     <group position={fit.position} scale={fit.scale}>
       <group rotation={fit.rotation}>
         <primitive object={obj} />
-        {showPlugs && !ghosted && leds?.plugs?.length ? (
-          <PortPlugs root={obj} plugs={leds.plugs} deviceId={deviceId} />
+        {showPlugs &&
+        !ghosted &&
+        pluggables !== "hide" &&
+        leds?.plugs?.length ? (
+          <PortPlugs
+            root={obj}
+            plugs={leds.plugs}
+            deviceId={deviceId}
+            ghost={pluggables === "ghost"}
+            scale={fit.scale}
+          />
         ) : null}
         {overlay?.(obj, drawn)}
       </group>

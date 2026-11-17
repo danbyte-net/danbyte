@@ -29,11 +29,13 @@ import { useReportLegend, type LegendReporter } from "@/components/speed-scale"
 import { effectivePortLabelSource, portLabelText } from "@/lib/port-label"
 import type { DeviceLeds } from "@/lib/led-state"
 import { pluggedNames, portTransceivers } from "@/lib/port-plugs"
+import { usePluggablesMode } from "@/lib/pluggables-pref"
 import type { PortLabelSource } from "@/lib/api"
 import { fetchFacePortsBatched } from "@/lib/face-ports-batch"
 import { facePortsOnSide } from "@/lib/faceplate-layout"
 
 import { PlacedModel } from "./device-model"
+import { PlugOverlayScope } from "./plug-overlay"
 import { ModelPortMarkers } from "./device-model-port-markers"
 import { BayHits } from "./bay-hits"
 import type { MappedPortPick } from "./device-model-port-markers"
@@ -703,6 +705,9 @@ export function DeviceMesh({
   const box = sharedBox(dw, boxH, dd)
   const edges = ghosted ? null : sharedEdges(dw, boxH, dd)
 
+  // The parts in the ports, as this viewer chose (View menu).
+  const pluggables = usePluggablesMode()
+
   const handlers = {
     onClick: (e: ThreeEvent<MouseEvent>) => {
       e.stopPropagation()
@@ -736,61 +741,64 @@ export function DeviceMesh({
         rotation={[0, model.pose.rotY, 0]}
         {...handlers}
       >
-        {model.level === "full" && (
-          <PlacedModel
-            entry={model.entry}
-            fit={model.fit}
-            parts={model.parts}
-            bays={model.bays}
-            emptyMode={model.emptyMode}
-            leds={leds ?? null}
-            showPlugs
-            deviceId={dev.id}
-            overlay={
-              onDeviceMenu && model.bays?.length
-                ? (root, drawn) => (
-                    <BayHits
-                      root={root}
-                      drawn={drawn}
-                      selected={null}
-                      onMenu={(bay, at) => onDeviceMenu(menuDev, { bay }, at)}
-                    />
-                  )
-                : undefined
-            }
-          />
-        )}
-        <mesh position={[0, mh / 2, 0]} geometry={sharedBox(mw, mh, md)}>
-          <meshBasicMaterial colorWrite={false} depthWrite={false} />
-        </mesh>
-        {(selected || hovered) && (
-          <lineSegments
-            position={[0, mh / 2, 0]}
-            geometry={sharedEdges(mw, mh, md)}
-            raycast={() => null}
-          >
-            <lineBasicMaterial
-              color={selected ? DEVICE_SELECTED : DEVICE_EDGE}
-              transparent={!selected}
-              opacity={selected ? 1 : 0.5}
+        <PlugOverlayScope>
+          {model.level === "full" && (
+            <PlacedModel
+              entry={model.entry}
+              fit={model.fit}
+              parts={model.parts}
+              bays={model.bays}
+              emptyMode={model.emptyMode}
+              leds={leds ?? null}
+              showPlugs
+              pluggables={pluggables}
+              deviceId={dev.id}
+              overlay={
+                onDeviceMenu && model.bays?.length
+                  ? (root, drawn) => (
+                      <BayHits
+                        root={root}
+                        drawn={drawn}
+                        selected={null}
+                        onMenu={(bay, at) => onDeviceMenu(menuDev, { bay }, at)}
+                      />
+                    )
+                  : undefined
+              }
             />
-          </lineSegments>
-        )}
-        {model.level === "full" && showModelPorts && onSelectModelPort && (
-          <ModelPortMarkers
-            deviceId={dev.id}
-            size={model.fit.size}
-            plugged={pluggedNames(leds)}
-            transceivers={portTransceivers(leds)}
-            selectedPort={selectedPort ?? null}
-            onSelect={(pk) => onSelectModelPort(dev.id, pk)}
-            onMenu={
-              onDeviceMenu
-                ? (pk, at) => onDeviceMenu(menuDev, { port: pk.port }, at)
-                : undefined
-            }
-          />
-        )}
+          )}
+          <mesh position={[0, mh / 2, 0]} geometry={sharedBox(mw, mh, md)}>
+            <meshBasicMaterial colorWrite={false} depthWrite={false} />
+          </mesh>
+          {(selected || hovered) && (
+            <lineSegments
+              position={[0, mh / 2, 0]}
+              geometry={sharedEdges(mw, mh, md)}
+              raycast={() => null}
+            >
+              <lineBasicMaterial
+                color={selected ? DEVICE_SELECTED : DEVICE_EDGE}
+                transparent={!selected}
+                opacity={selected ? 1 : 0.5}
+              />
+            </lineSegments>
+          )}
+          {model.level === "full" && showModelPorts && onSelectModelPort && (
+            <ModelPortMarkers
+              deviceId={dev.id}
+              size={model.fit.size}
+              plugged={pluggables === "hide" ? undefined : pluggedNames(leds)}
+              transceivers={portTransceivers(leds)}
+              selectedPort={selectedPort ?? null}
+              onSelect={(pk) => onSelectModelPort(dev.id, pk)}
+              onMenu={
+                onDeviceMenu
+                  ? (pk, at) => onDeviceMenu(menuDev, { port: pk.port }, at)
+                  : undefined
+              }
+            />
+          )}
+        </PlugOverlayScope>
       </group>
     )
   }

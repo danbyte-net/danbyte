@@ -158,9 +158,14 @@ export function markerShape(port: ShapedPort, size: V3): MarkerShape {
 }
 
 /** The rim's width (m) for an opening `w`×`h`: thin, but never a hairline
- * on a small port nor heavy on a big one. */
-export function rimWidth(w: number, h: number): number {
-  return Math.min(0.0012, Math.max(0.0004, Math.min(w, h) * 0.08))
+ * on a small port nor heavy on a big one. `thick` (the Ports overlay on,
+ * or the parts ghosted) about doubles it, so the colour reads at rack
+ * distance too. */
+export function rimWidth(w: number, h: number, thick = false): number {
+  const e = Math.min(w, h)
+  return thick
+    ? Math.min(0.0025, Math.max(0.0008, e * 0.15))
+    : Math.min(0.0012, Math.max(0.0004, e * 0.08))
 }
 
 /** Markers sharing one geometry: the same size and radius, to 0.01 mm. */

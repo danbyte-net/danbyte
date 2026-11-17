@@ -9,7 +9,11 @@ import type { PortPlug } from "@/lib/port-plugs"
 import {
   anchorMatrices,
   cableEmptyMatrix,
+  GHOST_OPACITY,
   cordEndOf,
+  ghostColour,
+  ghostMaterialOf,
+  partFronts,
   partMeshes,
   receptacleMatrix,
   seatParts,
@@ -230,5 +234,73 @@ describe("stacking a cord on its transceiver", () => {
     // Along the cable: out of the front, toward −Z.
     expect(end.z[2]).toBeCloseTo(-1)
     expect(end.scale).toBeCloseTo(1)
+  })
+})
+
+// ── ghosting and fronts ─────────────────────────────────────────────────────
+
+describe("ghosted parts", () => {
+  it("draws a see-through, greyed clone that writes no depth", () => {
+    const red = new THREE.MeshStandardMaterial({ color: "#ff0000" })
+    const g = ghostMaterialOf(red) as THREE.MeshStandardMaterial
+    expect(g).not.toBe(red)
+    expect(g.transparent).toBe(true)
+    expect(g.opacity).toBeCloseTo(GHOST_OPACITY)
+    expect(g.depthWrite).toBe(false)
+    // Greyed: the channels close in on one another.
+    expect(g.color.r - g.color.g).toBeLessThan(0.2)
+    expect(g.color.r).toBeGreaterThan(g.color.g)
+    // The source is untouched, and one clone serves every seat.
+    expect(red.transparent).toBe(false)
+    expect(red.depthWrite).toBe(true)
+    expect(red.color.getHexString()).toBe("ff0000")
+    expect(ghostMaterialOf(red)).toBe(g)
+  })
+
+  it("keeps a grey grey and greys a cable colour", () => {
+    const grey = ghostColour(new THREE.Color(0.5, 0.5, 0.5))
+    expect([grey.r, grey.g, grey.b]).toEqual([0.5, 0.5, 0.5])
+    const aqua = ghostColour(new THREE.Color(0, 1, 1))
+    expect(aqua.g - aqua.r).toBeCloseTo(0.15)
+  })
+})
+
+describe("part fronts", () => {
+  const box = (zMax: number) =>
+    new THREE.Box3(
+      new THREE.Vector3(-0.007, -0.005, -0.05),
+      new THREE.Vector3(0.007, 0.005, zMax)
+    )
+
+  it("measures a transceiver's nose and a cord's mating face out of the port", () => {
+    const root = assembled()
+    const plugs = [
+      stacked(),
+      stacked({ port: "Te1/1/1", bay: "NM", name: "Te1/1/1" }),
+    ]
+    const anchors = anchorMatrices(root, plugs)
+    const t = transceiver()
+    const seats = seatParts(plugs, anchors, (u) => (u === SFP_URL ? t : cord()))
+    // The nose 9 mm out, the receptacle (the cord's face) 12 mm: the
+    // further one counts, along the anchor's out axis whichever way it
+    // faces (the chassis port faces −Z, the module's +Z).
+    const fronts = partFronts(plugs, anchors, seats, () => box(0.009))
+    expect(fronts.get("Gi1/0/1")).toBeCloseTo(0.012)
+    expect(fronts.get("Te1/1/1")).toBeCloseTo(0.012)
+    const long = partFronts(plugs, anchors, seats, () => box(0.02))
+    expect(long.get("Gi1/0/1")).toBeCloseTo(0.02)
+  })
+
+  it("leaves out a port whose parts stay in the opening", () => {
+    const root = assembled()
+    const plugs = [stacked({ transceiver_part: null })]
+    const anchors = anchorMatrices(root, plugs)
+    const seats = seatParts(plugs, anchors, () => cord())
+    expect(partFronts(plugs, anchors, seats, () => null).size).toBe(0)
+    // A transceiver not loaded yet adds nothing.
+    const t = seatParts([stacked({ cord_part: null })], anchors, () => null)
+    expect(
+      partFronts([stacked({ cord_part: null })], anchors, t, () => null).size
+    ).toBe(0)
   })
 })

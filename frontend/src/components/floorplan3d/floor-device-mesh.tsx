@@ -6,6 +6,7 @@ import * as THREE from "three"
 import type { FloorTileCheck } from "@/lib/api"
 import type { DeviceLeds } from "@/lib/led-state"
 import { pluggedNames, portTransceivers } from "@/lib/port-plugs"
+import { usePluggablesMode } from "@/lib/pluggables-pref"
 import { budgetLevel, plannedParts, wantsFarModel } from "@/lib/model-assembly"
 import { useDeviceLeds } from "@/lib/use-device-leds"
 import { markersVisible } from "@/lib/model-ports"
@@ -32,6 +33,7 @@ import type { ModelEntry, ReadyPart } from "./device-model"
 import type { OnDeviceMenu } from "@/components/model-viewer-menus"
 
 import { ModelPortMarkers } from "./device-model-port-markers"
+import { PlugOverlayScope } from "./plug-overlay"
 import { BayHits } from "./bay-hits"
 import { useModelBudget } from "./rack-model-draw"
 import type { ModelBudget } from "./rack-models"
@@ -278,6 +280,8 @@ function PlacedDevice({
   onFlyTo: (target: THREE.Vector3, position: THREE.Vector3) => void
 }) {
   const [hovered, setHovered] = useState(false)
+  // The parts in the ports, as this viewer chose (View menu).
+  const pluggables = usePluggablesMode()
   const { dev, tile } = p
   const model = dev.model
   const fit = useMemo(
@@ -330,7 +334,7 @@ function PlacedDevice({
       }}
     >
       {fit && !overBudget ? (
-        <>
+        <PlugOverlayScope>
           <PlacedModel
             entry={entry!}
             fit={fit}
@@ -340,6 +344,7 @@ function PlacedDevice({
             emptyMode={model?.empty_mode}
             leds={leds}
             showPlugs={full}
+            pluggables={pluggables}
             deviceId={dev.id}
             overlay={
               // Up close, as its ports: a bay's module menu on right-click.
@@ -369,7 +374,9 @@ function PlacedDevice({
             <ModelPortMarkers
               deviceId={dev.id}
               size={fit.size}
-              plugged={full ? pluggedNames(leds) : undefined}
+              plugged={
+                full && pluggables !== "hide" ? pluggedNames(leds) : undefined
+              }
               transceivers={full ? portTransceivers(leds) : undefined}
               selectedPort={selectedPort}
               onSelect={(pk) =>
@@ -401,7 +408,7 @@ function PlacedDevice({
               }
             />
           )}
-        </>
+        </PlugOverlayScope>
       ) : (
         <mesh
           position={[0, h / 2, 0]}

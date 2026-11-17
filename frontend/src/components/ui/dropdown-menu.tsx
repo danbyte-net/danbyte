@@ -34,11 +34,16 @@ function DropdownMenuContent({
   className,
   align = "start",
   sideOffset = 4,
+  container,
   ...props
-}: React.ComponentProps<typeof DropdownMenuPrimitive.Content>) {
+}: React.ComponentProps<typeof DropdownMenuPrimitive.Content> & {
+  /** Where the menu mounts (default: the body) - a fullscreen element
+   * shows only what is inside it. */
+  container?: HTMLElement | null
+}) {
   return (
     <NoFieldControl>
-      <DropdownMenuPrimitive.Portal>
+      <DropdownMenuPrimitive.Portal container={container}>
         <DropdownMenuPrimitive.Content
           data-slot="dropdown-menu-content"
           sideOffset={sideOffset}

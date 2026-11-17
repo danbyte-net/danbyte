@@ -29,6 +29,7 @@ import { faceCamera, faceZoom } from "@/lib/face-camera"
 import { plannedParts } from "@/lib/model-assembly"
 import { useDeviceLeds } from "@/lib/use-device-leds"
 import { pluggedNames, portTransceivers } from "@/lib/port-plugs"
+import { effectivePluggables, usePluggablesMode } from "@/lib/pluggables-pref"
 import type { ModelPortsDoc, V3 } from "@/lib/model-ports"
 
 import {
@@ -48,6 +49,7 @@ import {
 import type { MappedPortPick } from "./device-model-port-markers"
 import { BayHits } from "./bay-hits"
 import { PortPickPrecedence } from "./port-pick"
+import { PlugOverlayScope } from "./plug-overlay"
 import { Studio, StudioLights } from "./model-preview"
 import { STUDIO_LIGHTS } from "./studio"
 import { AO_INTENSITY, ViewerAo, aoRadiusFor, viewerLook } from "./viewer-look"
@@ -279,6 +281,11 @@ function Fitted({
   }
   const bays = props.model.bays?.length ? props.model.bays : null
   const { selection } = pickers
+  // The parts in the ports: the viewer's choice, ghosted while Ports is on.
+  const pluggables = effectivePluggables(
+    usePluggablesMode(),
+    !!props.outlineAll
+  )
   const pickBays = !!props.deviceId && !!bays && !!pickers.onSelectBay
   // A model with its own baked occlusion needs less of the screen's.
   const baked =
@@ -293,49 +300,56 @@ function Fitted({
           clip={clip}
         />
       )}
-      <PlacedModel
-        entry={entry}
-        fit={fit}
-        parts={parts}
-        bays={bays}
-        emptyMode={props.model.empty_mode}
-        leds={props.deviceId ? (leds[props.deviceId] ?? null) : undefined}
-        showPlugs
-        overlay={
-          pickBays
-            ? (root, drawn) => (
-                <BayHits
-                  root={root}
-                  drawn={drawn}
-                  selected={selection?.kind === "bay" ? selection.bay : null}
-                  onSelect={pickers.onSelectBay}
-                  onMenu={pickers.onBayMenu}
-                />
-              )
-            : props.overlay
-        }
-      />
-      {props.markers !== false &&
-        (props.deviceId ? (
-          <ModelPortMarkers
-            deviceId={props.deviceId}
-            size={size}
-            plugged={pluggedNames(leds[props.deviceId])}
-            transceivers={portTransceivers(leds[props.deviceId])}
-            selectedPort={
-              selection?.kind === "port" ? selection.port.marker : null
-            }
-            outlineAll={props.outlineAll}
-            onSelect={pickers.onSelectPort}
-            onMenu={pickers.onPortMenu}
-          />
-        ) : props.templatePorts?.ports.length ? (
-          <TemplatePortMarkers
-            ports={props.templatePorts.ports}
-            size={size}
-            outlineAll={props.outlineAll}
-          />
-        ) : null)}
+      <PlugOverlayScope>
+        <PlacedModel
+          entry={entry}
+          fit={fit}
+          parts={parts}
+          bays={bays}
+          emptyMode={props.model.empty_mode}
+          leds={props.deviceId ? (leds[props.deviceId] ?? null) : undefined}
+          showPlugs
+          pluggables={pluggables}
+          overlay={
+            pickBays
+              ? (root, drawn) => (
+                  <BayHits
+                    root={root}
+                    drawn={drawn}
+                    selected={selection?.kind === "bay" ? selection.bay : null}
+                    onSelect={pickers.onSelectBay}
+                    onMenu={pickers.onBayMenu}
+                  />
+                )
+              : props.overlay
+          }
+        />
+        {props.markers !== false &&
+          (props.deviceId ? (
+            <ModelPortMarkers
+              deviceId={props.deviceId}
+              size={size}
+              plugged={
+                pluggables === "hide"
+                  ? undefined
+                  : pluggedNames(leds[props.deviceId])
+              }
+              transceivers={portTransceivers(leds[props.deviceId])}
+              selectedPort={
+                selection?.kind === "port" ? selection.port.marker : null
+              }
+              outlineAll={props.outlineAll}
+              onSelect={pickers.onSelectPort}
+              onMenu={pickers.onPortMenu}
+            />
+          ) : props.templatePorts?.ports.length ? (
+            <TemplatePortMarkers
+              ports={props.templatePorts.ports}
+              size={size}
+              outlineAll={props.outlineAll}
+            />
+          ) : null)}
+      </PlugOverlayScope>
       {!isFaceView(view.preset) && (
         // One frame's depth pass per model and parts set (the key), not
         // one on every frame the demand loop draws.

@@ -17,6 +17,7 @@ import type { CordCable, PortPlug } from "@/lib/port-plugs"
 import { useCordEnds } from "./cord-ends"
 import { useDeviceModels } from "./device-model"
 import type { ModelEntry } from "./device-model"
+import { usePlugOverlay } from "./plug-overlay"
 
 /**
  * Parts seated in a device's ports (docs/dcim/model-packs.md → Accessory
@@ -41,6 +42,12 @@ import type { ModelEntry } from "./device-model"
  * In the 3D room each cord's `cable` empty is published (cord-ends) so
  * the cable run starts there. Parts never take the pointer: the port
  * markers reach over them (port-pick).
+ *
+ * Ghosted (the Pluggables choice, or the Ports overlay), the parts draw
+ * see-through and grey (ghostMaterialOf) without writing depth, so the
+ * markers read through them - except the hovered or selected port's, which
+ * stays solid. Each port's part front is published to the markers
+ * (plug-overlay), which then draw their wash on it, not at the cage mouth.
  */
 
 /** A part's mesh with its matrix in the part's own frame. */
@@ -68,6 +75,50 @@ function whiteOf(mat: THREE.Material): THREE.Material {
 }
 
 const channelOf = (m: THREE.Material) => recolourChannel(m.name)
+
+/** A ghosted part's opacity and how much of its colour it keeps. */
+export const GHOST_OPACITY = 0.25
+const GHOST_SATURATION = 0.15
+
+/** `c` greyed toward its own luminance, in place: a ghost keeps a hint of
+ * its colour, never enough to fight the overlay's. */
+export function ghostColour(c: THREE.Color): THREE.Color {
+  const l = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b
+  c.r = l + (c.r - l) * GHOST_SATURATION
+  c.g = l + (c.g - l) * GHOST_SATURATION
+  c.b = l + (c.b - l) * GHOST_SATURATION
+  return c
+}
+
+/** The ghosted clones, per source material (freed with it, a WeakMap). */
+const ghostClones = new WeakMap<THREE.Material, THREE.Material>()
+
+/**
+ * `mat`'s ghost: see-through at GHOST_OPACITY, greyed, writing no depth,
+ * so what stands behind it (a port's wash) shows through and it never
+ * hides another ghost. Transparent, it draws after the viewer's AO pass,
+ * never through it (viewer-look). One clone per source material.
+ */
+export function ghostMaterialOf(mat: THREE.Material): THREE.Material {
+  let g = ghostClones.get(mat)
+  if (!g) {
+    g = mat.clone()
+    g.transparent = true
+    g.opacity = mat.opacity * GHOST_OPACITY
+    g.depthWrite = false
+    if ("color" in g && g.color instanceof THREE.Color) ghostColour(g.color)
+    if ("emissive" in g && g.emissive instanceof THREE.Color)
+      ghostColour(g.emissive)
+    ghostClones.set(mat, g)
+  }
+  return g
+}
+
+function ghostOf(
+  m: THREE.Material | THREE.Material[]
+): THREE.Material | THREE.Material[] {
+  return Array.isArray(m) ? m.map(ghostMaterialOf) : ghostMaterialOf(m)
+}
 
 /** The meshes of a loaded part, each with its matrix in the part's frame. */
 export function partMeshes(scene: THREE.Object3D): PartMesh[] {
@@ -259,6 +310,50 @@ export function seatParts(
   return out
 }
 
+/** A loaded part's own box; null while it loads or when it failed. */
+export type BoxOf = (url: string) => THREE.Box3 | null
+
+const _o = new THREE.Vector3()
+const _f = new THREE.Vector3()
+const _out = new THREE.Vector3()
+
+/**
+ * How far each port's parts stand out of its opening, in the root's frame
+ * along the anchor's out axis, by the port's name: a transceiver's nose
+ * (its box's furthest +Z), a cord's mating face (its origin), the further
+ * of the two. A port whose parts stay inside the opening is left out.
+ */
+export function partFronts(
+  plugs: readonly PortPlug[],
+  anchors: readonly (THREE.Matrix4 | null)[],
+  seats: readonly Seat[],
+  boxOf: BoxOf
+): Map<string, number> {
+  const anchorOf = new Map<PortPlug, THREE.Matrix4>()
+  plugs.forEach((p, i) => {
+    const a = anchors[i]
+    if (a) anchorOf.set(p, a)
+  })
+  const out = new Map<string, number>()
+  for (const s of seats) {
+    const a = anchorOf.get(s.plug)
+    if (!a) continue
+    let z = 0
+    if (s.role === "transceiver") {
+      const box = boxOf(s.url)
+      if (!box || box.isEmpty()) continue
+      z = box.max.z
+    }
+    _f.set(0, 0, z).applyMatrix4(s.matrix)
+    _o.setFromMatrixPosition(a)
+    a.extractBasis(_x, _y, _out)
+    if (_out.lengthSq() < 1e-18) continue
+    const d = _f.sub(_o).dot(_out.normalize())
+    if (d > 1e-6) out.set(s.plug.name, Math.max(out.get(s.plug.name) ?? 0, d))
+  }
+  return out
+}
+
 const _p = new THREE.Vector3()
 const _x = new THREE.Vector3()
 const _y = new THREE.Vector3()
@@ -287,13 +382,15 @@ export function cordEndOf(
 const _m = new THREE.Matrix4()
 const _c = new THREE.Color()
 
-/** One part at many ports, instanced. */
+/** One part at many ports, instanced; `ghost` draws them see-through. */
 function PartInstances({
   entry,
   seats,
+  ghost = false,
 }: {
   entry: ModelEntry
   seats: readonly Seat[]
+  ghost?: boolean
 }) {
   const invalidate = useThree((s) => s.invalidate)
   const meshes = useMemo(() => partMeshes(entry.scene!), [entry.scene])
@@ -301,13 +398,17 @@ function PartInstances({
   const instanced = useMemo(
     () =>
       meshes.map((pm) => {
-        const im = new THREE.InstancedMesh(pm.geometry, pm.material, count)
+        const im = new THREE.InstancedMesh(
+          pm.geometry,
+          ghost ? ghostOf(pm.material) : pm.material,
+          count
+        )
         im.raycast = () => {}
         im.castShadow = false
-        im.receiveShadow = true
+        im.receiveShadow = !ghost
         return im
       }),
-    [meshes, count]
+    [meshes, count, ghost]
   )
   useLayoutEffect(
     () => () => instanced.forEach((im) => im.dispose()),
@@ -318,14 +419,17 @@ function PartInstances({
       const channel = meshes[k].channel
       seats.forEach((s, i) => {
         im.setMatrixAt(i, _m.multiplyMatrices(s.matrix, meshes[k].local))
-        if (channel) im.setColorAt(i, _c.set(s.colours[channel]))
+        if (channel) {
+          _c.set(s.colours[channel])
+          im.setColorAt(i, ghost ? ghostColour(_c) : _c)
+        }
       })
       im.instanceMatrix.needsUpdate = true
       if (im.instanceColor) im.instanceColor.needsUpdate = true
       im.computeBoundingSphere()
     })
     invalidate()
-  }, [instanced, meshes, seats, invalidate])
+  }, [instanced, meshes, seats, ghost, invalidate])
   return (
     <>
       {instanced.map((im) => (
@@ -340,16 +444,24 @@ function PartInstances({
  * beside the root, as PlacedModel's overlay is). Draws nothing until a
  * part has loaded; a port whose anchor the model lacks is left out. With
  * `deviceId`, in the 3D room, it publishes where its cords' cables start.
+ * `ghost` draws them see-through but the hovered or selected port's; their
+ * fronts go to the device's markers (plug-overlay) scaled by `scale`, the
+ * root's size in the markers' frame.
  */
 export function PortPlugs({
   root,
   plugs,
   deviceId,
+  ghost = false,
+  scale = 1,
 }: {
   root: THREE.Object3D
   plugs: readonly PortPlug[]
   deviceId?: string
+  ghost?: boolean
+  scale?: number
 }) {
+  const overlay = usePlugOverlay()
   const key = plugsKey({ plugs: [...plugs] })
   // Keyed on the values: a poll with the same plugs keeps the draws.
   // `key` stands for `plugs`.
@@ -373,15 +485,40 @@ export function PortPlugs({
     // `readyKey` stands for `entries`.
     [list, anchors, readyKey]
   )
+  // Ghosted, the hovered and selected ports' parts stay solid: one
+  // instanced draw per part and look.
+  const solid = ghost ? overlay?.solid : undefined
+  const solidKey = solid ? [...solid].join("\u0000") : ""
   const groups = useMemo(() => {
-    const out = new Map<string, Seat[]>()
+    const out = new Map<string, { url: string; ghost: boolean; at: Seat[] }>()
     for (const s of seats) {
-      const g = out.get(s.url)
-      if (g) g.push(s)
-      else out.set(s.url, [s])
+      const g = ghost && !solid?.has(s.plug.name)
+      const k = `${g ? 1 : 0}\u0001${s.url}`
+      const e = out.get(k)
+      if (e) e.at.push(s)
+      else out.set(k, { url: s.url, ghost: g, at: [s] })
     }
     return [...out.entries()]
-  }, [seats])
+    // `solidKey` stands for `solid`.
+  }, [seats, ghost, solidKey])
+
+  // Each port's part front, for the markers' washes.
+  const fronts = useMemo(() => {
+    const raw = partFronts(list, anchors, seats, (url) => {
+      const e = entries.get(url)
+      return e?.status === "ready" ? e.box : null
+    })
+    for (const [k, v] of raw) raw.set(k, v * scale)
+    return raw
+    // `readyKey` stands for `entries`.
+  }, [list, anchors, seats, readyKey, scale])
+  useEffect(() => {
+    overlay?.setFronts(fronts, ghost)
+  }, [overlay, fronts, ghost])
+  useEffect(() => {
+    if (!overlay) return
+    return () => overlay.setFronts(new Map(), false)
+  }, [overlay])
 
   // Where each cord's cable starts, in the room's frame: re-published when
   // the cords or the model's place change.
@@ -433,10 +570,12 @@ export function PortPlugs({
 
   return (
     <>
-      {groups.map(([url, at]) => {
-        const e = entries.get(url)
+      {groups.map(([gk, g]) => {
+        const e = entries.get(g.url)
         if (e?.status !== "ready" || !e.scene) return null
-        return <PartInstances key={url} entry={e} seats={at} />
+        return (
+          <PartInstances key={gk} entry={e} seats={g.at} ghost={g.ghost} />
+        )
       })}
     </>
   )

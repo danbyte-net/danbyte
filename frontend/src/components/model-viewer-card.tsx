@@ -4,8 +4,27 @@ import { Maximize2, Minimize2, Scan } from "lucide-react"
 import type { Model3DEffective } from "@/lib/api"
 import type { ModelPortsDoc } from "@/lib/model-ports"
 import { Loading } from "@/components/loading"
-import { BarButton, BarIconButton, BarToggle } from "@/components/map-toolbar"
+import {
+  BarButton,
+  BarIconButton,
+  BarMenuTrigger,
+  BarToggle,
+} from "@/components/map-toolbar"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { Section } from "@/components/ui/section"
+import {
+  PLUGGABLES_LABEL,
+  PLUGGABLES_MODES,
+  readPluggablesMode,
+  setPluggablesMode,
+  usePluggablesMode,
+} from "@/lib/pluggables-pref"
 import { cn } from "@/lib/utils"
 import type {
   ModelViewerProps,
@@ -44,8 +63,11 @@ const PRESETS: { value: ViewPreset; label: string }[] = [
  * The model with its toolbar - Front / Rear / Top (straight on,
  * orthographic) / 3D (perspective), Fit to re-frame the current view,
  * Ports to outline every port (else only hovered, selected, cabled and
- * held ones show), fullscreen - for the Overview's "3D model" card and
- * the device Panel's 3D view. `note` sits at the toolbar's end.
+ * held ones show), Pluggables to show, ghost or hide the transceivers,
+ * cords and plugs in a device's ports (the viewer's choice, shared with
+ * the room; Ports ghosts them while it's on), fullscreen - for the
+ * Overview's "3D model" card and the device Panel's 3D view. `note` sits
+ * at the toolbar's end.
  */
 export function ModelViewerFrame({
   source,
@@ -65,10 +87,17 @@ export function ModelViewerFrame({
     n: 0,
   })
   const [outlineAll, setOutlineAll] = useState(false)
-  const [full, setFull] = useState(false)
+  const pluggables = usePluggablesMode()
+  // The frame while it is fullscreen: menus mount inside it.
+  const [fullEl, setFullEl] = useState<HTMLElement | null>(null)
+  const full = fullEl !== null
   useEffect(() => {
     const onChange = () =>
-      setFull(!!wrap.current && document.fullscreenElement === wrap.current)
+      setFullEl(
+        wrap.current && document.fullscreenElement === wrap.current
+          ? wrap.current
+          : null
+      )
     document.addEventListener("fullscreenchange", onChange)
     return () => document.removeEventListener("fullscreenchange", onChange)
   }, [])
@@ -104,6 +133,33 @@ export function ModelViewerFrame({
           </BarToggle>
         )}
         {tools}
+        {source.deviceId && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <BarMenuTrigger
+                className={cn(pluggables === "show" && "text-muted-foreground")}
+              >
+                Pluggables
+              </BarMenuTrigger>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="start"
+              className="min-w-32"
+              container={fullEl ?? undefined}
+            >
+              <DropdownMenuRadioGroup
+                value={pluggables}
+                onValueChange={(v) => setPluggablesMode(readPluggablesMode(v))}
+              >
+                {PLUGGABLES_MODES.map((m) => (
+                  <DropdownMenuRadioItem key={m} value={m}>
+                    {PLUGGABLES_LABEL[m]}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
         <span className="ml-auto flex items-center gap-2">
           {note && (
             <span className="text-[11px] whitespace-nowrap text-muted-foreground">

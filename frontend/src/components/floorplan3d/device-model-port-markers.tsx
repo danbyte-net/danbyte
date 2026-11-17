@@ -38,6 +38,7 @@ import {
 
 import { PORT_MARKERS_KEY } from "./port-pick"
 import { KeepInView } from "./keep-in-view"
+import { usePlugOverlay } from "./plug-overlay"
 
 /**
  * The ports mapped onto a floor device's 3D model, each drawn as its own
@@ -55,6 +56,13 @@ import { KeepInView } from "./keep-in-view"
  * this only up close (`markersVisible`), so a hall of devices draws none.
  * The Overview's model viewer and the floor plan panel draw the same
  * markers on the model they frame.
+ *
+ * A port with a part seated in it (port-plugs) draws its wash on the
+ * part's front - the transceiver's nose, the cord's mating face - not at
+ * the cage mouth behind it, while the parts are ghosted and whenever it
+ * is hovered or selected; ghosted or outlining every port, the rims draw
+ * thicker. The depth test stays on: a marker never shows through the
+ * chassis from behind or the side.
  */
 
 /** A port's pick volume: a unit box from the opening (z 0) out to z 1,
@@ -132,6 +140,10 @@ export function ModelPortMarkers({
     staleTime: 30_000,
   })
   const observed = useObservedPorts(deviceId)
+  // The parts seated in the ports: their fronts, whether they're ghosted.
+  const plugOverlay = usePlugOverlay()
+  const frontsKey = plugOverlay?.frontsKey ?? ""
+  const ghosting = plugOverlay?.ghost ?? false
   const ports = useMemo(
     () => (facePorts.data?.model ?? []).filter((p) => p.p && p.n),
     [facePorts.data]
@@ -148,6 +160,7 @@ export function ModelPortMarkers({
           pluggedKey && pluggedKey.split("\u0000").includes(fp.name)
             ? PLUG_REACH_M
             : 0,
+        front: plugOverlay?.fronts.get(fp.name) ?? 0,
         shape: markerShape(
           {
             n: fp.n!,
@@ -160,7 +173,8 @@ export function ModelPortMarkers({
           size
         ),
       })),
-    [ports, size, pluggedKey]
+    // `frontsKey` stands for the overlay's fronts.
+    [ports, size, pluggedKey, frontsKey, plugOverlay]
   )
   const hexes = useMemo(
     () =>
@@ -189,10 +203,25 @@ export function ModelPortMarkers({
     selectedPort == null
       ? -1
       : placed.findIndex((pk) => pk.port.marker === selectedPort)
+  // The hovered and selected ports keep their parts solid.
+  const [hovered, setHovered] = useState<string | null>(null)
+  const selectedName = selected >= 0 ? placed[selected].port.name : null
+  useEffect(() => {
+    plugOverlay?.setSolid(
+      [hovered, selectedName].filter((n): n is string => !!n)
+    )
+  }, [plugOverlay, hovered, selectedName])
+  useEffect(() => {
+    if (!plugOverlay) return
+    return () => plugOverlay.setSolid([])
+  }, [plugOverlay])
   return (
     <MarkerMesh
       placed={placed}
       lookOf={lookOf}
+      forward={ghosting}
+      thickRim={outlineAll || ghosting}
+      onHoverChange={(pk) => setHovered(pk?.port.name ?? null)}
       selected={selected >= 0 ? selected : null}
       onSelect={onSelect}
       onFly={onFly}
@@ -242,6 +271,7 @@ export function TemplatePortMarkers({
     <MarkerMesh
       placed={placed}
       lookOf={lookOf}
+      thickRim={outlineAll}
       card={(pk) => (
         <div className="ml-3 -translate-y-1/2 rounded-md border border-border bg-popover/95 px-2 py-1.5 text-[11px] whitespace-nowrap text-popover-foreground shadow-md">
           <span className="font-mono font-semibold">{pk.port.name}</span>
@@ -257,11 +287,14 @@ function shapeOf(points: [number, number][]): THREE.Shape {
 
 /** The wash and the rim for one opening size: the opening itself, and a
  * thin ring just outside it, so the port's own edge stays in view. */
-function openingGeometries(s: Pick<MarkerShape, "w" | "h" | "r">): {
+function openingGeometries(
+  s: Pick<MarkerShape, "w" | "h" | "r">,
+  thick = false
+): {
   fill: THREE.BufferGeometry
   rim: THREE.BufferGeometry
 } {
-  const rim = rimWidth(s.w, s.h)
+  const rim = rimWidth(s.w, s.h, thick)
   const inner = roundedRect(s.w, s.h, s.r)
   const ring = shapeOf(
     roundedRect(s.w + 2 * rim, s.h + 2 * rim, s.r > 0 ? s.r + rim : 0)
@@ -284,6 +317,26 @@ interface Shaped {
   shape: MarkerShape
   /** How far out of the port its pick reaches (m): a seated plug's. */
   reach?: number
+  /** How far out of the opening the part seated in it ends (m): where
+   * its wash moves to (plug-overlay). */
+  front?: number
+}
+
+/**
+ * How far out of its opening each marker's wash and rim stand (m): on the
+ * front of the part seated in the port (`front`) for every port while
+ * `forward` (the parts ghosted), else for the hovered and selected ones
+ * only - their parts stay solid, so their wash must stand in front.
+ */
+export function markerLifts(
+  placed: readonly Pick<Shaped, "front">[],
+  forward: boolean,
+  hover: number | null,
+  selected: number | null
+): number[] {
+  return placed.map((pk, i) =>
+    forward || i === hover || i === selected ? (pk.front ?? 0) : 0
+  )
 }
 
 /** The pose of a marker: at `at`, lifted `lift` along its normal, its X
@@ -307,6 +360,9 @@ function pose(pk: Shaped, lift: number, sx: number, sy: number, sz = 1) {
 function MarkerMesh<TPick extends Shaped>({
   placed,
   lookOf,
+  forward = false,
+  thickRim = false,
+  onHoverChange,
   selected = null,
   onSelect,
   onFly,
@@ -315,6 +371,12 @@ function MarkerMesh<TPick extends Shaped>({
 }: {
   placed: TPick[]
   lookOf: (pick: TPick, mode: MarkerMode) => MarkerLook
+  /** Every wash on its port's part front (markerLifts). */
+  forward?: boolean
+  /** The thicker rim (rimWidth). */
+  thickRim?: boolean
+  /** The hovered marker, or null, on a change. */
+  onHoverChange?: (pick: TPick | null) => void
   /** The selected marker's index, if any. */
   selected?: number | null
   onSelect?: (pick: TPick) => void
@@ -326,6 +388,12 @@ function MarkerMesh<TPick extends Shaped>({
   const hitRef = useRef<THREE.InstancedMesh>(null)
   const [hover, setHover] = useState<number | null>(null)
   const rightDown = useRef<{ x: number; y: number } | null>(null)
+  const hoverChange = useRef(onHoverChange)
+  hoverChange.current = onHoverChange
+  const hoverPick = hover != null ? (placed[hover] ?? null) : null
+  useEffect(() => {
+    hoverChange.current?.(hoverPick)
+  }, [hoverPick])
 
   // One geometry pair per opening size; a 48-port row has one or two.
   const groups = useMemo(() => {
@@ -339,9 +407,9 @@ function MarkerMesh<TPick extends Shaped>({
     return [...byKey.entries()].map(([key, members]) => ({
       key,
       members,
-      geo: openingGeometries(placed[members[0]].shape),
+      geo: openingGeometries(placed[members[0]].shape, thickRim),
     }))
-  }, [placed])
+  }, [placed, thickRim])
   useEffect(
     () => () => {
       for (const g of groups) {
@@ -358,12 +426,16 @@ function MarkerMesh<TPick extends Shaped>({
       ),
     [placed, lookOf, hover, selected]
   )
+  const lifts = useMemo(
+    () => markerLifts(placed, forward, hover, selected),
+    [placed, forward, hover, selected]
+  )
 
   useLayoutEffect(() => {
     const hit = hitRef.current
     if (!hit) return
     placed.forEach((pk, i) => {
-      const rim = rimWidth(pk.shape.w, pk.shape.h)
+      const rim = rimWidth(pk.shape.w, pk.shape.h, thickRim)
       hit.setMatrixAt(
         i,
         pose(
@@ -379,7 +451,7 @@ function MarkerMesh<TPick extends Shaped>({
     hit.instanceMatrix.needsUpdate = true
     hit.computeBoundingSphere()
     invalidate()
-  }, [placed, invalidate])
+  }, [placed, thickRim, invalidate])
 
   // The cursor is the page's: never leave it a pointer after unmount.
   useEffect(
@@ -461,6 +533,7 @@ function MarkerMesh<TPick extends Shaped>({
           placed={placed}
           members={g.members}
           looks={looks}
+          lifts={lifts}
           fillGeo={g.geo.fill}
           rimGeo={g.geo.rim}
         />
@@ -484,12 +557,15 @@ function OpeningGroup({
   placed,
   members,
   looks,
+  lifts,
   fillGeo,
   rimGeo,
 }: {
   placed: readonly Shaped[]
   members: readonly number[]
   looks: readonly MarkerLook[]
+  /** Each marker's distance out past its opening (markerLifts). */
+  lifts: readonly number[]
   fillGeo: THREE.BufferGeometry
   rimGeo: THREE.BufferGeometry
 }) {
@@ -503,11 +579,12 @@ function OpeningGroup({
     members.forEach((i, j) => {
       const pk = placed[i]
       const look = looks[i]
+      const out = lifts[i] ?? 0
       const f = look.fill ? 1 : 0
-      fill.setMatrixAt(j, pose(pk, LIFT_M, f, f))
+      fill.setMatrixAt(j, pose(pk, LIFT_M + out, f, f))
       fill.setColorAt(j, _c.set(look.fill ?? "#000000"))
       const r = look.rim ? 1 : 0
-      rim.setMatrixAt(j, pose(pk, RIM_LIFT_M, r, r))
+      rim.setMatrixAt(j, pose(pk, RIM_LIFT_M + out, r, r))
       rim.setColorAt(j, _c.set(look.rim ?? "#000000"))
     })
     for (const im of [fill, rim]) {
@@ -517,7 +594,7 @@ function OpeningGroup({
       im.computeBoundingSphere()
     }
     invalidate()
-  }, [placed, members, looks, invalidate])
+  }, [placed, members, looks, lifts, invalidate])
   return (
     <>
       <instancedMesh

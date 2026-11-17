@@ -817,6 +817,11 @@ ceiling, underfloor runs sit beneath the slab) and zones tint the floor.
 - **Port labels** (View menu, 3D, shown when the deployment prints them):
   turns the labels on the port quads off for this browser only - the same
   switch as the device page's Panel header.
+- **Pluggables** (View menu, 3D, under Cables): **Show**, **Ghost** or
+  **Hide** the transceivers, cords and plugs seated in model ports. Kept
+  in this browser and shared with the device viewer and the rack's 3D view;
+  **Hide** starts cable runs at the port again. See
+  [Show, ghost or hide](../dcim/model-packs.md#pluggables-show-ghost-hide).
 - **Device names** (View menu, 3D): name plates per device. Underneath,
   **All racks / Highlighted rack** limits them to the rack you have selected
   or are focused on, and **Names off the gear** starts each plate at the
@@ -1013,6 +1018,10 @@ port itself stays visible:
   a cabled port by its speed, a free or disabled one grey, a held one
   amber. Hover rims and washes the port; the selected port takes the
   selection colour.
+- **Over a transceiver or cord**, a hovered or selected port's wash sits on
+  the front of the part in it, not behind it. With **Pluggables** on
+  **Ghost**, every port's does, the parts turn see-through and the rims
+  thicken; the hovered or selected port's part stays solid.
 - **Hover** names the port, its state, the far end of its cable and an
   interface's untagged VLAN. **Click** selects it and opens the room's port
   card - connect, trace the run, open the cable - as a photo port's does.

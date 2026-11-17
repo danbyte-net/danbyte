@@ -11,6 +11,13 @@ import {
 import { InfoTip } from "@/components/ui/info-tip"
 import { Slider } from "@/components/ui/slider"
 import { setPortLabelsShown, usePortLabelsShown } from "@/lib/port-labels-pref"
+import {
+  PLUGGABLES_LABEL,
+  PLUGGABLES_MODES,
+  setPluggablesMode,
+  usePluggablesMode,
+} from "@/lib/pluggables-pref"
+import type { PluggablesMode } from "@/lib/pluggables-pref"
 import { CABLE_SCALE_MAX, CABLE_SCALE_MIN } from "@/lib/render-quality"
 import type { CableLook, RenderQualitySetting } from "@/lib/render-quality"
 import { useMe } from "@/lib/use-me"
@@ -92,6 +99,9 @@ export function DisplayMenu({
   // choice, shared with the device page.
   const { faceplatePortLabels } = useMe()
   const portLabelsShown = usePortLabelsShown()
+  // The parts in the ports - this viewer's choice, shared with the device
+  // viewer and the rack's 3D view.
+  const pluggables = usePluggablesMode()
   return (
     <Popover>
       <PopoverTrigger asChild>
@@ -351,6 +361,20 @@ export function DisplayMenu({
               onChange={(v) => setViewPref("show_3d_cables", v)}
               className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
             />
+            <div className="px-2 pt-1 pb-1.5">
+              <span className="mb-1 block text-[10px] font-medium tracking-[0.08em] text-muted-foreground uppercase">
+                Pluggables
+              </span>
+              <SegmentedTabs<PluggablesMode>
+                value={pluggables}
+                onValueChange={setPluggablesMode}
+                label="Pluggables"
+                items={PLUGGABLES_MODES.map((m) => ({
+                  value: m,
+                  label: PLUGGABLES_LABEL[m],
+                }))}
+              />
+            </div>
             <FormCheckbox
               label="Airflow"
               checked={show3dAirflow}

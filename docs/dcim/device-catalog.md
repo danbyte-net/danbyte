@@ -312,7 +312,10 @@ it, front toward you. Drag to orbit and scroll to zoom; the toolbar has
 like a photo), **3D** (the perspective three-quarter view), **Fit**,
 **Ports** (the [mapped ports](#model-ports), outlined in one neutral
 colour - a type has no port state; hovering one names it) and
-**Fullscreen**. A module type's Overview has the same viewer. The type's rack-face
+**Fullscreen**. A device's viewer also has **Pluggables** - **Show**,
+**Ghost** or **Hide** the transceivers, cords and plugs in its ports
+([Show, ghost or hide](model-packs.md#pluggables-show-ghost-hide)); with
+**Ports** on they ghost, so the port colours read through them. A module type's Overview has the same viewer. The type's rack-face
 photos stay in their own section below the cards. The viewer lights the
 model like a studio product shot - soft shadows, ambient occlusion in port
 cages and vents on a capable graphics card, a pack's baked occlusion - see
