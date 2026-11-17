@@ -122,8 +122,9 @@ export function PluggableModelCard({ part }: { part: AccessoryType }) {
 /**
  * The interface page's Transceiver row thumbnail: the exact part the port
  * shows (api.port_plugs.port_parts) - with its cord while cabled, coloured
- * by the cable - linking to the part's Pluggables page when the reader may
- * open it. Nothing while the port shows no part.
+ * by the cable - turned by dragging, with the part's name under it linking
+ * to its Pluggables page when the reader may open it. Nothing while the
+ * port shows no part.
  */
 export function PortPartThumb({ interfaceId }: { interfaceId: string }) {
   const q = useQuery({
@@ -159,21 +160,26 @@ export function PortPartThumb({ interfaceId }: { interfaceId: string }) {
         {...source}
         markers={false}
         view={{ preset: "iso", n: 0 }}
-        className="pointer-events-none h-24 w-36"
+        className="h-24 w-36"
       />
     </Suspense>
   )
-  const frame = "block overflow-hidden rounded-md border border-border bg-card"
-  return main.id ? (
-    <Link
-      to="/pluggables/$id"
-      params={{ id: main.id }}
-      className={frame}
-      aria-label={`Open ${main.name}`}
-    >
-      {viewer}
-    </Link>
-  ) : (
-    <span className={frame}>{viewer}</span>
+  // The view turns on drag, so it is no link itself (a drag would grab the
+  // link); the part's name under it opens the part.
+  return (
+    <span className="inline-flex flex-col items-start gap-1">
+      <span className="block overflow-hidden rounded-md border border-border bg-card">
+        {viewer}
+      </span>
+      {main.id && (
+        <Link
+          to="/pluggables/$id"
+          params={{ id: main.id }}
+          className="text-xs text-muted-foreground hover:text-foreground hover:underline"
+        >
+          {main.name}
+        </Link>
+      )}
+    </span>
   )
 }

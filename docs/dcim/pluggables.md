@@ -128,8 +128,9 @@ active tenant; another tenant's id answers 404.
 ## Elsewhere
 
 - **Interface page:** the Transceiver row shows a small 3D view of the part
-  the port shows - with its cord while cabled, coloured by the cable - that
-  opens the part's page ([Interfaces](interfaces.md)).
+  the port shows - with its cord while cabled, coloured by the cable. Drag
+  to turn it; the part's name under it opens the part's page
+  ([Interfaces](interfaces.md)).
 - **Device → Hardware:** a transceiver's part ID links to its pluggable.
 - **[Transceivers list](inventory.md#transceivers-list):** the part IDs
   link the same way.
