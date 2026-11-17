@@ -732,7 +732,7 @@ export const sections: NavSection[] = [
             title: "Pluggables",
             url: "/pluggables",
             icon: Plug,
-            objectType: "moduletype",
+            objectType: "accessorytype",
           },
           {
             title: "Platforms",

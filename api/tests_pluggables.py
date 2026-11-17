@@ -232,7 +232,7 @@ class UsageTests(_Base):
 
     def test_without_inventory_view_records_count_for_nothing(self):
         self._item("SFP 1", part="SFP-10G-LR", iface=self.te1)
-        self._user([(["moduletype", "device", "interface", "cable"], ["view"])])
+        self._user([(["accessorytype", "device", "interface", "cable"], ["view"])])
         self.assertEqual(self._usage(self.lr), [])
 
     def test_query_count_does_not_grow_with_devices(self):
@@ -284,14 +284,14 @@ class DeleteTests(_Base):
 
     def test_use_the_reader_cannot_see_still_blocks(self):
         self._cable(self.te1, type="mmf")
-        self._user([(["moduletype"], ["view", "delete"])])
+        self._user([(["accessorytype"], ["view", "delete"])])
         self.assertEqual(self.client.delete(f"/api/accessory-types/{self.gen.id}/").status_code,
                          409)
 
 
 class PermissionTests(_Base):
     def test_view_only(self):
-        self._user([(["moduletype"], ["view"])])
+        self._user([(["accessorytype"], ["view"])])
         self.assertEqual(self.client.get("/api/accessory-types/").status_code, 200)
         self.assertEqual(self.client.get(f"/api/accessory-types/{self.lr.id}/").status_code, 200)
         self.assertEqual(self._patch(self.lr, {"standard": "x"}).status_code, 403)
@@ -302,7 +302,7 @@ class PermissionTests(_Base):
                                           {"file": up}).status_code, 403)
 
     def test_change(self):
-        self._user([(["moduletype"], ["view", "change"])])
+        self._user([(["accessorytype"], ["view", "change"])])
         self.assertEqual(self._patch(self.lr, {"standard": "x"}).status_code, 200)
         self.assertEqual(self.client.delete(f"/api/accessory-types/{self.dac.id}/").status_code,
                          403)

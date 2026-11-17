@@ -78,7 +78,7 @@ lists a port whether or not its device has a 3D model.
 
 ## Editing
 
-**Edit** (change on module types) sets:
+**Edit** (change on pluggables) sets:
 
 - **Fits:** one port type slug per line.
 - **Part numbers:** one per line; a duplicate (ignoring case and a trailing
@@ -112,15 +112,17 @@ already has marks nothing.
 
 ## Deleting
 
-**Delete** (delete on module types) removes a part nothing uses: no
+**Delete** (delete on pluggables) removes a part nothing uses: no
 transceiver record is set to it, and no port shows it - counting every port
 in the tenant, including ones you may not view. A pack re-import brings a
 deleted part back.
 
 ## Permissions
 
-Pluggables follow module types: view to see the list and pages, change to
-edit and replace a model, delete to delete. Every part belongs to the
+Pluggables have their own permission, **Pluggables** (`accessorytype`):
+view to see the list, pages and change log, change to edit and replace a
+model, delete to delete. The built-in roles hold it; a custom role needs it
+granted. Site roles read it. Every part belongs to the
 active tenant; another tenant's id answers 404.
 
 ## Elsewhere
@@ -136,13 +138,13 @@ active tenant; another tenant's id answers 404.
 
 | Call | Does |
 |---|---|
-| `GET /api/accessory-types/` | The tenant's parts, each with `in_use`, `hand_edited`, `reach_m` and `pack_import` (`{pack: {name, version}, file, triangles}`). Filters: `kind`, `connector`, `fits` (a port type), `pack` (a pack name), `in_use=true\|false`, `search`. View on module types. |
+| `GET /api/accessory-types/` | The tenant's parts, each with `in_use`, `hand_edited`, `reach_m` and `pack_import` (`{pack: {name, version}, file, triangles}`). Filters: `kind`, `connector`, `fits` (a port type), `pack` (a pack name), `in_use=true\|false`, `search`. View on pluggables. |
 | `GET /api/accessory-types/{id}/` | One part, with `part_records` (`{part number: records}`) and, for a transceiver, `cord` (`{id, name, connector, model_url, cable}`) - the cord that plugs into it. |
-| `PATCH /api/accessory-types/{id}/` | Change `fits`, `parts`, `standard`, `wavelength_nm`, `reach_m`, `cable` (null for none; refused on a transceiver). Each field changed joins `hand_edited`. `hand_edited` itself may only shrink: send the fields to keep (`[]` gives them all back to the pack). Change on module types. |
-| `GET/POST /api/accessory-types/{id}/model/` | Download the model, or replace it with a multipart `file` (checked like any model). The answer carries `model_notes`; `model` joins `hand_edited`. Change on module types to write. |
+| `PATCH /api/accessory-types/{id}/` | Change `fits`, `parts`, `standard`, `wavelength_nm`, `reach_m`, `cable` (null for none; refused on a transceiver). Each field changed joins `hand_edited`. `hand_edited` itself may only shrink: send the fields to keep (`[]` gives them all back to the pack). Change on pluggables. |
+| `GET/POST /api/accessory-types/{id}/model/` | Download the model, or replace it with a multipart `file` (checked like any model). The answer carries `model_notes`; `model` joins `hand_edited`. Change on pluggables to write. |
 | `GET /api/accessory-types/{id}/usage/` | The [usage](#usage) rows: `device`, `site`, `port` (`{kind, id, name, type}`, null for a spare), `role` (`transceiver`, `plug`, `cord`), `source` (`set`, `part`, `fallback`), `cabled`, `cable_type`, `item` (`{id, name, part_id, serial_number, standard}`). Paged. |
-| `DELETE /api/accessory-types/{id}/` | Delete an unused part; `409` while anything uses it. Delete on module types. |
-| `GET /api/interfaces/{id}/parts/` | The parts one interface shows: `transceiver_part` and `cord_part` (`{id, vendor, name, kind, connector, url}`, the cord with `cable`; `id` is null for a reader who may not view module types), `cabled`, `color`, `cable_type`, `port_type`. View on the interface. |
+| `DELETE /api/accessory-types/{id}/` | Delete an unused part; `409` while anything uses it. Delete on pluggables. |
+| `GET /api/interfaces/{id}/parts/` | The parts one interface shows: `transceiver_part` and `cord_part` (`{id, vendor, name, kind, connector, url}`, the cord with `cable`; `id` is null for a reader who may not view pluggables), `cabled`, `color`, `cable_type`, `port_type`. View on the interface. |
 
 The list and the usage cost a fixed number of queries however many ports
 and records the tenant has.

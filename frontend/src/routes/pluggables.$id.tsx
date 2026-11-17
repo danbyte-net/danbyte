@@ -82,7 +82,7 @@ function Body({ part: p }: { part: AccessoryType }) {
     "overview"
   )
   const { canDo } = useMe()
-  const canEdit = canDo("moduletype", "change")
+  const canEdit = canDo("accessorytype", "change")
   const nav = useNavigate()
   const qc = useQueryClient()
   const [deleting, setDeleting] = useState<AccessoryType | null>(null)
@@ -211,7 +211,7 @@ function Body({ part: p }: { part: AccessoryType }) {
         )
       }
       remove={
-        canDo("moduletype", "delete") && (
+        canDo("accessorytype", "delete") && (
           <DeleteButton onClick={() => setDeleting(p)} />
         )
       }

@@ -732,7 +732,7 @@ recorded transceiver's part ID and serial under the port name.
 cable's colour and type are read only from cables the reader may view, and
 a transceiver record counts only for a reader who may view inventory
 items. Accessory types are tenant-wide, like module types. A reader who
-may view module types downloads a part once for the room
+may view pluggables downloads a part once for the room
 (`/api/accessory-types/{id}/model/`); anyone else gets it through the
 device (`/api/devices/{id}/accessory-model/{accessory id}/`).
 

@@ -218,7 +218,7 @@ _ENTRIES: list[tuple[str, str, str]] = [
     ("api.ModelPack", "3D model packs", "DCIM"),
     # Parts seated in cabled ports (api.port_plugs); its endpoints gate on
     # module type rights, as the parts come with the module types.
-    ("api.AccessoryType", "Accessory types", "DCIM"),
+    ("api.AccessoryType", "Pluggables", "DCIM"),
     ("api.DeviceRole", "Device roles", "DCIM"),
     ("api.PlatformGroup", "Platform groups", "DCIM"),
     ("api.Platform", "Platforms", "DCIM"),

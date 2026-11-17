@@ -7,9 +7,9 @@ Accessory types come with model packs. An editor may change a part's
 ``hand_edited``, and a pack re-import keeps it (api.port_plugs.apply_accessory).
 Name, vendor, kind and connector stay the pack's.
 
-Permissions are the module types' (the parts arrive beside them): view to
-read, change to edit and replace the model, delete to delete - and only a
-part nothing uses. Every row is the active tenant's own. ``model/`` serves a
+Permissions are the ``accessorytype`` grant ("Pluggables"): view to read,
+change to edit and replace the model, delete to delete - and only a part
+nothing uses. Every row is the active tenant's own. ``model/`` serves a
 part's ``.glb`` like a type's model (api.model_3d.serve); ``usage/`` lists
 the ports that show it (api.port_plugs.usage).
 """
@@ -175,7 +175,7 @@ class AccessoryTypeViewSet(viewsets.GenericViewSet):
     def get_queryset(self):
         tenant = self._tenant()
         if not pp.may_view_types(self.request.user, tenant):
-            raise PermissionDenied("You can't view module types.")
+            raise PermissionDenied("You can't view pluggables.")
         return AccessoryType.objects.filter(tenant=tenant)
 
     def _get(self, pk):
@@ -190,8 +190,8 @@ class AccessoryTypeViewSet(viewsets.GenericViewSet):
     def _need(self, act: str):
         from auth_api import rbac
 
-        if not rbac.has_action(self.request.user, self._tenant(), "moduletype", act):
-            raise PermissionDenied(f"You can't {act} module types.")
+        if not rbac.has_action(self.request.user, self._tenant(), "accessorytype", act):
+            raise PermissionDenied(f"You can't {act} pluggables.")
 
     def list(self, request):
         """The tenant's parts. Filters: ``kind``, ``connector``, ``fits`` (a
@@ -288,7 +288,7 @@ class AccessoryTypeViewSet(viewsets.GenericViewSet):
     @action(detail=True, methods=["get", "post"], url_path="model")
     def model_file(self, request, pk=None):
         """GET the part's 3D model (binary glTF). POST a multipart ``file``
-        to replace it (change on module types): checked like any model
+        to replace it (change on pluggables): checked like any model
         (api.model_3d), noted against the part's triangle budget and the
         empties stacking needs; ``model`` joins ``hand_edited``. Answers
         the part with ``model_notes``."""

@@ -337,12 +337,12 @@ class ScopeTests(_Base):
 
     def test_without_interface_view_no_plugs(self):
         self._cable(self._iface(self.dev, "Te1/0/1"))
-        self._reader(["device", "devicetype", "moduletype", "cable"])
+        self._reader(["device", "devicetype", "accessorytype", "cable"])
         self.assertEqual(self._plugs(), [])
 
     def test_without_cable_view_no_colour_or_medium(self):
         self._cable(self._iface(self.dev, "Te1/0/1"), type="dac-passive", color="#ff0000")
-        self._reader(["device", "devicetype", "interface", "moduletype"])
+        self._reader(["device", "devicetype", "interface", "accessorytype"])
         # The medium is unknown: the default part, grey.
         self.assertEqual([(shown(p), p["color"]) for p in self._plugs()],
                          [(self._url(self.sr), None)])

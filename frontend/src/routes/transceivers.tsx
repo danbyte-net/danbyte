@@ -27,7 +27,7 @@ export const Route = createFileRoute("/transceivers")({
 function TransceiversPage() {
   const [q, setQ] = useUrlSearch()
   const { canDo } = useMe()
-  const linkTypes = canDo("moduletype", "view")
+  const linkTypes = canDo("accessorytype", "view")
   const query = useQuery({
     queryKey: ["transceivers", q],
     queryFn: () =>

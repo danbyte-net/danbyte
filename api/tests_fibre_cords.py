@@ -446,7 +446,7 @@ class PayloadTests(_Base):
         user = User.objects.create_user("u", password="x")
         UserProfile.objects.create(user=user).tenants.add(self.tenant)
         grant = ObjectPermission.objects.create(
-            name="r", object_types=["device", "devicetype", "moduletype", "interface"],
+            name="r", object_types=["device", "devicetype", "accessorytype", "interface"],
             actions=["view"])
         grant.users.add(user)
         grant.tenants.add(self.tenant)

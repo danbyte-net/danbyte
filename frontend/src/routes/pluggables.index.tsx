@@ -36,8 +36,8 @@ export const Route = createFileRoute("/pluggables/")({
 function PluggablesPage() {
   const [q, setQ] = useUrlSearch()
   const { canDo } = useMe()
-  const canEdit = canDo("moduletype", "change")
-  const canDelete = canDo("moduletype", "delete")
+  const canEdit = canDo("accessorytype", "change")
+  const canDelete = canDo("accessorytype", "delete")
   const [deleting, setDeleting] = useState<AccessoryType | null>(null)
 
   const query = useQuery({

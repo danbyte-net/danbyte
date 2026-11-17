@@ -568,7 +568,7 @@ def in_use(wanted: dict, user, tenant) -> dict:
 
 def accessory_url(acc, device, shared: bool) -> str:
     """A part's model URL: the tenant-wide one for a reader who may view
-    module types (one download for a whole room), else through the device."""
+    pluggables (one download for a whole room), else through the device."""
     from .model_3d import version_of
 
     v = version_of(acc.model_3d)
@@ -580,7 +580,7 @@ def accessory_url(acc, device, shared: bool) -> str:
 def may_view_types(user, tenant) -> bool:
     from auth_api import rbac
 
-    return rbac.has_action(user, tenant, "moduletype", "view")
+    return rbac.has_action(user, tenant, "accessorytype", "view")
 
 
 def cord_for(accessories, connector: str):

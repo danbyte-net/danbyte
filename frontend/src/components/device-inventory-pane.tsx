@@ -190,7 +190,7 @@ function hardwareTotals(items: InventoryItemRow[]) {
 export function DeviceInventoryPane({ deviceId }: { deviceId: string }) {
   const { canDo } = useMe()
   const canWrite = canDo("device", "change")
-  const canViewTypes = canDo("moduletype", "view")
+  const canViewTypes = canDo("accessorytype", "view")
   const qc = useQueryClient()
   const [adding, setAdding] = useState(false)
   const [editing, setEditing] = useState<InventoryItemRow | null>(null)
