@@ -22,16 +22,33 @@ function named(name: string, at: [number, number, number] = [0, 0, 0]) {
   return o
 }
 
+/** A `port:` or `cable` empty as Blender's glTF exporter writes it: the
+ * part frame it stands for (`turn`, +Z out, +Y up) with the exporter's
+ * +90° about X on top, so its arrow is its local +Y. */
+const EXPORTED = new THREE.Quaternion().setFromAxisAngle(
+  new THREE.Vector3(1, 0, 0),
+  Math.PI / 2
+)
+function empty(
+  name: string,
+  at: [number, number, number] = [0, 0, 0],
+  turn = new THREE.Euler()
+) {
+  const o = named(name, at)
+  o.quaternion.setFromEuler(turn).multiply(EXPORTED)
+  return o
+}
+
 /** A chassis with a front port turned to face −Z (the anchor's +Z out of
  * the port) and a module bay; the module carries a `{module}` port. */
 function assembled() {
   const chassis = new THREE.Group()
-  const port = named("port:Gi1/0/1", [0.1, 0.02, -0.2])
-  port.rotation.y = Math.PI
-  chassis.add(port)
+  chassis.add(
+    empty("port:Gi1/0/1", [0.1, 0.02, -0.2], new THREE.Euler(0, Math.PI, 0))
+  )
   chassis.add(named("bay:NM", [0, 0.03, 0.2]))
   const nm = new THREE.Group()
-  nm.add(named("port:Te1/{module}/1", [0.01, 0, 0]))
+  nm.add(empty("port:Te1/{module}/1", [0.01, 0, 0]))
   const bays: ModelBay[] = [
     { name: "NM", position: "1", installed: true, part: null },
   ]
@@ -122,16 +139,14 @@ const stacked = (over: Partial<PortPlug> = {}): PortPlug => ({
  * turned a quarter about its +Z (an odd pose, so the composition shows). */
 function transceiver(name = "port:lc") {
   const t = new THREE.Group()
-  const rec = named(name, [0, 0.001, 0.012])
-  rec.rotation.z = Math.PI / 2
-  t.add(rec)
+  t.add(empty(name, [0, 0.001, 0.012], new THREE.Euler(0, 0, Math.PI / 2)))
   return t
 }
 
 /** A cord whose `cable` empty ends its stub 40 mm out. */
 function cord() {
   const c = new THREE.Group()
-  c.add(named("cable", [0, 0, 0.04]))
+  c.add(empty("cable", [0, 0, 0.04]))
   return c
 }
 
@@ -190,7 +205,7 @@ describe("stacking a cord on its transceiver", () => {
 
   it("finds the receptacle by the cord's connector before the transceiver's", () => {
     const t = new THREE.Group()
-    t.add(named("port:lc", [0, 0, 0.01]), named("port:mpo", [0, 0, 0.02]))
+    t.add(empty("port:lc", [0, 0, 0.01]), empty("port:mpo", [0, 0, 0.02]))
     expect(at(receptacleMatrix(t, ["mpo", "lc"]))).toEqual([0, 0, 0.02])
     expect(at(receptacleMatrix(t, ["lc"]))).toEqual([0, 0, 0.01])
     expect(receptacleMatrix(t, ["rj45"])).toBeNull()

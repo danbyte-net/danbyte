@@ -97,6 +97,21 @@ export function partMeshes(scene: THREE.Object3D): PartMesh[] {
  * has no such anchor: the chassis' `port:` nodes outside any posed part,
  * a module's inside the part posed at its bay (model-assembly tags the
  * part's root `danbyteBay`; its names have `{module}` resolved). */
+/**
+ * An exported empty's frame turned into a part's frame. Blender's glTF
+ * exporter gives every empty (camera, light) its Y-up correction: the
+ * arrow a `port:` or `cable` empty points along in Blender (its local +Z)
+ * comes out as the node's local +Y, and Blender's up as its local -Z.
+ * Parts are modelled +Z out of the port, +Y up (spec §13), so a part
+ * seated on an empty takes the empty's matrix times this.
+ */
+export const EMPTY_TO_PART = new THREE.Matrix4().makeRotationX(-Math.PI / 2)
+
+/** `m` (an empty's matrix) as the frame a part on it takes. */
+function partFrame(m: THREE.Matrix4): THREE.Matrix4 {
+  return m.multiply(EMPTY_TO_PART)
+}
+
 export function anchorMatrices(
   root: THREE.Object3D,
   plugs: readonly Pick<PortPlug, "port" | "bay">[]
@@ -122,7 +137,7 @@ export function anchorMatrices(
   return plugs.map((p) => {
     const node = byBay.get(p.bay ?? null)?.get(p.port)
     return node
-      ? new THREE.Matrix4().multiplyMatrices(inv, node.matrixWorld)
+      ? partFrame(new THREE.Matrix4().multiplyMatrices(inv, node.matrixWorld))
       : null
   })
 }
@@ -163,9 +178,10 @@ export function receptacleMatrix(
   }
   for (const n of names) {
     const node = ports.get(n)
-    if (node) return nodeMatrix(scene, node)
+    if (node) return partFrame(nodeMatrix(scene, node))
   }
-  if (ports.size === 1) return nodeMatrix(scene, [...ports.values()][0])
+  if (ports.size === 1)
+    return partFrame(nodeMatrix(scene, [...ports.values()][0]))
   return null
 }
 
@@ -186,7 +202,7 @@ export function cableEmptyMatrix(scene: THREE.Object3D): THREE.Matrix4 | null {
     })
     cableNodes.set(scene, node)
   }
-  return node ? nodeMatrix(scene, node) : null
+  return node ? partFrame(nodeMatrix(scene, node)) : null
 }
 
 /** One part drawn at one port. */

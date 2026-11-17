@@ -590,7 +590,7 @@ model3d:
 | `kind` | `transceiver` (a module in a cage, which takes a cord), `plug` (a cord or plug: `RJ45-PLUG`, `LC-DUPLEX`, `MPO-12`, `IEC-C13`) or `cord` (a one-piece part: a DAC or AOC, body and cable together). |
 | `connector` | What it takes or ends in: `rj45`, `lc`, `mpo`, `dac`, `aoc`, `iec-c13`, `usb-mini-b`… A transceiver's connector names the cord it takes; a cord's says which transceivers it plugs into. |
 | `fits` | The interface, front port, console port and power port type slugs it plugs into (`10gbase-x-sfpp`, `lc-duplex`, `rj-45`, `iec-60320-c14`). |
-| `model3d.file` | The part's model. Its origin is where it meets the port, +Z out along the cable, +Y up - the same as the `port:` empty, so Danbyte copies the anchor's transform onto it. |
+| `model3d.file` | The part's model. Its origin is where it meets the port, +Z out along the cable, +Y up - the same as the `port:` empty in Blender, so the part seats itself. (Blender's glTF exporter turns every empty so its arrow is the node's local +Y; Danbyte turns it back before seating a part, on host ports, a transceiver's `port:<connector>` and a cord's `cable` empty.) |
 | `parts` | Optional. A real transceiver's vendor part numbers - every one this model stands for, as printed on the label (`SFP-10G-SR`, not `SFP-10G-SR=`). |
 | `standard` | Optional. The IEEE / MSA name: `10GBASE-SR`, `100GBASE-SR4`. |
 | `wavelength_nm` | Optional. The nominal wavelength in nm; leave it out for copper. |
