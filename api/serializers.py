@@ -6047,17 +6047,54 @@ class InventoryItemSerializer(
             else None
         )
 
+    site = serializers.SerializerMethodField()
+    pluggable = serializers.SerializerMethodField()
+
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_interface(self, obj):
         if not obj.interface_id:
             return None
-        return {"id": str(obj.interface_id), "name": obj.interface.name}
+        out = {"id": str(obj.interface_id), "name": obj.interface.name}
+        # ``cabled``: the port has a cable or is marked connected - where the
+        # list annotated it.
+        if hasattr(obj, "_iface_cabled"):
+            out["cabled"] = obj._iface_cabled
+        return out
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_accessory_type(self, obj):
         if not obj.accessory_type_id:
             return None
         acc = obj.accessory_type
+        return {"id": str(acc.pk), "vendor": acc.vendor, "name": acc.name}
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_site(self, obj):
+        site = obj.device.site if obj.device_id else None
+        return {"id": str(site.pk), "name": site.name} if site is not None else None
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_pluggable(self, obj):
+        """A transceiver's part on the Pluggables page: the one set by hand,
+        else the one whose ``parts`` lists its part ID (api.port_plugs) -
+        the tenant's parts read once per response."""
+        if obj.kind != "transceiver" or not obj.device_id:
+            return None
+        if obj.accessory_type_id:
+            acc = obj.accessory_type
+        elif not obj.part_id:
+            return None
+        else:
+            from .port_plugs import part_key, part_maps
+
+            cache = self.context.setdefault("_part_maps", {})
+            tid = obj.device.tenant_id
+            if tid not in cache:
+                cache[tid] = part_maps(list(AccessoryType.objects.filter(tenant_id=tid)
+                                            .only("id", "vendor", "name", "kind", "parts")))[1]
+            acc = cache[tid].get(part_key(obj.part_id))
+            if acc is None:
+                return None
         return {"id": str(acc.pk), "vendor": acc.vendor, "name": acc.name}
 
     def validate(self, attrs):
@@ -6105,6 +6142,7 @@ class InventoryItemSerializer(
                   "status", "status_id",
                   "interface", "interface_id", "standard", "wavelength_nm",
                   "reach_m", "connector", "accessory_type", "accessory_type_id",
+                  "pluggable", "site",
                   "tags", "tag_ids", "custom_fields",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]

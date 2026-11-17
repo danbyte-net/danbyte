@@ -354,6 +354,7 @@ function invalidateTransceiver(
   qc.invalidateQueries({ queryKey: ["device-inventory", iface.device.id] })
   qc.invalidateQueries({ queryKey: ["free-transceivers", iface.device.id] })
   qc.invalidateQueries({ queryKey: ["device-leds"] })
+  qc.invalidateQueries({ queryKey: ["interface-parts", iface.id] })
 }
 
 /** The Overview's Transceiver value: what the port holds, with Set and

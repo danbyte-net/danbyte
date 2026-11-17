@@ -190,6 +190,7 @@ function hardwareTotals(items: InventoryItemRow[]) {
 export function DeviceInventoryPane({ deviceId }: { deviceId: string }) {
   const { canDo } = useMe()
   const canWrite = canDo("device", "change")
+  const canViewTypes = canDo("moduletype", "view")
   const qc = useQueryClient()
   const [adding, setAdding] = useState(false)
   const [editing, setEditing] = useState<InventoryItemRow | null>(null)
@@ -261,6 +262,8 @@ export function DeviceInventoryPane({ deviceId }: { deviceId: string }) {
       ...(canWrite ? [selectionColumn<InventoryItemRow>()] : []),
       ...buildInventoryItemColumns({
         driftFor: (id) => driftByPart.get(id) ?? [],
+        // A transceiver's part ID opens its part on the Pluggables page.
+        linkTypes: canViewTypes,
         actions: canWrite
           ? { onEdit: setEditing, onDelete: (r) => delMutate(r.id) }
           : undefined,
@@ -268,7 +271,7 @@ export function DeviceInventoryPane({ deviceId }: { deviceId: string }) {
       // Memoised: an inline array is a new identity every render, which makes
       // DataTable's selection effect loop and locks the pane up.
     ],
-    [canWrite, delMutate, driftByPart]
+    [canWrite, canViewTypes, delMutate, driftByPart]
   )
 
   return (

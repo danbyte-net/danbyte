@@ -184,7 +184,11 @@ has a **Transceiver** row: the part ID, serial and standard of the optic in
 it, with **Set**, **Change** and **Remove**. While a transceiver sits in
 it, the port keeps a pluggable type and stays on its device: remove the
 transceiver before changing either. See
-[Transceivers](inventory.md#transceivers).
+[Transceivers](inventory.md#transceivers). Beside it, a small 3D view
+shows the exact part the port shows - the transceiver, with its cord while
+a cable is in it, coloured by the cable - and opens the part's
+[Pluggables](pluggables.md) page (for a reader who may view module types).
+A port that shows no part has none.
 
 On the Overview, the **Switching** card has an **Uplink** row: the
 interface's setting and, for Automatic, what the

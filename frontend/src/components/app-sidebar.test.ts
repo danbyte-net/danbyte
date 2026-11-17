@@ -32,6 +32,7 @@ describe("app sidebar sections", () => {
           "/device-roles",
           "/dependency-media",
           "/device-profiles",
+          "/transceivers",
         ],
       ],
       [
@@ -40,6 +41,7 @@ describe("app sidebar sections", () => {
           "/manufacturers",
           "/device-types",
           "/module-types",
+          "/pluggables",
           "/platforms",
           "/platform-groups",
         ],
@@ -104,6 +106,8 @@ describe("app sidebar sections", () => {
     expect(gate("/manufacturers")).toBe("manufacturer")
     expect(gate("/device-types")).toBe("devicetype")
     expect(gate("/module-types")).toBe("moduletype")
+    expect(gate("/pluggables")).toBe("moduletype")
+    expect(gate("/transceivers")).toBe("inventoryitem")
     expect(gate("/platforms")).toBe("platform")
     expect(gate("/platform-groups")).toBe("platformgroup")
     expect(gate("/device-profiles")).toBe("deviceprofile")

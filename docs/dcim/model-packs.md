@@ -738,6 +738,13 @@ device (`/api/devices/{id}/accessory-model/{accessory id}/`).
 
 Until a pack with accessory types is installed, cabled ports show no plug.
 
+**Pluggables page.** DCIM → Catalog → [Pluggables](pluggables.md) lists the
+tenant's accessory types with how many ports use each, shows one in the 3D
+viewer with its cord seated and the cable colours previewed, and lets an
+editor change its fits, part numbers, standard, wavelength, reach and
+cable, or replace its model. A field changed there is kept by the next
+pack import ([Changed by hand](pluggables.md#changed-by-hand)).
+
 ## Importing a pack
 
 A pack can also be imported with a management command, from a folder or a
@@ -764,7 +771,8 @@ A pack can also be imported with a management command, from a folder or a
   checked and scanned, the report printed, and nothing kept.
 - Accessory types are matched by folder (vendor) and name, created or
   updated, and get the pack's model. They are reported as *accessory type*
-  rows.
+  rows. A field [changed by hand](pluggables.md#changed-by-hand) on the
+  Pluggables page - and a model replaced there - is kept, with a note.
 - Models no YAML names are listed and not imported.
 - A device type with [rendered photos](#rendered-photos) gets them as its
   faces, with its reference modules, ports and LEDs. A face uploaded by
@@ -795,8 +803,8 @@ pack.
 | `GET /api/device-types/{id}/studio/` | What the image renderer needs: the model, `frame_mm` (`[width, height]`), the bays with their reference modules' models and `leds`, the components by name (`ports`: `[kind, type]`), the `token` of the model state, `pending`, `generated`, `hand_made` and `sources` (as `images_source` below). View on the type. |
 | `POST /api/device-types/{id}/studio/` | Stores a rendered set (multipart): `front_image`, `rear_image`, `iso_image` (WebP or PNG), `image_ports` and `image_leds` (JSON), `token` (a stale one answers 400) and `overwrite` - the hand-made targets to replace, comma-separated. Answers `written`, `kept` and the type. Change on the type. |
 | `GET /api/devices/{id}/studio/` | The same for a device's own faces: its components, its modules' LED bindings, the port covers to hide (`covers`, `bay_covers`) and the plugs in its cabled ports (`plugs`), as on `/api/device-leds/`. View on the device. |
-| `GET /api/accessory-types/` (and `{id}/`) | The tenant's [accessory types](#accessory-types): `vendor`, `name`, `kind`, `connector`, `fits`, `parts`, `standard`, `wavelength_nm`, `model_url`. Read only. View on module types. |
-| `GET /api/accessory-types/{id}/model/` | An accessory type's model. View on module types. |
+| `GET /api/accessory-types/` (and `{id}/`) | The tenant's [accessory types](#accessory-types): `vendor`, `name`, `kind`, `connector`, `fits`, `parts`, `standard`, `wavelength_nm`, `reach_m`, `cable`, `model_url`, `pack_import`, `hand_edited`, `in_use`. View on module types. Editing, usage and delete: [Pluggables → API](pluggables.md#api). |
+| `GET /api/accessory-types/{id}/model/` | An accessory type's model. View on module types; a `POST` replaces it (change). |
 | `GET /api/devices/{id}/accessory-model/{accessory id}/` | The same through a device, for a reader who may view the device but not module types. |
 | `GET /api/device-leds/?devices=<id>,<id>…` | What the status LEDs show now. Also `?device=<id>` or `?rack=<id>`. POST the same keys as a JSON body for long lists (`{"devices": [...]}`). Any other parameter is a 400. |
 | `GET/POST /api/devices/{id}/locate/` | The [locate beacon](devices.md#locate). |

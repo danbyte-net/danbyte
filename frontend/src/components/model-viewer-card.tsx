@@ -29,6 +29,8 @@ export interface ViewerSource {
   manufacturerId?: string | null
   /** A type: its mapping, drawn neutral. */
   templatePorts?: ModelPortsDoc | null
+  /** Drawn beside the model, in its frame (model-viewer). */
+  overlay?: ModelViewerProps["overlay"]
 }
 
 const PRESETS: { value: ViewPreset; label: string }[] = [
@@ -48,10 +50,13 @@ const PRESETS: { value: ViewPreset; label: string }[] = [
 export function ModelViewerFrame({
   source,
   note,
+  tools,
   className = "h-80",
 }: {
   source: ViewerSource
   note?: React.ReactNode
+  /** More toolbar controls, after the views. */
+  tools?: React.ReactNode
   className?: string
 }) {
   const wrap = useRef<HTMLDivElement>(null)
@@ -98,6 +103,7 @@ export function ModelViewerFrame({
             Ports
           </BarToggle>
         )}
+        {tools}
         <span className="ml-auto flex items-center gap-2">
           {note && (
             <span className="text-[11px] whitespace-nowrap text-muted-foreground">

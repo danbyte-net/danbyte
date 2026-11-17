@@ -61,6 +61,11 @@ export type InventoryItemColumnId =
   | "serial_number"
   | "description"
   | "asset_tag"
+  // The Transceivers list (docs/dcim/inventory.md → Transceivers list).
+  | "device"
+  | "site"
+  | "standard"
+  | "cabled"
 
 export const INVENTORY_ITEM_COLUMNS: InventoryItemColumnId[] = [
   "name",
@@ -76,14 +81,34 @@ export const INVENTORY_ITEM_COLUMNS: InventoryItemColumnId[] = [
   "asset_tag",
 ]
 
+/** The Transceivers list's columns: every transceiver in the tenant. */
+export const TRANSCEIVER_COLUMNS: InventoryItemColumnId[] = [
+  "part_id",
+  "serial_number",
+  "standard",
+  "device",
+  "port",
+  "cabled",
+  "site",
+  "name",
+]
+
 export function buildInventoryItemColumns({
   include = INVENTORY_ITEM_COLUMNS,
   driftFor,
+  linkTypes = false,
+  facets = false,
   actions,
 }: {
   include?: InventoryItemColumnId[]
   /** Observed health disagreeing with the set status, per part. */
   driftFor?: (id: string) => SnmpDriftItem[]
+  /** A transceiver's part ID links to its part on the Pluggables page
+   * (the reader may view module types). */
+  linkTypes?: boolean
+  /** Filter facets on part, standard, device, site, port and cabled (a
+   * flat list; the device inventory is a tree). */
+  facets?: boolean
   /** Row actions; omitted, the table is read-only. */
   actions?: {
     onEdit: (r: InventoryItemRow) => void
@@ -126,6 +151,20 @@ export function buildInventoryItemColumns({
       id: "port",
       header: "Port",
       accessorFn: (r) => r.interface?.name ?? "",
+      ...(facets
+        ? {
+            meta: {
+              facet: {
+                kind: "enum",
+                label: "In a port",
+                get: (r: InventoryItemRow) => (r.interface ? "port" : "spare"),
+                formatValue: (v: string) => ({
+                  label: v === "port" ? "In a port" : "Spare",
+                }),
+              },
+            },
+          }
+        : {}),
       cell: ({ row }) => {
         const i = row.original.interface
         return i ? (
@@ -186,7 +225,127 @@ export function buildInventoryItemColumns({
         </span>
       ),
     }),
-    part_id: () => muted("part_id", "Part ID", true),
+    part_id: () => ({
+      id: "part_id",
+      accessorFn: (r) => r.part_id,
+      header: "Part ID",
+      cell: ({ row }) => {
+        const r = row.original
+        const t = r.pluggable
+        if (!r.part_id && !t)
+          return <span className="text-muted-foreground">-</span>
+        return linkTypes && t ? (
+          <Link
+            to="/pluggables/$id"
+            params={{ id: t.id }}
+            className="link font-mono text-xs"
+          >
+            {r.part_id || t.name}
+          </Link>
+        ) : (
+          <span className="font-mono text-xs">{r.part_id || "-"}</span>
+        )
+      },
+      ...(facets
+        ? {
+            meta: {
+              facet: {
+                kind: "enum",
+                label: "Part",
+                get: (r: InventoryItemRow) => r.part_id || "__none__",
+                formatValue: (v: string) => ({
+                  label: v === "__none__" ? "None" : v,
+                }),
+              },
+            },
+          }
+        : {}),
+    }),
+    standard: () => ({
+      ...muted("standard", "Standard"),
+      ...(facets
+        ? {
+            meta: {
+              facet: {
+                kind: "enum",
+                label: "Standard",
+                get: (r: InventoryItemRow) => r.standard || "__none__",
+                formatValue: (v: string) => ({
+                  label: v === "__none__" ? "None" : v,
+                }),
+              },
+            },
+          }
+        : {}),
+    }),
+    device: () => ({
+      id: "device",
+      header: "Device",
+      accessorFn: (r) => r.device.name,
+      cell: ({ row }) => (
+        <Link
+          to="/devices/$id"
+          params={{ id: row.original.device.id }}
+          className="link font-medium"
+        >
+          {row.original.device.name}
+        </Link>
+      ),
+      ...(facets
+        ? {
+            meta: {
+              facet: {
+                kind: "enum",
+                label: "Device",
+                get: (r: InventoryItemRow) => r.device.id,
+                formatValue: (_v: string, s: InventoryItemRow) => ({
+                  label: s.device.name,
+                }),
+              },
+            },
+          }
+        : {}),
+    }),
+    site: () => ({
+      id: "site",
+      header: "Site",
+      accessorFn: (r) => r.site?.name ?? "",
+      cell: ({ row }) => {
+        const s = row.original.site
+        return s ? (
+          <Link to="/sites/$id" params={{ id: s.id }} className="link text-xs">
+            {s.name}
+          </Link>
+        ) : (
+          <span className="text-muted-foreground">-</span>
+        )
+      },
+      ...(facets
+        ? {
+            meta: {
+              facet: {
+                kind: "enum",
+                label: "Site",
+                get: (r: InventoryItemRow) => r.site?.id ?? "__none__",
+                formatValue: (v: string, s: InventoryItemRow) => ({
+                  label: v === "__none__" ? "No site" : (s.site?.name ?? v),
+                }),
+              },
+            },
+          }
+        : {}),
+    }),
+    cabled: () => ({
+      id: "cabled",
+      header: "Cabled",
+      accessorFn: (r) =>
+        r.interface ? (r.interface.cabled ? "Yes" : "No") : "",
+      cell: ({ getValue }) => (
+        <span className="text-xs text-muted-foreground">
+          {getValue<string>() || "-"}
+        </span>
+      ),
+    }),
     serial_number: () => muted("serial_number", "Serial", true),
     description: () => ({
       id: "description",

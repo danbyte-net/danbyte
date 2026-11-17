@@ -59,6 +59,7 @@ import { InterfaceRoutingCard } from "@/components/routing/interface-routing-car
 import { useMe } from "@/lib/use-me"
 import { useDcimChoices } from "@/lib/use-dcim-choices"
 import { TransceiverValue } from "@/components/transceiver-dialog"
+import { PortPartThumb } from "@/components/pluggable-model"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { buildLearnedMacColumns } from "@/components/columns/learned-mac-columns"
 import { RefreshMacsButton, UplinkBadge } from "@/components/learned-macs-cell"
@@ -456,10 +457,15 @@ function InterfaceOverview({
           {
             label: "Transceiver",
             value: (
-              <TransceiverValue
-                iface={i}
-                canEdit={canDo("inventoryitem", "change")}
-              />
+              <span className="flex flex-wrap items-start justify-between gap-3">
+                <TransceiverValue
+                  iface={i}
+                  canEdit={canDo("inventoryitem", "change")}
+                />
+                {/* The exact part in 3D, with its cord while cabled
+                    (docs/dcim/pluggables.md). */}
+                <PortPartThumb interfaceId={i.id} />
+              </span>
             ),
           } satisfies KvRow,
         ]

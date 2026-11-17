@@ -191,7 +191,9 @@ class PackImportTests(_CoverBase):
         self.assertEqual((acc.vendor, acc.name, acc.kind, acc.connector, acc.fits),
                          ("Generic", "RJ45-PLUG", "plug", "rj45",
                           ["1000base-t", "10gbase-t", "rj-45"]))
-        self.assertEqual(acc.pack_import, {"pack": {"name": "Acme test", "version": "1.1.0"}})
+        self.assertEqual(acc.pack_import, {"pack": {"name": "Acme test", "version": "1.1.0"},
+                                          "file": "models/Generic/RJ45-PLUG.glb",
+                                          "triangles": 2})
         with acc.model_3d.open("rb") as fh:
             self.assertEqual(fh.read(), plug_glb())
         out = self.run_import("--apply")

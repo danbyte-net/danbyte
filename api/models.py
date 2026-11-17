@@ -6264,6 +6264,7 @@ class AccessoryType(TimestampedModel):
     )
     standard = models.CharField(max_length=64, blank=True, default="", db_default="")
     wavelength_nm = models.PositiveIntegerField(null=True, blank=True)
+    reach_m = models.PositiveIntegerField(null=True, blank=True)
     # A cord's run (``cable:`` in the pack, export spec §13 v1.9):
     # {profile: zipcord | round, jacket_mm, pitch_mm, min_bend_mm}, or null.
     # Danbyte draws the cable from the part's ``cable`` empty with it.
@@ -6274,6 +6275,12 @@ class AccessoryType(TimestampedModel):
     )
     # The pack that brought it: {name, version}.
     pack_import = models.JSONField(null=True, blank=True, default=None, editable=False)
+    # The fields changed by hand since (``fits``, ``parts``, ``standard``,
+    # ``wavelength_nm``, ``reach_m``, ``cable``, ``model``): a pack re-import
+    # keeps them (api.port_plugs.apply_accessory).
+    hand_edited = models.JSONField(
+        default=list, blank=True, db_default=models.Value([], models.JSONField()),
+    )
 
     class Meta:
         ordering = ["vendor", "name"]

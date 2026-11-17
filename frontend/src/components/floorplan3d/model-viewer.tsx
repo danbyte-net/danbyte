@@ -122,6 +122,9 @@ export interface ModelViewerProps {
   /** A click on a port goes here instead of selecting it (a small preview
    * with no room for the panel). */
   onPort?: (pick: MappedPortPick) => void
+  /** Drawn in the model's own frame, beside it (a part's seated cord on the
+   * Pluggables page). Gets the drawn root. */
+  overlay?: (root: THREE.Object3D) => React.ReactNode
   className?: string
 }
 
@@ -309,7 +312,7 @@ function Fitted({
                   onMenu={pickers.onBayMenu}
                 />
               )
-            : undefined
+            : props.overlay
         }
       />
       {props.markers !== false &&

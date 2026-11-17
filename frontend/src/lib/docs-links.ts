@@ -55,6 +55,8 @@ export const DOCS_LINKS: Record<string, string> = {
   "/virtual-chassis": "dcim/virtual-chassis/",
   "/device-types": "dcim/device-catalog/",
   "/module-types": "dcim/device-catalog/",
+  "/pluggables": "dcim/pluggables/",
+  "/transceivers": "dcim/inventory/#transceivers-list",
   "/manufacturers": "dcim/device-catalog/",
   "/device-roles": "dcim/device-catalog/",
   "/platforms": "dcim/device-catalog/",

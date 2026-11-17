@@ -28,7 +28,7 @@ journal - linked to the interface.
 | **Connector** | `LC`, `SC`, `MPO-12`, `MPO-16`, `RJ45`, `DAC`, `AOC` or `Other`. |
 | **Wavelength (nm)** | 850, 1310, 1550, a CWDM or DWDM channel. |
 | **Reach (m)** | The rated reach. |
-| **3D part** | The [accessory type](model-packs.md#accessory-types) to draw in the port, set through the API (`accessory_type_id`). Left empty, Danbyte draws the accessory type whose `parts` lists the item's part ID. |
+| **3D part** | The [pluggable](pluggables.md) (accessory type) to draw in the port, set through the API (`accessory_type_id`). Left empty, Danbyte draws the one whose part numbers list the item's part ID. |
 
 **Rules.** Danbyte checks these on every save - the form, the API and bulk edit
 alike:
@@ -68,7 +68,13 @@ there too.
 ### Where transceivers show
 
 - **Hardware tab:** the inventory table's **Port** column names each
-  transceiver's port, linked to the interface.
+  transceiver's port, linked to the interface. Its **Part ID** links to the
+  transceiver's [pluggable](pluggables.md) - the one set by hand, else the
+  one whose part numbers list it - for a reader who may view module types.
+- **[Transceivers list](#transceivers-list):** every transceiver in the
+  tenant.
+- **Interface page:** the Transceiver row shows the part in 3D, with its
+  cord while cabled, linked to its pluggable.
 - **Interface lists:** the optional **Transceiver** column (pick it in the
   Columns menu) shows the part ID.
 - **3D:** a port with a transceiver draws its part even with no cable in it.
@@ -87,8 +93,28 @@ items at the device's site; anyone else sees the port without it.
 `/api/inventory-items/` carries the fields above: `interface` (`{id, name}`,
 written as `interface_id`), `standard`, `wavelength_nm`, `reach_m`,
 `connector`, and `accessory_type` (`{id, vendor, name}`, written as
-`accessory_type_id`). The list takes `kind=transceiver` and
-`in_port=true|false` beside `device`; bulk edit sets `standard`,
+`accessory_type_id`). Read only: `pluggable` (`{id, vendor, name}`, a
+transceiver's part - set by hand, else matched by part ID - or null) and
+`site` (the device's, `{id, name}`); in the list, `interface` also carries
+`cabled` (a cable ends on the port, or it is marked connected). The list
+takes `kind=transceiver`, `in_port=true|false`, `site`, `part` (part ID
+contains), `standard` (exact, any case) and `cabled=true|false` beside
+`device`; `search` also matches the serial, part ID and asset tag. Bulk edit sets `standard`,
 `connector`, `wavelength_nm` and `reach_m`. An interface's read carries
 `transceiver`: `{id, name, part_id, serial_number, standard}`, or null - also
 null for a reader who may not view the item.
+
+## Transceivers list
+
+**DCIM → Transceivers** lists every inventory item of kind transceiver in
+the tenant, in a port or spare: part ID, serial, standard, device, port,
+whether the port is cabled, site and name. It answers "where is serial
+FNS…", "how many SFP-10G-LR are in use" and "which optics are spare".
+
+- **Filters:** part, standard, device, site, and **In a port** / **Spare**
+  in the rail; the search box matches the name, serial, part ID, asset tag
+  and device.
+- **Part ID** links to the transceiver's [pluggable](pluggables.md) for a
+  reader who may view module types; **Port** opens the interface.
+- It needs view on inventory items, and shows the ones at sites you may
+  view. It reads `/api/inventory-items/?kind=transceiver` (above).

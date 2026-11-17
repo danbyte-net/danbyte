@@ -23,6 +23,7 @@ import {
   Container,
   Cpu,
   DoorClosed,
+  Plug,
   ExternalLink,
   EyeOff,
   Factory,
@@ -698,6 +699,12 @@ export const sections: NavSection[] = [
             icon: Layers3,
             objectType: "deviceprofile",
           },
+          {
+            title: "Transceivers",
+            url: "/transceivers",
+            icon: CableIcon,
+            objectType: "inventoryitem",
+          },
         ],
       },
       {
@@ -719,6 +726,12 @@ export const sections: NavSection[] = [
             title: "Module types",
             url: "/module-types",
             icon: ArrowDownUp,
+            objectType: "moduletype",
+          },
+          {
+            title: "Pluggables",
+            url: "/pluggables",
+            icon: Plug,
             objectType: "moduletype",
           },
           {

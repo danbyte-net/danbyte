@@ -2062,7 +2062,8 @@ export function saveModelPorts(
 }
 
 /** Who carries an uploaded 3D model. */
-export type Model3DOwnerKind = "device-types" | "devices" | "module-types"
+export type Model3DOwnerKind =
+  "device-types" | "devices" | "module-types" | "accessory-types"
 
 /** Set or replace a 3D model (a .glb); `lod: "far"` sets the far-distance
  * copy. The answer is the object with the upload's `model_scan`. */
@@ -4683,15 +4684,139 @@ export interface InventoryItemRow {
   /** CPU cores (kind=cpu). */
   cores: number | null
   status: StatusMini | null
-  /** A transceiver's port (docs/dcim/inventory.md → Transceivers). */
-  interface: { id: string; name: string } | null
+  /** A transceiver's port (docs/dcim/inventory.md → Transceivers);
+   * `cabled` when a cable ends on it or it is marked connected (null where
+   * the list did not work it out). */
+  interface: { id: string; name: string; cabled?: boolean | null } | null
   standard: string
   wavelength_nm: number | null
   reach_m: number | null
   connector: TransceiverConnector | ""
   /** The 3D part drawn in its port, set by hand. */
   accessory_type: { id: string; vendor: string; name: string } | null
+  /** A transceiver's part on the Pluggables page: set by hand, else the one
+   * whose part numbers list its part ID. */
+  pluggable?: { id: string; vendor: string; name: string } | null
+  /** The device's site. */
+  site?: { id: string; name: string } | null
   tags: Tag[]
+}
+
+/** A pluggable part (docs/dcim/pluggables.md): a transceiver, plug or
+ * cord a model pack brings - `/api/accessory-types/`. */
+export type AccessoryKind = "plug" | "transceiver" | "cord"
+
+export const ACCESSORY_KIND_LABEL: Record<AccessoryKind, string> = {
+  transceiver: "Transceiver",
+  plug: "Plug",
+  cord: "Cord",
+}
+
+/** A kind's label; an unknown one as it is. */
+export function accessoryKindLabel(kind: string): string {
+  return (
+    (ACCESSORY_KIND_LABEL as Record<string, string | undefined>)[kind] ?? kind
+  )
+}
+
+/** How a cord's run is drawn (the pack's `cable:` block). Sizes in mm. */
+export interface AccessoryCable {
+  profile: "zipcord" | "round"
+  jacket_mm: number
+  pitch_mm: number | null
+  min_bend_mm: number | null
+}
+
+/** A field a hand edit marks; a pack re-import keeps it. */
+export type AccessoryHandField =
+  | "fits"
+  | "parts"
+  | "standard"
+  | "wavelength_nm"
+  | "reach_m"
+  | "cable"
+  | "model"
+
+export interface AccessoryType {
+  id: string
+  vendor: string
+  name: string
+  kind: AccessoryKind
+  connector: string
+  /** The port types it plugs into. */
+  fits: string[]
+  /** The vendor part numbers it stands for. */
+  parts: string[]
+  standard: string
+  wavelength_nm: number | null
+  reach_m: number | null
+  cable: AccessoryCable | null
+  model_url: string | null
+  pack_import: {
+    pack: { name: string; version: string }
+    file?: string
+    triangles?: number
+  } | null
+  hand_edited: AccessoryHandField[]
+  /** Ports and spare records that show it. */
+  in_use: number | null
+  /** Detail only: per part number, the records whose part ID it matches. */
+  part_records?: Record<string, number>
+  /** Detail only, a transceiver: the cord that plugs into it. */
+  cord?: {
+    id: string
+    name: string
+    connector: string
+    model_url: string | null
+    cable: AccessoryCable | null
+  } | null
+  /** After a model upload: what the check found. */
+  model_notes?: string[]
+  created_at: string
+  updated_at: string
+}
+
+/** One place a part shows (`/api/accessory-types/<id>/usage/`). */
+export interface AccessoryUsageRow {
+  device: { id: string; name: string } | null
+  site: { id: string; name: string } | null
+  /** Null for a spare record (no port). */
+  port: { kind: string; id: string; name: string; type: string } | null
+  role: "transceiver" | "cord" | "plug"
+  /** set: a record set to it by hand; part: a record whose part ID it
+   * lists; fallback: the part a port takes without one. */
+  source: "set" | "part" | "fallback"
+  cabled: boolean
+  cable_type: string
+  item: {
+    id: string
+    name: string
+    part_id: string
+    serial_number: string
+    standard: string
+  } | null
+}
+
+/** A part in a port, for the interface page's thumbnail. */
+export interface PortPart {
+  /** Null for a reader who may not view module types. */
+  id: string | null
+  vendor: string
+  name: string
+  kind: string
+  connector: string
+  url: string
+  cable?: AccessoryCable | null
+}
+
+/** `/api/interfaces/<id>/parts/`. */
+export interface PortParts {
+  port_type: string
+  cabled: boolean
+  color: string | null
+  cable_type: string
+  transceiver_part: PortPart | null
+  cord_part: PortPart | null
 }
 
 export type TransceiverConnector =

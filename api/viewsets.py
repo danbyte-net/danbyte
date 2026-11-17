@@ -5846,6 +5846,16 @@ class InterfaceViewSet(
             ).data,
         })
 
+    @extend_schema(responses={200: OpenApiTypes.OBJECT})
+    @action(detail=True, methods=["get"], url_path="parts")
+    def parts(self, request, pk=None):
+        """The 3D parts this port shows - its transceiver and the cord in it
+        (api.port_plugs.port_parts) - for the interface page's thumbnail."""
+        from .port_plugs import port_parts
+
+        iface = self.get_object()  # tenant-scoped via device__tenant
+        return Response(port_parts(iface, request.user, iface.device.tenant))
+
     @action(detail=True, methods=["get"], url_path="lag")
     def lag(self, request, pk=None):
         """A bundle at a glance: the aggregate's members as full interface
@@ -6514,6 +6524,8 @@ class _DevicePortViewSet(NameRangeCreateMixin, ComponentBulkMixin, TenantScopedV
     bulk_str_fields = ("type", "description")
     bulk_tags = True
     bulk_name_scope_field = "device_id"
+    # More text fields ``search`` matches besides the name and the device's.
+    search_extra: tuple[str, ...] = ()
 
     def get_queryset(self):
         tenant = _get_active_tenant(self.request)
@@ -6523,7 +6535,10 @@ class _DevicePortViewSet(NameRangeCreateMixin, ComponentBulkMixin, TenantScopedV
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
-                qs = qs.filter(name__icontains=s) | qs.filter(device__name__icontains=s) | qs.filter(cf_text_q(qs.model, s))
+                hit = Q(name__icontains=s) | Q(device__name__icontains=s)
+                for f in self.search_extra:
+                    hit |= Q(**{f"{f}__icontains": s})
+                qs = qs.filter(hit) | qs.filter(cf_text_q(qs.model, s))
             device_id = self.request.query_params.get("device")
             if device_id:
                 qs = qs.filter(device_id=device_id)
@@ -6887,7 +6902,8 @@ class InventoryItemTemplateViewSet(_ComponentTemplateViewSet):
 class InventoryItemViewSet(_DevicePortViewSet):
     queryset = (
         InventoryItem.objects
-        .select_related("device", "manufacturer", "parent", "interface", "accessory_type")
+        .select_related("device", "device__site", "manufacturer", "parent", "interface",
+                        "accessory_type")
         .prefetch_related(TAGS)
         .order_by(natural("device__name"), NATURAL_NAME)
     )
@@ -6905,17 +6921,35 @@ class InventoryItemViewSet(_DevicePortViewSet):
 
     # ``picker=1`` from the transceiver picker: the full row is light enough.
     extra_query_params = ("picker",)
+    search_extra = ("serial_number", "part_id", "asset_tag")
 
     def get_queryset(self):
         # ``kind=transceiver`` and ``in_port=false``: the set-transceiver
         # dialog's free optics on one device.
+        # The Transceivers list (docs/dcim/inventory.md → Transceivers list)
+        # adds ``site``, ``part``, ``standard`` and ``cabled``.
         qs = super().get_queryset()
-        kind = self.request.query_params.get("kind") if self.request else None
-        if kind:
+        if not self.request:
+            return qs
+        p = self.request.query_params
+        if kind := p.get("kind"):
             qs = qs.filter(kind=kind)
-        in_port = self.request.query_params.get("in_port") if self.request else None
+        in_port = p.get("in_port")
         if in_port in ("true", "false"):
             qs = qs.filter(interface__isnull=in_port == "false")
+        if site := p.get("site"):
+            qs = qs.filter(device__site_id=site)
+        if part := p.get("part", "").strip():
+            qs = qs.filter(part_id__icontains=part)
+        if standard := p.get("standard", "").strip():
+            qs = qs.filter(standard__iexact=standard)
+        from django.db.models import BooleanField, Exists, ExpressionWrapper
+
+        cabled = Q(Exists(CableTermination.objects.filter(interface=OuterRef("interface_id"))))
+        cabled |= Q(interface__mark_connected=True)
+        qs = qs.annotate(_iface_cabled=ExpressionWrapper(cabled, output_field=BooleanField()))
+        if p.get("cabled") in ("true", "false"):
+            qs = qs.filter(_iface_cabled=p.get("cabled") == "true")
         return qs
 
     def check_bulk_rows(self, rows, updates):
