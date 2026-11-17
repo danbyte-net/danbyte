@@ -20,6 +20,8 @@ function part(over: Partial<AccessoryType>): AccessoryType {
     pack_import: null,
     hand_edited: [],
     in_use: 0,
+    created_at: "",
+    updated_at: "",
     ...over,
   }
 }

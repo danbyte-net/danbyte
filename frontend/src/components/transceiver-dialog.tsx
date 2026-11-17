@@ -199,7 +199,7 @@ export function pluggableFacts(a: AccessoryType): {
     partId: a.parts[0] ?? a.name,
     facts: {
       standard: a.standard,
-      connector: known.has(c) ? c : c ? "other" : "",
+      connector: known.has(c) ? (c as TransceiverConnector) : c ? "other" : "",
       wavelength: a.wavelength_nm != null ? String(a.wavelength_nm) : "",
       reach: a.reach_m != null ? String(a.reach_m) : "",
     },
