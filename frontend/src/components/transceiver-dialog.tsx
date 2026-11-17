@@ -93,10 +93,6 @@ export function factsPayload(f: TransceiverFacts) {
   }
 }
 
-const CONNECTOR_OPTIONS = [
-  { value: "", label: "-" },
-  ...TRANSCEIVER_CONNECTOR_OPTIONS,
-]
 
 /** Standard, connector, wavelength and reach. */
 export function TransceiverFactFields({
@@ -123,9 +119,10 @@ export function TransceiverFactFields({
       />
       <FormSelect
         label="Connector"
-        value={value.connector}
+        value={value.connector || null}
         onChange={(v) => set("connector")(v ?? "")}
-        options={CONNECTOR_OPTIONS}
+        options={TRANSCEIVER_CONNECTOR_OPTIONS}
+        noneLabel="-"
         error={errors.connector}
       />
       <FormText
