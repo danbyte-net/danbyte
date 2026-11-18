@@ -188,14 +188,22 @@ export async function parseModel(buf: ArrayBuffer): Promise<THREE.Group> {
  * drawn with alpha to coverage. With a plain alpha test, the texture's
  * smaller mip levels average holes and metal together; once that average
  * falls under the cut-off the whole far side of a door vanished, along a
- * line that moved with the camera. Coverage turns the average into how
- * see-through it looks instead, as a perforated panel does from afar.
+ * line that moved with the camera. Coverage smooths the edges, and three
+ * sharpens it around the cut-off, so the cut-off itself comes down to
+ * `CUTOUT_ALPHA_TEST`: a perforated sheet averages about 0.36 (6.4 mm holes
+ * on an 8 mm pitch), which stays over it - a far door reads as the solid
+ * screen it looks like, and up close its holes are as crisp as before.
  */
+export const CUTOUT_ALPHA_TEST = 0.25
+
 export function smoothCutouts(obj: THREE.Object3D) {
   obj.traverse((o) => {
     if (!(o instanceof THREE.Mesh)) return
     for (const m of Array.isArray(o.material) ? o.material : [o.material])
-      if (m.alphaTest > 0 && !m.transparent) m.alphaToCoverage = true
+      if (m.alphaTest > 0 && !m.transparent) {
+        m.alphaToCoverage = true
+        m.alphaTest = Math.min(m.alphaTest, CUTOUT_ALPHA_TEST)
+      }
   })
 }
 

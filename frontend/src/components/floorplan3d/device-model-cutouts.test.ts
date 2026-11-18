@@ -1,7 +1,7 @@
 import * as THREE from "three"
 import { describe, expect, it } from "vitest"
 
-import { smoothCutouts } from "./device-model"
+import { CUTOUT_ALPHA_TEST, smoothCutouts } from "./device-model"
 
 describe("cut-out materials", () => {
   it("draw alpha-masked parts with alpha to coverage, leaving the rest", () => {
@@ -18,6 +18,10 @@ describe("cut-out materials", () => {
     g.add(new THREE.Mesh(box, [glass, plain]))
     smoothCutouts(g)
     expect(perforated.alphaToCoverage).toBe(true)
+    // A far perforated sheet averages ~0.36: it must stay over the cut-off.
+    expect(perforated.alphaTest).toBe(CUTOUT_ALPHA_TEST)
+    expect(0.36).toBeGreaterThan(perforated.alphaTest)
+    expect(glass.alphaTest).toBe(0.01)
     // Blended glass sorts and blends; coverage is for masks only.
     expect(glass.alphaToCoverage).toBe(false)
     expect(plain.alphaToCoverage).toBe(false)
