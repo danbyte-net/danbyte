@@ -359,7 +359,10 @@ which wins over its type's.
 
 A type with a model shows it on its Overview in a **3D model** viewer at
 the top of the right-hand column. The model stands the way the room stands
-it, front toward you. Drag to orbit and scroll to zoom; the toolbar has
+it, front toward you. It moves like every
+[3D view](../features/floor-plans.md#navigate-3d) (click to pivot, drag to
+orbit, right-drag to pan, scroll to zoom; **Orbit** / **Pan** on the
+toolbar); the toolbar has
 **Front**, **Rear** and **Top** (straight at that face, no perspective,
 like a photo), **3D** (the perspective three-quarter view), **Fit**,
 **Ports** (the [mapped ports](#model-ports), outlined in one neutral
@@ -920,6 +923,10 @@ count per kind.
   photo's markers project onto the model's front, the rear photo's onto its
   back, each dropped onto the surface, ready to adjust. Ports already mapped
   stay where they are.
+- **Move the camera** as in every
+  [3D view](../features/floor-plans.md#navigate-3d); a click that places a
+  port also pivots there. **Orbit** / **Pan** on the editor's bar sets what
+  a drag off a marker does.
 - **Undo / redo** (Ctrl+Z / Ctrl+Shift+Z) work inside the dialog. Nothing is
   written until **Save**, which sends the whole mapping in one request. If
   someone saved a mapping since you opened the editor, Save is refused and

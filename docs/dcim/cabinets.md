@@ -186,7 +186,7 @@ calibrated photo is clipped to its device, so are its ports. They resolve
 in one request when the view opens - the room's own, so the drift outline
 costs a check per device - and the key to their colours sits under the view.
 
-Drag to turn it and scroll to zoom toward the pointer. **Close door** and **Open door** swing
+Click to set the pivot, drag to turn around it, right-drag to pan and scroll to zoom toward the pointer ([how 3D views move](../features/floor-plans.md#navigate-3d)); **Orbit** / **Pan** sets what a drag does. **Close door** and **Open door** swing
 the door on its left-hand hinge (it snaps when the system asks for reduced
 motion); **Front** and **Rear** look straight at either side, as a
 double-click on the cabinet does; **PNG** downloads `<cabinet>-3d.png`.

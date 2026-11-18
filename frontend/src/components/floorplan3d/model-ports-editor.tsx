@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Canvas, useThree } from "@react-three/fiber"
 import type { ThreeEvent } from "@react-three/fiber"
-import { OrbitControls } from "@react-three/drei"
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import { Check, Redo2, Search, Undo2 } from "lucide-react"
@@ -40,6 +39,7 @@ import type { History, ModelPort, ModelPortKind, V3 } from "@/lib/model-ports"
 import { naturalCompare } from "@/lib/natural-sort"
 import { cn } from "@/lib/utils"
 import { TEMPLATE_ENDPOINT } from "@/components/component-template-dialog"
+import { CameraModeToggle } from "@/components/camera-mode-toggle"
 import { Loading } from "@/components/loading"
 import { QueryError } from "@/components/query-error"
 import { SegmentedTabs } from "@/components/segmented-tabs"
@@ -47,6 +47,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Kbd } from "@/components/ui/kbd"
 
+import { CameraRig } from "./camera-rig"
+import type { RigControls } from "./camera-rig"
 import { useDeviceModel } from "./device-model"
 import { snapToSurface, uprightOf, hitNormal } from "./device-model-ports"
 import type { Upright } from "./device-model-ports"
@@ -324,6 +326,7 @@ export default function ModelPortsEditor({
             onValueChange={(v) => setRows(v === "1" ? 1 : 2)}
           />
         )}
+        <CameraModeToggle />
         <div className="ml-auto flex items-center gap-1">
           <Button size="sm" variant="outline" onClick={copyPhotos}>
             Copy from photo ports
@@ -560,9 +563,7 @@ function EditorScene({
 }) {
   const entry = useDeviceModel(url)
   const camera = useThree((s) => s.camera)
-  const controls = useThree((s) => s.controls) as unknown as {
-    enabled: boolean
-  } | null
+  const controls = useThree((s) => s.controls) as unknown as RigControls | null
   const invalidate = useThree((s) => s.invalidate)
   const upright = useMemo(
     () => (entry?.scene ? uprightOf(entry.scene, up, front) : null),
@@ -578,10 +579,13 @@ function EditorScene({
     camera.position.set(d * 0.3, d * 0.5, -d * 0.85)
     camera.near = d / 500
     camera.far = d * 50
-    camera.lookAt(0, 0, 0)
     camera.updateProjectionMatrix()
+    if (controls) {
+      controls.target.set(0, 0, 0)
+      controls.update()
+    } else camera.lookAt(0, 0, 0)
     invalidate()
-  }, [upright, camera, invalidate])
+  }, [upright, camera, controls, invalidate])
 
   // A marker's radius in model units: 8 mm at the size the room fits the
   // model to, held between 0.4% and 2% of the model so it stays findable.
@@ -699,7 +703,13 @@ function EditorScene({
           </group>
         )
       })}
-      <OrbitControls makeDefault enableDamping={false} />
+      <CameraRig
+        target={[0, 0, 0]}
+        keyboard={false}
+        floor={false}
+        minDistance={0.005}
+        minNear={0.0005}
+      />
     </>
   )
 }

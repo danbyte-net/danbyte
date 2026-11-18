@@ -20,6 +20,7 @@ import type { PlanShape } from "./shapes"
 import type { PlanCapacity } from "./use-plan-capacity"
 import type { CadDrawingState } from "./use-cad-drawing"
 import type { PlanViewPrefs } from "./use-plan-view-prefs"
+import { CAMERA_HINT } from "@/lib/camera-mode"
 import { lazyChunk } from "@/lib/lazy-chunk"
 
 // The 3D room view - the only consumer of the three.js stack, lazy-loaded so
@@ -194,9 +195,7 @@ export function PlanScene3D({
       {colorLegend}
       {showHint && (
         <div className="absolute right-3 bottom-3 flex items-center gap-2 rounded-md border border-border bg-popover/90 px-2.5 py-1.5 text-[11px] text-muted-foreground shadow backdrop-blur">
-          Drag to orbit · scroll to zoom at the cursor · right-drag to pan ·
-          double-click to frame · F focus · 0 fit all · WASD move · Space/C
-          up-down
+          {CAMERA_HINT}
           <button
             onClick={onDismissHint}
             aria-label="Dismiss"

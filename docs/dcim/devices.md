@@ -344,8 +344,10 @@ the model leads; with a photo the photo leads, and once you pick **3D** it
 leads for you on every device until you pick a photo view again (kept in
 this browser).
 
-The viewer turns with the mouse (drag to orbit, right-drag to pan, scroll
-to zoom). Its toolbar has **Front**, **Rear** and **Top** - each looks
+The viewer moves like every [3D view](../features/floor-plans.md#navigate-3d):
+click a point to pivot on it, drag to orbit, right-drag to pan, scroll to
+zoom toward the pointer; **Orbit** / **Pan** sets what a drag does. Its
+toolbar has **Front**, **Rear** and **Top** - each looks
 straight at that face with no perspective, fitted to it like a photo or a
 rack elevation, so every port of a row looks the same - and **3D**, the
 perspective three-quarter view. It opens on **Front**. Orbiting away from

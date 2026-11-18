@@ -1,12 +1,13 @@
 import { useEffect, useLayoutEffect, useMemo } from "react"
 import { Canvas, useThree } from "@react-three/fiber"
-import { OrbitControls } from "@react-three/drei"
 import * as THREE from "three"
 
 import { Loading } from "@/components/loading"
 import type { Model3DFront, Model3DUp } from "@/lib/api"
 import type { V3 } from "@/lib/model-ports"
 
+import { CameraRig } from "./camera-rig"
+import type { RigControls } from "./camera-rig"
 import { useDeviceModel } from "./device-model"
 import {
   STUDIO_LIGHTS,
@@ -166,6 +167,7 @@ function Framed({
   front: Model3DFront
 }) {
   const camera = useThree((s) => s.camera)
+  const controls = useThree((s) => s.controls) as unknown as RigControls | null
   const invalidate = useThree((s) => s.invalidate)
   const { rotation, offset, radius } = useMemo(() => {
     const [rx, ry, rz] = modelRotation(up, front)
@@ -188,10 +190,13 @@ function Framed({
     camera.position.set(d * 0.45, d * 0.35, -d * 0.85)
     camera.near = radius / 100
     camera.far = radius * 100
-    camera.lookAt(0, 0, 0)
     camera.updateProjectionMatrix()
+    if (controls) {
+      controls.target.set(0, 0, 0)
+      controls.update()
+    } else camera.lookAt(0, 0, 0)
     invalidate()
-  }, [camera, radius, invalidate])
+  }, [camera, controls, radius, invalidate])
   return (
     <group position={offset}>
       <group rotation={rotation}>
@@ -250,7 +255,13 @@ export default function ModelPreview({
         ) : url ? (
           <FromUrl url={url} up={up} front={front} />
         ) : null}
-        <OrbitControls makeDefault enableDamping={false} />
+        <CameraRig
+          target={[0, 0, 0]}
+          keyboard={false}
+          floor={false}
+          minDistance={0.005}
+          minNear={0.0005}
+        />
       </Canvas>
     </div>
   )

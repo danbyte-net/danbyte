@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 import { Canvas } from "@react-three/fiber"
-import { Html, OrbitControls } from "@react-three/drei"
+import { Html } from "@react-three/drei"
 import { Link } from "@tanstack/react-router"
 import * as THREE from "three"
 
@@ -44,6 +44,7 @@ import {
 } from "./device-model-port-markers"
 import type { MappedPortPick } from "./device-model-port-markers"
 import { BayHits } from "./bay-hits"
+import { CameraRig } from "./camera-rig"
 import { PortPickPrecedence } from "./port-pick"
 import { PlugOverlayScope } from "./plug-overlay"
 import { Studio } from "./model-preview"
@@ -523,7 +524,13 @@ export default function ModelViewer(props: ModelViewerProps) {
         <PortPickPrecedence />
         <Studio />
         <Model props={props} pickers={pickers} />
-        <OrbitControls makeDefault enableDamping={false} />
+        <CameraRig
+          target={[0, 0, 0]}
+          keyboard={false}
+          floor={false}
+          minDistance={0.005}
+          minNear={0.0005}
+        />
       </Canvas>
       {deviceId && selection && (
         <SelectionPanel

@@ -3,6 +3,7 @@ import { Maximize2, Minimize2, Scan } from "lucide-react"
 
 import type { Model3DEffective } from "@/lib/api"
 import type { ModelPortsDoc } from "@/lib/model-ports"
+import { CameraModeToggle } from "@/components/camera-mode-toggle"
 import { Loading } from "@/components/loading"
 import {
   BarButton,
@@ -154,6 +155,7 @@ export function ModelViewerFrame({
         <BarIconButton label="Fit" onClick={() => go(view.preset)}>
           <Scan />
         </BarIconButton>
+        <CameraModeToggle />
         {hasPorts && (
           <BarToggle
             pressed={outlineAll}

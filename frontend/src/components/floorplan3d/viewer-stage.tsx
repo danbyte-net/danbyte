@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react"
+import { useEffect, useMemo, useRef } from "react"
 import type { ReactNode } from "react"
 import { useThree } from "@react-three/fiber"
 import {
@@ -62,7 +62,11 @@ export function contactShadowFor(size: V3): {
   }
 }
 
-type OrbitLike = { target: THREE.Vector3; update: () => void }
+type OrbitLike = {
+  target: THREE.Vector3
+  update: () => void
+  flyTo?: (position: THREE.Vector3, target: THREE.Vector3) => void
+}
 
 /** `size` held by value: a new array with the same numbers (a payload refresh
  * rebuilding the stack's box every few seconds) keeps the previous one, so
@@ -89,6 +93,9 @@ function Rig({
   const invalidate = useThree((s) => s.invalidate)
   const width = useThree((s) => s.size.width)
   const height = useThree((s) => s.size.height)
+  // The perspective camera last framed: a re-frame of it (Fit, a resize)
+  // flies there; a new camera or a face view is placed at once.
+  const framed = useRef<THREE.Camera | null>(null)
   useEffect(() => {
     let position: V3
     let target: V3
@@ -110,8 +117,18 @@ function Rig({
       camera.near = radius / 100
       camera.far = radius * 100
     }
-    camera.position.set(...position)
+    const again = framed.current === camera
+    framed.current = isFaceView(view.preset) ? null : camera
     camera.updateProjectionMatrix()
+    if (again && controls?.flyTo) {
+      controls.flyTo(
+        new THREE.Vector3(...position),
+        new THREE.Vector3(...target)
+      )
+      invalidate()
+      return
+    }
+    camera.position.set(...position)
     if (controls) {
       controls.target.set(...target)
       controls.update()

@@ -341,6 +341,9 @@ member's card:
   panel has **Open device**. A click on this device's body, or on empty
   space, clears the selection.
 - **Front**, **Rear**, **Top**, **3D** and **Fit** frame the whole stack.
+  Refreshed data never re-frames it while you move the camera. A click on
+  a member also pivots the camera there, as in every
+  [3D view](../features/floor-plans.md#navigate-3d).
   When the members' models together pass the room's triangle budget
   ([3D room](../features/floor-plans.md#the-3d-room-view)), the other
   members draw their far copies.

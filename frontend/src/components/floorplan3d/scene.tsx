@@ -30,6 +30,7 @@ import { InstallModuleDialog } from "@/components/device-modules-pane"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Loading } from "@/components/loading"
+import { CameraModeToggle } from "@/components/camera-mode-toggle"
 import { BarButton, BarIconButton } from "@/components/map-toolbar"
 import { OpenLink } from "@/components/open-link"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -1816,6 +1817,7 @@ export default function FloorScene3D({
           ports is in view, and then explains only those colours - in the maps'
           legend frame. The overlay toggles live in the route's View popover. */}
       <div className="absolute top-3 right-3 flex flex-col items-end gap-2">
+        <CameraModeToggle buttonClassName="bg-popover/95" tipSide="left" />
         <BarIconButton
           label="Fit all"
           shortcut="0"

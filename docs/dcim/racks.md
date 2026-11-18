@@ -477,7 +477,7 @@ devices you can view.
 **2D | 3D**, first on the Elevation toolbar, swaps the drawing for the rack in
 3D (`?viz=3d` keeps it in the URL) - the same cabinet, devices and photo
 faceplates as the floor plan's [3D room](../features/floor-plans.md#the-3d-room-view),
-this rack alone. Drag to turn it and scroll to zoom toward the pointer; **Front** and **Rear**
+this rack alone. Click to set the pivot, drag to turn around it, right-drag to pan and scroll to zoom toward the pointer ([how 3D views move](../features/floor-plans.md#navigate-3d)); **Orbit** / **Pan** sets what a drag does; **Front** and **Rear**
 look straight at either face, and a double-click on a device frames it.
 Ports on the photos are coloured as the room colours them - cabled by
 speed, free faint, disabled grey, live SNMP where it is polled - and a port

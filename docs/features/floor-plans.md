@@ -684,30 +684,39 @@ site-sized map never hides the ground and its map.
 Trays render at their recorded level/elevation (overhead runs hang below the
 ceiling, underfloor runs sit beneath the slab) and zones tint the floor.
 
-- **Navigate**: every gesture works on what is under the pointer, so a
-  site-wide plan is as quick to get around as a single room:
+- **Navigate**{ #navigate-3d }: every 3D view - this room, a building's
+  levels, a [rack](../dcim/racks.md#the-rack-in-3d) or
+  [cabinet](../dcim/cabinets.md) in 3D, the device
+  [3D model viewer](../dcim/devices.md#3d-model) and its stack view, the
+  [model ports editor](../dcim/device-catalog.md#model-ports) - moves the
+  same way:
 
     | Control | What it does |
     | --- | --- |
-    | Scroll, or pinch | Zooms toward the point under the pointer - a rack, the floor, a building - and makes it the orbit centre. Each notch covers the same share of the distance to that point, so a far corner of a campus is a few notches away and the last metre never crawls. Zoom stops just short of the surface. |
-    | Drag | Orbits around the point under the pointer when pressed. ++alt++ + drag orbits around the current centre instead. One finger on a touch screen. |
-    | Right-drag, middle-drag, or ++shift++ + drag | Pans: the point pressed stays under the pointer, so near things move slowly and the distant floor quickly. Two fingers pan and pinch together. |
-    | Click | Selects a rack, cabinet, device, area (a building on a site plan) or wall. A press that drags never selects. |
+    | Click | Makes the point clicked the **pivot**: later drags turn around it. Nothing moves, and a small marker fades in on the point. The click still selects - a rack, cabinet, device, area (a building on a site plan), wall or port. A press that drags never selects. |
+    | Drag | Orbits around the pivot (while it is on screen, else around the middle of the view). The horizon stays level. In a room or rack the camera stays above the pivot's horizon, so it never sinks under the floor or tips over the top; a lone model can be seen from below. ++alt++ + drag orbits around the point under the pointer. One finger on a touch screen. |
+    | Right-drag, middle-drag, or ++shift++ + drag | Pans: the view slides with no rotation, and the point pressed stays under the pointer. |
+    | **Orbit** / **Pan** | On the view's toolbar. In **Pan**, a plain drag pans too and rotation is off. The choice is shared by every 3D view and kept in this browser. |
+    | Scroll, or pinch | Zooms toward the point under the pointer, each notch the same share of the distance to it, so a far corner of a campus is a few notches away and the last metre never crawls. Zoom stops just short of the surface; scrolling on walks through it (below). There is no zoom limit in or out. In the flat Front, Rear and Top views of a model, zoom grows the picture around the pointer. |
+    | Trackpad | Two-finger swipe pans, pinch zooms. A swipe straight up or down zooms like a mouse wheel. |
     | Double-click | Flies to frame what was clicked: a rack or cabinet face-on, a device at its faceplate, an area or wall from a three-quarter view. |
     | ++f++ | On a selected rack, cabinet or device: flies to its front and turns **Focus** on. On a selected area or wall: frames it. |
     | ++0++, ++home++, or **Fit all** | Flies back to the whole plan. |
     | ++esc++ | Unwinds Focus, then isolation, then the selection - and flies back to the whole plan. |
-    | Arrows or WASD | Glide level with the floor in the direction the camera faces - the way to walk the aisles. ++space++ rises, ++c++ descends (++page-up++ / ++page-down++ too), holding ++shift++ sprints at 4x. Speed tracks the distance to the orbit centre. |
+    | Arrows or WASD | Glide level with the floor in the direction the camera faces - the way to walk the aisles. ++space++ rises, ++c++ descends (++page-up++ / ++page-down++ too), holding ++shift++ sprints at 4x. Speed tracks the distance to the orbit centre. The room and a building's levels only. |
 
-    Any input interrupts a fly-to, and when the system asks for reduced
-    motion a fly-to lands at once instead of animating. The camera moves
-    without re-rendering the room, so navigating a large plan costs only
-    the drawing.
-- **Zoom has no wall**: at a rack's face, scrolling on walks the camera
-  forward - through the rack front and out into the aisle behind it - so
-  orbit turns into fly exactly when orbiting stops being useful. The floor
-  is never passed through. Zoom-out reaches far enough to frame a
-  campus-sized plan.
+    Drags and zooms ease in, and framing flights take about 0.3 s. Any
+    input interrupts a flight. When the system asks for reduced motion,
+    everything lands at once and the pivot marker shows without fading.
+    The camera moves without re-rendering the room, so navigating a large
+    plan costs only the drawing.
+- **Zoom has no wall**: at a face, scrolling on walks the camera forward -
+  through the rack front and out into the aisle behind it, or into a
+  chassis - so zoom never gets stuck. The floor is never passed through.
+- **Nothing is cut off up close**: the camera's near clipping distance
+  follows the nearest surface in view, so a cabinet door beside the camera
+  draws whole however far away the orbit centre is, and the far distance
+  grows with a zoom-out.
 - **Cabinet shell** (View menu, 3D): a three-position mode, not a checkbox.
   **Solid** closes every cabinet - side panels plus smoked-glass doors
   front and rear, so the gear reads as silhouettes - the room as a visitor
@@ -2713,7 +2722,7 @@ out, and so is a section left empty.
 
 The **Preview** block shows the device type's rack-face photo when it has
 one, else the device's [3D model](../dcim/devices.md#3d-model) - small and
-interactive (drag to orbit, scroll to zoom), seen straight from the front
+interactive ([navigates](#navigate-3d) like every 3D view), seen straight from the front
 without perspective, its mapped ports outlined by state; clicking an
 interface opens it, and a right-click on a port or a module bay opens the
 same menu as the device page's viewer. With both, **Photo** / **3D** picks

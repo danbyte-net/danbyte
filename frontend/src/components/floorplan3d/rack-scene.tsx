@@ -27,6 +27,7 @@ import { usePortLabelsShown } from "@/lib/port-labels-pref"
 import { useMe } from "@/lib/use-me"
 import { FaceplateLegend } from "@/components/device-faceplate"
 import { Loading } from "@/components/loading"
+import { CameraModeToggle } from "@/components/camera-mode-toggle"
 import { BarButton, BarMenuTrigger } from "@/components/map-toolbar"
 import {
   DropdownMenu,
@@ -232,6 +233,7 @@ function RackView({
             <BarButton onClick={() => look("front")}>Front</BarButton>
             <BarButton onClick={() => look("rear")}>Rear</BarButton>
           </div>
+          <CameraModeToggle />
           <ModeMenu
             label="Pluggables"
             value={pluggables}
@@ -269,10 +271,8 @@ function RackView({
           controls={{
             target: start.target,
             maxDistance: dist * 2,
-            minDistance: 0.15,
             requestRef: flyToRef,
             keyboard: false,
-            dollyThrough: false,
           }}
           stamp={`${selection?.deviceId ?? ""}|${selection?.portName ?? ""}`}
           invalidateRef={invalidateRef}

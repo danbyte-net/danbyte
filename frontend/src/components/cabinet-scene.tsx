@@ -8,6 +8,7 @@ import { legendIsEmpty } from "@/lib/faceplate-colors"
 import { usePortLabelsShown } from "@/lib/port-labels-pref"
 import { useMe } from "@/lib/use-me"
 import { FaceplateLegend } from "@/components/device-faceplate"
+import { CameraModeToggle } from "@/components/camera-mode-toggle"
 import { BarButton } from "@/components/map-toolbar"
 import { useLegendCollector } from "@/components/speed-scale"
 import { PartMarkerMenu, useCanSetPartStatus } from "@/components/part-status"
@@ -165,6 +166,7 @@ export default function CabinetScene({
               <BarButton onClick={() => look("front")}>Front</BarButton>
               <BarButton onClick={() => look("rear")}>Rear</BarButton>
             </div>
+            <CameraModeToggle />
             <BarButton
               className="ml-auto"
               onClick={() =>
@@ -190,10 +192,8 @@ export default function CabinetScene({
               controls={{
                 target: start.target,
                 maxDistance: dist * 3,
-                minDistance: 0.12,
                 requestRef: flyToRef,
                 keyboard: false,
-                dollyThrough: false,
               }}
               stamp={`${doorOpen}|${picked?.deviceId}|${picked?.port?.marker}`}
               invalidateRef={invalidateRef}
