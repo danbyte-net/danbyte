@@ -233,6 +233,15 @@ device alone.
 cable is drawn to a member they may not view. A recorded cable needs view
 on the cable and both interfaces; without interface view nothing is drawn.
 
+### On the stack page {#on-the-stack-page}
+
+The stack page's **Stack** card has a **3D** tab beside Photo and Rendered
+when its master (or, without a master, its first member) has a 3D model. It
+shows the same whole-stack view as a member's 3D card, always the whole
+stack, so there is no Stack switch: every member, the stack and StackPower
+cables, and the Stacks Show / Ghost / Hide choice. The master is the
+highlighted member.
+
 ## SNMP
 
 A stack is polled once, through its master (or lowest member), and the
