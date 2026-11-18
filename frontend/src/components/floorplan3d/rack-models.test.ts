@@ -126,6 +126,30 @@ describe("rack slot pose", () => {
     )
   })
 
+  it("turns a reversed device round, its rear face on the ear plane", () => {
+    const reversed = {
+      ears: true,
+      position: "reversed" as const,
+      offset_mm: 0,
+      shift_mm: 0,
+      rails: "none" as const,
+      reversed: true,
+      ear_mm: 2,
+    }
+    const front = rackSlotPose(rack(), dev(), 1, size)
+    const turned = rackSlotPose(rack(), dev({ rack_mount: reversed }), 1, size)
+    expect(front.rotY).toBe(0)
+    expect(turned.rotY).toBeCloseTo(Math.PI, 6)
+    expect(turned.position[2]).toBeCloseTo(front.position[2], 6)
+    const rear = rackSlotPose(
+      rack(),
+      dev({ face: "rear", rack_mount: reversed }),
+      1,
+      size
+    )
+    expect(rear.rotY).toBe(0)
+  })
+
   it("puts half-width gear on its side", () => {
     const r = rack()
     const left = rackSlotPose(

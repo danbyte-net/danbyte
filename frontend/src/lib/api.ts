@@ -2278,7 +2278,7 @@ export interface Device {
   /** Vertical extent of the strip in U; null draws ~¾ of the rack. */
   mount_span_u: number | null
   /** Which of its type's ear positions it is fitted at; "" the default. */
-  ear_position?: "front" | "mid" | "rear" | ""
+  ear_position?: "front" | "mid" | "rear" | "reversed" | ""
   /** How it sits on the rails (api.rack_mount), read-only. */
   rack_mount?: RackMountInfo
   /** Read-only, derived from the device type. */
@@ -2331,7 +2331,7 @@ export interface DeviceWritePayload {
   mount?: "side_left" | "side_right" | ""
   mount_offset_mm?: number | null
   mount_span_u?: number | null
-  ear_position?: "front" | "mid" | "rear" | ""
+  ear_position?: "front" | "mid" | "rear" | "reversed" | ""
   /** A rail sets its cabinet; a rail without an offset takes the first gap
    * from the left the device fits in. */
   cabinet_id?: string | null

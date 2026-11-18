@@ -1,6 +1,6 @@
 import { OPENING_MM, PANEL_MM } from "@/lib/faceplate-geometry"
 
-import { modelFrontM } from "@/lib/rack-mount"
+import { isReversed, modelFrontM } from "@/lib/rack-mount"
 
 import { deviceYM, mm, rackFrontZM } from "./world"
 import type { SceneDevice, SceneRack } from "./world"
@@ -55,8 +55,9 @@ export interface SlotPose {
  * front-mounted device's front sits on the front rail plane (world
  * `rackRailPlanesM`), out by its ears' offset, and it runs back from
  * there; a rear-mounted one is turned round, its front on the rear rail
- * plane and its offset toward the rear. A 2-post frame's one rail is
- * mid-depth.
+ * plane and its offset toward the rear. A reversed one is turned round
+ * on its rail, its rear face out by the offset. A 2-post frame's one rail
+ * is mid-depth.
  */
 export function rackSlotPose(
   rack: SceneRack,
@@ -77,10 +78,13 @@ export function rackSlotPose(
   // Its origin (the front ears) `modelShiftM` in front of the rail plane
   // (lib/rack-mount): the fitted box's front, ears or faceplate, that far
   // or a little further.
+  // A reversed device (lib/rack-mount) is turned round on the same rail:
+  // its rear face stands where the faceplate would.
   const rear = dev.face === "rear"
   const front = rackFrontZM(rack, dev, rackDepthM, modelFrontM(dev.rack_mount))
   const z = rear ? front - size[2] / 2 : front + size[2] / 2
-  return { position: [x, y + lift, z], rotY: rear ? Math.PI : 0 }
+  const turned = rear !== isReversed(dev.rack_mount)
+  return { position: [x, y + lift, z], rotY: turned ? Math.PI : 0 }
 }
 
 /** A point in a rack's frame in the room: turned by the rack's facing

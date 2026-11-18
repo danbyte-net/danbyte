@@ -97,7 +97,11 @@ The **Rack mounting** card says how the hardware sits on a rack's rails:
   positive toward the rack front: `0` for ears flush with the faceplate,
   `220` for ears fitted mid-chassis, a negative value for a recessed front
   fitting. Leave a position blank when the hardware doesn't offer it.
+- **Reversed (mm)** - the box turned round in its U, its rear panel toward
+  the rack front (Cisco's C9300 "rear mount"): the rear face's distance in
+  front of the ear plane, `0` for ears flush with the rear panel.
 - **Default position** - the fitting it ships with.
+- **Ear plate (mm)** - the ears' plate thickness, 0.5-10 mm; blank is 2.
 - **Rails** - none, fixed or sliding.
 
 Not recorded, a type has front ears flush with its faceplate, as every type
@@ -113,23 +117,29 @@ The library and pack import read a `rack_mount:` block (the export spec's
 ```yaml
 rack_mount:
   ears: true
-  positions: { front: 0, mid: 220, rear: 430 }
+  positions: { front: 0, mid: 220, rear: 430, reversed: 0 }
   default: front
   rails: none
+  ear_mm: 2        # optional
 ```
 
 A block that can't be used is dropped and reported. The API carries the
 block as `rack_mount` on the type, and on a device `ear_position` plus a
-read-only `rack_mount`: `{ears, position, offset_mm, shift_mm, rails}`,
-where `shift_mm` is how far the device's 3D model stands in front of the
-rail (its origin is the front of its ears in the front position).
+read-only `rack_mount`: `{ears, position, offset_mm, shift_mm, rails,
+reversed, ear_mm}`, where `shift_mm` is how far the device's 3D model stands
+in front of the rail (its origin is the front of its ears in the front
+position) and `reversed` says it is turned round. `ear_position` takes
+`front`, `mid`, `rear` or `reversed`.
 
 In the [3D racks](racks.md#the-rack-in-3d) a device stands on its rack's
 rail plane, out by its fitting: its faceplate `offset_mm` in front of the
 front rail, so gear fitted mid-chassis sticks out of the rack front by its
 mid offset. A rear-mounted device stands on the rear rail and moves toward
-the rear by the same rule. Ears are drawn 2 mm thick, their back on the
-rail's face, so eared gear stands that much further out. Gear without ears
+the rear by the same rule. A reversed device is turned round on its rail,
+its rear face `offset_mm` in front of it and its faceplate toward the other
+aisle. Ears are drawn at their plate thickness (2 mm unless the type gives
+its own), their back on the rail's face, so eared gear stands that much
+further out. Gear without ears
 has its faceplate on the rail.
 On a 2-post frame both sides share the one mid-depth rail. Its model,
 plugs, port markers, hover box and cable ends move with it.

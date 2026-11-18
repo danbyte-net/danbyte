@@ -1,4 +1,10 @@
-import { EAR_POSITION_LABELS, EAR_POSITIONS } from "@/lib/rack-mount"
+import {
+  EAR_MM_MAX,
+  EAR_MM_MIN,
+  EAR_PLATE_MM,
+  EAR_POSITION_LABELS,
+  EAR_POSITIONS,
+} from "@/lib/rack-mount"
 import type { EarPosition, RackMountDraft, RailKind } from "@/lib/rack-mount"
 import {
   FormCheckbox,
@@ -15,7 +21,8 @@ const RAILS: { value: RailKind; label: string }[] = [
 
 /** A device type's rack mounting (docs/dcim/device-catalog.md → Rack
  * mounting): its ears and the positions they fit at - the faceplate's
- * distance in front of the ear plane, mm - and its rail kit. */
+ * distance in front of the ear plane, mm (Reversed: the rear face's, the
+ * box turned round) - its ear plate thickness and its rail kit. */
 export function RackMountFields({
   value,
   onChange,
@@ -36,12 +43,16 @@ export function RackMountFields({
         onChange={(ears) => set({ ears })}
       />
       {value.ears && (
-        <div className="grid gap-3 @md:grid-cols-3">
+        <div className="grid gap-3 @md:grid-cols-4">
           {EAR_POSITIONS.map((p) => (
             <FormText
               key={p}
               label={`${EAR_POSITION_LABELS[p]} (mm)`}
-              info="Faceplate in front of the ear plane. Blank: not offered."
+              info={
+                p === "reversed"
+                  ? "Turned round: rear face in front of the ear plane. Blank: not offered."
+                  : "Faceplate in front of the ear plane. Blank: not offered."
+              }
               type="number"
               min={-2000}
               max={2000}
@@ -51,7 +62,7 @@ export function RackMountFields({
           ))}
         </div>
       )}
-      <div className="grid gap-3 @md:grid-cols-2">
+      <div className="grid gap-3 @md:grid-cols-3">
         {value.ears && (
           <FormSelect
             label="Default position"
@@ -62,6 +73,18 @@ export function RackMountFields({
               value: p,
               label: EAR_POSITION_LABELS[p],
             }))}
+          />
+        )}
+        {value.ears && (
+          <FormText
+            label="Ear plate (mm)"
+            info={`Plate thickness, ${EAR_MM_MIN}-${EAR_MM_MAX} mm. Blank: ${EAR_PLATE_MM}.`}
+            type="number"
+            min={EAR_MM_MIN}
+            max={EAR_MM_MAX}
+            step={0.5}
+            value={value.ear_mm}
+            onChange={(v) => set({ ear_mm: v })}
           />
         )}
         <FormSelect

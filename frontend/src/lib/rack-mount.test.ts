@@ -5,6 +5,8 @@ import {
   faceplateOffsetM,
   hasEars,
   EAR_PLATE_MM,
+  earPlateM,
+  isReversed,
   modelFrontM,
   modelShiftM,
   rackMountDraft,
@@ -30,6 +32,8 @@ describe("rackMountOf", () => {
       offset_mm: 220,
       shift_mm: 220,
       rails: "none",
+      reversed: false,
+      ear_mm: EAR_PLATE_MM,
     })
     expect(rackMountOf(BLOCK).position).toBe("front")
     expect(
@@ -79,6 +83,33 @@ describe("rackMountOf", () => {
     expect(
       modelFrontM(rackMountOf({ ...BLOCK, ears: false, positions: {} }))
     ).toBe(0)
+  })
+})
+
+describe("reversed and the ear plate", () => {
+  const C9300 = { ...BLOCK, positions: { front: 0, mid: 98, reversed: 0 } }
+
+  it("turns a reversed device round, its rear face on the ear plane", () => {
+    const info = rackMountOf(C9300, "reversed")
+    expect(info.position).toBe("reversed")
+    expect(isReversed(info)).toBe(true)
+    expect(info.shift_mm).toBe(0)
+    expect(modelFrontM(info)).toBeCloseTo(EAR_PLATE_MM / 1000, 6)
+    const out = rackMountOf({ ...C9300, positions: { reversed: 30 } })
+    expect(modelFrontM(out)).toBeCloseTo(0.03 + EAR_PLATE_MM / 1000, 6)
+    expect(isReversed(rackMountOf(C9300, "mid"))).toBe(false)
+  })
+
+  it("takes the type's ear plate, else the default", () => {
+    expect(earPlateM(rackMountOf({ ...BLOCK, ear_mm: 4 }))).toBeCloseTo(0.004)
+    expect(earPlateM(rackMountOf(BLOCK))).toBeCloseTo(EAR_PLATE_MM / 1000)
+    expect(earPlateM(undefined)).toBeCloseTo(EAR_PLATE_MM / 1000)
+    expect(rackMountError({ ...BLOCK, ear_mm: 20 })).toMatch(/Ear plate/)
+    const draft = { ...rackMountDraft(C9300), ear_mm: "3" }
+    expect(rackMountPayload(draft)).toEqual({ ...C9300, ear_mm: 3 })
+    expect(rackMountSummary({ ...C9300, ear_mm: 3 })).toBe(
+      "Front 0 mm (default) · Mid 98 mm · Reversed 0 mm, 3 mm ears"
+    )
   })
 })
 
