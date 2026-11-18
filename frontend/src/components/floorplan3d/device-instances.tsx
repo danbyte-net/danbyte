@@ -59,6 +59,9 @@ export function DeviceInstances({
     })
     im.instanceMatrix.needsUpdate = true
     if (im.instanceColor) im.instanceColor.needsUpdate = true
+    // The culling sphere is computed once, at first draw: devices moved at
+    // the same count would be culled by the old one.
+    im.computeBoundingSphere()
     // Demand frameloop: the buffers changed outside a render request.
     invalidate()
   }, [boxes, devices, invalidate])

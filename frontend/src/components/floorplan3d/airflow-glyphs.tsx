@@ -77,6 +77,9 @@ export function AirflowGlyphs({
         )
       })
       mesh.instanceMatrix.needsUpdate = true
+      // The culling sphere is computed once, at first draw: new placements
+      // at the same count would be culled by the old one.
+      mesh.computeBoundingSphere()
     }
   }, [intake, exhaust])
 
