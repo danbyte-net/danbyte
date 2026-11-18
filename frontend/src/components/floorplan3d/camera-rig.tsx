@@ -106,15 +106,6 @@ const PROBE_MS = 200
 /** The pivot marker's radius, as a share of the view's height at its depth. */
 const MARKER_SHARE = 0.008
 
-/** Centre and four corners of the view: where the near plane is probed. */
-const PROBE_POINTS: readonly (readonly [number, number])[] = [
-  [0, 0],
-  [-0.9, -0.9],
-  [0.9, -0.9],
-  [-0.9, 0.9],
-  [0.9, 0.9],
-]
-
 /** Keydown targets that own the keyboard - navigation must not steal keys. */
 const EDITABLE_SELECTOR = 'input, textarea, select, [contenteditable="true"]'
 
@@ -131,6 +122,7 @@ const _fwd = new THREE.Vector3()
 const _ndc = new THREE.Vector2()
 const _normal = new THREE.Vector3()
 const _v = new THREE.Vector3()
+const _probeBox = new THREE.Box3()
 const WORLD_UP = new THREE.Vector3(0, 1, 0)
 
 /** What lies under a screen point: a surface of the scene, the floor, or -
@@ -1007,33 +999,29 @@ export function CameraRig({
     }
   }, [keyboard, invalidate, requestRef, camera])
 
-  const probeRaycaster = useMemo(() => new THREE.Raycaster(), [])
-
-  /** The nearest surface's depth at the centre and corners of the view,
-   * looking no further than `reach` (beyond it, it cannot shape the near). */
+  // The nearest thing to the camera, for the near plane: the distance to
+  // every visible mesh's box - floors, zones and walls too, which turn off
+  // raycasting so they don't take clicks (a ray probe walked through them,
+  // and the camera saw through a floor it hovered over). A box's distance is
+  // never more than its surface's, so the plane stays in front of it.
   const probeSurface = (
     cam: THREE.PerspectiveCamera,
     reach: number
   ): number => {
-    const meshes: THREE.Object3D[] = []
-    scene.traverseVisible((o) => {
-      if (o instanceof THREE.Mesh && o !== marker) meshes.push(o)
-    })
-    cam.getWorldDirection(_fwd)
-    probeRaycaster.near = 0
-    // Along a corner ray, depth is distance × cos: allow for the slant.
-    probeRaycaster.far = reach * 2
     let best = Infinity
-    for (const [x, y] of PROBE_POINTS) {
-      _ndc.set(x, y)
-      probeRaycaster.setFromCamera(_ndc, cam)
-      const hits = probeRaycaster.intersectObjects(meshes, false)
-      if (hits.length === 0) continue
-      const hit = hits[0]
-      const depth = _v.subVectors(hit.point, cam.position).dot(_fwd)
-      if (depth < best) best = depth
-    }
-    return best
+    scene.traverseVisible((o) => {
+      if (!(o instanceof THREE.Mesh) || o === marker) return
+      const inst = o instanceof THREE.InstancedMesh ? o : null
+      if (inst && !inst.boundingBox) inst.computeBoundingBox()
+      const g = o.geometry as THREE.BufferGeometry
+      if (!inst && !g.boundingBox) g.computeBoundingBox()
+      const box = inst ? inst.boundingBox : g.boundingBox
+      if (!box || box.isEmpty()) return
+      _probeBox.copy(box).applyMatrix4(o.matrixWorld)
+      const d = _probeBox.distanceToPoint(cam.position)
+      if (d < best) best = d
+    })
+    return best <= reach * 2 ? best : Infinity
   }
 
   useFrame((state, delta) => {
