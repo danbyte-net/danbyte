@@ -165,7 +165,8 @@ export function dollyThroughStep(
   target: readonly [number, number, number],
   deltaY: number,
   distance: number,
-  threshold: number = MIN_DISTANCE_M * DOLLY_THROUGH_AT
+  threshold: number = MIN_DISTANCE_M * DOLLY_THROUGH_AT,
+  stepM: number = DOLLY_THROUGH_STEP_M
 ): [number, number, number] | null {
   if (deltaY >= 0 || distance > threshold) return null
   const dx = target[0] - cam[0]
@@ -173,8 +174,7 @@ export function dollyThroughStep(
   const dz = target[2] - cam[2]
   const d = Math.hypot(dx, dy, dz)
   if (d === 0) return null
-  const step =
-    DOLLY_THROUGH_STEP_M * Math.min(1, Math.max(0.05, Math.abs(deltaY) / 100))
+  const step = stepM * Math.min(1, Math.max(0.05, Math.abs(deltaY) / 100))
   const k = step / d
   return [dx * k, dy * k, dz * k]
 }
@@ -478,9 +478,10 @@ export function frameBox(
   return { target: centre, position: add(centre, scale(back, dist)) }
 }
 
-/** Seconds a fly-to takes: longer hops a little longer, never sluggish. */
+/** Seconds a fly-to takes: about 0.3 s, longer hops a little longer,
+ * never sluggish. */
 export function flyDuration(travel: number): number {
-  return Math.min(1.1, 0.55 + 0.1 * Math.log1p(Math.max(0, travel)))
+  return Math.min(0.5, 0.3 + 0.03 * Math.log1p(Math.max(0, travel)))
 }
 
 export interface Fly {

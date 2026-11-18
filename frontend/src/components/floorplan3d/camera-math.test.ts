@@ -285,9 +285,9 @@ describe("advanceFly - fly-to easing and reduced motion", () => {
   })
 
   it("longer hops take a little longer, within bounds", () => {
-    expect(flyDuration(0)).toBeCloseTo(0.55)
+    expect(flyDuration(0)).toBeCloseTo(0.3)
     expect(flyDuration(10)).toBeGreaterThan(flyDuration(1))
-    expect(flyDuration(1e6)).toBe(1.1)
+    expect(flyDuration(1e6)).toBe(0.5)
   })
 })
 
