@@ -407,6 +407,21 @@ describe("picking a stack cable", () => {
     expect(n).toBeGreaterThan(1)
   })
 
+  it("previews and toggles the cable at a hovered or clicked head", () => {
+    const s = new StackLinkStore()
+    s.setStacks([RING])
+    s.previewPort("m3", "StackPower3/A")
+    expect(s.active).toBe(k[4])
+    expect(s.selected).toBeNull()
+    s.previewPort("m3", null)
+    expect(s.active).toBeNull()
+    expect(s.togglePort("m3", "StackPower3/A")).toBe(true)
+    expect(s.selected).toBe(k[4])
+    expect(s.togglePort("m3", "StackPower3/A")).toBe(true)
+    expect(s.selected).toBeNull()
+    expect(s.togglePort("m3", "nope")).toBe(false)
+  })
+
   it("lets go of a cable no longer drawn", () => {
     const s = new StackLinkStore()
     s.setStacks([RING])
@@ -457,7 +472,7 @@ describe("recording a derived cable", () => {
       label: "STACK-T1-50CM",
       length: "50",
       length_unit: "cm",
-      type: "",
+      type: "stack",
     })
     const power = recordPayload(RING.links[3], {
       part: "",
@@ -465,7 +480,7 @@ describe("recording a derived cable", () => {
       unit: "",
     })
     expect(power.a[0].kind).toBe("power_port")
-    expect(power.type).toBe("power")
+    expect(power.type).toBe("stack-power")
     expect(power.length).toBeNull()
     expect(power.length_unit).toBe("m")
   })

@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef } from "react"
 import { useFrame, useThree } from "@react-three/fiber"
+import type { ThreeEvent } from "@react-three/fiber"
 import * as THREE from "three"
 
 import type { CordEnd, CordEndStore, Vec3 } from "@/lib/cord-run"
@@ -388,10 +389,12 @@ function PartInstances({
   entry,
   seats,
   ghost = false,
+  onPort,
 }: {
   entry: ModelEntry
   seats: readonly Seat[]
   ghost?: boolean
+  onPort?: PortPick
 }) {
   const invalidate = useThree((s) => s.invalidate)
   const meshes = useMemo(() => partMeshes(entry.scene!), [entry.scene])
@@ -404,13 +407,15 @@ function PartInstances({
           ghost ? ghostOf(pm.material) : pm.material,
           count
         )
-        im.raycast = () => {}
+        // Pickable only where a port's head picks something (stack cables):
+        // the many plugs of a patched switch stay out of the raycast.
+        if (!onPort) im.raycast = () => {}
         im.castShadow = false
         im.receiveShadow = !ghost
         im.renderOrder = PLUG_RENDER_ORDER
         return im
       }),
-    [meshes, count, ghost]
+    [meshes, count, ghost, !!onPort]
   )
   useLayoutEffect(
     () => () => instanced.forEach((im) => im.dispose()),
@@ -435,7 +440,28 @@ function PartInstances({
   return (
     <>
       {instanced.map((im) => (
-        <primitive key={im.uuid} object={im} />
+        <primitive
+          key={im.uuid}
+          object={im}
+          {...(onPort && {
+            onPointerOver: (e: ThreeEvent<PointerEvent>) => {
+              const s = e.instanceId != null ? seats[e.instanceId] : null
+              if (!s) return
+              e.stopPropagation()
+              document.body.style.cursor = "pointer"
+              onPort.hover(s.plug.name)
+            },
+            onPointerOut: () => {
+              document.body.style.cursor = ""
+              onPort.hover(null)
+            },
+            onClick: (e: ThreeEvent<MouseEvent>) => {
+              const s = e.instanceId != null ? seats[e.instanceId] : null
+              if (!s || !onPort.pick(s.plug.name)) return
+              e.stopPropagation()
+            },
+          })}
+        />
       ))}
     </>
   )
@@ -450,6 +476,13 @@ function PartInstances({
  * fronts go to the device's markers (plug-overlay) scaled by `scale`, the
  * root's size in the markers' frame.
  */
+/** What hovering and clicking a head does: preview and pick the cable at
+ * its port (`pick` true when the port has one). */
+export interface PortPick {
+  hover: (port: string | null) => void
+  pick: (port: string) => boolean
+}
+
 export function PortPlugs({
   root,
   plugs,
@@ -460,6 +493,7 @@ export function PortPlugs({
   anchorEnds = false,
   fronts: publishFronts = true,
   frame,
+  onPort,
 }: {
   root: THREE.Object3D
   plugs: readonly PortPlug[]
@@ -478,6 +512,8 @@ export function PortPlugs({
    * instanced model's shared copy (rack-model-draw): an empty standing
    * where the root would. Defaults to `root`. */
   frame?: THREE.Object3D | null
+  /** Heads that pick their port's cable (stack cables). */
+  onPort?: PortPick
 }) {
   const plugOverlay = usePlugOverlay()
   const overlay = publishFronts ? plugOverlay : null
@@ -604,7 +640,15 @@ export function PortPlugs({
       {groups.map(([gk, g]) => {
         const e = entries.get(g.url)
         if (e?.status !== "ready" || !e.scene) return null
-        return <PartInstances key={gk} entry={e} seats={g.at} ghost={g.ghost} />
+        return (
+          <PartInstances
+            key={gk}
+            entry={e}
+            seats={g.at}
+            ghost={g.ghost}
+            onPort={onPort}
+          />
+        )
       })}
     </>
   )

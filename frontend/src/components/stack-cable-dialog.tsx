@@ -19,8 +19,8 @@ import { FormFooter, FormSelect, FormText } from "@/components/forms"
 /**
  * Record cable (docs/dcim/virtual-chassis.md → Record a derived cable):
  * one or more links of a stack's derived ring saved as real cables - the
- * two ports, the head's part number as the label and its length, `power`
- * for a StackPower cable. Several at once share one length, editable per
+ * two ports, the head's part number as the label and its length, type
+ * `stack` or `stack-power`. Several at once share one length, editable per
  * row. Each is an ordinary cable create (cable add, scoped and audited as
  * any); the 3D views then draw it as recorded.
  */
@@ -116,7 +116,9 @@ export function RecordStackCablesDialog({
 
   return (
     <Dialog open onOpenChange={(o) => !o && !saving && onClose()}>
-      <DialogContent className={many ? "sm:max-w-2xl" : "sm:max-w-md"}>
+      <DialogContent
+        className={`max-h-[90vh] overflow-y-auto ${many ? "sm:max-w-2xl" : "sm:max-w-md"}`}
+      >
         <DialogHeader>
           <DialogTitle>
             {many
@@ -150,7 +152,7 @@ export function RecordStackCablesDialog({
               }}
             />
           )}
-          <div className="flex max-h-[50vh] flex-col gap-3 overflow-y-auto">
+          <div className="flex flex-col gap-3">
             {targets.map((t, i) => {
               const row = rows[i] ?? firstRow(t)
               return (

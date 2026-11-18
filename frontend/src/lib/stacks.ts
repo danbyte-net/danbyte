@@ -631,6 +631,20 @@ export class StackLinkStore {
     return true
   }
 
+  /** Pick, or put back, the cable at a port; true when it has one. */
+  togglePort(device: string, port: string): boolean {
+    const l = linkAtPort(this.drawn, device, port)
+    if (!l) return false
+    this.toggle(stackLinkKey(l))
+    return true
+  }
+
+  /** Preview the cable at a port (its head hovered); null ends it. */
+  previewPort(device: string, port: string | null) {
+    const l = port ? linkAtPort(this.drawn, device, port) : null
+    this.setPreview(l ? stackLinkKey(l) : null)
+  }
+
   setPreview(key: string | null) {
     if (this.previewKey === key) return
     this.previewKey = key
@@ -718,6 +732,6 @@ export function recordPayload(
     label: choice.part.trim(),
     length: choice.length.trim() === "" ? null : choice.length.trim(),
     length_unit: choice.unit || "m",
-    type: link.kind === "power" ? "power" : "",
+    type: link.kind === "power" ? "stack-power" : "stack",
   }
 }

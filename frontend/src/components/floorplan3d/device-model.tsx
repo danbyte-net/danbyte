@@ -547,6 +547,18 @@ export function ModelOverlays({
   // view's stack cables. Shown or ghosted by the Stacks choice - the
   // payload has none left when it is Hide (lib/stacks withStackMode).
   const stackScene = useStackScene()
+  const linkStore = stackScene?.links ?? null
+  const onStackPort = useMemo(
+    () =>
+      linkStore && deviceId
+        ? {
+            hover: (port: string | null) =>
+              linkStore.previewPort(deviceId, port),
+            pick: (port: string) => linkStore.togglePort(deviceId, port),
+          }
+        : undefined,
+    [linkStore, deviceId]
+  )
   const stacksMode = useStacksMode()
   return (
     <>
@@ -567,6 +579,7 @@ export function ModelOverlays({
           plugs={leds.stack_plugs}
           deviceId={deviceId}
           ends={stackScene?.ends ?? null}
+          onPort={onStackPort}
           anchorEnds
           fronts={false}
           ghost={stacksMode === "ghost"}
