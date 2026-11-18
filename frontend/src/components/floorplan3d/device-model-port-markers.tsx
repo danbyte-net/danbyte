@@ -18,6 +18,7 @@ import { fetchFacePortsBatched } from "@/lib/face-ports-batch"
 import { modelPortHex, portLocal } from "@/lib/model-ports"
 import {
   MARKER_FILL_OPACITY,
+  MARKER_FILL_OPACITY_OVER_PART,
   markerLook,
   markerShape,
   rimWidth,
@@ -536,6 +537,7 @@ function MarkerMesh<TPick extends Shaped>({
           lifts={lifts}
           fillGeo={g.geo.fill}
           rimGeo={g.geo.rim}
+          overPart={forward}
         />
       ))}
       {hot && (
@@ -560,6 +562,7 @@ function OpeningGroup({
   lifts,
   fillGeo,
   rimGeo,
+  overPart = false,
 }: {
   placed: readonly Shaped[]
   members: readonly number[]
@@ -568,6 +571,8 @@ function OpeningGroup({
   lifts: readonly number[]
   fillGeo: THREE.BufferGeometry
   rimGeo: THREE.BufferGeometry
+  /** The washes lie on ghosted parts: the stronger fill. */
+  overPart?: boolean
 }) {
   const invalidate = useThree((s) => s.invalidate)
   const fillRef = useRef<THREE.InstancedMesh>(null)
@@ -606,7 +611,9 @@ function OpeningGroup({
         <meshBasicMaterial
           toneMapped={false}
           transparent
-          opacity={MARKER_FILL_OPACITY}
+          opacity={
+            overPart ? MARKER_FILL_OPACITY_OVER_PART : MARKER_FILL_OPACITY
+          }
           depthWrite={false}
           side={THREE.DoubleSide}
         />

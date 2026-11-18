@@ -20,6 +20,9 @@ import { PORT_BOX_MM, portBoxKind } from "@/lib/model-studio"
 export const MODEL_PORT_RESERVED = "#f59e0b"
 /** The fill's opacity: a wash, the port stays readable through it. */
 export const MARKER_FILL_OPACITY = 0.2
+/** The fill while pluggables are ghosted: it lies over a pale see-through
+ * part, not a dark cage, so a light wash would wash out. */
+export const MARKER_FILL_OPACITY_OVER_PART = 0.55
 
 export type MarkerMode = "idle" | "hover" | "selected"
 
