@@ -46,7 +46,7 @@ function useRecoloured(
   colours: Record<RecolourChannel, string>
 ) {
   const invalidate = useThree((s) => s.invalidate)
-  const key = `${colours.cable}|${colours.fibre}|${colours.lc}`
+  const key = `${colours.cable}|${colours.fibre}|${colours.lc}|${colours.band}`
   useEffect(() => {
     const swapped: [THREE.Mesh, THREE.Material | THREE.Material[]][] = []
     const made: THREE.Material[] = []
@@ -86,7 +86,7 @@ function Cord({
     () => receptacleMatrix(root, names) ?? new THREE.Matrix4(),
     [root, names]
   )
-  const key = `${colours.cable}|${colours.fibre}|${colours.lc}`
+  const key = `${colours.cable}|${colours.fibre}|${colours.lc}|${colours.band}`
   const meshes = useMemo(() => {
     if (!scene) return []
     return partMeshes(scene).map((pm) => {

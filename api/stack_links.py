@@ -125,7 +125,9 @@ def stacks(devices, owners: dict, user, tenant, accessories=()) -> tuple[list, d
     ``per device`` ``{device id: {stack, stack_plugs, stack_ends}}`` -
     ``stack`` ``{id, name, position, master, master_name}``,
     ``stack_plugs`` a plug row per link end (api.port_plugs' shape, the
-    head as ``cord_part``), ``stack_ends`` ``{interface: derived}``."""
+    head as ``cord_part``, ``end`` the cable's side - ``a`` or ``b``: a
+    recorded cable's termination, a derived link's A or B end - for the
+    head's ``END_BAND``), ``stack_ends`` ``{interface: derived}``."""
     from django.db.models import OuterRef, Q, Subquery
 
     from .dcim_choices import STACK_INTERFACE_TYPES
@@ -156,17 +158,23 @@ def stacks(devices, owners: dict, user, tenant, accessories=()) -> tuple[list, d
             _vis=_visible(user, tenant, "interface"),
             _cable=Subquery(CableTermination.objects.filter(interface=OuterRef("pk"))
                             .order_by().values("cable_id")[:1]),
+            _cend=Subquery(CableTermination.objects.filter(interface=OuterRef("pk"))
+                           .order_by().values("end")[:1]),
         )
         .order_by()
-        .values_list("device_id", "name", "type", "_vis", "_cable"))
+        .values_list("device_id", "name", "type", "_vis", "_cable", "_cend"))
 
     ports: dict[str, list] = {}
-    for dev_id, name, ptype, vis, cable in ifaces:
+    # The cable's side at each cabled stack port: which band colour it takes.
+    sides: dict[tuple, str] = {}
+    for dev_id, name, ptype, vis, cable, cend in ifaces:
         ports.setdefault(str(dev_id), []).append((name, ptype or "", bool(vis), cable))
+        if cable is not None and cend:
+            sides[(str(dev_id), name)] = cend.lower()
     for v in ports.values():
         v.sort(key=lambda p: natural_key(p[0]))
 
-    cabled = {c for *_x, c in ifaces if c is not None}
+    cabled = {row[4] for row in ifaces if row[4] is not None}
     cables: dict = {}
     if cabled:
         from auth_api import rbac
@@ -256,7 +264,9 @@ def stacks(devices, owners: dict, user, tenant, accessories=()) -> tuple[list, d
                     "master_name": names.get(master) if master else None,
                 }, "stack_plugs": [], "stack_ends": {}}
         for a, b, derived, _cable, color, ctype, label in links:
-            for dev, anchor, iface, ptype in (a, b):
+            for side, (dev, anchor, iface, ptype) in (("a", a), ("b", b)):
+                if not derived:
+                    side = sides.get((dev, iface), side)
                 module, head = (_heads(accessories, maps, ptype, ctype, label)
                                 if accessories else (None, None))
                 entry = per[dev]
@@ -271,6 +281,7 @@ def stacks(devices, owners: dict, user, tenant, accessories=()) -> tuple[list, d
                     "cord_part": (_part_doc(head, drawn[dev], shared, cable=True)
                                   if head else None),
                     "derived": derived,
+                    "end": side,
                 })
     for entry in per.values():
         entry["stack_plugs"].sort(key=lambda r: r["port"])

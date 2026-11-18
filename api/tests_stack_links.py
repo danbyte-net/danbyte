@@ -146,10 +146,10 @@ class PayloadTests(_Base):
         self.assertEqual(two["stack"], {"id": str(self.vc.id), "name": "STACK", "position": 2,
                                         "master": False, "master_name": "sw1"})
         self.assertTrue(out["devices"][str(self.dev.id)]["stack"]["master"])
-        self.assertEqual([(p["port"], p["name"], p["derived"], p["cord_part"])
+        self.assertEqual([(p["port"], p["name"], p["derived"], p["cord_part"], p["end"])
                           for p in two["stack_plugs"]],
-                         [("StackPort1/1", "StackPort2/1", True, None),
-                          ("StackPort1/2", "StackPort2/2", True, None)])
+                         [("StackPort1/1", "StackPort2/1", True, None, "a"),
+                          ("StackPort1/2", "StackPort2/2", True, None, "b")])
         # Derived: the covers hide only while the ring is drawn.
         self.assertEqual(two["covers"], [])
         self.assertEqual(two["stack_covers"], ["StackPort1/1", "StackPort1/2"])
@@ -175,6 +175,15 @@ class PayloadTests(_Base):
         # A cabled port hides its cover as any does; nothing is derived.
         self.assertEqual((one["covers"], one["stack_covers"]), (["StackPort1/1"], []))
         self.assertEqual(out["devices"][str(self.members[1].id)]["stack_plugs"], [])
+
+    def test_a_recorded_cable_takes_its_terminations_sides(self):
+        # Cabled B on member 1, A on member 3: the band follows the cable.
+        self._cable("StackPort3/2", "StackPort1/1")
+        out = self._payload()
+        ends = {(dev, p["name"]): p["end"] for dev, e in out["devices"].items()
+                for p in e["stack_plugs"]}
+        self.assertEqual(ends, {(str(self.dev.id), "StackPort1/1"): "b",
+                                (str(self.members[2].id), "StackPort3/2"): "a"})
 
     def test_a_recorded_cable_elsewhere_in_the_stack_stops_the_ring(self):
         self._cable("StackPort2/1", "StackPort3/2")

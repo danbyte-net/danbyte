@@ -7,6 +7,9 @@
  *   its type - OS1/OS2 yellow, OM1/OM2 orange, OM3/OM4 aqua, OM5 lime.
  * - `LC_BODY` (the connector bodies and duplex clip): by type - single-mode
  *   UPC blue, APC green, OM1/OM2 beige, OM3/OM4 aqua, OM5 lime.
+ * - `END_BAND` (export spec v1.12, a stack cable head's ring): by the
+ *   cable's side at the port - the A end yellow, the B end green - so the
+ *   two ends of one cable tell apart; grey with no side known.
  *
  * Pure: the viewer's cords (floorplan3d/port-plugs) and the room's cable
  * runs (floorplan3d/cable-trace-3d) both read it.
@@ -97,8 +100,22 @@ export function copperColor(cableColor: string | null | undefined): string {
   return cableColor && HEX.test(cableColor) ? cableColor.toLowerCase() : NEUTRAL
 }
 
+/** The `END_BAND` colour of a cable's A and B ends. */
+export const END_BAND_COLOURS = {
+  a: FIBRE_COLOURS.yellow,
+  b: FIBRE_COLOURS.green,
+} as const
+
+/** A cable's side at a port: its A or B termination. */
+export type CableEnd = "a" | "b"
+
+/** The `END_BAND` colour for a cable's side, grey when it is not known. */
+export function endBandColor(end: CableEnd | null | undefined): string {
+  return end === "a" || end === "b" ? END_BAND_COLOURS[end] : NEUTRAL
+}
+
 /** Which colour a material name takes, or null when it keeps its own. */
-export type RecolourChannel = "cable" | "fibre" | "lc"
+export type RecolourChannel = "cable" | "fibre" | "lc" | "band"
 
 export function recolourChannel(materialName: string): RecolourChannel | null {
   switch (materialName) {
@@ -108,20 +125,25 @@ export function recolourChannel(materialName: string): RecolourChannel | null {
       return "fibre"
     case "LC_BODY":
       return "lc"
+    case "END_BAND":
+      return "band"
     default:
       return null
   }
 }
 
-/** The three recolour channels' colours for one cabled end. */
+/** The recolour channels' colours for one cabled end; `end` is the
+ * cable's side there (the `END_BAND`'s colour). */
 export function endColours(end: {
   color: string | null | undefined
   cableType: string | null | undefined
   apc: boolean
+  end?: CableEnd | null
 }): Record<RecolourChannel, string> {
   return {
     cable: copperColor(end.color),
     fibre: fibreColor(end.color, end.cableType),
     lc: lcBodyColor(end.cableType, end.apc),
+    band: endBandColor(end.end),
   }
 }

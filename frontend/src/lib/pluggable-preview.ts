@@ -53,6 +53,8 @@ export function previewColours(
     color: null,
     cableType: p.cableType,
     apc: p.apc || isApc(connector),
+    // A stack cable head's END_BAND shows as an A end.
+    end: "a",
   })
 }
 

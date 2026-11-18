@@ -79,7 +79,10 @@ describe("port plugs", () => {
       cable: NEUTRAL,
       fibre: C.yellow,
       lc: C.blue,
+      band: NEUTRAL,
     })
+    expect(plugColours(plug("S1", { end: "a" })).band).toBe(C.yellow)
+    expect(plugColours(plug("S2", { end: "b" })).band).toBe(C.green)
     expect(
       plugColours(
         plug("F1", { cable_type: "smf-os2", port_type: "lc-apc-duplex" })
@@ -89,6 +92,7 @@ describe("port plugs", () => {
     expect(PLUG_DEFAULT_COLOR).toBe(NEUTRAL)
     expect([...RECOLOURED_MATERIALS].sort()).toEqual([
       "CABLE",
+      "END_BAND",
       "FIBRE",
       "LC_BODY",
     ])

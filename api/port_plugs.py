@@ -576,6 +576,7 @@ def _used_ports(kind, qs, cables, items, extra=()):
             .annotate(_kind=Value(kind, output_field=text),
                       _ctype=Subquery(seen.values("cable__type")[:1], output_field=text),
                       _color=Subquery(seen.values("cable__color")[:1], output_field=text),
+                      _cend=Subquery(seen.values("end")[:1], output_field=text),
                       _cabled=ExpressionWrapper(cabled, output_field=BooleanField()),
                       **rec)
             .values_list(*ROW, *extra))
@@ -603,12 +604,13 @@ def _record(xid, acc, part, serial, conn):
 
 def in_use(wanted: dict, user, tenant) -> dict:
     """``{(device id, kind, component name): (type, cable type, colour,
-    cabled, record)}`` for the ports of ``wanted`` (``{device id: _wanted
+    cabled, record, end)}`` for the ports of ``wanted`` (``{device id: _wanted
     rows}``) the reader may view that are in use: a cable ends on it, it is
     marked connected (``cabled`` either way), or - an interface - it holds a
     transceiver record the reader may view. ``record`` is ``(accessory type
-    id, part ID, serial, connector)`` or None. The cable's type and colour
-    only when the reader may view the cable. One query (UNION ALL over the
+    id, part ID, serial, connector)`` or None; ``end`` is the cable's side
+    at the port (``a``/``b``, "" with none). The cable's type, colour and
+    side only when the reader may view the cable. One query (UNION ALL over the
     kinds)."""
     kinds: dict[str, set] = {}
     for dev_id, rows in wanted.items():
@@ -621,10 +623,12 @@ def in_use(wanted: dict, user, tenant) -> dict:
     parts = []
     for kind, dev_ids in sorted(kinds.items()):
         qs = _scoped_ports(kind, user, tenant, superuser).filter(device_id__in=list(dev_ids))
-        parts.append(_used_ports(kind, qs, cables, items if kind == "interface" else None))
+        parts.append(_used_ports(kind, qs, cables, items if kind == "interface" else None,
+                                 extra=("_cend",)))
     return {(str(d), k, n): (t or "", ct or "", col or "", bool(cab),
-                             _record(xid, acc, part, serial, conn))
-            for d, k, n, t, ct, col, cab, xid, acc, part, serial, conn in _union(parts)}
+                             _record(xid, acc, part, serial, conn), (end or "").lower())
+            for d, k, n, t, ct, col, cab, xid, acc, part, serial, conn, end
+            in _union(parts)}
 
 
 def accessory_url(acc, device, shared: bool) -> str:
@@ -767,7 +771,7 @@ def _part_doc(acc, device, shared: bool, *, cable: bool = False) -> dict:
 
 def plugs(devices, owners: dict, user, tenant, accessories=None) -> dict[str, list]:
     """``{device id: [{port, bay, name, port_type, cabled, color,
-    cable_type, transceiver, transceiver_part, cord_part}]}`` - the parts
+    cable_type, transceiver, transceiver_part, cord_part, end}]}`` - the parts
     to seat in each device's drawn model, by its port anchor as drawn
     (``port``, with ``bay`` the module's bay or null); ``name`` is the
     device's port (interface, console port, power inlet…) it stands for
@@ -781,7 +785,8 @@ def plugs(devices, owners: dict, user, tenant, accessories=None) -> dict[str, li
     ``port:<connector>`` empty - or at the port's anchor when there is no
     transceiver. ``cable`` is the cord's run (``AccessoryType.cable``) or
     null. ``color`` is the cable's ``#rrggbb`` or null and ``cable_type``
-    its type or "" (both only from a cable the reader may view);
+    its type or "", ``end`` the cable's side at the port, ``a``/``b`` or
+    null (all three only from a cable the reader may view);
     ``cabled`` says whether a cable is in the port; ``transceiver`` is the
     record's ``{part_id, serial}`` or null. A port with a record is listed
     even when it draws nothing, for its hover card. Devices with nothing to
@@ -808,7 +813,7 @@ def plugs(devices, owners: dict, user, tenant, accessories=None) -> dict[str, li
             hit = used.get((key, kind, comp))
             if hit is None:
                 continue
-            ptype, ctype, color, cabled, rec = hit
+            ptype, ctype, color, cabled, rec, side = hit
             if rec is None:
                 k = (kind, ptype, ctype, cabled)
                 if k not in picks:
@@ -829,6 +834,7 @@ def plugs(devices, owners: dict, user, tenant, accessories=None) -> dict[str, li
                                 if rec is not None else None),
                 "transceiver_part": _part_doc(module, d, shared) if module else None,
                 "cord_part": _part_doc(cord, d, shared, cable=True) if cord else None,
+                "end": side or None,
             })
         if rows:
             out[key] = sorted(rows, key=lambda r: (r["bay"] or "", r["port"]))

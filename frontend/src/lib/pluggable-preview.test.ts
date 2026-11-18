@@ -26,6 +26,7 @@ describe("pluggable preview", () => {
       cable: NEUTRAL,
       fibre: FIBRE_COLOURS.yellow,
       lc: FIBRE_COLOURS.blue,
+      band: FIBRE_COLOURS.yellow,
     })
     expect(previewColours("os2-apc").lc).toBe(FIBRE_COLOURS.green)
     expect(previewColours("os2", "lc-apc").lc).toBe(FIBRE_COLOURS.green)
@@ -35,6 +36,7 @@ describe("pluggable preview", () => {
       cable: NEUTRAL,
       fibre: NEUTRAL,
       lc: NEUTRAL,
+      band: FIBRE_COLOURS.yellow,
     })
     // An unknown value previews neutral.
     expect(previewColours("nope").fibre).toBe(NEUTRAL)

@@ -683,7 +683,9 @@ port's cable, and the pack check doesn't flag it. Danbyte picks the head by the 
 `parts` lists a recorded cable's label first, else the first by vendor and
 name. The run is drawn between the two heads' `cable` empties in the head's
 `cable:` profile: one round jacket, or a zip cord's or ribbon's jackets side
-by side along the empties' ±X, untwisted. A recorded cable whose label names
+by side along the empties' ±X, untwisted. An `END_BAND` ring on the head is
+yellow at the cable's A end and green at its B end. A recorded cable whose
+label names
 a `min_bend_by_part` length bends by it; a derived ring uses `min_bend_mm`. Without a
 fitting part, a plain cable runs between the port anchors. A stack over data
 ports needs no special part: mark the interfaces `stack: true` in the device
@@ -736,17 +738,19 @@ then the transceiver's, else the transceiver's only `port:` empty - and at
 the port's own anchor when there is no transceiver or its model has no such
 empty. A cord waits for its transceiver's model to load.
 
-**Colours.** Danbyte sets three materials; everything else keeps its own:
+**Colours.** Danbyte sets four materials; everything else keeps its own:
 
 | Material | Colour |
 |---|---|
 | `CABLE` (copper jackets and boots, power cords, DACs) | the cable's colour, grey when it has none |
 | `FIBRE` (fibre jackets, matching boots) | the cable's colour, else by type: OS1/OS2 yellow, OM1/OM2 orange, OM3/OM4 aqua, OM5 lime |
 | `LC_BODY` (LC bodies and the duplex clip) | by type: single-mode UPC blue, APC green, OM1/OM2 beige, OM3/OM4 aqua, OM5 lime |
+| `END_BAND` (v1.12: a ring that tells a cable's two ends apart, such as a stack cable head's) | by the cable's side at the port: the A end yellow, the B end green; grey when no side is known |
 
 APC is an `-apc` port or front-port type (`lc-apc-duplex`) or connector.
 Plain `mmf` counts as OM1/OM2, `smf` as OS1/OS2, `aoc` as OM3/OM4. A cable
-the reader may not view leaves all three grey.
+the reader may not view leaves all four grey. The Pluggables page's
+preview shows an `END_BAND` as an A end.
 
 **Cable runs from a cord.** In the [3D room](../features/floor-plans.md#the-3d-room-view),
 where a cord is drawn at an end, the cable's run starts at the cord's

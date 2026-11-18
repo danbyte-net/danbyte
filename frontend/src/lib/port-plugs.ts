@@ -1,6 +1,6 @@
 import type { DeviceLeds } from "@/lib/led-state"
 import { endColours, isApc, NEUTRAL } from "@/lib/fibre-colours"
-import type { RecolourChannel } from "@/lib/fibre-colours"
+import type { CableEnd, RecolourChannel } from "@/lib/fibre-colours"
 
 /**
  * Parts in the ports of a 3D model (docs/dcim/model-packs.md → Accessory
@@ -55,6 +55,9 @@ export interface PortPlug {
   cable_type?: string
   /** The transceiver recorded in the port, when the reader may view it. */
   transceiver?: PortTransceiver | null
+  /** The cable's side at this port, `a` or `b` (the `END_BAND`'s colour),
+   * when the reader may view the cable. */
+  end?: CableEnd | null
   /** In the cage, at the port's anchor. */
   transceiver_part: PlugPart | null
   /** At the transceiver's `port:<connector>` empty, else at the port's
@@ -76,6 +79,7 @@ export const RECOLOURED_MATERIALS: ReadonlySet<string> = new Set([
   "CABLE",
   "FIBRE",
   "LC_BODY",
+  "END_BAND",
 ])
 
 /** The plugs of a payload entry (none when it carries none). */
@@ -122,12 +126,14 @@ export function pluggedNames(
 
 /** The three recolour channels' colours for a port's parts. */
 export function plugColours(
-  p: Pick<PortPlug, "color" | "cable_type" | "port_type" | "cord_part">
+  p: Pick<PortPlug, "color" | "cable_type" | "port_type" | "cord_part"> &
+    Partial<Pick<PortPlug, "end">>
 ): Record<RecolourChannel, string> {
   return endColours({
     color: p.color,
     cableType: p.cable_type,
     apc: isApc(p.port_type, p.cord_part?.connector),
+    end: p.end,
   })
 }
 

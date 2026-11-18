@@ -262,15 +262,23 @@ class PayloadTests(_Base):
             "cabled": True, "color": "#ff0000", "cable_type": "dac-passive",
             "transceiver": None, "transceiver_part": None,
             "cord_part": {"url": self._url(self.dac), "kind": "plug", "connector": "dac",
-                          "cable": None}})
+                          "cable": None},
+            "end": "a"})
         self.assertEqual((shown(url["Te1/0/2"]), url["Te1/0/2"]["color"]),
                          (self._url(self.sr), None))
         self.assertEqual(shown(url["con 0"]), self._url(self.rj45))
 
     def test_marked_connected_takes_the_default_part(self):
         Interface.objects.filter(device=self.dev, name="Te1/0/2").update(mark_connected=True)
-        self.assertEqual([(p["port"], shown(p), p["color"]) for p in self._plugs()],
-                         [("Te1/0/2", self._url(self.sr), None)])
+        self.assertEqual([(p["port"], shown(p), p["color"], p["end"]) for p in self._plugs()],
+                         [("Te1/0/2", self._url(self.sr), None, None)])
+
+    def test_the_cables_side_names_the_end(self):
+        cable = self._cable(self._iface(self.dev, "Te1/0/1"), type="dac-passive")
+        CableTermination.objects.create(cable=cable, end="B",
+                                        interface=self._iface(self.dev, "Te1/0/2"))
+        self.assertEqual({p["port"]: p["end"] for p in self._plugs()},
+                         {"Te1/0/1": "a", "Te1/0/2": "b"})
 
     def test_nothing_fits(self):
         Interface.objects.filter(device=self.dev).update(type="100gbase-x-qsfp28")
@@ -343,9 +351,9 @@ class ScopeTests(_Base):
     def test_without_cable_view_no_colour_or_medium(self):
         self._cable(self._iface(self.dev, "Te1/0/1"), type="dac-passive", color="#ff0000")
         self._reader(["device", "devicetype", "interface", "accessorytype"])
-        # The medium is unknown: the default part, grey.
-        self.assertEqual([(shown(p), p["color"]) for p in self._plugs()],
-                         [(self._url(self.sr), None)])
+        # The medium is unknown: the default part, grey, no side.
+        self.assertEqual([(shown(p), p["color"], p["end"]) for p in self._plugs()],
+                         [(self._url(self.sr), None, None)])
 
     def test_without_module_type_view_the_part_comes_through_the_device(self):
         self._cable(self._iface(self.dev, "Te1/0/1"), type="mmf")

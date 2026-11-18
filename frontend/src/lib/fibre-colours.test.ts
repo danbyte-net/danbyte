@@ -4,6 +4,7 @@ import {
   FIBRE_COLOURS as C,
   NEUTRAL,
   copperColor,
+  endBandColor,
   endColours,
   fibreColor,
   fibreGrade,
@@ -60,12 +61,17 @@ describe("fibre colours", () => {
   })
 
   it("maps materials to channels and an end to its colours", () => {
-    expect(["CABLE", "FIBRE", "LC_BODY", "Metal"].map(recolourChannel)).toEqual(
-      ["cable", "fibre", "lc", null]
-    )
+    expect(
+      ["CABLE", "FIBRE", "LC_BODY", "END_BAND", "Metal"].map(recolourChannel)
+    ).toEqual(["cable", "fibre", "lc", "band", null])
     expect(copperColor(null)).toBe(NEUTRAL)
     expect(
       endColours({ color: null, cableType: "smf-os2", apc: true })
-    ).toEqual({ cable: NEUTRAL, fibre: C.yellow, lc: C.green })
+    ).toEqual({ cable: NEUTRAL, fibre: C.yellow, lc: C.green, band: NEUTRAL })
+    expect(
+      endColours({ color: null, cableType: "", apc: false, end: "a" }).band
+    ).toBe(C.yellow)
+    expect(endBandColor("b")).toBe(C.green)
+    expect(endBandColor(null)).toBe(NEUTRAL)
   })
 })

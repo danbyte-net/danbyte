@@ -165,7 +165,11 @@ stack-cable part - an [accessory type](model-packs.md#stack-cable-heads) of
 cable runs between their `cable` empties, drawn in the head's profile: one
 round jacket, or a zip cord's or ribbon's jackets side by side. Its corners
 bend no tighter than the head's bend, or the per-length one a recorded
-cable's label names. A marked data port takes what any
+cable's label names. A head with an `END_BAND` ring colours the two
+ends of each cable apart: **yellow** at the A end, **green** at the B end -
+a recorded cable's own A and B terminations, a derived link's member *n*
+(A) and member *n+1* (B) - so one cable reads the same in every view. A
+marked data port takes what any
 cabled port of its type takes: a DAC head, an optic and its cord, an RJ45
 plug. Without a part, a plain dark cable runs from the ports.
 
