@@ -499,6 +499,12 @@ or **X-ray**, which draw no doors. The shell modes keep their meaning:
 **Solid** draws the doors and panels, **Cutaway** the frame only, **X-ray**
 the frame up close and an outline far off.
 
+Gear stands on the rails: a front-mounted device's faceplate on the front
+rail, a rear-mounted one's on the rear rail (**Rail depth** behind the
+front one), and on a 2-post frame both on the one mid-depth rail. A device
+fitted at its type's mid or rear ear position stands out from the rail by
+that position's offset - see [Rack mounting](device-catalog.md#rack-mounting).
+
 Racks roll up **power**: supply is every *primary* power
 feed delivered to the rack (volts × amps × max-utilisation%,
 three-phase × √3) - or, where no primary feed with a voltage and amperage

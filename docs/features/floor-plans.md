@@ -783,7 +783,11 @@ ceiling, underfloor runs sit beneath the slab) and zones tint the floor.
       mm in a 19 inch rack, half that for half-width gear) and its units
       tall, the model's own depth kept. A front-mounted device's front sits
       on the front rails and it runs back from there; a rear-mounted one is
-      turned round, its front on the rear rails. It turns with the rack.
+      turned round, its front on the rear rails. Its
+      [ear position](../dcim/device-catalog.md#rack-mounting) moves it out
+      from the rail by its offset (toward the rear for rear-mounted gear),
+      and on a 2-post frame it sits on the one mid-depth rail; the box it
+      draws without a model stands the same way. It turns with the rack.
     - **Assembled**: installed modules in their bays, covers over the empty
       ones, as on the floor ([model packs](../dcim/model-packs.md)). Up
       close, on the full model, cabled ports show their plugs

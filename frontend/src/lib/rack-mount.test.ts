@@ -4,15 +4,15 @@ import {
   earPositions,
   faceplateOffsetM,
   hasEars,
+  modelFrontM,
   modelShiftM,
   rackMountDraft,
   rackMountError,
   rackMountOf,
   rackMountPayload,
-  rackMountSummary
-  
+  rackMountSummary,
 } from "./rack-mount"
-import type {RackMountBlock} from "./rack-mount";
+import type { RackMountBlock } from "./rack-mount"
 
 const BLOCK: RackMountBlock = {
   ears: true,
@@ -60,6 +60,16 @@ describe("rackMountOf", () => {
     expect(faceplateOffsetM(info)).toBeCloseTo(0.3)
     expect(modelShiftM(info)).toBeCloseTo(0.34)
     expect(faceplateOffsetM(rackMountOf(recessed))).toBeCloseTo(-0.04)
+  })
+
+  it("puts a fitted model's front on its ears or its faceplate, the further out", () => {
+    expect(modelFrontM(rackMountOf(BLOCK, "mid"))).toBeCloseTo(0.22)
+    expect(modelFrontM(rackMountOf(null))).toBe(0)
+    const recessed = { ...BLOCK, positions: { front: -40, rear: 300 } }
+    expect(modelFrontM(rackMountOf(recessed))).toBe(0)
+    expect(modelFrontM(rackMountOf(recessed, "rear"))).toBeCloseTo(0.34)
+    const bezel = { ...BLOCK, positions: { front: 25 } }
+    expect(modelFrontM(rackMountOf(bezel))).toBeCloseTo(0.025)
   })
 })
 

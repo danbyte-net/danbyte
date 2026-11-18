@@ -12,6 +12,7 @@ import {
   renderTemplateName,
 } from "@/lib/faceplate-geometry"
 
+import { faceplateOffsetM } from "@/lib/rack-mount"
 import type { RackMountInfo } from "@/lib/rack-mount"
 
 import { raisedContains } from "../floorplan/raised-floor-shape"
@@ -542,6 +543,44 @@ export function deviceYM(
   }
 }
 
+/** How far in from the front and rear planes the rails sit, as a share
+ * of the depth - where racked gear stood before rack Looks. */
+export const RAIL_INSET_FRAC = 0.45
+
+/**
+ * The rack's mounting rail planes (z, m; the front plane on −Z): the front
+ * rail as far in as ever, the rear one `rail_depth_mm` behind it (else as
+ * far in from the rear). A 2-post frame has one rail, mid-depth. A rack
+ * without a Look (an older cached scene) is the legacy cabinet.
+ */
+export function rackRailPlanesM(
+  depthM: number,
+  look: Pick<SceneLook, "frame" | "rail_depth_mm"> | null | undefined
+): { front: number; rear: number } {
+  if (look?.frame === "2-post") return { front: 0, rear: 0 }
+  const front = -depthM * RAIL_INSET_FRAC
+  if (look?.rail_depth_mm != null) {
+    const rear = Math.min(depthM / 2, front + mm(look.rail_depth_mm))
+    return { front, rear }
+  }
+  return { front, rear: depthM * RAIL_INSET_FRAC }
+}
+
+/**
+ * Where a racked device's front stands (z, m, rack frame): `aheadM` in
+ * front of its rail - the front rail, or for rear-mounted gear (turned
+ * round) the rear rail, ahead then meaning toward the rear (+Z).
+ */
+export function rackFrontZM(
+  rack: Pick<SceneRack, "look">,
+  dev: Pick<SceneDevice, "face">,
+  rackDepthM: number,
+  aheadM: number
+): number {
+  const rails = rackRailPlanesM(rackDepthM, rack.look)
+  return dev.face === "rear" ? rails.rear + aheadM : rails.front - aheadM
+}
+
 /**
  * A racked device's box geometry, local to its rack group - THE single source
  * for the 3D device box (DeviceMesh renders from it; the cables layer anchors
@@ -589,10 +628,16 @@ export function deviceBoxM(
     : dev.is_full_depth
       ? rackDepthM * 0.9
       : rackDepthM * 0.45
+  // Its faceplate stands on the rail plane, out by its ears' offset
+  // (lib/rack-mount; an earless device's faceplate is on the rail).
   const mountedRear = dev.face === "rear"
-  const dz = mountedRear
-    ? rackDepthM * 0.45 - dd / 2
-    : dd / 2 - rackDepthM * 0.45
+  const front = rackFrontZM(
+    rack,
+    dev,
+    rackDepthM,
+    faceplateOffsetM(dev.rack_mount)
+  )
+  const dz = mountedRear ? front - dd / 2 : front + dd / 2
   return { y, h, dx, dz, dw, dd, boxH: h * 0.94, mountedRear }
 }
 

@@ -11,7 +11,7 @@ import * as THREE from "three"
 
 import { OPENING_MM, PANEL_MM } from "@/lib/faceplate-geometry"
 
-import { RACK_BASE_M, mm } from "./world"
+import { RACK_BASE_M, mm, rackRailPlanesM } from "./world"
 import type { SceneDevice, SceneRack } from "./world"
 
 export type RackFrame = "2-post" | "4-post" | "cabinet" | "wall-cabinet"
@@ -67,36 +67,14 @@ export const LEGACY_LOOK: SceneLook = {
   blanks: [],
 }
 
-/** How far in from the front and rear planes the rails sit, as a share
- * of the depth - where racked gear stands today (rack-models
- * RAIL_INSET_FRAC). */
-const RAIL_INSET_FRAC = 0.45
-
 export function isEnclosed(frame: RackFrame): boolean {
   return frame === "cabinet" || frame === "wall-cabinet"
 }
 
-/**
- * The rack's mounting rail planes (z, m): the front rail where today's
- * gear stands, the rear one `rail_depth_mm` behind it (else as far in from
- * the rear). A 2-post frame has one rail, mid-depth.
- *
- * TODO(rack-mount): racked device placement (rack-model-draw slotMatrix,
- * device-mesh) should take its rail plane from here and add the device's
- * faceplate offset (lib/rack-mount.ts `faceplateOffsetM`).
- */
-export function railPlanesM(
-  depthM: number,
-  look: Pick<SceneLook, "frame" | "rail_depth_mm">
-): { front: number; rear: number } {
-  if (look.frame === "2-post") return { front: 0, rear: 0 }
-  const front = -depthM * RAIL_INSET_FRAC
-  if (look.rail_depth_mm != null) {
-    const rear = Math.min(depthM / 2, front + mm(look.rail_depth_mm))
-    return { front, rear }
-  }
-  return { front, rear: depthM * RAIL_INSET_FRAC }
-}
+/** The rack's mounting rail planes (z, m) - world `rackRailPlanesM`:
+ * racked gear stands on them too (`deviceBoxM`, rack-models
+ * `rackSlotPose`). */
+export const railPlanesM = rackRailPlanesM
 
 // ── stretching ──────────────────────────────────────────────────────────────
 

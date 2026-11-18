@@ -89,12 +89,20 @@ export function faceplateOffsetM(
 /**
  * How far a racked device's model moves in front of the rail plane (m):
  * its origin is the front of its ears in the front position (spec §3).
- *
- * TODO(rack-mount): rack-model-draw `slotMatrix` / device-mesh add this
- * to the front rail plane (rack-kit-math `railPlanesM`) once both land.
  */
 export function modelShiftM(info: RackMountInfo | null | undefined): number {
   return info && info.ears ? info.shift_mm / 1000 : 0
+}
+
+/**
+ * How far a fitted model's front - the most forward point of its box: the
+ * faceplate, or the ears where they stand ahead of it (a recessed front
+ * fitting) - stands in front of the rail plane (m). The fit centres the
+ * model on its box, so this is where the box goes for its origin (the
+ * front ears) to land `modelShiftM` in front of the rail. 0 without ears.
+ */
+export function modelFrontM(info: RackMountInfo | null | undefined): number {
+  return info && info.ears ? Math.max(info.shift_mm, info.offset_mm) / 1000 : 0
 }
 
 /** Whether a device has rack ears (an unrecorded type does). */

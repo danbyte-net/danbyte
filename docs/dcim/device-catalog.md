@@ -122,8 +122,15 @@ A block that can't be used is dropped and reported. The API carries the
 block as `rack_mount` on the type, and on a device `ear_position` plus a
 read-only `rack_mount`: `{ears, position, offset_mm, shift_mm, rails}`,
 where `shift_mm` is how far the device's 3D model stands in front of the
-rail (its origin is the front of its ears in the front position). The 3D
-racks don't move devices by it yet.
+rail (its origin is the front of its ears in the front position).
+
+In the [3D racks](racks.md#the-rack-in-3d) a device stands on its rack's
+rail plane, out by its fitting: its faceplate `offset_mm` in front of the
+front rail, so gear fitted mid-chassis sticks out of the rack front by its
+mid offset. A rear-mounted device stands on the rear rail and moves toward
+the rear by the same rule. Gear without ears has its faceplate on the rail.
+On a 2-post frame both sides share the one mid-depth rail. Its model,
+plugs, port markers, hover box and cable ends move with it.
 
 !!! note "New in 0.21"
 

@@ -1,6 +1,8 @@
 import { OPENING_MM, PANEL_MM } from "@/lib/faceplate-geometry"
 
-import { deviceYM, mm } from "./world"
+import { modelFrontM } from "@/lib/rack-mount"
+
+import { deviceYM, mm, rackFrontZM } from "./world"
 import type { SceneDevice, SceneRack } from "./world"
 
 /**
@@ -15,10 +17,6 @@ import type { SceneDevice, SceneRack } from "./world"
  * frame has its front plane on −Z too (rack-mesh), so a front-mounted
  * device needs no turn and a rear-mounted one a half turn about Y.
  */
-
-/** How far in from the cabinet's front and rear planes the rails sit, as a
- * share of its depth - where `deviceBoxM` puts a box's face. */
-export const RAIL_INSET_FRAC = 0.45
 
 /** The width a racked device's front spans (m): the rail opening plus the
  * mounting ears - a 19" rack's 482.6 mm frame. Half-width gear spans half
@@ -54,9 +52,11 @@ export interface SlotPose {
  * (w, h, d in metres). Its bottom sits on the slot's lowest unit - centred
  * in the slot's height when it is a little shorter, as real gear is - and
  * across where the box would stand (half-width gear on its side). A
- * front-mounted device's front sits on the front rail plane and it runs
- * back from there; a rear-mounted one is turned round, its front on the
- * rear rail plane.
+ * front-mounted device's front sits on the front rail plane (world
+ * `rackRailPlanesM`), out by its ears' offset, and it runs back from
+ * there; a rear-mounted one is turned round, its front on the rear rail
+ * plane and its offset toward the rear. A 2-post frame's one rail is
+ * mid-depth.
  */
 export function rackSlotPose(
   rack: SceneRack,
@@ -74,9 +74,12 @@ export function rackSlotPose(
       : dev.rack_side === "right"
         ? openM * 0.25
         : 0
-  const rail = rackDepthM * RAIL_INSET_FRAC
+  // Its origin (the front ears) `modelShiftM` in front of the rail plane
+  // (lib/rack-mount): the fitted box's front, ears or faceplate, that far
+  // or a little further.
   const rear = dev.face === "rear"
-  const z = rear ? rail - size[2] / 2 : -rail + size[2] / 2
+  const front = rackFrontZM(rack, dev, rackDepthM, modelFrontM(dev.rack_mount))
+  const z = rear ? front - size[2] / 2 : front + size[2] / 2
   return { position: [x, y + lift, z], rotY: rear ? Math.PI : 0 }
 }
 
