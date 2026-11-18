@@ -229,7 +229,7 @@ _GEO_BLANK = {
     "model": None,
     # Ears and the faceplate's offset (api.rack_mount): none recorded.
     "rack_mount": {"ears": True, "position": "front", "offset_mm": 0, "shift_mm": 0,
-                   "rails": "none"},
+                   "rails": "none", "reversed": False, "ear_mm": 2},
 }
 
 #: A rack with no type and no Look of its own (api.rack_look.DEFAULTS).
