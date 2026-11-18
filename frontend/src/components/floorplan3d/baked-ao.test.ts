@@ -8,7 +8,7 @@ import { applyLeds, findLeds } from "./led-binding"
 import { assembleModel } from "./model-assembly"
 import { fitMaterialToUvs, prepare, simplify } from "./model-convert"
 import { applyPortCovers, findPortCovers } from "./port-covers"
-import { farInstances, partMeshes } from "./rack-model-draw"
+import { instancedParts, partMeshes } from "./rack-model-draw"
 
 /**
  * A pack's baked ambient occlusion (export spec v1.8): an
@@ -218,18 +218,16 @@ describe("baked ambient occlusion", () => {
     expectAo(sys.meshes[0])
   })
 
-  it("survives the rack's far instancing", () => {
+  it("survives the rack's instancing", () => {
     const { root } = assembleModel(scene, [], null)
     const pms = partMeshes(root)
-    const instanced = farInstances(pms, 3)
-    // The lit-LED instances colour per instance, unlit; the rest are the
-    // model's own.
-    instanced.forEach((im, i) => {
-      if (pms[i].led) return
-      expectAo(im)
-    })
-    expect(instanced.filter((_, i) => !pms[i].led).length).toBeGreaterThan(0)
-    instanced.forEach((im) => im.dispose())
+    // The LEDs draw as their own batch (led-instances); every other part
+    // keeps the model's own material.
+    const instanced = instancedParts(pms, 3, true)
+    expect(instanced.length).toBe(pms.filter((p) => !p.led).length)
+    expect(instanced.length).toBeGreaterThan(0)
+    instanced.forEach(({ im }) => expectAo(im))
+    instanced.forEach(({ im }) => im.dispose())
   })
 
   it("survives the converter's merge, and drops a map whose UVs go", async () => {

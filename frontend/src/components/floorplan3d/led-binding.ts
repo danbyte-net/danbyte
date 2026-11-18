@@ -76,6 +76,10 @@ let phaseOn = true
 let timer: ReturnType<typeof setInterval> | null = null
 const listeners = new Set<() => void>()
 
+/** The clock's phase as a shader uniform (1 lit, 0 dark): instanced
+ * lights (led-instances) blink with it, in step with these materials. */
+export const LED_PHASE = { value: 1 }
+
 const materials = new Map<string, THREE.MeshStandardMaterial>()
 /** The blinking materials and their lit strength. */
 const blinking = new Map<THREE.MeshStandardMaterial, number>()
@@ -133,6 +137,7 @@ function tick() {
   const on = blinkPhaseOn(Date.now())
   if (on === phaseOn) return
   phaseOn = on
+  LED_PHASE.value = on ? 1 : 0
   for (const [m, strength] of blinking) m.emissiveIntensity = on ? strength : 0
   listeners.forEach((fn) => fn())
 }

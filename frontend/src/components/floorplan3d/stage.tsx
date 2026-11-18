@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react"
+import { useEffect, useMemo, useState } from "react"
 import type { ComponentProps, MutableRefObject, ReactNode } from "react"
 import { Canvas, useThree } from "@react-three/fiber"
 import { EffectComposer, N8AO } from "@react-three/postprocessing"
@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils"
 
 import { CameraRig } from "./camera-rig"
 import { PortPickPrecedence } from "./port-pick"
+import { RenderStatsProbe, renderStatsOn } from "./render-stats"
 
 /**
  * The stage every 3D view in this folder stands on - the room, one rack,
@@ -142,6 +143,7 @@ export function Stage({
     }),
     [px, py, pz, fov, near, far]
   )
+  const [statsOn] = useState(renderStatsOn)
   return (
     <Canvas
       frameloop="demand"
@@ -156,6 +158,7 @@ export function Stage({
       onPointerMissed={onPointerMissed}
     >
       {invalidateRef && <InvalidatorBridge apiRef={invalidateRef} />}
+      {statsOn && <RenderStatsProbe />}
       <InvalidateOnToggle stamp={stamp} />
       <PortPickPrecedence />
       {captureRef && <CaptureBridge captureRef={captureRef} />}

@@ -6,8 +6,8 @@ import type { SceneDevice, SceneRack } from "./world"
 /**
  * Racked devices drawing their 3D models (docs/features/floor-plans.md →
  * 3D models in racks): the pure part - where a fitted model sits in its
- * rack slot, which level of detail a device wants at a distance, and how
- * the room's triangle budget is shared out. No three.js objects, so it
+ * rack slot, which level of detail a device wants at its size on screen,
+ * and how the room's triangle budget is shared out. No three.js objects, so it
  * tests without a canvas; rack-model-draw.tsx applies it.
  *
  * A model's fitted frame (device-model `fittedModel`) stands it on its own
@@ -102,55 +102,90 @@ export function rackToWorld(
  * (instanced across identical devices), or the box with its face photos. */
 export type RackModelLevel = "full" | "far" | "box"
 
-/** Switch distances (m, eye to the device's centre), each with a gap so a
- * device on the edge doesn't flicker between two looks. */
-export const RACK_FULL_IN_M = 3.5
-export const RACK_FULL_OUT_M = 4.5
-export const RACK_FAR_IN_M = 9
-export const RACK_FAR_OUT_M = 11
+/** Switch sizes on screen (CSS px across the device's face - its frame
+ * width), each with a gap so a device on the edge doesn't flicker between
+ * two looks. At the room's 45° lens in a canvas about 600 px tall (a rack
+ * page's), a 19" device turns full within about 3.5 m (back past 4.4 m)
+ * and far within about 8.7 m (back past 10.9 m); a bigger canvas, or a
+ * zoomed lens, brings the detail in from further off, and half-width
+ * gear switches closer. */
+export const RACK_FULL_IN_PX = 100
+export const RACK_FULL_OUT_PX = 80
+export const RACK_FAR_IN_PX = 40
+export const RACK_FAR_OUT_PX = 32
 
-/** The level a device wants at `dist`, given the one it has now. */
+/** The level a device wants at `px` across on screen, given the one it
+ * has now. */
 export function wantedRackLevel(
-  dist: number,
+  px: number,
   current: RackModelLevel
 ): RackModelLevel {
-  const full = current === "full" ? RACK_FULL_OUT_M : RACK_FULL_IN_M
-  if (dist < full) return "full"
-  const far = current === "box" ? RACK_FAR_IN_M : RACK_FAR_OUT_M
-  return dist < far ? "far" : "box"
+  const full = current === "full" ? RACK_FULL_OUT_PX : RACK_FULL_IN_PX
+  if (px > full) return "full"
+  const far = current === "box" ? RACK_FAR_IN_PX : RACK_FAR_OUT_PX
+  return px > far ? "far" : "box"
+}
+
+/** What a camera's projection gives the screen-size sum: its vertical
+ * projection scale (`projectionMatrix[5]`: 1 / tan(fov / 2) × zoom for a
+ * perspective lens, 2 / height × zoom for an orthographic one) and
+ * whether it is orthographic (no shrinking with distance). */
+export interface ScreenLens {
+  projY: number
+  ortho: boolean
+  /** The canvas' height (CSS px). */
+  heightPx: number
+}
+
+/** How many CSS px `sizeM` metres across spans at `dist` metres from the
+ * eye - the distance, not the depth along the view, so a device off to
+ * the side reads a little smaller, as it does in the lens' corners. */
+export function screenSizePx(
+  sizeM: number,
+  dist: number,
+  lens: ScreenLens
+): number {
+  const depth = lens.ortho ? 1 : Math.max(dist, 1e-3)
+  return (sizeM * lens.projY * lens.heightPx) / (2 * depth)
 }
 
 // ── the triangle budget ─────────────────────────────────────────────────────
 
-/** One racked device asking for a model: how far off it is, the level it
- * wants, and the triangles each level costs once loaded (null: not loaded
- * yet, or none). */
+/** One racked device asking for a model: how big it is on screen (CSS px
+ * across its face) and whether it is in view at all, the level it wants,
+ * and the triangles each level costs once loaded (null: not loaded yet,
+ * or none). */
 export interface ModelWant {
   id: string
-  dist: number
+  px: number
+  /** In the camera's view: a device behind the eye or off to the side
+   * ranks after every one in view. */
+  inView: boolean
   level: "full" | "far"
   full: number | null
   far: number | null
 }
 
 /** The share of the budget far copies of the devices up close may take
- * before the nearest of them are raised to full - the rest is kept for
+ * before the biggest of them are raised to full - the rest is kept for
  * those upgrades. Standing at a rack, a few hundred devices are "up
  * close"; their far copies alone would fill the budget. */
 export const NEAR_FAR_SHARE = 0.5
 
 /**
- * The level each device gets within `left` triangles, nearest first in
- * each pass:
+ * The level each device gets within `left` triangles, biggest on screen
+ * first in each pass (those in view before those out of it):
  *
  * 1. the devices up close (wanting their full model) get their cheap far
  *    copy, up to `NEAR_FAR_SHARE` of the budget;
- * 2. what is left raises the nearest of them to full;
+ * 2. what is left raises the biggest of them to full;
  * 3. everything still a box - up close past the share, or further off -
  *    gets a far copy with the rest.
  *
- * So the device in front of you is full, its neighbours aren't boxes, and
- * a hall of far copies never starves either. `limit` caps one device. A
+ * So the device that fills the screen is full, its neighbours aren't
+ * boxes, and a hall of far copies never starves either. Every instance
+ * counts its triangles - identical devices drawn instanced cost far fewer
+ * draw calls, but the GPU still runs every instance's vertices. `limit` caps one device. A
  * device past the budget keeps its box - with its face photos it looks
  * right at that size.
  */
@@ -161,7 +196,10 @@ export function allocateModels(
 ): Map<string, RackModelLevel> {
   const out = new Map<string, RackModelLevel>()
   const order = [...wants].sort(
-    (a, b) => a.dist - b.dist || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+    (a, b) =>
+      Number(b.inView) - Number(a.inView) ||
+      b.px - a.px ||
+      (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
   )
   const ok = (n: number | null): n is number => n !== null && n <= limit
   for (const w of order) out.set(w.id, "box")
@@ -188,9 +226,9 @@ export function allocateModels(
 /**
  * The room's triangle budget, shared by every model it draws. Floor
  * devices spend first (their layer reports what it spent); racked devices
- * share what is left, nearest first, across every rack. Each rack posts
- * its devices' wants and reads back its devices' levels; listeners hear
- * only when a level changes.
+ * share what is left, biggest on screen first, across every rack. Each
+ * rack posts its devices' wants and reads back its devices' levels;
+ * listeners hear only when a level changes.
  */
 export interface ModelBudget {
   /** What the floor devices drew (triangles). */

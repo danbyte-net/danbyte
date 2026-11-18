@@ -418,11 +418,6 @@ export function PlacedModel({
   overlay?: (root: THREE.Object3D, drawn: ReadonlySet<string>) => ReactNode
 }) {
   const invalidate = useThree((s) => s.invalidate)
-  // A stack member's cable heads (stack-scene): their ends go to the
-  // view's stack cables. Shown or ghosted by the Stacks choice - the
-  // payload has none left when it is Hide (lib/stacks withStackMode).
-  const stackScene = useStackScene()
-  const stacksMode = useStacksMode()
   const partsKey = parts
     .map((p) => `${p.bay}\u0001${p.position}\u0001${p.entry.scene?.uuid}`)
     .join("\u0000")
@@ -503,32 +498,82 @@ export function PlacedModel({
     <group position={fit.position} scale={fit.scale}>
       <group rotation={fit.rotation}>
         <primitive object={obj} />
-        {showPlugs &&
-        !ghosted &&
-        pluggables !== "hide" &&
-        leds?.plugs?.length ? (
-          <PortPlugs
-            root={obj}
-            plugs={leds.plugs}
-            deviceId={deviceId}
-            ghost={pluggables === "ghost"}
-            scale={fit.scale}
-          />
-        ) : null}
-        {showPlugs && !ghosted && leds?.stack_plugs?.length ? (
-          <PortPlugs
-            root={obj}
-            plugs={leds.stack_plugs}
-            deviceId={deviceId}
-            ends={stackScene?.ends ?? null}
-            anchorEnds
-            fronts={false}
-            ghost={stacksMode === "ghost"}
-            scale={fit.scale}
-          />
-        ) : null}
-        {overlay?.(obj, drawn)}
+        <ModelOverlays
+          root={obj}
+          drawn={drawn}
+          leds={leds}
+          showPlugs={showPlugs && !ghosted}
+          pluggables={pluggables}
+          deviceId={deviceId}
+          scale={fit.scale}
+          overlay={overlay}
+        />
       </group>
     </group>
+  )
+}
+
+/**
+ * What rides on a placed model, in its assembled root's frame: the plugs
+ * seated in its cabled ports, a stack member's cable heads, and the
+ * caller's overlay (a viewer's bay hit boxes). Mounted beside the root -
+ * PlacedModel's own copy, or an instanced model's shared copy with
+ * `frame` standing where the root would (rack-model-draw).
+ */
+export function ModelOverlays({
+  root,
+  frame,
+  drawn,
+  leds,
+  showPlugs,
+  pluggables = "show",
+  deviceId,
+  scale,
+  overlay,
+}: {
+  root: THREE.Object3D
+  /** Places `root` in the room when it is not drawn itself (port-plugs). */
+  frame?: THREE.Object3D | null
+  drawn: ReadonlySet<string>
+  leds?: DeviceLeds | null
+  showPlugs: boolean
+  pluggables?: PluggablesMode
+  deviceId?: string
+  /** The root's size in the markers' frame (the fit's scale). */
+  scale: number
+  overlay?: (root: THREE.Object3D, drawn: ReadonlySet<string>) => ReactNode
+}) {
+  // A stack member's cable heads (stack-scene): their ends go to the
+  // view's stack cables. Shown or ghosted by the Stacks choice - the
+  // payload has none left when it is Hide (lib/stacks withStackMode).
+  const stackScene = useStackScene()
+  const stacksMode = useStacksMode()
+  return (
+    <>
+      {showPlugs && pluggables !== "hide" && leds?.plugs?.length ? (
+        <PortPlugs
+          root={root}
+          frame={frame}
+          plugs={leds.plugs}
+          deviceId={deviceId}
+          ghost={pluggables === "ghost"}
+          scale={scale}
+        />
+      ) : null}
+      {showPlugs && leds?.stack_plugs?.length ? (
+        <PortPlugs
+          root={root}
+          frame={frame}
+          plugs={leds.stack_plugs}
+          deviceId={deviceId}
+          ends={stackScene?.ends ?? null}
+          anchorEnds
+          fronts={false}
+          ghost={stacksMode === "ghost"}
+          scale={scale}
+        />
+      ) : null}
+      {overlay?.(root, drawn)}
+    </>
   )
 }

@@ -199,9 +199,10 @@ its interface or other port names, character for character.
 - **Distance.** From about 14 m away a model with a far copy draws that
   instead, for the chassis and each part that has one.
 - **Racks.** A racked device draws its model in its slot, fitted between
-  the ears and to its units: the full model up close, the far copy (shared
-  by every identical device in the rack, one instanced draw per part) a
-  few metres off, and the box with its generated face photos further out.
+  the ears and to its units: the full model while it is big on screen, the
+  far copy when smaller, and the box with its generated face photos
+  smaller still. At either level every identical device in the rack (same
+  model, same installed modules) shares one instanced draw per part.
   See [Devices in racks](../features/floor-plans.md#the-3d-room-view).
 - **Budget.** Every part counts against the room's triangle budget. Past
   it, a floor device draws its chassis alone, then its box; a racked device
@@ -550,7 +551,7 @@ the chassis.
   member 1 (`cover:port:StackPort1/1` is member 2's `StackPort2/1`), and a
   module's covers keep `{module}`, which takes the bay's position.
 - **Where.** In the device's 3D viewer and in the 3D room, on floor and
-  racked devices. A rack's far copies are drawn instanced, one draw for
+  racked devices. A rack's models are drawn instanced, one draw for
   every identical device; a cover there is hidden for each device on its
   own.
 - **Types.** A device type has no cabling: its viewer, its generated images

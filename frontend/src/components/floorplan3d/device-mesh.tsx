@@ -34,7 +34,6 @@ import type { PortLabelSource } from "@/lib/api"
 import { fetchFacePortsBatched } from "@/lib/face-ports-batch"
 import { facePortsOnSide } from "@/lib/faceplate-layout"
 
-import { PlacedModel } from "./device-model"
 import { PlugOverlayScope } from "./plug-overlay"
 import {
   StackCard,
@@ -45,6 +44,7 @@ import {
 import { ModelPortMarkers } from "./device-model-port-markers"
 import { BayHits } from "./bay-hits"
 import type { MappedPortPick } from "./device-model-port-markers"
+import { InstancedModelOverlays } from "./rack-model-draw"
 import type { RackModelDraw } from "./rack-model-draw"
 import { FaceLabel } from "./text-sprite"
 import { useMaxAnisotropy } from "./texture-quality"
@@ -756,9 +756,11 @@ export function DeviceMesh({
   }
 
   if (model && !ghosted) {
-    // The model in its slot: drawn here up close, by the rack's instanced
-    // groups further off. The pointer's target is one invisible box the
-    // model's size, not its triangles.
+    // The model in its slot, drawn by the rack's instanced groups (rack-
+    // model-draw); here only what is this device's own - the plugs and
+    // stack heads on a full model, its bay boxes and port markers, hover
+    // and selection. The pointer's target is one invisible box the model's
+    // size, not its triangles.
     const [mw, mh, md] = model.fit.size
     return (
       <group
@@ -768,14 +770,9 @@ export function DeviceMesh({
       >
         <PlugOverlayScope>
           {model.level === "full" && (
-            <PlacedModel
-              entry={model.entry}
-              fit={model.fit}
-              parts={model.parts}
-              bays={model.bays}
-              emptyMode={model.emptyMode}
+            <InstancedModelOverlays
+              draw={model}
               leds={leds ?? null}
-              showPlugs
               pluggables={pluggables}
               deviceId={dev.id}
               overlay={

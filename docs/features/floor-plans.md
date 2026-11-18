@@ -767,7 +767,9 @@ ceiling, underfloor runs sit beneath the slab) and zones tint the floor.
     without photos. A model over 500,000 triangles, or past the room's
     budget for all models together (6,000,000 triangles on a capable GPU,
     2,000,000 on a software renderer or a device under 4 GB; the browser's
-    `danbyte:model-budget` key, `low`, `high` or a number, overrides it),
+    `danbyte:model-budget` key, `low`, `high` or a number, overrides it;
+    setting `danbyte:3d-stats` shows a 3D view's draw calls and triangles
+    in its corner),
     draws as its bounding box,
     and a **Model too detailed** card names it. A
     [modular model](../dcim/model-packs.md) draws with its installed
@@ -787,20 +789,34 @@ ceiling, underfloor runs sit beneath the slab) and zones tint the floor.
       close, on the full model, cabled ports show their plugs
       ([accessory types](../dcim/model-packs.md#accessory-types)); the far
       copies draw none.
-    - **By distance**: within about 3.5 m (back past 4.5 m) the full model;
-      out to about 9 m (back past 11 m) the far copy - the full model when
-      there is none - drawn as one instanced mesh per part for every device
-      in the rack that looks the same, so a rack of identical switches
-      costs one model's draw calls; beyond that, or when the rack's gear is
-      not drawn one by one, the box with its face photos, which the
-      [generated images](../dcim/model-packs.md#generated-images) make look
-      the same from there.
+    - **By size on screen**: a device turns to its full model once its
+      face is about 100 px across on screen (back below 80 px), and to
+      its far copy - the full model when there is none - from about 40 px
+      (back below 32 px); smaller than that, or when the rack's gear is
+      not drawn one by one, it is the box with its face photos, which the
+      [generated images](../dcim/model-packs.md#generated-images) make
+      look the same from there. On a rack page's canvas that is full
+      within about 3.5 m and far within about 9 m; a bigger window, or a
+      closer zoom, brings the detail in from further off, and half-width
+      gear switches closer in.
+    - **Instanced**: every device in the rack drawing the same model at
+      the same level, with the same installed modules, is one instanced
+      mesh per part of the model - full models as well as far copies - so
+      a rack of identical switches costs one model's draw calls, not one
+      per switch. A device with modules of its own forms a group of one.
+      Each device's port covers still hide by its own cabling, its status
+      LEDs (all of a model's lights are one draw for the whole group)
+      light by its own state, and its plugs, stack heads, port markers,
+      bay menus, hover and selection stay its own.
     - **Budget**: the room's triangle budget (above) is shared with the
       devices on the floor, which spend first; racked devices take what is
-      left across every rack: the ones up close get their far copy (with up
-      to half of it), the nearest of them are then raised to their full
-      model, and the rest get far copies with what remains. Past it a device steps down
-      to its far copy, then its box - silently, as the box looks right.
+      left across every rack, the biggest on screen first and those in
+      view before those behind you: the ones up close get their far copy
+      (with up to half of it), the biggest of them are then raised to
+      their full model, and the rest get far copies with what remains.
+      Every instance counts its triangles - instancing saves draw calls,
+      not the GPU's work per device. Past it a device steps down to its
+      far copy, then its box - silently, as the box looks right.
     - **Status LEDs** glow on the model, the locate beacon included (blinking
       up close, steady on the far copy). The room asks for every
       model-drawn device's lights in one request every 30 seconds.

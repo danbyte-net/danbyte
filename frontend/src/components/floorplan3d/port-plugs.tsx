@@ -459,6 +459,7 @@ export function PortPlugs({
   ends,
   anchorEnds = false,
   fronts: publishFronts = true,
+  frame,
 }: {
   root: THREE.Object3D
   plugs: readonly PortPlug[]
@@ -473,6 +474,10 @@ export function PortPlugs({
   anchorEnds?: boolean
   /** Publish the part fronts to the device's markers (plug-overlay). */
   fronts?: boolean
+  /** What places `root` in the room, when `root` itself is not drawn - an
+   * instanced model's shared copy (rack-model-draw): an empty standing
+   * where the root would. Defaults to `root`. */
+  frame?: THREE.Object3D | null
 }) {
   const plugOverlay = usePlugOverlay()
   const overlay = publishFronts ? plugOverlay : null
@@ -570,8 +575,9 @@ export function PortPlugs({
   const last = useRef<{ cords: typeof cords; world: number[] } | null>(null)
   useFrame(() => {
     if (!store || !deviceId) return
-    root.updateWorldMatrix(true, false)
-    const world = root.matrixWorld.elements
+    const at = frame ?? root
+    at.updateWorldMatrix(true, false)
+    const world = at.matrixWorld.elements
     const prev = last.current
     if (
       prev &&
@@ -582,10 +588,7 @@ export function PortPlugs({
     last.current = { cords, world: [...world] }
     const published = new Map<string, CordEnd>()
     for (const c of cords)
-      published.set(
-        c.name,
-        cordEndOf(root.matrixWorld, c.seat, c.local, c.cable)
-      )
+      published.set(c.name, cordEndOf(at.matrixWorld, c.seat, c.local, c.cable))
     store.setDevice(deviceId, published)
   })
   useEffect(() => {

@@ -6,10 +6,10 @@ import { LED_MAX_DEVICES, ledRequestIds } from "@/lib/use-device-leds"
 import { fittedModel } from "./device-model"
 import { slotMatrix } from "./rack-model-draw"
 import {
-  RACK_FAR_IN_M,
-  RACK_FAR_OUT_M,
-  RACK_FULL_IN_M,
-  RACK_FULL_OUT_M,
+  RACK_FAR_IN_PX,
+  RACK_FAR_OUT_PX,
+  RACK_FULL_IN_PX,
+  RACK_FULL_OUT_PX,
   allocateModels,
   createModelBudget,
   instanceGroupKey,
@@ -18,6 +18,7 @@ import {
   rackSlotPose,
   rackSlotTargetM,
   rackToWorld,
+  screenSizePx,
   wantedRackLevel,
 } from "./rack-models"
 import type { ModelWant, RackModelLevel } from "./rack-models"
@@ -189,33 +190,74 @@ describe("rack slot pose", () => {
 })
 
 describe("rack model level of detail", () => {
-  it("steps full, far, box with a gap each way", () => {
-    expect(wantedRackLevel(1, "box")).toBe("full")
-    expect(wantedRackLevel(RACK_FULL_IN_M + 0.1, "box")).toBe("far")
+  it("steps full, far, box by size on screen with a gap each way", () => {
+    expect(wantedRackLevel(400, "box")).toBe("full")
+    expect(wantedRackLevel(RACK_FULL_IN_PX - 1, "box")).toBe("far")
     // Inside the gap, each keeps what it has.
-    const gapFull = (RACK_FULL_IN_M + RACK_FULL_OUT_M) / 2
+    const gapFull = (RACK_FULL_IN_PX + RACK_FULL_OUT_PX) / 2
     expect(wantedRackLevel(gapFull, "full")).toBe("full")
     expect(wantedRackLevel(gapFull, "far")).toBe("far")
-    const gapFar = (RACK_FAR_IN_M + RACK_FAR_OUT_M) / 2
+    const gapFar = (RACK_FAR_IN_PX + RACK_FAR_OUT_PX) / 2
     expect(wantedRackLevel(gapFar, "far")).toBe("far")
     expect(wantedRackLevel(gapFar, "box")).toBe("box")
-    expect(wantedRackLevel(RACK_FAR_OUT_M + 0.1, "far")).toBe("box")
+    expect(wantedRackLevel(RACK_FAR_OUT_PX - 1, "far")).toBe("box")
   })
 
   it("doesn't flicker when the camera wobbles on an edge", () => {
     let level: RackModelLevel = "box"
     const seen = new Set<RackModelLevel>()
     for (let i = 0; i < 50; i++) {
-      level = wantedRackLevel(RACK_FAR_IN_M - 0.2 + (i % 2) * 0.4, level)
+      level = wantedRackLevel(RACK_FAR_IN_PX + 2 - (i % 2) * 4, level)
       seen.add(level)
     }
     expect([...seen]).toEqual(["far"])
   })
+
+  // The room's lens: 45°, in a rack page's canvas, 600 px tall.
+  const lens = {
+    projY: 1 / Math.tan((22.5 * Math.PI) / 180),
+    ortho: false,
+    heightPx: 600,
+  }
+  const frame = 0.4826
+
+  it("keeps the distances the room had at its usual window", () => {
+    const at = (m: number) => screenSizePx(frame, m, lens)
+    // Full within about 3.5 m, back past 4.4 m; far within about 8.7 m,
+    // back past 10.9 m.
+    expect(wantedRackLevel(at(3.4), "box")).toBe("full")
+    expect(wantedRackLevel(at(3.6), "box")).toBe("far")
+    expect(wantedRackLevel(at(4.3), "full")).toBe("full")
+    expect(wantedRackLevel(at(4.5), "full")).toBe("far")
+    expect(wantedRackLevel(at(8.6), "box")).toBe("far")
+    expect(wantedRackLevel(at(8.9), "box")).toBe("box")
+    expect(wantedRackLevel(at(10.8), "far")).toBe("far")
+    expect(wantedRackLevel(at(11.1), "far")).toBe("box")
+  })
+
+  it("follows the window and the lens, not the distance", () => {
+    // Twice the canvas, twice the size: full from twice as far.
+    const big = { ...lens, heightPx: 1200 }
+    expect(wantedRackLevel(screenSizePx(frame, 6.5, big), "box")).toBe("full")
+    expect(wantedRackLevel(screenSizePx(frame, 6.5, lens), "box")).toBe("far")
+    // Half-width gear is half as wide: it turns full closer in.
+    expect(wantedRackLevel(screenSizePx(frame / 2, 3, lens), "box")).not.toBe(
+      "full"
+    )
+    // An orthographic lens doesn't shrink with distance.
+    const ortho = { projY: 2 / 4, ortho: true, heightPx: 850 }
+    expect(screenSizePx(frame, 2, ortho)).toBe(screenSizePx(frame, 20, ortho))
+  })
 })
 
 describe("triangle budget", () => {
-  const want = (o: Partial<ModelWant> & { id: string }): ModelWant => ({
-    dist: 1,
+  // `rank` stands in for distance: the further, the smaller on screen.
+  const want = ({
+    rank = 1,
+    ...o
+  }: Partial<ModelWant> & { id: string; rank?: number }): ModelWant => ({
+    px: 1000 / rank,
+    inView: true,
     level: "full",
     full: 100,
     far: 10,
@@ -225,10 +267,10 @@ describe("triangle budget", () => {
   it("gives near devices far copies, upgrades the nearest, then the rest", () => {
     const out = allocateModels(
       [
-        want({ id: "c", dist: 3 }),
-        want({ id: "a", dist: 1 }),
-        want({ id: "b", dist: 2 }),
-        want({ id: "d", dist: 4, level: "far" }),
+        want({ id: "c", rank: 3 }),
+        want({ id: "a", rank: 1 }),
+        want({ id: "b", rank: 2 }),
+        want({ id: "d", rank: 4, level: "far" }),
       ],
       215,
       1000
@@ -241,7 +283,7 @@ describe("triangle budget", () => {
     expect(out.get("d")).toBe("box")
     // Past the budget even for far copies, the farthest keep their box.
     const tight = allocateModels(
-      [want({ id: "a", dist: 1 }), want({ id: "b", dist: 2 })],
+      [want({ id: "a", rank: 1 }), want({ id: "b", rank: 2 })],
       15,
       1000
     )
@@ -255,7 +297,7 @@ describe("triangle budget", () => {
     const wants = Array.from({ length: 300 }, (_, i) =>
       want({
         id: `d${String(i).padStart(3, "0")}`,
-        dist: 1 + i / 100,
+        rank: 1 + i / 100,
         full: 180,
         far: 8,
       })
@@ -267,6 +309,31 @@ describe("triangle budget", () => {
     expect(levels.filter((l) => l === "full").length).toBeGreaterThanOrEqual(6)
     expect(levels.filter((l) => l === "far").length).toBeGreaterThan(100)
     expect(levels[299]).toBe("box")
+  })
+
+  it("ranks by size on screen, the ones in view first", () => {
+    // Room for one full model: it goes to the biggest in view, not to the
+    // bigger one behind the camera.
+    const out = allocateModels(
+      [
+        want({ id: "behind", px: 900, inView: false }),
+        want({ id: "small", px: 150 }),
+        want({ id: "big", px: 600 }),
+      ],
+      150,
+      1000
+    )
+    expect(out.get("big")).toBe("full")
+    expect(out.get("small")).toBe("far")
+    expect(out.get("behind")).toBe("far")
+    // The biggest is full whatever order the wants come in.
+    for (let i = 0; i < 5; i++) {
+      const wants = Array.from({ length: 8 }, (_, k) =>
+        want({ id: `d${k}`, px: 100 + ((k + i) % 8) * 50 })
+      )
+      const top = wants.reduce((a, b) => (b.px > a.px ? b : a))
+      expect(allocateModels(wants, 200, 1000).get(top.id)).toBe("full")
+    }
   })
 
   it("respects the one-model limit and models not loaded yet", () => {
@@ -288,8 +355,8 @@ describe("triangle budget", () => {
     const budget = createModelBudget(300, 1000)
     let heard = 0
     budget.subscribe(() => heard++)
-    budget.setWants("r1", [want({ id: "a", dist: 1 })])
-    budget.setWants("r2", [want({ id: "b", dist: 2 })])
+    budget.setWants("r1", [want({ id: "a", rank: 1 })])
+    budget.setWants("r2", [want({ id: "b", rank: 2 })])
     expect(parseLevels(budget.ownerKey("r1")).get("a")).toBe("full")
     expect(budget.levelOf("b")).toBe("full")
     expect(budget.drawnKey()).toBe("a,b")
@@ -299,7 +366,7 @@ describe("triangle budget", () => {
     expect(budget.levelOf("b")).toBe("far")
     const before = heard
     // The same wants again change nothing and tell nobody.
-    budget.setWants("r1", [want({ id: "a", dist: 1 })])
+    budget.setWants("r1", [want({ id: "a", rank: 1 })])
     expect(heard).toBe(before)
     budget.setWants("r1", [])
     expect(budget.ownerKey("r1")).toBe("")
