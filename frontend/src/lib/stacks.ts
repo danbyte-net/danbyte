@@ -51,9 +51,16 @@ export interface StackLinkEnd {
   name: string
 }
 
+/** What a stack cable carries: the stack's data (StackWise and the
+ * like) or its power (StackPower). */
+export type StackLinkKind = "data" | "power"
+
 export interface StackLink {
   a: StackLinkEnd
   b: StackLinkEnd
+  /** A data stack cable or a StackPower cable; absent from an older
+   * server, read as data. */
+  kind?: StackLinkKind
   /** Drawn from member order: no cable is recorded. */
   derived: boolean
   /** The recorded cable, or null. */
@@ -132,10 +139,11 @@ export function memberText(stack: DeviceStack): string {
 }
 
 /** A stack cable's name in its hover card. */
-export function stackLinkText(link: Pick<StackLink, "derived">): string {
-  return link.derived
-    ? "Stack cable (derived from member order)"
-    : "Stack cable"
+export function stackLinkText(
+  link: Pick<StackLink, "derived" | "kind">
+): string {
+  const name = link.kind === "power" ? "StackPower cable" : "Stack cable"
+  return link.derived ? `${name} (derived from member order)` : name
 }
 
 // ── the run ──────────────────────────────────────────────────────────────

@@ -111,6 +111,12 @@ describe("stack facts", () => {
       "Stack cable (derived from member order)"
     )
     expect(stackLinkText({ derived: false })).toBe("Stack cable")
+    expect(stackLinkText({ derived: false, kind: "power" })).toBe(
+      "StackPower cable"
+    )
+    expect(stackLinkText({ derived: true, kind: "power" })).toBe(
+      "StackPower cable (derived from member order)"
+    )
   })
 })
 

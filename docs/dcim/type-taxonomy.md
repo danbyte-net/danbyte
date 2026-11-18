@@ -44,6 +44,22 @@ Use the form-factor slug for switch ports that take optics, and the
 media-specific slug when the medium is fixed (RJ45, BiDi OLT/ONT ports,
 fixed-optic gear).
 
+## Power port type groups
+
+| Group | Examples |
+|---|---|
+| IEC 60320 | `iec-60320-c14`, `iec-60320-c20` |
+| NEMA (non-locking / locking) | `nema-5-15p`, `nema-l6-30p` |
+| DC | `dc-terminal`, `saf-d-grid` |
+| Stack power | `cisco-stackpower` |
+| Other | `hardwired`, `other` |
+
+**Stack power** is Danbyte's own (the standard vocabulary has none): a
+switch's power-sharing ports, such as the Catalyst 9300's `StackPower1/A` /
+`B`. They are power ports, not interfaces, because they carry power; the 3D
+views draw a stack's [StackPower cables](virtual-chassis.md#stackpower)
+between them.
+
 ## Cable type groups
 
 | Group | Examples |

@@ -148,8 +148,43 @@ A rack's [3D view](racks.md#the-rack-in-3d) and the floor plan's
   uses A and B only - draw the rest by recording the cables. Recorded cables
   always win.
 
-Hover a stack cable for its card: **Stack cable**, or **Stack cable (derived
-from member order)**, and the two ports. A derived ring is a drawing aid, not
+### StackPower {#stackpower}
+
+Cisco StackPower shares the members' power supplies over its own cables,
+beside the data stack. Danbyte draws those **StackPower cables** the same
+way:
+
+- **StackPower ports.** A member's power ports of type **Cisco
+  StackPower** (`cisco-stackpower`, the catalog's **Stack power** group).
+  In natural name order the first two are its **A** and **B**
+  (`StackPower1/A`, `StackPower1/B` on a Catalyst 9300).
+- **Recorded cables.** Any cable between two StackPower ports of members of
+  the same stack.
+- **Derived ring.** When none is recorded: member *n*'s B to member
+  *n+1*'s A, the last back to the first. A StackPower ring joins at most
+  **four** switches (Cisco's limit on the C9300), so members 1-4, 5-8, …
+  each close their own ring; a last member left on its own gets none. The
+  stack's **Topology** does not apply to it.
+
+The data ring and the StackPower ring are decided apart: a recorded
+StackPower cable leaves the derived data ring in place, and the other way
+round. A derived StackPower cable is a drawing aid like a derived stack
+cable: it hides the ports' covers while drawn and counts for nothing else -
+not utilization, power draw or a power budget. A recorded one hides its
+ports' covers as any cabled port does. Viewing StackPower cables needs view
+on power ports (and cables, for recorded ones).
+
+Each end seats the tenant's StackPower head (`CAB-SPWR`, `fits:
+[cisco-stackpower]`) and the cable is drawn in its `cable:` profile (an
+8.5 mm round jacket). Its `END_BAND` follows Cisco's marking: the
+**green** band is the end that may only go into a switch, the **yellow**
+band the end that may go into a switch or an XPS. Between two switches
+either end fits, so Danbyte colours them as stack cables: **yellow** at the
+A end, **green** at the B end - a derived link's A end is member *n*'s B
+port. The same **Stacks** choice shows, ghosts or hides them.
+
+Hover a stack cable for its card: **Stack cable** or **StackPower cable**,
+with **(derived from member order)** on a derived one, and the two ports. A derived ring is a drawing aid, not
 data: its ports hide their [port covers](model-packs.md#port-covers) while
 it is drawn, and count for nothing else - not port utilization, capacity or a
 port's connected state.

@@ -92,7 +92,7 @@ The models name the nodes Danbyte reads, exactly, in the glTF file:
 |---|---|
 | `bay:<module bay name>` | Where an installed module's origin goes. Its place and turn are the module's pose in the chassis. |
 | `empty:<module bay name>` | The cover drawn while that bay is empty. |
-| `port:<interface name>` | A port, at the opening, pointing out of it. A module's ports keep their template's `{module}` token, for example `port:TwentyFiveGigE{module}/0/1`. Any other port-like component is a `port:` named after its template the same way: a console port (`port:con 0`), a PSU's power inlet (`port:PSU{module}`, from `power-ports:` in the YAML), an aux, front or rear port. |
+| `port:<interface name>` | A port, at the opening, pointing out of it. A module's ports keep their template's `{module}` token, for example `port:TwentyFiveGigE{module}/0/1`. Any other port-like component is a `port:` named after its template the same way: a console port (`port:con 0`), a PSU's power inlet (`port:PSU{module}`, from `power-ports:` in the YAML), a chassis power port such as a C9300's `port:StackPower1/A`, an aux, front or rear port. |
 | `led:<id>`, `led:port:<interface name>` | A status light: its own mesh, with the material `LED`. |
 | `cover:port:<interface name>` | A removable blank or dust plug in a port, such as a StackWise blank or an SFP plug: its own mesh, placed where it sits. Shown while the port is free (export spec v1.5). See [Port covers](#port-covers). |
 
@@ -546,8 +546,9 @@ The in-app check runs the same checker, with the tenant.
 ## Port covers
 
 A `cover:port:<interface name>` mesh is a blank or dust plug that comes
-out when a cable goes in: the StackWise blanks on a C9300's stack ports, an
-SFP cage's plug. Cage and jack geometry that is always there stays part of
+out when a cable goes in: the StackWise blanks on a C9300's stack ports, the
+two halves of its StackPower blank (`cover:port:StackPower1/A` and `/B`, one
+per power port), an SFP cage's plug. Cage and jack geometry that is always there stays part of
 the chassis.
 
 - **When it shows.** On a device, a cover shows while its port is free and
@@ -563,8 +564,10 @@ the chassis.
 - **Types.** A device type has no cabling: its viewer, its generated images
   and a pack's rendered photos show every cover. A device's own **Render
   faces** hides the covers of its ports in use.
-- **Scope.** Only the interfaces the reader may view count. Without
-  interface view every cover stays as modelled, so the cabling doesn't
+- **Power ports.** A cover named after a power port (a StackPower port)
+  hides once a cable is on that power port.
+- **Scope.** Only the interfaces and power ports the reader may view count.
+  Without view on them every cover stays as modelled, so the cabling doesn't
   show.
 
 ## Accessory types
@@ -698,6 +701,33 @@ fitting part, a plain cable runs between the port anchors. A stack over data
 ports needs no special part: mark the interfaces `stack: true` in the device
 type's YAML (a Danbyte key, ignored elsewhere; it sets the template's
 **Stack port**) and their DAC, optic or RJ45 head is used.
+
+StackPower ports take a head the same way. They are the chassis'
+`power-ports` of type `cisco-stackpower` (a Danbyte type, like the stacking
+interface types), each with its `port:` empty and its own
+`cover:port:` blank, and the cord fits that type:
+
+```yaml
+# device-types/Cisco/C9300-48P.yaml
+power-ports:
+  - name: StackPower1/A
+    type: cisco-stackpower
+  - name: StackPower1/B
+    type: cisco-stackpower
+---
+# accessory-types/Cisco/CAB-SPWR.yaml
+name: CAB-SPWR
+kind: cord
+connector: stack
+fits: [cisco-stackpower]
+parts: [CAB-SPWR-30CM, CAB-SPWR-150CM]
+cable: {profile: round, jacket_mm: 8.5, min_bend_mm: 40}
+```
+
+Its `END_BAND` follows Cisco's marking - green on the end that may only go
+into a switch, yellow on the end that may also go into an XPS - and between
+two switches is coloured as any stack cable's, yellow at A and green at B
+([StackPower in 3D](virtual-chassis.md#stackpower)).
 
 ### Which parts a port shows
 
@@ -945,10 +975,12 @@ A pack can also be imported with a management command, from a folder or a
 
 - Each YAML is matched to an existing type by **manufacturer and part
   number** (by name when it has no part number). A type that isn't there is
-  created from the YAML, with its templates. A matched module type that
-  lacks a power port its YAML names (a PSU type imported before module
-  types carried power ports) gets it added; nothing else on a matched type
-  changes.
+  created from the YAML, with its templates. A matched device or module
+  type that lacks a power port its YAML names (a PSU type imported before
+  module types carried power ports, a C9300 before its StackPower ports)
+  gets it added, `{position}`-named on a type whose interfaces are; its
+  existing devices gain it with the type's **Sync devices**. Nothing else
+  on a matched type changes.
 - The matched or created type gets the pack's model and far model,
   replacing what it had, with the scan's report per type. A hand-made port
   mapping on the replaced model is cleared.
@@ -1035,12 +1067,14 @@ when there is no transceiver. Either may be null; a port with a record
 that draws nothing is still listed, for its hover card. A switch stack
 member also has `stack` (`{id, name, position, master, master_name}`, or
 null), `stack_plugs` (rows like `plugs`, plus `derived`, for the ends of its
-[stack cables](virtual-chassis.md#in-3d); those ports are not in `plugs`)
-and `stack_covers` (the covers only a derived ring hides - the viewer hides
+[stack cables](virtual-chassis.md#in-3d) and StackPower cables; those
+ports are not in `plugs`) and `stack_covers` (the covers only a derived ring hides - the viewer hides
 them while stacks are drawn). `stacks` lists the stacks among the devices:
 `{id, name, master, members: [{device, name, position}], links}`, each link
-`{a, b, derived, cable, color, label}` with ends `{device, port, name}`
-(the anchor as drawn and the interface). A light left
+`{a, b, kind, derived, cable, color, label}` with ends `{device, port,
+name}` (the anchor as drawn and the interface or power port); `kind` is
+`data` for a stack cable, `power` for a [StackPower](virtual-chassis.md#stackpower)
+cable. A light left
 out is off. A state is `green`, `amber`, `red`, `blue` or `neutral`, with
 `_blink` added when it blinks. The query count is the same for one device
 as for five hundred.
