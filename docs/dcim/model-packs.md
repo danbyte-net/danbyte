@@ -910,7 +910,13 @@ or a mix) is stretched along those axes so both its ends keep their distance
 to the cabinet's edges. Its tiling textures are rescaled so holes keep their
 real size: the repeat is taken as covering `danbyte_ref_mm` (1000 mm by
 default), or one tile per `danbyte_tile_mm` on a material without a
-transform. Objects with Blender's `.001` suffixes are the same part. The
+transform. A stretched part may be modelled in place at its size in the
+reference cabinet, or as a `danbyte_ref_mm` (1000 mm) mesh with its origin
+at its start: Danbyte then lays it out at its reference size first, across
+symmetric about the centre, front to back as far from the rear as it starts
+from the front of the kit's first `depths_mm` (so list the reference depth
+first), and up to the roof's underside. Door hardware moves with its leaf at
+its own size. Objects with Blender's `.001` suffixes are the same part. The
 `FRAME` material takes the rack's colour; everything else keeps its own.
 A door's `hinge` empty gives its hinge side as modelled; Danbyte mirrors it
 for the other. `label:u` isn't drawn: the U numbers are Danbyte's own.

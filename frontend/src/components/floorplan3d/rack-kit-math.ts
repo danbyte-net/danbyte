@@ -28,6 +28,9 @@ export interface SceneKit {
     { stretch: string; ref_mm: number | null; hinge: boolean }
   >
   colours: Record<string, string>
+  /** The kit's sizes; the first width and depth are its reference. */
+  widths_mm?: number[]
+  depths_mm?: number[]
   model_url: string | null
   far_url: string | null
 }
@@ -103,6 +106,68 @@ export function mapAxis(
   const c = (min + max) / 2
   const nearLo = c - rLo <= rHi - c
   return { centre: nearLo ? c - rLo + tLo : c - rHi + tHi, scale: 1 }
+}
+
+/**
+ * A stretched part as the export spec §14 delivers it - a 1000 mm
+ * (`refMm`) mesh along each stretch axis, its origin at the start - laid
+ * out at its size in the reference cabinet, so `partMatrix` can stretch it
+ * from there: across (x) symmetric about the centre, front to back
+ * (stretch "y") as far from the rear as its origin is from the front of
+ * the reference depth `depthM`, and up (stretch "z") to `topY` (the roof's
+ * underside). `origin` and `raw` are in the rack frame (x across, y up, z
+ * from the front at 0 to the rear at `depthM`). Null when the part is
+ * already modelled in place (no axis is `refMm` long) - kept as it is.
+ */
+export function referenceBox(
+  origin: THREE.Vector3,
+  raw: THREE.Box3,
+  stretch: string,
+  refMm: number | null,
+  depthM: number | null,
+  topY: number
+): THREE.Box3 | null {
+  if (!stretch || !refMm || refMm <= 0) return null
+  const len = refMm / 1000
+  const near = (a: number) => Math.abs(a - len) <= len * 0.02
+  const size = raw.getSize(new THREE.Vector3())
+  const out = raw.clone()
+  let changed = false
+  if (stretch.includes("x") && near(size.x)) {
+    const half = Math.abs(origin.x)
+    if (half > 1e-4) {
+      out.min.x = -half
+      out.max.x = half
+      changed = true
+    }
+  }
+  if (stretch.includes("y") && near(size.z) && depthM && depthM > 0) {
+    const front = Math.min(Math.max(origin.z, 0), depthM / 2)
+    out.min.z = front
+    out.max.z = depthM - front
+    changed = true
+  }
+  if (stretch.includes("z") && near(size.y) && topY > origin.y) {
+    out.min.y = origin.y
+    out.max.y = topY
+    changed = true
+  }
+  return changed ? out : null
+}
+
+/** The matrix taking box `from` onto box `to`, axis by axis. */
+export function boxToBox(from: THREE.Box3, to: THREE.Box3): THREE.Matrix4 {
+  const fs = from.getSize(new THREE.Vector3())
+  const ts = to.getSize(new THREE.Vector3())
+  const k = (t: number, f: number) => (f > 1e-9 ? t / f : 1)
+  return new THREE.Matrix4()
+    .makeTranslation(to.min.x, to.min.y, to.min.z)
+    .multiply(
+      new THREE.Matrix4().makeScale(k(ts.x, fs.x), k(ts.y, fs.y), k(ts.z, fs.z))
+    )
+    .multiply(
+      new THREE.Matrix4().makeTranslation(-from.min.x, -from.min.y, -from.min.z)
+    )
 }
 
 /** The matrix taking a part whose box is `box` (rack frame, reference

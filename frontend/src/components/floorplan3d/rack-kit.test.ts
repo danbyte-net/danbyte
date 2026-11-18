@@ -230,3 +230,130 @@ describe("buildKit", () => {
     cut.dispose()
   })
 })
+
+/** A part in the 1000 mm convention (§14 as packs deliver it): its node at
+ * the part's start, the mesh 1 m along each stretch axis from there (glTF
+ * x across, y up, depth toward −z), the other axes `size`. */
+function part1000(
+  name: string,
+  stretch: string,
+  size: [number, number, number],
+  origin: [number, number, number]
+) {
+  const sx = stretch.includes("x") ? 1 : size[0]
+  const sy = stretch.includes("z") ? 1 : size[1]
+  const sz = stretch.includes("y") ? 1 : size[2]
+  const g = new THREE.Group()
+  g.userData = {
+    gltfName: name,
+    danbyte_stretch: stretch,
+    danbyte_ref_mm: 1000,
+  }
+  g.position.set(...origin)
+  const mesh = new THREE.Mesh(
+    new THREE.BoxGeometry(sx, sy, sz),
+    new THREE.MeshStandardMaterial({ name: "FRAME" })
+  )
+  mesh.position.set(
+    stretch.includes("x") ? sx / 2 : 0,
+    stretch.includes("z") ? sy / 2 : 0,
+    stretch.includes("y") ? -sz / 2 : 0
+  )
+  g.add(mesh)
+  return g
+}
+
+/** The reference cabinet (600 × 1000, roof underside at 2.01 m) with its
+ * parts as the cabinet kit delivers them. */
+function kit1000() {
+  const s = new THREE.Group()
+  s.add(
+    part("post:segment", [0.02, 0.04445, 0.02], [0.233, 0.13 + 0.022225, -0.1])
+  )
+  s.add(part1000("base:plinth", "xy", [0, 0.1, 0], [-0.3, 0.05, 0]))
+  s.add(part1000("top:vented", "xy", [0, 0.01, 0], [-0.3, 2.015, 0]))
+  s.add(part1000("beam:width", "x", [0, 0.03, 0.02], [-0.26, 1.97, -0.022]))
+  s.add(part1000("beam:depth", "y", [0.02, 0.03, 0], [0.26, 1.97, -0.062]))
+  s.add(part1000("side:panel", "yz", [0.01, 0, 0], [0.3, 0.1, 0]))
+  const door = part1000("door:perforated", "xz", [0, 0, 0.022], [-0.3, 0.1, 0])
+  const hinge = new THREE.Object3D()
+  hinge.userData.gltfName = "hinge"
+  door.add(hinge)
+  s.add(door)
+  s.add(part("door:handle", [0.02, 0.12, 0.03], [0.26, 1.1, 0.015]))
+  s.updateMatrixWorld(true)
+  return s
+}
+
+describe("kits in the 1000 mm convention", () => {
+  const index = indexKit(kit1000(), 1)
+  const box = (name: string) => index.parts.find((p) => p.name === name)!.box
+
+  it("lays each stretched part out at its reference size", () => {
+    expect(box("base:plinth").min.x).toBeCloseTo(-0.3)
+    expect(box("base:plinth").max.x).toBeCloseTo(0.3)
+    expect(box("base:plinth").max.z - box("base:plinth").min.z).toBeCloseTo(1)
+    expect(box("beam:width").max.x - box("beam:width").min.x).toBeCloseTo(0.52)
+    expect(box("beam:depth").min.z).toBeCloseTo(0.062)
+    expect(box("beam:depth").max.z).toBeCloseTo(0.938)
+    expect(box("side:panel").min.y).toBeCloseTo(0.1)
+    expect(box("side:panel").max.y).toBeCloseTo(2.015)
+    expect(
+      box("door:perforated").max.x - box("door:perforated").min.x
+    ).toBeCloseTo(0.6)
+    expect(box("door:perforated").max.y).toBeCloseTo(2.015)
+    expect(index.ref.max.x - index.ref.min.x).toBeCloseTo(0.6)
+    expect(index.ref.max.z - index.ref.min.z).toBeCloseTo(1)
+  })
+
+  it("stretches a reference-size rack to exactly the reference", () => {
+    const built = buildKit(
+      index,
+      "r",
+      LOOK,
+      42,
+      0.6,
+      2.02,
+      1,
+      "#c9ccce",
+      "solid"
+    )
+    const plinth = built.plain
+      .map((p) => p.geometry.boundingBox!.clone().applyMatrix4(p.matrix))
+      .find((b) => b.max.y <= 0.1 + 1e-6 && b.max.x - b.min.x > 0.5)!
+    expect(plinth.max.x - plinth.min.x).toBeCloseTo(0.6)
+    expect(plinth.max.z - plinth.min.z).toBeCloseTo(1)
+    built.dispose()
+  })
+
+  it("hangs split doors at half the width with handles at the meeting edge", () => {
+    const built = buildKit(
+      index,
+      "r",
+      LOOK,
+      42,
+      0.8,
+      2.02,
+      1.2,
+      "#c9ccce",
+      "solid"
+    )
+    const front = built.doors.filter((d) => d.side === "front")
+    expect(front).toHaveLength(2)
+    for (const leaf of front) {
+      const boxes = leaf.draws.map((d) =>
+        d.geometry.boundingBox!.clone().applyMatrix4(d.matrix)
+      )
+      const panel = boxes[0]
+      expect(panel.max.x - panel.min.x).toBeCloseTo(0.4, 2)
+      expect(panel.max.y - panel.min.y).toBeCloseTo(1.915, 2)
+      const handle = boxes[boxes.length - 1]
+      // Handle at its own size, near the centre line, away from the hinge.
+      expect(handle.max.x - handle.min.x).toBeCloseTo(0.02, 3)
+      const hx = (handle.min.x + handle.max.x) / 2
+      expect(Math.abs(hx)).toBeLessThan(0.08)
+      expect(Math.abs(hx - leaf.hingeX)).toBeGreaterThan(0.3)
+    }
+    built.dispose()
+  })
+})

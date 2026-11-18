@@ -6,12 +6,14 @@ import { useDeviceModel } from "./device-model"
 import { SwingDoor } from "./rack-shell"
 import {
   doorInfill,
+  boxToBox,
   doorLeaves,
   isEnclosed,
   partMatrix,
   postSegmentMatrices,
   postSpots,
   railPlanesM,
+  referenceBox,
   stretchedRepeat,
 } from "./rack-kit-math"
 import type { SceneKit, SceneLook } from "./rack-kit-math"
@@ -41,6 +43,8 @@ interface KitPart {
   meshes: PartMesh[]
   /** A door's `hinge` empty, in the rack frame. */
   hinge: THREE.Vector3 | null
+  /** The part node's origin, in the rack frame. */
+  origin: THREE.Vector3
 }
 
 interface KitIndex {
@@ -50,8 +54,13 @@ interface KitIndex {
 
 const indexCache = new WeakMap<THREE.Object3D, KitIndex>()
 
-/** A kit's parts by node, in the rack frame (cached per loaded scene). */
-export function indexKit(scene: THREE.Object3D): KitIndex {
+/** A kit's parts by node, in the rack frame (cached per loaded scene).
+ * `depthM`: the reference cabinet's outer depth (the kit's first depth),
+ * for stretched parts delivered as 1000 mm meshes (`referenceBox`). */
+export function indexKit(
+  scene: THREE.Object3D,
+  depthM: number | null = null
+): KitIndex {
   const hit = indexCache.get(scene)
   if (hit) return hit
   scene.updateMatrixWorld(true)
@@ -94,14 +103,42 @@ export function indexKit(scene: THREE.Object3D): KitIndex {
           box,
           meshes,
           hinge,
+          origin: new THREE.Vector3()
+            .setFromMatrixPosition(o.matrixWorld)
+            .applyMatrix4(TO_RACK),
         })
-        if (!name.startsWith("door:")) ref.union(box)
       }
       return
     }
     o.children.forEach(visit)
   }
   visit(scene)
+  // Stretched parts delivered at 1000 mm, laid out at their reference
+  // size first: up to the roof's underside, else the frame's top.
+  const roofs = parts.filter((p) => p.name.startsWith("top:"))
+  const fixedTop = parts
+    .filter((p) => !p.stretch && !p.name.startsWith("door:"))
+    .reduce((y, p) => Math.max(y, p.box.max.y), 0)
+  const topY = roofs.length
+    ? Math.min(...roofs.map((p) => p.origin.y))
+    : fixedTop
+  for (const part of parts) {
+    const to = referenceBox(
+      part.origin,
+      part.box,
+      part.stretch,
+      part.refMm,
+      depthM,
+      topY
+    )
+    if (!to) continue
+    const pre = boxToBox(part.box, to)
+    for (const m of part.meshes) m.matrix = pre.clone().multiply(m.matrix)
+    if (part.hinge) part.hinge.applyMatrix4(pre)
+    part.box = to
+  }
+  for (const part of parts)
+    if (!part.name.startsWith("door:")) ref.union(part.box)
   const out = { ref, parts }
   indexCache.set(scene, out)
   return out
@@ -221,7 +258,17 @@ export function RackKitShell({
   const built = useMemo(
     () =>
       scene
-        ? buildKit(indexKit(scene), rackId, look, units, w, h, d, color, mode)
+        ? buildKit(
+            indexKit(scene, kitDepthM(kit)),
+            rackId,
+            look,
+            units,
+            w,
+            h,
+            d,
+            color,
+            mode
+          )
         : null,
     [scene, rackId, look, units, w, h, d, color, mode]
   )
@@ -296,6 +343,12 @@ function InstancedPart({
       receiveShadow
     />
   )
+}
+
+/** The kit's reference depth (m): its first listed depth. */
+function kitDepthM(kit: SceneKit): number | null {
+  const d = kit.depths_mm?.[0]
+  return typeof d === "number" && d > 0 ? d / 1000 : null
 }
 
 /** Everything a kit-built rack draws, and what to dispose with it. */
@@ -502,9 +555,24 @@ export function buildKit(
             matrix: leafM.clone().multiply(pm.matrix),
           })
         for (const hw of hardware) {
-          const hm = m
-            .clone()
-            .multiply(partMatrix(hw.box, index.ref, target, ""))
+          // Hardware moves with its leaf at its own size: where the leaf
+          // puts its centre, mirrored with the leaf, never squeezed.
+          const placed = partMatrix(hw.box, index.ref, target, "")
+          const c = hw.box.getCenter(new THREE.Vector3()).applyMatrix4(placed)
+          const at = c.clone().applyMatrix4(m)
+          let hm = new THREE.Matrix4().makeTranslation(
+            at.x - c.x,
+            at.y - c.y,
+            at.z - c.z
+          )
+          if (m.determinant() < 0)
+            hm = hm.multiply(
+              new THREE.Matrix4()
+                .makeTranslation(c.x, c.y, c.z)
+                .multiply(MIRROR_X)
+                .multiply(new THREE.Matrix4().makeTranslation(-c.x, -c.y, -c.z))
+            )
+          hm.multiply(placed)
           for (const pm of hw.meshes)
             draws.push({
               geometry: pm.geometry,

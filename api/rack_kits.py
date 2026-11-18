@@ -393,7 +393,8 @@ def may_view(user, tenant) -> bool:
 
 def kit_doc(kit, rack, shared: bool) -> dict | None:
     """A kit as the 3D room reads it: ``{id, name, frame, parts, colours,
-    model_url, far_url}``; the URLs the kit's own for a reader who may view
+    widths_mm, depths_mm, model_url, far_url}`` (the first width and depth
+    are the reference cabinet's); the URLs the kit's own for a reader who may view
     rack types (``shared``), else through ``rack``. None without a model."""
     from .model_3d import version_of
 
@@ -412,4 +413,5 @@ def kit_doc(kit, rack, shared: bool) -> dict | None:
 
     return {"id": str(kit.pk), "name": kit.name, "frame": kit.frame,
             "parts": kit.parts or {}, "colours": kit.colours or {},
+            "widths_mm": kit.widths_mm or [], "depths_mm": kit.depths_mm or [],
             "model_url": url(False), "far_url": url(True)}
