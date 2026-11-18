@@ -43,6 +43,10 @@ class ApiConfig(AppConfig):
         from . import cable_routing
 
         cable_routing.connect_signals()
+        # A stack's auto-connect cables follow its members (api.stack_cables).
+        from . import stack_cables
+
+        stack_cables.connect_signals()
         # The `tunnels` block of a device or VM render: each tunnel end with
         # its far end(s) resolved, WireGuard keys and ports included.
         from .export_templates import register_context_provider

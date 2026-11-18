@@ -82,6 +82,28 @@ class RingTests(SimpleTestCase):
         self.assertIs(head_for([a, b, plug], STACK, "stack-t1-1m="), a)
         self.assertIsNone(head_for([a, b], "cisco-stackwise-160"))
 
+    def test_a_generic_family_port_takes_a_member_head(self):
+        t1 = SimpleNamespace(vendor="Cisco", name="STACK-T1", kind="cord",
+                             fits=["cisco-stackwise-480", "cisco-stackwise-1t"],
+                             parts=["STACK-T1-50CM", "STACK-T1-1M"])
+        old = SimpleNamespace(vendor="A", name="OLD", kind="cord",
+                              fits=["cisco-stackwise-160"], parts=["CAB-STK-E-1M"])
+        exact = SimpleNamespace(vendor="Z", name="GENERIC", kind="cord",
+                                fits=["cisco-stackwise"], parts=[])
+        # The family's order: 480 before 160, whatever the names.
+        self.assertIs(head_for([old, t1], "cisco-stackwise"), t1)
+        self.assertIs(head_for([old, t1], "Cisco-StackWise"), t1)
+        # A recorded cable's label names a family member's part.
+        self.assertIs(head_for([old, t1], "cisco-stackwise", "CAB-STK-E-1M"), old)
+        # An exact fit wins over the family.
+        self.assertIs(head_for([old, t1, exact], "cisco-stackwise"), exact)
+        # A specific type never falls back to its siblings.
+        self.assertIsNone(head_for([old], "cisco-stackwise-480"))
+        ext = SimpleNamespace(vendor="Extreme", name="SS", kind="cord",
+                              fits=["extreme-summitstack-256"], parts=[])
+        self.assertIs(head_for([ext], "extreme-summitstack"), ext)
+        self.assertIsNone(head_for([t1], "juniper-vcp"))
+
 
 class _Base(_LedBase):
     def setUp(self):
@@ -143,7 +165,9 @@ class PayloadTests(_Base):
         # The anchor as drawn: every member's model is authored as member 1.
         self.assertEqual(s["links"][1]["a"], {"device": str(self.members[1].id),
                                               "port": "StackPort1/1",
-                                              "name": "StackPort2/1"})
+                                              "name": "StackPort2/1",
+                                              "id": str(Interface.objects.get(
+                                                  name="StackPort2/1").id)})
         two = out["devices"][str(self.members[1].id)]
         self.assertEqual(two["stack"], {"id": str(self.vc.id), "name": "STACK", "position": 2,
                                         "master": False, "master_name": "sw1"})
@@ -168,12 +192,14 @@ class PayloadTests(_Base):
         cable = self._cable("StackPort1/1", "StackPort3/2", color="#00FF00", label="X")
         out = self._payload()
         [s] = out["stacks"]
+        ids = dict(Interface.objects.values_list("name", "id"))
         self.assertEqual(s["links"], [{
-            "a": {"device": str(self.dev.id), "port": "StackPort1/1", "name": "StackPort1/1"},
+            "a": {"device": str(self.dev.id), "port": "StackPort1/1", "name": "StackPort1/1",
+                  "id": str(ids["StackPort1/1"])},
             "b": {"device": str(self.members[2].id), "port": "StackPort1/2",
-                  "name": "StackPort3/2"},
+                  "name": "StackPort3/2", "id": str(ids["StackPort3/2"])},
             "kind": "data", "derived": False, "cable": str(cable.id), "color": "#00ff00",
-            "label": "X"}])
+            "label": "X", "length_m": None, "parts": []}])
         one = out["devices"][str(self.dev.id)]
         # A cabled port hides its cover as any does; nothing is derived.
         self.assertEqual((one["covers"], one["stack_covers"]), (["StackPort1/1"], []))
@@ -220,6 +246,19 @@ class PayloadTests(_Base):
         self.assertEqual(two["stack_plugs"][0]["cord_part"]["cable"]["jacket_mm"], 6.0)
         # Stack ports' parts ride in stack_plugs only.
         self.assertEqual(two["plugs"], [])
+
+    def test_a_generic_stackwise_port_seats_the_480_head(self):
+        Interface.objects.filter(device__in=self.members).update(type="cisco-stackwise")
+        acc = AccessoryType(tenant=self.tenant, vendor="Cisco", name="STACK-T1",
+                            kind="cord", connector="stack", fits=[STACK],
+                            cable={"profile": "round", "jacket_mm": 6.0, "pitch_mm": None,
+                                   "min_bend_mm": 40.0})
+        acc.model_3d.name = "device-models/stack-t1.glb"
+        acc.save()
+        two = self._payload()["devices"][str(self.members[1].id)]
+        self.assertTrue(two["stack_plugs"])
+        self.assertTrue(all(p["cord_part"] and p["cord_part"]["kind"] == "cord"
+                            for p in two["stack_plugs"]))
 
     def test_not_counted_as_connected(self):
         self._payload()
@@ -566,15 +605,20 @@ class StackPowerTests(_PowerBase):
     def test_recorded_power_cables_win(self):
         m1, m2, m3 = self.members
         cable = self._power_cable(m1, "StackPower1/A", m3, "StackPower1/B",
-                                  label="CAB-SPWR-30CM", color="#808080")
+                                  label="CAB-SPWR-30CM", color="#808080",
+                                  length=30, length_unit="cm")
+        pa = PowerPort.objects.get(device=m1, name="StackPower1/A")
+        pb = PowerPort.objects.get(device=m3, name="StackPower1/B")
         out = self._payload()
         [s] = out["stacks"]
         power = [lk for lk in s["links"] if lk["kind"] == "power"]
         self.assertEqual(power, [{
-            "a": {"device": str(m1.id), "port": "StackPower1/A", "name": "StackPower1/A"},
-            "b": {"device": str(m3.id), "port": "StackPower1/B", "name": "StackPower1/B"},
+            "a": {"device": str(m1.id), "port": "StackPower1/A", "name": "StackPower1/A",
+                  "id": str(pa.id)},
+            "b": {"device": str(m3.id), "port": "StackPower1/B", "name": "StackPower1/B",
+                  "id": str(pb.id)},
             "kind": "power", "derived": False, "cable": str(cable.id), "color": "#808080",
-            "label": "CAB-SPWR-30CM"}])
+            "label": "CAB-SPWR-30CM", "length_m": 0.3, "parts": []}])
         # The data ring is decided apart and still derived.
         self.assertEqual([lk["derived"] for lk in s["links"] if lk["kind"] == "data"],
                          [True] * 3)
@@ -731,6 +775,50 @@ power-ports:
             finally:
                 files.close()
             self.assertFalse([n for n in again.types[0].notes if n.startswith("power-ports")])
+        finally:
+            shutil.rmtree(root, ignore_errors=True)
+
+    def test_a_differing_interface_type_is_reported_not_changed(self):
+        from .devicetype_import import interface_type_notes
+
+        # self.dt carries StackPort{position}/n templates typed STACK.
+        InterfaceTemplate.objects.filter(device_type=self.dt, name__startswith="StackPort"
+                                         ).update(type="cisco-stackwise")
+        notes = interface_type_notes(self.dt, {"interfaces": [
+            {"name": "StackPort1/1", "type": STACK},
+            {"name": "StackPort1/2", "type": "cisco-stackwise"},
+            {"name": "Nowhere1/1", "type": STACK}, {"type": STACK}, "junk"]})
+        self.assertEqual(notes, [
+            "StackPort{position}/1: type cisco-stackwise here, cisco-stackwise-480 in the "
+            "pack - set the template's type and sync the type to update."])
+        self.assertEqual(set(InterfaceTemplate.objects.filter(
+            device_type=self.dt, name__startswith="StackPort").values_list("type", flat=True)),
+            {"cisco-stackwise"})
+
+    def test_a_pack_import_notes_the_differing_type(self):
+        import os
+        import shutil
+        import tempfile
+
+        from .devicetype_import import import_devicetype_yaml
+        from .model_pack import PackFiles, import_pack
+
+        self.assertTrue(import_devicetype_yaml(self.tenant, self.YAML.replace(
+            "1000base-t", "1000base-x-sfp"))["ok"])
+        root = tempfile.mkdtemp()
+        try:
+            os.makedirs(os.path.join(root, "device-types/Cisco"))
+            with open(os.path.join(root, "device-types/Cisco/C9300-24P.yaml"), "w") as fh:
+                fh.write(self.YAML)
+            files = PackFiles(root)
+            try:
+                [row] = import_pack(self.tenant, files, dry_run=True).types
+            finally:
+                files.close()
+            self.assertEqual(row.action, "matched")
+            self.assertIn("GigabitEthernet1/0/1: type 1000base-x-sfp here, 1000base-t in the "
+                          "pack - set the template's type and sync the type to update.",
+                          row.notes)
         finally:
             shutil.rmtree(root, ignore_errors=True)
 

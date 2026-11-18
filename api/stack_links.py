@@ -39,7 +39,9 @@ StackPower cable never stops the derived data ring, nor the other way.
 Each end seats a stack-cable head when the tenant has one. A dedicated
 stacking port takes an accessory type of ``kind: cord`` whose ``fits`` names
 its type (export spec §13), the one whose ``parts`` lists a recorded cable's
-label first, else the first by vendor and name. A marked data port takes
+label first, else the first by vendor and name; a port of a generic
+family type (``cisco-stackwise``) without an exact fit takes one that fits
+a member of the family (``STACK_TYPE_FAMILIES``). A marked data port takes
 what any cabled port of its type takes (api.port_plugs ``stack``): a DAC
 head, an optic and its cord, an RJ45 plug. The run is drawn between the heads' ``cable``
 empties, or between the port anchors when there is none.
@@ -72,15 +74,39 @@ def _visible(user, tenant, slug):
                 output_field=BooleanField())
 
 
+#: Metres per ``Cable.length_unit``.
+_UNIT_M = {"m": 1.0, "cm": 0.01, "ft": 0.3048, "in": 0.0254}
+
+
+def _metres(length, unit) -> float | None:
+    """A cable's length in metres, or None when it has none."""
+    if length is None or length <= 0:
+        return None
+    return round(float(length) * _UNIT_M.get(unit or "m", 1.0), 4)
+
+
 def head_for(accessories, port_type: str, label: str = ""):
     """The stack-cable head for a stack port of ``port_type``: a ``kind:
     cord`` part that fits it - the one whose ``parts`` lists ``label`` (a
-    recorded cable's) first, else the first by vendor and name - or None."""
+    recorded cable's) first, else the first by vendor and name - or None.
+
+    A port of a generic family type (``cisco-stackwise``,
+    ``STACK_TYPE_FAMILIES``) with no exact fit takes a part that fits a
+    member of the family, in the family's order (480 before 1T before
+    320…); a part named by ``label`` wins among them too."""
+    from .dcim_choices import STACK_TYPE_FAMILIES
     from .port_plugs import _by_name, part_key
 
     t = (port_type or "").strip().lower()
-    fit = sorted((a for a in accessories if a.kind == "cord" and t in (a.fits or [])),
-                 key=_by_name)
+    cords = [a for a in accessories if a.kind == "cord"]
+
+    def fitting(slug):
+        return sorted((a for a in cords if slug in (a.fits or [])), key=_by_name)
+
+    tiers = [fitting(t)]
+    if not tiers[0]:
+        tiers = [fitting(m) for m in STACK_TYPE_FAMILIES.get(t, ())]
+    fit = [a for tier in tiers for a in tier]
     if not fit:
         return None
     key = part_key(label) if label else ""
@@ -155,9 +181,11 @@ def stacks(devices, owners: dict, user, tenant, accessories=()) -> tuple[list, d
     the reader; their ``_installed_parts`` loaded):
 
     ``stacks`` ``[{id, name, master, members: [{device, name, position}],
-    links: [{a, b, kind, derived, cable, color, label}]}]`` - each end
-    ``{device, port, name}``, ``port`` the anchor as drawn and ``name`` the
-    interface or power port; ``kind`` ``data`` (a stack port's cable) or
+    links: [{a, b, kind, derived, cable, color, label, length_m, parts}]}]`` - each end
+    ``{device, port, name, id}``, ``port`` the anchor as drawn, ``name`` and
+    ``id`` the interface or power port; ``parts`` the head's part numbers
+    (the lengths Record cable offers); ``length_m`` a recorded cable's
+    length in metres (the drawn loop is sized to it) or null; ``kind`` ``data`` (a stack port's cable) or
     ``power`` (a StackPower cable);
 
     ``per device`` ``{device id: {stack, stack_plugs, stack_ends}}`` -
@@ -201,7 +229,8 @@ def stacks(devices, owners: dict, user, tenant, accessories=()) -> tuple[list, d
                           _cend=Subquery(term.values("end")[:1]),
                           _kind=Value(kind, output_field=CharField()))
                 .order_by()
-                .values_list("device_id", "name", "type", "_vis", "_cable", "_cend", "_kind"))
+                .values_list("device_id", "name", "type", "_vis", "_cable", "_cend", "_kind",
+                             "id"))
 
     # Data stack ports and StackPower ports in one query (UNION ALL).
     comps = list(
@@ -215,8 +244,9 @@ def stacks(devices, owners: dict, user, tenant, accessories=()) -> tuple[list, d
     ports: dict[tuple, list] = {}
     # The cable's side at each cabled stack port: which band colour it takes.
     sides: dict[tuple, str] = {}
-    for dev_id, name, ptype, vis, cable, cend, kind in comps:
-        ports.setdefault((str(dev_id), kind), []).append((name, ptype or "", bool(vis), cable))
+    for dev_id, name, ptype, vis, cable, cend, kind, pk in comps:
+        ports.setdefault((str(dev_id), kind), []).append(
+            (name, ptype or "", bool(vis), cable, str(pk)))
         if cable is not None and cend:
             sides[(str(dev_id), kind, name)] = cend.lower()
     for v in ports.values():
@@ -230,8 +260,10 @@ def stacks(devices, owners: dict, user, tenant, accessories=()) -> tuple[list, d
         qs = Cable.objects.filter(tenant=tenant, pk__in=cabled)
         if not getattr(user, "is_superuser", False):
             qs = rbac.restrict_queryset(qs, user, tenant, "cable", "view")
-        cables = {c: (color, ctype, label) for c, color, ctype, label in
-                  qs.order_by().values_list("id", "color", "type", "label")}
+        cables = {c: (color, ctype, label, _metres(length, unit))
+                  for c, color, ctype, label, length, unit in
+                  qs.order_by().values_list("id", "color", "type", "label",
+                                            "length", "length_unit")}
 
     # Where each drawn member's stack ports sit on its model: interfaces
     # for data links, power ports for StackPower.
@@ -265,19 +297,20 @@ def stacks(devices, owners: dict, user, tenant, accessories=()) -> tuple[list, d
             stack_ports = {m[0]: ports.get((m[0], kind), []) for m in members}
 
             def end(dev, port, _a=anchors, _ports=stack_ports, _kind=kind):
-                """``(device, anchor, port name, type)`` when it can be drawn."""
+                """``(device, anchor, port name, type, port id)`` when it can be
+                drawn."""
                 if dev not in drawn or dev not in _a:
                     return None
                 hit = next((p for p in _ports.get(dev, []) if p[0] == port), None)
                 anchor = _a[dev].get((_kind, port))
                 if hit is None or not hit[2] or anchor is None:
                     return None
-                return dev, anchor, port, hit[1]
+                return dev, anchor, port, hit[1], hit[4]
 
             # Recorded: a cable between two stack ports of this stack's members.
             by_cable: dict = {}
             for m in members:
-                for name, _t, _vis, cable in stack_ports[m[0]]:
+                for name, _t, _vis, cable, _pk in stack_ports[m[0]]:
                     if cable is not None:
                         by_cable.setdefault(cable, []).append((m[0], name))
             if any(len(ends) == 2 for ends in by_cable.values()):
@@ -286,8 +319,9 @@ def stacks(devices, owners: dict, user, tenant, accessories=()) -> tuple[list, d
                         continue
                     a, b = (end(*e) for e in ends)
                     if a and b:
-                        color, ctype, label = cables[cable]
-                        links.append((a, b, False, cable, color, ctype, label or "", kind))
+                        color, ctype, label, metres = cables[cable]
+                        links.append((a, b, False, cable, color, ctype, label or "", kind,
+                                      metres))
                 continue
             order = [(m[0], [p[0] for p in stack_ports[m[0]]]) for m in members]
             derived = (ring(order, closed=s["closed"]) if kind == "data"
@@ -295,22 +329,25 @@ def stacks(devices, owners: dict, user, tenant, accessories=()) -> tuple[list, d
             for (ad, ap), (bd, bp) in derived:
                 a, b = end(ad, ap), end(bd, bp)
                 if a and b:
-                    links.append((a, b, True, None, "", "", "", kind))
+                    links.append((a, b, True, None, "", "", "", kind, None))
 
         if not any(m[0] in drawn for m in visible):
             continue
-        out_stacks.append({
-            "id": str(vc_id), "name": s["name"], "master": master,
-            "members": [{"device": m[0], "name": m[1], "position": m[2]} for m in visible],
-            "links": [{
-                "a": {"device": a[0], "port": a[1], "name": a[2]},
-                "b": {"device": b[0], "port": b[1], "name": b[2]},
+        link_docs = [{
+                "a": {"device": a[0], "port": a[1], "name": a[2], "id": a[4]},
+                "b": {"device": b[0], "port": b[1], "name": b[2], "id": b[4]},
                 "kind": kind,
                 "derived": derived,
                 "cable": str(cable) if cable else None,
                 "color": color.lower() if _HEX.match(color or "") else None,
                 "label": label,
-            } for a, b, derived, cable, color, _ct, label, kind in links],
+                "length_m": metres,
+                "parts": [],
+            } for a, b, derived, cable, color, _ct, label, kind, metres in links]
+        out_stacks.append({
+            "id": str(vc_id), "name": s["name"], "master": master,
+            "members": [{"device": m[0], "name": m[1], "position": m[2]} for m in visible],
+            "links": link_docs,
         })
         for m in visible:
             if m[0] in drawn:
@@ -319,12 +356,15 @@ def stacks(devices, owners: dict, user, tenant, accessories=()) -> tuple[list, d
                     "master": master == m[0],
                     "master_name": names.get(master) if master else None,
                 }, "stack_plugs": [], "stack_ends": {}}
-        for a, b, derived, _cable, color, ctype, label, kind in links:
-            for side, (dev, anchor, port, ptype) in (("a", a), ("b", b)):
+        for doc, (a, b, derived, _cable, color, ctype, label, kind, _m) in zip(
+                link_docs, links, strict=True):
+            for side, (dev, anchor, port, ptype, _pk) in (("a", a), ("b", b)):
                 if not derived:
                     side = sides.get((dev, kind, port), side)
                 module, head = (_heads(accessories, maps, ptype, ctype, label)
                                 if accessories else (None, None))
+                if head is not None and not doc["parts"]:
+                    doc["parts"] = [str(p) for p in (head.parts or [])]
                 entry = per[dev]
                 entry["stack_ends"][port] = derived
                 entry["stack_plugs"].append({

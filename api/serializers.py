@@ -7030,6 +7030,10 @@ class CableSerializer(TableSerializerMixin, CustomFieldsSerializerMixin, StatusS
             instance.length_source = ""
         for k, v in validated_data.items():
             setattr(instance, k, v)
+        # An edit makes an auto-connect cable an ordinary one: the stack no
+        # longer manages it (api.stack_cables).
+        instance.auto_source = ""
+        instance.auto_chassis = None
         instance.save()
         # Every rewritten end's old terminations go before any new one is
         # made: a port moving from one end to the other (a swap) would
@@ -7053,8 +7057,10 @@ class CableSerializer(TableSerializerMixin, CustomFieldsSerializerMixin, StatusS
                   "length", "length_unit", "length_source", "color", "description",
                   "fiber_count", "strands", "is_fiber", "pve_vnet",
                   "a_terminations", "b_terminations", "a", "b",
+                  "auto_source", "auto_chassis",
                   "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
         read_only_fields = ["id", "numid", "is_fiber", "length_source",
+                            "auto_source", "auto_chassis",
                             "created_at", "updated_at"]
 
 
@@ -11576,6 +11582,37 @@ class VirtualChassisSerializer(
             return len(obj.members.all())
         return obj.members.count()
 
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        self._check_auto_connect(attrs)
+        return attrs
+
+    def _check_auto_connect(self, attrs):
+        """Turning auto-connect on or off makes and deletes cables: the
+        caller needs cable add and delete at every member's site."""
+        from auth_api import rbac
+
+        from .views import _get_active_tenant
+
+        changed = [f for f in ("auto_connect_stack", "auto_connect_power")
+                   if f in attrs and bool(attrs[f]) != bool(
+                       getattr(self.instance, f, False))]
+        request = self.context.get("request")
+        if not changed or request is None:
+            return
+        user = request.user
+        tenant = _get_active_tenant(request)
+        sites = set()
+        if self.instance is not None:
+            sites = {s for s in self.instance.members.values_list("site_id", flat=True) if s}
+        for action in ("add", "delete"):
+            scope = rbac.site_scope(user, tenant, "cable", action)
+            ok = rbac.has_action(user, tenant, "cable", action) and (
+                scope is None or sites <= scope)
+            if not ok:
+                raise serializers.ValidationError({changed[0]: (
+                    f"Needs cable {action} rights at the stack's sites.")})
+
     def validate_master_id(self, value):
         # The master must be (or become) a member of this chassis.
         if value is not None and self.instance is not None:
@@ -11588,6 +11625,7 @@ class VirtualChassisSerializer(
     class Meta:
         model = VirtualChassis
         fields = ["id", "name", "domain", "master", "master_id", "stack_topology",
+                  "auto_connect_stack", "auto_connect_power",
                   "members", "member_count", "primary_ip", "oob_ip",
                   "description", "comments",
                   "tags", "tag_ids", "custom_fields",

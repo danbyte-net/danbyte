@@ -3178,6 +3178,16 @@ class VirtualChassis(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMi
         help_text="How the members are cabled: a ring closes back from the last "
                   "member to the first, a chain does not.",
     )
+    # Auto-connect (api.stack_cables): Danbyte records the ring derived from
+    # member order as real cables and keeps them in step with the members.
+    auto_connect_stack = models.BooleanField(
+        default=False, db_default=False,
+        help_text="Record the stack ports' ring as cables and keep it in sync.",
+    )
+    auto_connect_power = models.BooleanField(
+        default=False, db_default=False,
+        help_text="Record the StackPower ports' rings as cables and keep them in sync.",
+    )
     description = models.CharField(max_length=255, blank=True, default="")
     comments = models.TextField(blank=True, default="")
 
@@ -5172,6 +5182,17 @@ class Cable(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         max_length=8, blank=True, default="", db_default="",
         validators=[validate_pve_vnet],
         help_text="Proxmox SDN VNet id, e.g. c0042.",
+    )
+    #: A cable a stack's auto-connect made and manages (api.stack_cables):
+    #: ``stack`` (the data ring) or ``stack-power``, with the stack. Any edit
+    #: through the API clears both - the cable is then an ordinary one.
+    AUTO_SOURCES = [("", "None"), ("stack", "Stack ring"), ("stack-power", "StackPower ring")]
+    auto_source = models.CharField(
+        max_length=16, blank=True, default="", db_default="", choices=AUTO_SOURCES,
+    )
+    auto_chassis = models.ForeignKey(
+        "VirtualChassis", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="auto_cables",
     )
 
     class Meta:

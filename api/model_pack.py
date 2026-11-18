@@ -814,6 +814,7 @@ def import_pack(tenant, files: PackFiles, *, dry_run: bool = True,
         add_module_power_ports,
         import_devicetype_yaml,
         import_moduletype_yaml,
+        interface_type_notes,
     )
     from .models import DeviceType, ModuleType
     from .port_plugs import ACCESSORY_DIR, apply_accessory
@@ -916,6 +917,9 @@ def import_pack(tenant, files: PackFiles, *, dry_run: bool = True,
                     # (a C9300's StackPower ports).
                     if kind == "device-type" and (n := add_device_power_ports(obj, data)):
                         tr.notes.append(f"power-ports: added {n}.")
+                    # Reported, not changed: the type's own ports win.
+                    tr.notes += interface_type_notes(obj, data,
+                                                     module=kind == "module-type")
                     if kind == "device-type":
                         tr.notes += apply_bay_modules(obj, data)
                         tr.notes += apply_rack_mount(obj, data)

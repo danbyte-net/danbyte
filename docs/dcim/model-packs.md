@@ -690,7 +690,20 @@ model3d:
 medium (not fibre, copper or DAC), so the head is never picked for a data
 port's cable, and the pack check doesn't flag it. Danbyte picks the head by the stack port's type (`fits`): the part whose
 `parts` lists a recorded cable's label first, else the first by vendor and
-name. The run is drawn between the two heads' `cable` empties in the head's
+name. A port of a generic family type takes a family member's head when no
+part fits it exactly - most device-type libraries type StackWise ports plain
+`cisco-stackwise`:
+
+| Port type | Takes a head that fits, in this order |
+|---|---|
+| `cisco-stackwise` | `cisco-stackwise-480`, `-1t`, `-320`, `-160`, `-80` |
+| `extreme-summitstack` | `extreme-summitstack-512`, `-256`, `-128` |
+
+The head's `parts` are also the lengths [Record
+cable](virtual-chassis.md#record-a-derived-cable) offers and the label
+[auto-connect](virtual-chassis.md#auto-connect) gives a cable (its shortest
+part): a part number ending in a plain length (`-50CM`, `-1M`, `-150CM`)
+sets the cable's length too. The run is drawn between the two heads' `cable` empties in the head's
 `cable:` profile: one round jacket, or a zip cord's or ribbon's jackets side
 by side along the empties' ±X, untwisted, hanging in a loop behind the
 stack ([how a cable hangs](virtual-chassis.md#in-3d)). An `END_BAND` ring on
@@ -981,6 +994,14 @@ A pack can also be imported with a management command, from a folder or a
   gets it added, `{position}`-named on a type whose interfaces are; its
   existing devices gain it with the type's **Sync devices**. Nothing else
   on a matched type changes.
+- An interface template whose type differs from the YAML's is reported,
+  not changed: `StackPort{position}/1: type cisco-stackwise here,
+  cisco-stackwise-480 in the pack - set the template's type and sync the
+  type to update.` Change the template's type on the device type, then
+  **Sync devices** carries it to the type's devices. A generic
+  `cisco-stackwise` port still takes a StackWise-480 head (see
+  [Stack-cable heads](#stack-cable-heads)), so the note matters only where
+  the exact type does.
 - The matched or created type gets the pack's model and far model,
   replacing what it had, with the scan's report per type. A hand-made port
   mapping on the replaced model is cleared.

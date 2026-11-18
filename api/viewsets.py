@@ -4534,6 +4534,17 @@ class DeviceViewSet(
             count_virtual=port_count_virtual(_get_active_tenant(request)),
         ))
 
+    @action(detail=True, methods=["get"], url_path="stack-links")
+    def stack_links(self, request, pk=None):
+        """The device's stack ports in a ring derived from member order, by
+        port id, with the far end (``api.stack_cables.derived_for_device``)
+        - for the port pages and tabs, where no cable is recorded."""
+        from .stack_cables import derived_for_device
+
+        device = self.get_object()
+        return Response({"ports": derived_for_device(
+            device, request.user, _get_active_tenant(request))})
+
     @action(detail=False, methods=["get"], url_path="port-utilization")
     def port_utilization_rollup(self, request):
         """Every device with counted ports + its fill level, for the capacity

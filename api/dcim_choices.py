@@ -317,6 +317,19 @@ STACK_INTERFACE_TYPES: frozenset[str] = frozenset(
     v for g, opts in INTERFACE_TYPE_CHOICES if g == "Stacking" for v, _ in opts
 )
 
+#: Generic stacking types and the members of their family, in the order a
+#: stack-cable head is picked for a port of the generic type when no part
+#: fits it exactly (api.stack_links.head_for): most device-type libraries
+#: type a StackWise port plain ``cisco-stackwise`` while a pack's head fits
+#: ``cisco-stackwise-480``. Cisco: the C9300's 480 and 1T before the older
+#: generations; Extreme: newest first.
+STACK_TYPE_FAMILIES: dict[str, tuple[str, ...]] = {
+    "cisco-stackwise": ("cisco-stackwise-480", "cisco-stackwise-1t", "cisco-stackwise-320",
+                        "cisco-stackwise-160", "cisco-stackwise-80"),
+    "extreme-summitstack": ("extreme-summitstack-512", "extreme-summitstack-256",
+                            "extreme-summitstack-128"),
+}
+
 #: The connector a transceiver takes (InventoryItem.connector).
 TRANSCEIVER_CONNECTOR_CHOICES: Choices = [
     ("lc", "LC"),

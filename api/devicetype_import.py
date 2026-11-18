@@ -610,6 +610,33 @@ def add_device_power_ports(dt, data: dict) -> int:
     return len(made)
 
 
+def interface_type_notes(owner, data: dict, *, module: bool = False) -> list[str]:
+    """Import notes for a matched type whose interface templates' types
+    differ from its YAML's ``interfaces:`` - reported, never changed (a
+    library type's ``cisco-stackwise`` port against a pack's
+    ``cisco-stackwise-480``, which picks the stack-cable head). A device
+    type whose interfaces carry ``{position}`` matches the names
+    positionized as its import did."""
+    rows = data.get("interfaces")
+    rows = [r for r in rows if isinstance(r, dict)] if isinstance(rows, list) else []
+    if not rows:
+        return []
+    have = dict(owner.interface_templates.values_list("name", "type"))
+    stacked = not module and any("{position" in n for n in have)
+    notes: list[str] = []
+    for r in rows:
+        name = str(r.get("name") or "").strip()
+        want = str(r.get("type") or "").strip().lower()
+        if not name or not want:
+            continue
+        if name not in have and stacked:
+            name = positionize(name)
+        if name in have and (have[name] or "") != want:
+            notes.append(f"{name}: type {have[name] or 'none'} here, {want} in the pack "
+                         f"- set the template's type and sync the type to update.")
+    return notes
+
+
 def add_module_power_ports(mt, data: dict) -> int:
     """Power port templates from a module-types YAML's ``power-ports:`` (a
     PSU's inlet; ``{module}`` kept) that ``mt`` lacks by name. Returns the
