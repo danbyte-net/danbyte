@@ -49,6 +49,8 @@ Fields:
   A change to the height, width or full depth that would put a racked device
   of the type over another or past the top of its rack is refused, naming the
   devices.
+- **Rack mounting** - its rack ears and where they fit
+  (`rack_mount`, see [Rack mounting](#rack-mounting))
 - **Airflow**, **weight** - hardware facts (airflow also exists per device as
   an override). The airflow directions - front to rear, rear to front, left
   to right, right to left, passive, mixed - are the `airflow` list of
@@ -83,6 +85,47 @@ Device types accept [custom fields](../features/tags-and-custom-fields.md)
 (target **Device types**) - handy for catalog-level attributes such as a
 warranty window or an end-of-life date that belongs to the model, not the
 individual device.
+
+### Rack mounting {#rack-mounting}
+
+The **Rack mounting** card says how the hardware sits on a rack's rails:
+
+- **Rack ears** - unticked for gear with none (shelf gear, a server on a
+  sliding rail kit, free-standing boxes).
+- **Front**, **Mid**, **Rear (mm)** - the ear positions the install guide
+  offers, each as the faceplate's distance in front of the ear plane,
+  positive toward the rack front: `0` for ears flush with the faceplate,
+  `220` for ears fitted mid-chassis, a negative value for a recessed front
+  fitting. Leave a position blank when the hardware doesn't offer it.
+- **Default position** - the fitting it ships with.
+- **Rails** - none, fixed or sliding.
+
+Not recorded, a type has front ears flush with its faceplate, as every type
+had before. A device of the type picks its **Ear position** on the device
+form (shown when the type offers more than one); blank takes the type's
+default, and a position the type doesn't offer is refused. A type can't
+drop a position its devices are fitted at. The device page's Rack card shows
+the fitting.
+
+The library and pack import read a `rack_mount:` block (the export spec's
+§8 "Rack mounting"):
+
+```yaml
+rack_mount:
+  ears: true
+  positions: { front: 0, mid: 220, rear: 430 }
+  default: front
+  rails: none
+```
+
+A block that can't be used is dropped and reported. The API carries the
+block as `rack_mount` on the type, and on a device `ear_position` plus a
+read-only `rack_mount`: `{ears, position, offset_mm, shift_mm, rails}`,
+where `shift_mm` is how far the device's 3D model stands in front of the
+rail (its origin is the front of its ears in the front position). The 3D
+racks don't move devices by it yet.
+
+!!! note "New in 0.21"
 
 ### Picking an icon {#icon-picker}
 

@@ -55,8 +55,10 @@ devicetype-library's `rack-types/` folder - single files, pasted YAML, uploads,
 or a `/tree/` link to a manufacturer - through the same import the device types
 use. The model, width, height, starting unit, top-down numbering, outer width
 and depth (converted from inches when the file uses them) and load budget come
-across; the form factor, outer height, the rack's own weight and mounting depth
-aren't held on a rack type, and the import report lists them as skipped. The
+across, and the form factor and mounting depth become the
+[Look](#look)'s frame and rail depth. The outer height and the rack's own
+weight aren't held on a rack type, and the import report lists them as
+skipped. A file may also carry a `look:` block with the Look's fields. The
 library has no power or cooling figures, but a file of your own may add
 Danbyte's keys: `max_power_w` and `cooling_capacity_w` (whole watts) and
 `cooling_capability` (`air`, `hybrid`, `liquid` or `immersion`). A value that
@@ -79,6 +81,54 @@ devices at the rack's site** - without it the rack is refused wholly (no
 half-created rack). The stamp is create-only: re-saving a rack never
 duplicates its strips. Deleting a rack type never touches racks or devices
 (and is refused with a conflict while racks still use it).
+
+### Look
+
+The **Look** card on the rack type and rack forms says what the
+[3D view](#the-rack-in-3d) builds the rack as:
+
+| Field | Values | Default |
+|---|---|---|
+| Frame | Cabinet, 4-post, 2-post, Wall cabinet | Cabinet |
+| Rail depth | front to rear rail, mm | derived from the outer depth |
+| Front door, Rear door | None, Perforated, Glass, Solid, Split perforated, Split solid | Perforated / Split perforated |
+| Hinge | Left, Right (as you face the door) | Left |
+| Side panels | yes / no | yes |
+| Top | Vented, Solid, Fans, Brush | Vented |
+| Base | Plinth, Casters, Feet | Plinth |
+| Colour | Black, Grey, White or a custom hex colour | Black |
+| Kit | a [rack kit](model-packs.md#rack-kits) from a model pack | none: Danbyte's own drawing |
+| Blanking fill | yes / no | no |
+
+Doors, hinge, side panels and top apply to cabinets and wall cabinets; an
+open 4-post or 2-post frame has none.
+
+A rack type holds a value for each. A **rack** holds the same fields as
+overrides: left blank (the form's *Type's* option) a field takes its rack
+type's value, so changing the type changes every rack that didn't set it;
+a rack without a type takes the defaults. The rack page's Look card shows
+the values the rack is drawn with, the inherited ones muted. A rack can set
+a kit of its own but can't take away its type's; pick a kit-less rack type
+for that.
+
+**Blanking fill** draws blanking panels in the rack's empty front units in
+3D, so a cabinet looks finished. They are drawing only: never devices,
+never counted in space or utilisation. A pack's `BLANK-1U` / `BLANK-2U`
+[accessory types](model-packs.md#rack-accessories) give them their look,
+for a reader who may view pluggables; otherwise they are plain panels.
+A blanking panel you record as a device stays a real device.
+
+The API carries the fields under their names (`frame`, `rail_depth_mm`,
+`front_door`, `rear_door`, `hinge`, `side_panels`, `top`, `base`, `colour`,
+`kit` / `kit_id`, `blanking_fill`) on the rack type, the rack (null =
+the type's) and the `rack_type` a rack embeds. A rack's `look` is the
+resolved set, with `inherited` naming the fields that came from its type
+or the defaults. Rack types and racks are audited, Look changes included.
+
+!!! note "New in 0.21"
+    Racks used to be one drawn cabinet with smoked-glass doors. A rack with
+    no Look of its own now draws its type's, else the defaults above:
+    perforated doors, split at the rear.
 
 #### Syncing a rack with its type
 
@@ -437,6 +487,17 @@ plan's 3D View menu on this device. **Pluggables** and **Stacks** choose
 how the parts in model ports and a switch stack's
 [stack cables](virtual-chassis.md#in-3d) draw (**Show**, **Ghost** or
 **Hide**, kept in this browser). Other cables are not drawn in this view yet.
+
+The cabinet is built from its [Look](#look): its frame, doors, side
+panels, top, base and colour, from its rack kit's parts when it has one.
+**Click a door to open it**: it swings out on its hinge side, and a split
+door's leaves open one at a time; click it again to close it. Open doors
+are yours alone and last until the page reloads - nothing is saved. With
+reduced motion set in the system, doors snap open. A closed door catches
+the click, so open it before picking a device behind it, or use **Cutaway**
+or **X-ray**, which draw no doors. The shell modes keep their meaning:
+**Solid** draws the doors and panels, **Cutaway** the frame only, **X-ray**
+the frame up close and an outline far off.
 
 Racks roll up **power**: supply is every *primary* power
 feed delivered to the rack (volts × amps × max-utilisation%,

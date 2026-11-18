@@ -28,6 +28,10 @@ models/Cisco/C9500-48Y4C.far.glb            # its far-distance copy (optional)
 models/Cisco/C9K-PWR-650WAC-R.glb           # a module
 accessory-types/Generic/RJ45-PLUG.yaml      # a plug for cabled ports
 models/Generic/RJ45-PLUG.glb
+rack-kits/Generic/CABINET/kit.yaml          # a rack style, as a kit of parts
+models/Generic/CABINET.kit.glb
+models/Generic/CABINET.far.glb
+rack-types/Generic/Generic-42U-600x1000.yaml
 ```
 
 The `model3d:` block of a type's YAML:
@@ -527,7 +531,9 @@ render's module part number may then be a module type the tenant has.
 |---|---|---|
 | Archive | A refusal from [the limits above](#security-limits). | |
 | `pack.yaml` | Missing; no `name`, `id`, `version` or `license`; `types` lists a part with no YAML. | No `types`; a YAML it doesn't list. |
-| Accessory types | No `name`; a `kind` other than `plug`, `transceiver` or `cord`; no usable `fits`; `model3d.file` missing, outside the pack or not a valid `.glb`. | A `fits` entry that isn't a type slug; `parts` not a list, or an entry that isn't a part number; a `wavelength_nm` that isn't a whole number of nm; a `cable:` block that isn't usable (unknown `profile`, no `jacket_mm`, a size that isn't a positive number of mm, a ribbon without a `count` of 2-8 or a `pitch_mm` at least its jacket, a key Danbyte doesn't read), a `min_bend_by_part` entry that isn't a positive size or names a part the accessory doesn't list, or one on a transceiver; a part number two accessory types list; over the triangle budget (a transceiver 1,500, a cord or plug 2,000); a transceiver with a connector but no `port:<connector>` empty; a cord with a `cable:` block but no `cable` empty; a part `types: accessory:` doesn't list. |
+| Accessory types | No `name`; a `kind` other than `plug`, `transceiver`, `cord`, `blanking`, `cable-manager` or `shelf`; no usable `fits` (a rack part: no `u_height` of 1 to 10); `model3d.file` missing, outside the pack or not a valid `.glb`. | A `fits` entry that isn't a type slug; `parts` not a list, or an entry that isn't a part number; a `wavelength_nm` that isn't a whole number of nm; a `cable:` block that isn't usable (unknown `profile`, no `jacket_mm`, a size that isn't a positive number of mm, a ribbon without a `count` of 2-8 or a `pitch_mm` at least its jacket, a key Danbyte doesn't read), a `min_bend_by_part` entry that isn't a positive size or names a part the accessory doesn't list, or one on a transceiver; a part number two accessory types list; over the triangle budget (a transceiver 1,500, a cord or plug 2,000); a transceiver with a connector but no `port:<connector>` empty; a cord with a `cable:` block but no `cable` empty; a part `types: accessory:` doesn't list. |
+| Rack kits | No `name`; a `frame` other than `cabinet`, `4-post`, `2-post` or `wall-cabinet`; `model3d.file` or `far` missing from the pack or not a valid `.glb`; no `post:segment` in the model. | No far box; over the budget (the kit 20,000 triangles, its far box 2,000); a stretched part without `danbyte_ref_mm`, or a `danbyte_stretch` that isn't `x`, `y`, `z` or a mix; a door without its `hinge` empty; a part name Danbyte doesn't read; a `colours` entry that isn't a hex colour; a kit `types: rack-kit:` doesn't list. |
+| Rack types | No `manufacturer` or `model`; a `look.kit` that is no kit in the pack (or the tenant). | A `look:` value Danbyte doesn't know; a rack type `types: rack-type:` doesn't list. |
 | Models | Not a valid `.glb`; over the triangle budget (chassis 150,000, far 15,000; module 30,000, far 3,000) or the size budget (8 MB, far 1 MB). | A model no YAML names; no far copy on a chassis or on a module of 5,000 triangles or more. |
 | Names | `bay:` with no module bay in the YAML; `bay:` in a module; `empty:` without its `bay:`; `port:` with no interface or other port (console, power, aux, front or rear port) in the YAML, `led:port:` with no interface (module names with `{module}`, as written); a name twice; an LED not on the `LED` material; the far copy missing a `bay:`, `empty:` or `led:` of the full model. | A module bay without a `bay:`; interfaces without a `port:`. |
 | LEDs | A `leds:` entry that doesn't parse or names no `led:` in the model; on a module type, a `led:` without an entry. | On a chassis, a `led:` without an entry (it stays off); a glob matching nothing. |
@@ -818,6 +824,115 @@ editor change its fits, part numbers, standard, wavelength, reach and
 cable, or replace its model. A field changed there is kept by the next
 pack import ([Changed by hand](pluggables.md#changed-by-hand)).
 
+## Rack kits {#rack-kits}
+
+Danbyte builds every rack from its own data - height in U, rail width,
+outer width and depth, rail depth and its [Look](racks.md#look) - so a
+pack doesn't carry one model per rack size. It carries a **rack kit**: one
+style of rack as named parts, which the 3D view assembles to each rack
+(the export spec §14).
+
+```yaml
+# rack-kits/Generic/CABINET/kit.yaml
+name: CABINET
+frame: cabinet                # cabinet | 4-post | 2-post | wall-cabinet
+model3d:
+  file: models/Generic/CABINET.kit.glb
+  far: models/Generic/CABINET.far.glb
+widths_mm: [600, 800]
+depths_mm: [1000, 1200]
+colours: { black: "#1b1c1e", grey: "#c9ccce" }
+```
+
+`pack.yaml` lists kits under `types: rack-kit: [CABINET, …]`.
+
+The kit's model holds every part as a named object, modelled in place for a
+600 × 1000 mm, 42U reference cabinet:
+
+| Part | How the 3D view uses it |
+|---|---|
+| `post:segment` | Exactly 1U of a rail post. Repeated for every unit at each post - front and rear, left and right (mirrored), two mid-depth posts on a 2-post frame - its rail face on the rack's rail plane. Every segment of a rack draws in one instanced draw call. Required. |
+| `post:top`, `post:bottom`, `beam:width`, `beam:depth`, `corner:top`, `corner:bottom` | The frame. |
+| `top:vented`, `top:solid`, `top:fans`, `top:brush` | The roof the Look's Top names (else solid, else vented). |
+| `base:plinth`, `base:casters`, `base:feet`, `base:plate` | The base the Look names; `base:plate` for a 2-post frame. |
+| `side:panel` | Side panels, in solid mode, when the Look has them. One modelled is mirrored for the other side. |
+| `door:perforated`, `door:glass`, `door:solid` | The leaf the door type names; a split door is two half-width leaves. The rear door is the front one turned round. |
+| `door:handle`, `door:hinge`, `door:lock` | Hardware, swinging with its leaf. |
+| `wall:bracket` | A wall cabinet's mounting plate. |
+
+Every part is fitted to the rack: one that isn't stretched keeps its size
+and moves with the nearer edge of the cabinet (a corner, a caster); a part
+with the custom property `danbyte_stretch` (`x`, `y`, `z` in Blender's axes,
+or a mix) is stretched along those axes so both its ends keep their distance
+to the cabinet's edges. Its tiling textures are rescaled so holes keep their
+real size: the repeat is taken as covering `danbyte_ref_mm` (1000 mm by
+default), or one tile per `danbyte_tile_mm` on a material without a
+transform. Objects with Blender's `.001` suffixes are the same part. The
+`FRAME` material takes the rack's colour; everything else keeps its own.
+A door's `hinge` empty gives its hinge side as modelled; Danbyte mirrors it
+for the other. `label:u` isn't drawn: the U numbers are Danbyte's own.
+
+The far box (`model3d.far`) is fitted to the rack's outer box and drawn at
+middle distance; far off the room draws its plain box, as for every rack.
+Without a kit, or while it loads, a rack is Danbyte's own drawing of its
+Look. A reader who may view rack types loads one copy of a kit for the
+whole room (`/api/rack-kits/{id}/model/`); anyone else who may view the
+rack loads it through the rack (`/api/racks/{id}/kit-model/`).
+
+Rack kits are a tenant's own, like accessory types, under the rack type
+grant: view to list and read them, delete to delete one (its rack types
+and racks then draw Danbyte's rack). There is nothing to edit by hand: a
+re-import replaces them. `GET /api/rack-kits/` lists them (`frame`,
+`search`), `GET /api/rack-kits/{id}/model/` serves the parts and
+`?far=1` the far box.
+
+### Rack types from a pack
+
+```yaml
+# rack-types/Generic/Generic-42U-600x1000.yaml
+manufacturer: Generic
+model: Generic 42U 600x1000 cabinet
+u_height: 42
+width: 19
+outer_width_mm: 600
+outer_depth_mm: 1000
+rail_depth_mm: 740
+look:
+  kit: CABINET
+  front_door: perforated
+  rear_door: split-perforated
+  hinge: left
+  side_panels: true
+  top: vented
+  base: plinth
+  colour: black
+```
+
+A rack type file is a [library rack type](racks.md#rack-types) with
+`outer_width_mm` / `outer_depth_mm` (millimetres, beside the library's
+`outer_width` / `outer_unit`), `rail_depth_mm` and the `look:` block.
+`pack.yaml` lists them under `types: rack-type: [<model>, …]`.
+
+### Rack accessories {#rack-accessories}
+
+Three more accessory kinds are rack parts, not port parts: `blanking`
+(`BLANK-1U`, `BLANK-2U`), `cable-manager` (`CM-1U-BRUSH`, `CM-2U-FINGER`…)
+and `shelf` (`SHELF-1U-FIXED`, `SHELF-2U-SLIDING`). They fit no port, so
+they have no `fits:`, and give their height instead:
+
+```yaml
+name: BLANK-1U
+kind: blanking
+u_height: 1
+model3d:
+  file: models/Generic/BLANK-1U.glb
+```
+
+Their origin is a device's: the front of the ears. A rack's
+[blanking fill](racks.md#look) draws the blanking parts in its empty units.
+Cable managers and shelves are imported and listed on the Pluggables page;
+the 3D view doesn't place them yet.
+
 ## Importing a pack
 
 A pack can also be imported with a management command, from a folder or a
@@ -846,6 +961,11 @@ A pack can also be imported with a management command, from a folder or a
   updated, and get the pack's model. They are reported as *accessory type*
   rows. A field [changed by hand](pluggables.md#changed-by-hand) on the
   Pluggables page - and a model replaced there - is kept, with a note.
+- Rack kits are matched by folder (vendor) and name, created or updated,
+  and get the pack's kit and far models (*rack kit* rows). Rack types are
+  matched by name: a new one is created from its YAML; a matched one gets
+  the YAML's Look, nothing else (*rack type* rows). A `look.kit` names a
+  kit of the pack - imported first - or one the tenant has.
 - Models no YAML names are listed and not imported.
 - A device type with [rendered photos](#rendered-photos) gets them as its
   faces, with its reference modules, ports and LEDs. A face uploaded by

@@ -32,6 +32,11 @@ shows them all.
 The filter rail narrows by kind, connector, fits, pack and in use. The
 search box matches the name, vendor, standard and part numbers.
 
+Rack parts a pack brings - blanking panels, cable managers and shelves
+([rack accessories](model-packs.md#rack-accessories)) - are listed here
+too, by kind. They fit no port; a blanking panel is what a rack's
+[blanking fill](racks.md#look) draws.
+
 ## A pluggable's page
 
 **Overview:**
