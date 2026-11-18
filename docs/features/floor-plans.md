@@ -716,7 +716,9 @@ ceiling, underfloor runs sit beneath the slab) and zones tint the floor.
 - **Nothing is cut off up close**: the camera's near clipping distance
   follows the nearest surface in view, so a cabinet door beside the camera
   draws whole however far away the orbit centre is, and the far distance
-  grows with a zoom-out.
+  grows with a zoom-out. It never comes closer than 5 cm (in the device
+  viewers, half a millimetre), so floor zones and door panels don't
+  flicker against what they lie on.
 - **Cabinet shell** (View menu, 3D): a three-position mode, not a checkbox.
   **Solid** closes every cabinet - side panels plus smoked-glass doors
   front and rear, so the gear reads as silhouettes - the room as a visitor

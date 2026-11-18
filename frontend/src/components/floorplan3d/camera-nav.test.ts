@@ -9,6 +9,7 @@ import {
   MODEL_MAX_POLAR,
   adaptiveFar,
   adaptiveNear,
+  NEAR_FAR_RATIO,
   classifyWheel,
   clickPivot,
   easeShare,
@@ -269,27 +270,35 @@ describe("markerOpacity", () => {
 })
 
 describe("adaptiveNear - the near plane stays in front of what is near", () => {
-  it("scales with the target distance when nothing is closer", () => {
-    expect(adaptiveNear({ toTarget: 10 })).toBeCloseTo(0.2)
+  it("scales with the target distance when nothing is closer, in steps", () => {
+    // 2% of 10 m is 0.2 m: the power of two under it.
+    expect(adaptiveNear({ toTarget: 10 })).toBe(0.125)
+    expect(adaptiveNear({ toTarget: 11 })).toBe(0.125)
   })
 
   // The sliced doors: the camera beside a cabinet, the target 20 m off. A
   // near plane from the target alone (0.4 m) cut the door 30 cm away.
   it("never reaches past a surface nearer than the target", () => {
     const fromTargetOnly = adaptiveNear({ toTarget: 20 })
-    expect(fromTargetOnly).toBeGreaterThan(0.3)
+    expect(fromTargetOnly).toBeGreaterThan(0.2)
     const near = adaptiveNear({ toTarget: 20, toSurface: 0.3 })
     expect(near).toBeLessThan(0.3)
-    expect(near).toBeCloseTo(0.075)
+    expect(near).toBe(0.125)
   })
 
   it("stays under half the camera's height over the floor", () => {
-    expect(adaptiveNear({ toTarget: 500, height: 2 })).toBeCloseTo(1)
+    expect(adaptiveNear({ toTarget: 500, height: 2 })).toBe(1)
   })
 
-  it("has a floor of its own", () => {
-    expect(adaptiveNear({ toTarget: 0, toSurface: 0 })).toBe(0.005)
+  // The flicker: a near plane of millimetres against a far of hundreds of
+  // metres left floor zones and door infill fighting for depth.
+  it("keeps a floor of its own and of the far plane", () => {
+    expect(adaptiveNear({ toTarget: 0, toSurface: 0 })).toBe(0.05)
     expect(adaptiveNear({ toTarget: 0, min: 0.0005 })).toBe(0.0005)
+    expect(adaptiveNear({ toTarget: 1, toSurface: 0.01, far: 2000 })).toBe(0.1)
+    expect(
+      2000 / adaptiveNear({ toTarget: 3, toSurface: 0, far: 2000 })
+    ).toBeLessThanOrEqual(NEAR_FAR_RATIO)
   })
 })
 

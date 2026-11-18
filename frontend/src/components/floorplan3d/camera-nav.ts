@@ -259,21 +259,34 @@ export function markerOpacity(
  * - `toSurface`: distance to the nearest surface the rig has seen in view
  *   (a quarter of it), or Infinity when unknown.
  * - `height`: the camera's height over the floor (half of it), or Infinity.
+ * - `far`: the far plane - the near plane never drops below 1/20,000 of
+ *   it, or layers a few millimetres apart (floor zones, a door's infill on
+ *   its frame) fight for the depth buffer and flicker.
+ *
+ * The result steps in powers of two, so it doesn't change every frame as
+ * the camera moves (a depth mapping that shifts each frame makes close
+ * layers shimmer).
  */
 export function adaptiveNear(opts: {
   toTarget: number
   toSurface?: number
   height?: number
   min?: number
+  far?: number
 }): number {
-  const near = Math.min(
+  const want = Math.min(
     25,
     opts.toTarget * 0.02,
-    (opts.toSurface ?? Infinity) * 0.25,
+    (opts.toSurface ?? Infinity) * 0.5,
     Math.abs(opts.height ?? Infinity) * 0.5
   )
-  return Math.max(opts.min ?? 0.005, near)
+  const floor = Math.max(opts.min ?? 0.05, (opts.far ?? 0) / NEAR_FAR_RATIO)
+  if (!(want > floor)) return floor
+  return Math.max(floor, 2 ** Math.floor(Math.log2(want)))
 }
+
+/** The widest far : near the depth buffer resolves cleanly at room scale. */
+export const NEAR_FAR_RATIO = 20000
 
 /** The far plane: what the scene set, or further when the camera has
  * zoomed out beyond it - zoom has no limit, so neither may the far plane. */

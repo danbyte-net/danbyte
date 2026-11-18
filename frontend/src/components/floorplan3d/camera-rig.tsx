@@ -229,7 +229,7 @@ export function CameraRig({
   keyboard = true,
   dollyThrough = true,
   floor = true,
-  minNear = 0.005,
+  minNear = 0.05,
 }: {
   target: [number, number, number]
   /** How far off the floor plane still counts as under the cursor (m) -
@@ -1159,18 +1159,19 @@ export function CameraRig({
           toSurface = Math.max(0, pr.depth - cam.position.distanceTo(pr.from))
         }
       }
-      const near = adaptiveNear({
-        toTarget,
-        toSurface,
-        height: opts.current.floor ? cam.position.y : Infinity,
-        min: opts.current.minNear,
-      })
       // A far the scene set (a viewer re-framing) becomes the base.
       if (!farRef.current || farRef.current.set !== cam.far)
         farRef.current = { base: cam.far, set: cam.far }
       const fr = farRef.current
       const far = adaptiveFar(toTarget, fr.base)
-      if (near < cam.near || near > cam.near * 1.2 || far !== cam.far) {
+      const near = adaptiveNear({
+        toTarget,
+        toSurface,
+        height: opts.current.floor ? cam.position.y : Infinity,
+        min: opts.current.minNear,
+        far,
+      })
+      if (near !== cam.near || far !== cam.far) {
         cam.near = near
         cam.far = far
         fr.set = far
