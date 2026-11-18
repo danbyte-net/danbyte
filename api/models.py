@@ -42,6 +42,10 @@ from .package_ids import validate_cpe, validate_purl
 from .spdx import validate_license_expression
 from .speed import normalize_speed
 from .pve_vnet import validate_pve_vnet
+from .rack_look import (
+    BASE_CHOICES, DOOR_CHOICES, FRAME_CHOICES, HINGE_CHOICES, TOP_CHOICES,
+    validate_rack_colour,
+)
 from core.models import (
     CustomFieldsMixin,
     Organization,
@@ -721,6 +725,14 @@ class DeviceType(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin,
         "rail position (mm)", max_digits=6, decimal_places=1, null=True, blank=True,
         validators=[MinValueValidator(0), MaxValueValidator(5000)],
         help_text="The rail's centreline below the body's top edge; empty = the middle.",
+    )
+    # How it sits on a rack's rails (api.rack_mount, the export spec §8):
+    # {ears, positions: {front|mid|rear: mm}, default, rails}. Null = not
+    # recorded: ears in front, flush with the faceplate.
+    rack_mount = models.JSONField(
+        null=True, blank=True, default=None,
+        help_text="Rack ears and where they fit: the faceplate's distance in "
+        "front of the ear plane per position, in mm.",
     )
     description = models.TextField(blank=True)
     owning_site = models.ForeignKey(
@@ -2594,6 +2606,14 @@ class Device(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin, Mod
         validators=[MinValueValidator(1), MaxValueValidator(60)],
         help_text=("Vertical extent of the side-mounted strip, in U. Blank "
                    "draws ~three quarters of the rack."),
+    )
+    # Which of its type's ear positions it is fitted at (api.rack_mount);
+    # blank takes the type's default.
+    EAR_POSITION_CHOICES = [("front", "Front"), ("mid", "Mid"), ("rear", "Rear")]
+    ear_position = models.CharField(
+        max_length=5, choices=EAR_POSITION_CHOICES, blank=True, default="",
+        db_default="",
+        help_text="Where its rack ears are fitted. Blank takes the type's default.",
     )
     # A DIN-rail cabinet instead of a rack (#277): the device is in the
     # cabinet, and on one of its rails at an offset from the rail's left end.
@@ -6247,6 +6267,8 @@ class ModelPack(TimestampedModel):
 #: (with its connector seated) or a power cord's plug.
 ACCESSORY_KIND_CHOICES = [
     ("plug", "Plug"), ("transceiver", "Transceiver"), ("cord", "Cord"),
+    ("blanking", "Blanking panel"), ("cable-manager", "Cable manager"),
+    ("shelf", "Shelf"),
 ]
 
 
@@ -6286,6 +6308,11 @@ class AccessoryType(TimestampedModel):
     # {profile: zipcord | round, jacket_mm, pitch_mm, min_bend_mm}, or null.
     # Danbyte draws the cable from the part's ``cable`` empty with it.
     cable = models.JSONField(null=True, blank=True, default=None)
+    # A rack part's height (blanking panels, cable managers, shelves; the
+    # export spec §14).
+    u_height = models.PositiveSmallIntegerField(
+        null=True, blank=True, validators=[MinValueValidator(1), MaxValueValidator(10)],
+    )
     model_3d = models.FileField(
         upload_to=device_model_path, blank=True, null=True, max_length=255,
         help_text="The part's 3D model (binary glTF, .glb).",
@@ -6339,6 +6366,46 @@ def weight_kg(value, unit) -> float | None:
     if value is None or unit not in WEIGHT_TO_KG:
         return None
     return float(value) * WEIGHT_TO_KG[unit]
+
+
+class RackKit(TimestampedModel):
+    """A kit of parts the 3D room builds racks from (api.rack_kits, the
+    export spec §14): posts repeated per unit, beams and panels stretched to
+    the rack's size, doors, roof and base variants. Comes with a model pack
+    (``rack-kits/<Vendor>/<NAME>/kit.yaml``) and is tenant-wide like
+    accessory types; rack types and racks point at one by ``kit``."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name="rack_kits")
+    vendor = models.CharField(max_length=100, blank=True, default="")
+    name = models.CharField(max_length=100)
+    frame = models.CharField(max_length=16, choices=FRAME_CHOICES, default="cabinet")
+    widths_mm = models.JSONField(default=list, blank=True)
+    depths_mm = models.JSONField(default=list, blank=True)
+    # {name: "#rrggbb"}: the base colours the FRAME material may take.
+    colours = models.JSONField(default=dict, blank=True)
+    # What the kit's model holds, read at import: {name: {stretch, ref_mm}}.
+    parts = models.JSONField(default=dict, blank=True)
+    model_3d = models.FileField(
+        upload_to=device_model_path, blank=True, null=True, max_length=255,
+        help_text="Every part of the kit, as named objects (.glb).",
+    )
+    model_3d_far = models.FileField(
+        upload_to=device_model_path, blank=True, null=True, max_length=255,
+        help_text="The far-off box (.glb).",
+    )
+    # The pack that brought it: {pack: {name, version}, file, far, triangles}.
+    pack_import = models.JSONField(null=True, blank=True, default=None, editable=False)
+
+    class Meta:
+        ordering = ["vendor", "name"]
+        constraints = [
+            models.UniqueConstraint(fields=["tenant", "vendor", "name"],
+                                    name="api_rackkit_unique_name"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.vendor} {self.name}".strip()
 
 
 class Rack(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
@@ -6436,6 +6503,29 @@ class Rack(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         validators=[MinValueValidator(100), MaxValueValidator(3000)],
         help_text="Cabinet outer depth in millimetres (blank = 1000).",
     )
+    # The Look (api.rack_look): null takes the rack type's.
+    frame = models.CharField(max_length=16, choices=FRAME_CHOICES, null=True, blank=True)
+    rail_depth_mm = models.PositiveSmallIntegerField(
+        null=True, blank=True,
+        validators=[MinValueValidator(100), MaxValueValidator(2000)],
+        help_text="Front to rear rail distance in millimetres.",
+    )
+    front_door = models.CharField(max_length=16, choices=DOOR_CHOICES, null=True, blank=True)
+    rear_door = models.CharField(max_length=16, choices=DOOR_CHOICES, null=True, blank=True)
+    hinge = models.CharField(max_length=5, choices=HINGE_CHOICES, null=True, blank=True)
+    side_panels = models.BooleanField(null=True, blank=True)
+    top = models.CharField(max_length=8, choices=TOP_CHOICES, null=True, blank=True)
+    base = models.CharField(max_length=8, choices=BASE_CHOICES, null=True, blank=True)
+    colour = models.CharField(max_length=16, null=True, blank=True,
+                              validators=[validate_rack_colour])
+    kit = models.ForeignKey(
+        "RackKit", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="racks",
+    )
+    blanking_fill = models.BooleanField(
+        null=True, blank=True,
+        help_text="Draw blanking panels in empty units (3D only, never counted).",
+    )
     description = models.TextField(blank=True)
 
     class Meta:
@@ -6516,6 +6606,35 @@ class RackType(NumIdMixin, TimestampedModel, TaggableMixin):
     cooling_capacity_w = models.PositiveIntegerField(
         null=True, blank=True,
         help_text="Heat the cooling of this model removes, in watts.",
+    )
+    # The Look (api.rack_look): what a rack of this model is drawn as.
+    frame = models.CharField(max_length=16, choices=FRAME_CHOICES, default="cabinet",
+                             db_default="cabinet")
+    rail_depth_mm = models.PositiveSmallIntegerField(
+        null=True, blank=True,
+        validators=[MinValueValidator(100), MaxValueValidator(2000)],
+        help_text="Front to rear rail distance in millimetres (blank = derived).",
+    )
+    front_door = models.CharField(max_length=16, choices=DOOR_CHOICES,
+                                  default="perforated", db_default="perforated")
+    rear_door = models.CharField(max_length=16, choices=DOOR_CHOICES,
+                                 default="split-perforated", db_default="split-perforated")
+    hinge = models.CharField(max_length=5, choices=HINGE_CHOICES, default="left",
+                             db_default="left")
+    side_panels = models.BooleanField(default=True, db_default=True)
+    top = models.CharField(max_length=8, choices=TOP_CHOICES, default="vented",
+                           db_default="vented")
+    base = models.CharField(max_length=8, choices=BASE_CHOICES, default="plinth",
+                            db_default="plinth")
+    colour = models.CharField(max_length=16, default="black", db_default="black",
+                              validators=[validate_rack_colour])
+    kit = models.ForeignKey(
+        "RackKit", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="rack_types",
+    )
+    blanking_fill = models.BooleanField(
+        default=False, db_default=False,
+        help_text="Draw blanking panels in empty units (3D only, never counted).",
     )
     description = models.TextField(blank=True)
 

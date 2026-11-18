@@ -85,7 +85,8 @@ class ChoiceTests(SimpleTestCase):
         self.assertEqual(fields, {"vendor": "Generic", "name": "RJ45-PLUG", "kind": "plug",
                                   "connector": "rj45", "fits": ["1000base-t"],
                                   "parts": [], "standard": "", "wavelength_nm": None,
-                                  "cable": None, "file": "models/Generic/RJ45-PLUG.glb"})
+                                  "cable": None, "u_height": None,
+                                  "file": "models/Generic/RJ45-PLUG.glb"})
         self.assertEqual(notes, ["fits: 'bad slug' is not a type slug - ignored."])
         for bad, why in (({**doc, "kind": "cable"}, "kind"), ({**doc, "fits": []}, "fits"),
                          ({**doc, "model3d": {"file": "../x.glb"}}, "model3d.file"),
@@ -152,7 +153,7 @@ class PackCheckTests(SimpleTestCase):
         rep = self.check()
         msgs = [f"{f.level} {f.path}: {f.message}" for f in rep.findings]
         self.assertIn("error accessory-types/Generic/BAD.yaml: kind: 'cable' is not one of "
-                      "plug, transceiver, cord.", msgs)
+                      "plug, transceiver, cord, blanking, cable-manager, shelf.", msgs)
         self.assertIn("warning pack.yaml: types.accessory doesn't list BAD.", msgs)
 
 

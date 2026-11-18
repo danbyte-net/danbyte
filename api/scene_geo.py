@@ -26,7 +26,44 @@ def load_racks(racks, devices=None) -> dict:
     lookups: list = list(RACK_DEVICE_LOOKUPS)
     if devices is not None:
         lookups.insert(0, Prefetch("devices", queryset=devices))
+    # The Look reads the rack's type and both kits (api.rack_look).
+    racks = racks.select_related("rack_type__kit", "kit")
     return {r.id: r for r in racks.prefetch_related(*lookups)}
+
+
+def look_context(user, tenant) -> dict:
+    """What every rack's ``look`` in one scene shares: whether the reader
+    gets the kits' own URLs (api.rack_kits.kit_doc), and the blanking
+    panels the fill draws - the tenant's ``blanking`` accessory types with a
+    model, for a reader who may view pluggables (else the room draws plain
+    panels)."""
+    from .models import AccessoryType
+    from .port_plugs import may_view_types
+    from .rack_kits import may_view
+
+    blanks = []
+    if may_view_types(user, tenant):
+        from .model_3d import version_of
+
+        for a in AccessoryType.objects.filter(
+                tenant=tenant, kind="blanking", u_height__isnull=False
+        ).exclude(model_3d="").exclude(model_3d__isnull=True).order_by("u_height", "name"):
+            blanks.append({"u_height": a.u_height, "name": a.name,
+                           "model_url": f"/api/accessory-types/{a.pk}/model/"
+                                        f"?v={version_of(a.model_3d)}"})
+    return {"kit_shared": may_view(user, tenant), "blanks": blanks}
+
+
+def rack_look_geo(r, ctx: dict | None) -> dict:
+    """The rack's resolved Look (api.rack_look.look_geo) with its kit's
+    drawing doc and, when it fills empty units, the blanking panels."""
+    from .rack_kits import kit_doc
+    from .rack_look import look_geo
+
+    ctx = ctx or {"kit_shared": False, "blanks": []}
+    look = look_geo(r, lambda kit: kit_doc(kit, r, ctx["kit_shared"]))
+    look["blanks"] = ctx["blanks"] if look["blanking_fill"] else []
+    return look
 
 
 def power_feed_types(racks) -> dict:
@@ -78,6 +115,8 @@ def device_geo(d, img, feed_types) -> dict:
     """One racked device: placement, footprint, look and power names.
     ``img`` is ``image_url(request)``; ``feed_types`` is
     ``power_feed_types(...)``."""
+    from .rack_mount import mount_of
+
     dt = d.device_type
     return {
         "id": str(d.id),
@@ -96,6 +135,8 @@ def device_geo(d, img, feed_types) -> dict:
         "u_height": dt.u_height if dt else 1,
         "rack_width": (dt.rack_width if dt else "full") or "full",
         "is_full_depth": dt.is_full_depth if dt else True,
+        # Ears and the faceplate's offset from the rail (api.rack_mount).
+        "rack_mount": mount_of(dt, d.ear_position),
         # Port labels on this device's quads: inherit / on / off.
         "port_labels": d.port_labels,
         # Effective airflow (device override, else type default) so the
@@ -165,9 +206,10 @@ def racked_device_geo(d, img, feed_types, viewable_types) -> dict:
     return geo
 
 
-def rack_geo(r, img, feed_types, viewable_types=None) -> dict:
+def rack_geo(r, img, feed_types, viewable_types=None, look_ctx=None) -> dict:
     """One rack and the devices it holds, as the 3D views draw it. With
-    ``viewable_types`` each positioned device carries its 3D model."""
+    ``viewable_types`` each positioned device carries its 3D model; its
+    ``look`` the kit URLs and blanks of ``look_ctx`` (``look_context``)."""
     return {
         "id": str(r.id),
         "name": r.name,
@@ -177,6 +219,7 @@ def rack_geo(r, img, feed_types, viewable_types=None) -> dict:
         "width": r.width,
         "outer_width_mm": r.outer_width_mm,
         "outer_depth_mm": r.outer_depth_mm,
+        "look": rack_look_geo(r, look_ctx),
         "devices": [
             racked_device_geo(d, img, feed_types, viewable_types)
             for d in r.devices.all()

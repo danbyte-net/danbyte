@@ -227,6 +227,17 @@ _GEO_BLANK = {
     # The device's 3D model (api.model_3d.effective), added with racks
     # drawing models; none of the fixture's types has one.
     "model": None,
+    # Ears and the faceplate's offset (api.rack_mount): none recorded.
+    "rack_mount": {"ears": True, "position": "front", "offset_mm": 0, "shift_mm": 0,
+                   "rails": "none"},
+}
+
+#: A rack with no type and no Look of its own (api.rack_look.DEFAULTS).
+_LOOK_DEFAULT = {
+    "frame": "cabinet", "rail_depth_mm": None, "front_door": "perforated",
+    "rear_door": "split-perforated", "hinge": "left", "side_panels": True,
+    "top": "vented", "base": "plinth", "colour": "#1b1c1e", "kit": None,
+    "blanking_fill": False, "blanks": [],
 }
 
 
@@ -245,6 +256,8 @@ class _PinnedScene(_SceneFixture):
             "id": str(self.rack.id), "name": "R01", "u_height": 42,
             "starting_unit": 1, "desc_units": False, "width": 19,
             "outer_width_mm": 800, "outer_depth_mm": 1200,
+            # What it is built as in 3D (api.rack_look), added since.
+            "look": _LOOK_DEFAULT,
             # Name order; the loose device has no place in the rack.
             "devices": [
                 _geo(self.half_l, face="front", rack_side="left", rack_width="half",

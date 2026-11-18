@@ -48,9 +48,9 @@ class AccessoryTypeSerializer(serializers.ModelSerializer):
     class Meta:
         model = AccessoryType
         fields = ["id", "vendor", "name", "kind", "connector", "fits", "parts", "standard",
-                  "wavelength_nm", "reach_m", "cable", "model_url", "pack_import",
+                  "wavelength_nm", "reach_m", "cable", "u_height", "model_url", "pack_import",
                   "hand_edited", "in_use", "created_at", "updated_at"]
-        read_only_fields = ["id", "vendor", "name", "kind", "connector", "model_url",
+        read_only_fields = ["id", "vendor", "name", "kind", "connector", "u_height", "model_url",
                             "pack_import", "in_use", "created_at", "updated_at"]
         extra_kwargs = {
             "wavelength_nm": {"min_value": 1, "max_value": 100_000},
@@ -70,6 +70,10 @@ class AccessoryTypeSerializer(serializers.ModelSerializer):
         return None if counts is None else counts.get(str(obj.pk), 0)
 
     def validate_fits(self, value):
+        if self.instance is not None and self.instance.kind in pp.RACK_KINDS:
+            if value:
+                raise ValidationError("A rack part plugs into no port.")
+            return []
         if not isinstance(value, list) or not value:
             raise ValidationError("List the port types it plugs into.")
         if len(value) > pp.MAX_FITS:

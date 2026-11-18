@@ -35,6 +35,7 @@ from . import raised_floor_geometry as rfg
 from .rooms import reconcile_room
 from .dcim_choices import PLUGGABLE_INTERFACE_TYPES
 from .models import (
+    RackKit,
     Antenna, AntennaTemplate, Application,
     Aggregate, ASN, AuxPort, AuxPortTemplate,
     CABINET_SIZE_FIELDS, DIN_PROFILE_CHOICES, FLOOR_PLAN_MAX_GRID, Cabinet, CabinetRole, CabinetType, DinRail,
@@ -2891,6 +2892,7 @@ class DeviceTypeMiniSerializer(NumIdModelSerializer):
         fields = ["id", "name", "manufacturer", "manufacturer_id", "icon",
                   "u_height", "rack_width", "is_full_depth",
                   "width_mm", "height_mm", "depth_mm", "din_profiles", "din_rail_mm",
+                  "rack_mount",
                   "front_image", "rear_image", "iso_image", "front_cal",
                   "release_date", "end_of_support", "lifecycle_state"]
         extra_kwargs = {f: {"coerce_to_string": False}
@@ -3212,6 +3214,33 @@ class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin
     din_profiles = serializers.ListField(
         child=serializers.ChoiceField(choices=DIN_PROFILE_CHOICES), required=False,
     )
+    rack_mount = serializers.JSONField(required=False, allow_null=True)
+
+    def validate_rack_mount(self, value):
+        from types import SimpleNamespace
+
+        from django.core.exceptions import ValidationError as DjangoValidationError
+
+        from .rack_mount import normalise, positions_of
+
+        try:
+            block = normalise(value)
+        except DjangoValidationError as exc:
+            detail = exc.message_dict if hasattr(exc, "error_dict") else {"": exc.messages}
+            raise serializers.ValidationError(
+                [f"{k}: {' '.join(v)}" if k else " ".join(v) for k, v in detail.items()]
+            ) from exc
+        inst = self.instance
+        if inst is not None:
+            # Devices fitted at a position the type stops offering.
+            offered = set(positions_of(SimpleNamespace(rack_mount=block)))
+            gone = (inst.device_set.exclude(ear_position="")
+                    .exclude(ear_position__in=offered).count())
+            if gone:
+                raise serializers.ValidationError(
+                    f"{gone} device{'s are' if gone != 1 else ' is'} fitted at a "
+                    "position this drops - change them first.")
+        return block
 
     def validate(self, attrs):
         """DIN-rail gear (#277): a type that mounts on rails has a width and a
@@ -3268,6 +3297,7 @@ class DeviceTypeSerializer(OwningSiteSerializerMixin, ObjectPermsSerializerMixin
                   "weight", "weight_unit",
                   "subdevice_role", "exclude_from_utilization",
                   "width_mm", "height_mm", "depth_mm", "din_profiles", "din_rail_mm",
+                  "rack_mount",
                   "model_3d", "model_3d_fit", "model_3d_up", "model_3d_front",
                   "model_ports", "model_3d_far", "model_3d_scan",
                   "custom_fields",
@@ -3510,6 +3540,8 @@ class DeviceSerializer(TableSerializerMixin, StatusSerializerMixin, ObjectPermsS
         "model_ports", "model_3d_far", "model_3d_scan", "local_context_data",
         "fov_direction", "fov_deg", "fov_distance_m", "fov_ptz",
         "mount_offset_mm", "mount_span_u",
+        # Placement in the rack: the 3D room reads it (api.rack_mount).
+        "rack_mount",
         # Its own column, Next end of life (device-columns.tsx).
         "lifecycle_next",
         # Set in the form; the PRTG column shows what PRTG has.
@@ -3597,6 +3629,7 @@ class DeviceSerializer(TableSerializerMixin, StatusSerializerMixin, ObjectPermsS
     rack = serializers.SerializerMethodField()
     u_height = serializers.SerializerMethodField()
     rack_width = serializers.SerializerMethodField()
+    rack_mount = serializers.SerializerMethodField()
     role = serializers.SerializerMethodField()
     platform = serializers.SerializerMethodField()
     effective_platform = serializers.SerializerMethodField()
@@ -3743,6 +3776,14 @@ class DeviceSerializer(TableSerializerMixin, StatusSerializerMixin, ObjectPermsS
 
     def get_rack_width(self, obj) -> str:
         return (obj.device_type.rack_width if obj.device_type else "") or "full"
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_rack_mount(self, obj):
+        """How it sits on the rails (api.rack_mount.device_mount): ``{ears,
+        position, offset_mm, rails}``."""
+        from .rack_mount import device_mount
+
+        return device_mount(obj)
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_role(self, obj):
@@ -3946,6 +3987,16 @@ class DeviceSerializer(TableSerializerMixin, StatusSerializerMixin, ObjectPermsS
         site_changed = changed("rack", "site", "location", "cabinet")
 
         self._validate_cabinet(attrs)
+
+        if changed("ear_position", "device_type"):
+            # One of its type's ear positions (api.rack_mount); blank takes
+            # the type's default.
+            from .rack_mount import check_ear_position
+
+            why = check_ear_position(
+                eff_type, attrs.get("ear_position", getattr(inst, "ear_position", "")))
+            if why:
+                raise serializers.ValidationError({"ear_position": why})
 
         rack = attrs.get("rack", getattr(self.instance, "rack", None))
         if rack is not None and (placement_changed or site_changed):
@@ -4329,7 +4380,7 @@ class DeviceSerializer(TableSerializerMixin, StatusSerializerMixin, ObjectPermsS
                   "role", "role_id", "platform", "platform_id",
                   "effective_platform",
                   "rack", "rack_id", "position", "face", "rack_side",
-                  "mount", "mount_offset_mm", "mount_span_u",
+                  "mount", "mount_offset_mm", "mount_span_u", "ear_position", "rack_mount",
                   "u_height", "rack_width",
                   "cabinet", "cabinet_id", "din_rail", "din_rail_id", "din_offset_mm",
                   "location", "location_id", "room", "room_id", "cluster", "cluster_id",
@@ -7943,11 +7994,50 @@ class RackTypeAccessorySerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "created_at", "updated_at"]
 
 
+class RackKitMiniSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = RackKit
+        fields = ["id", "vendor", "name", "frame"]
+
+
+#: The Look fields a rack type and a rack carry (api.rack_look), as the
+#: serializers list them.
+RACK_LOOK_FIELDS = ["frame", "rail_depth_mm", "front_door", "rear_door", "hinge",
+                    "side_panels", "top", "base", "colour", "kit", "kit_id",
+                    "blanking_fill"]
+
+
+class RackLookSerializerMixin(serializers.Serializer):
+    """The Look fields (api.rack_look): a colour named or hex, a kit of the
+    active tenant's."""
+
+    kit = RackKitMiniSerializer(read_only=True)
+    kit_id = TenantScopedPrimaryKeyRelatedField(
+        source="kit", queryset=RackKit.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+
+    def validate_colour(self, value):
+        from .rack_look import clean_colour
+
+        if value in (None, ""):
+            if isinstance(self.instance, RackType) or (
+                    self.instance is None and self.Meta.model is RackType):
+                raise serializers.ValidationError("Pick a colour.")
+            return None
+        try:
+            return clean_colour(value)
+        except ValueError as exc:
+            raise serializers.ValidationError(str(exc)) from exc
+
+
 class RackTypeMiniSerializer(NumIdModelSerializer):
     """Picker/embed shape. Carries the full dimension set so the rack form
-    can pre-fill client-side - the rack stays the source of truth."""
+    can pre-fill client-side - the rack stays the source of truth - and the
+    Look a rack inherits from it."""
 
     manufacturer = serializers.SerializerMethodField()
+    kit = RackKitMiniSerializer(read_only=True)
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_manufacturer(self, obj):
@@ -7959,10 +8049,12 @@ class RackTypeMiniSerializer(NumIdModelSerializer):
         fields = ["id", "name", "manufacturer", "width", "u_height",
                   "starting_unit", "desc_units", "outer_width_mm",
                   "outer_depth_mm", "max_weight", "max_weight_unit",
-                  "max_power_w", "cooling_capability", "cooling_capacity_w"]
+                  "max_power_w", "cooling_capability", "cooling_capacity_w",
+                  *(f for f in RACK_LOOK_FIELDS if f != "kit_id")]
 
 
-class RackTypeSerializer(TaggableSerializerMixin, NumIdModelSerializer):
+class RackTypeSerializer(RackLookSerializerMixin, TaggableSerializerMixin,
+                         NumIdModelSerializer):
     manufacturer = ManufacturerMiniSerializer(read_only=True)
     manufacturer_id = TenantScopedPrimaryKeyRelatedField(
         source="manufacturer", queryset=Manufacturer.objects.all(),
@@ -7987,6 +8079,7 @@ class RackTypeSerializer(TaggableSerializerMixin, NumIdModelSerializer):
                   "outer_width_mm", "outer_depth_mm",
                   "max_weight", "max_weight_unit", "max_power_w",
                   "cooling_capability", "cooling_capacity_w", "description",
+                  *RACK_LOOK_FIELDS,
                   "accessories", "rack_count",
                   "tags", "tag_ids", "created_at", "updated_at"]
         read_only_fields = ["id", "accessories", "rack_count",
@@ -8021,13 +8114,17 @@ class RackMiniSerializer(NumIdModelSerializer):
         fields = ["id", "name", "u_height", "starting_unit", "desc_units"]
 
 
-class RackSerializer(StatusSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
+class RackSerializer(RackLookSerializerMixin, StatusSerializerMixin, TaggableSerializerMixin,
+                     NumIdModelSerializer):
     # The power and cooling roll-ups and the two port rows are sets of
     # figures the rack page draws, not one value a column can show;
     # max_weight_kg repeats Max weight in kg for the load bar (see
     # api.list_fields).
     list_columns_exclude = (
-        "power", "cooling", "max_weight_kg", "ports", "panel_ports",
+        "power", "cooling", "max_weight_kg", "ports", "panel_ports", "look",
+        # Overrides: null reads as blank but draws the type's (``look``).
+        "frame", "rail_depth_mm", "front_door", "rear_door", "hinge", "side_panels",
+        "top", "base", "colour", "kit", "blanking_fill",
     )
     site = SiteRegionMiniSerializer(read_only=True)
     site_id = TenantScopedPrimaryKeyRelatedField(
@@ -8067,6 +8164,19 @@ class RackSerializer(StatusSerializerMixin, TaggableSerializerMixin, NumIdModelS
     device_count = serializers.SerializerMethodField()
     used_units = serializers.SerializerMethodField()
     document_count = serializers.SerializerMethodField()
+    look = serializers.SerializerMethodField()
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_look(self, obj):
+        """The Look the rack is drawn with (api.rack_look.resolve): its own
+        value, else its type's, else the default; ``inherited`` names the
+        fields not set on the rack."""
+        from .rack_look import resolve
+
+        look = resolve(obj)
+        kit = look["kit"]
+        look["kit"] = RackKitMiniSerializer(kit).data if kit is not None else None
+        return look
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_location(self, obj):
@@ -8280,6 +8390,7 @@ class RackSerializer(StatusSerializerMixin, TaggableSerializerMixin, NumIdModelS
                   "total_weight_kg", "max_weight_kg", "power",
                   "cooling", "cooling_free_w",
                   "starting_unit", "desc_units", "description",
+                  *RACK_LOOK_FIELDS, "look",
                   "device_count", "used_units", "ports", "panel_ports", "document_count",
                   "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
         read_only_fields = ["id", "numid", "device_count", "used_units",

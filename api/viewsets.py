@@ -8134,7 +8134,7 @@ class RackTypeViewSet(TenantScopedViewSet):
     """Rack model catalog - manufacturer/model profiles whose dims pre-fill
     the rack form and whose accessories can stamp 0U strips onto new racks."""
 
-    queryset = RackType.objects.select_related("manufacturer").prefetch_related(
+    queryset = RackType.objects.select_related("manufacturer", "kit").prefetch_related(
         TAGS, "accessories__device_type__manufacturer"
     ).order_by(NATURAL_NAME)
     serializer_class = RackTypeSerializer
@@ -8506,7 +8506,7 @@ class RackViewSet(ImageAttachmentMixin, TenantScopedViewSet):
         # them (#188).
         from .models import Document
 
-        if self.action in ("scene", "export_pdf_file", "move"):
+        if self.action in ("scene", "export_pdf_file", "move", "kit_model"):
             # The scene loads its own geometry (api.scene_geo), and a print
             # link only checks the rack is still in view; the figures below
             # would only be thrown away.
@@ -8522,7 +8522,7 @@ class RackViewSet(ImageAttachmentMixin, TenantScopedViewSet):
             super().get_queryset()
             .select_related(
                 "site", "site__region", "role", "location", "room",
-                "rack_type__manufacturer",
+                "rack_type__manufacturer", "rack_type__kit", "kit",
             )
             .prefetch_related(TAGS, capacity.racked_devices_prefetch(), "power_feeds", "cooling_feeds")
             .annotate(document_n=Coalesce(Subquery(documents), 0))
@@ -8921,13 +8921,29 @@ class RackViewSet(ImageAttachmentMixin, TenantScopedViewSet):
         )[rack.pk]
         from .views import _get_active_tenant
 
-        types = scene_geo.prepare_rack_models(
-            [loaded], request.user, _get_active_tenant(request)
-        )
+        tenant = _get_active_tenant(request)
+        types = scene_geo.prepare_rack_models([loaded], request.user, tenant)
         return Response(scene_geo.rack_geo(
             loaded, scene_geo.image_url(request), scene_geo.power_feed_types([loaded]),
-            types,
+            types, scene_geo.look_context(request.user, tenant),
         ))
+
+    @extend_schema(responses={200: OpenApiTypes.BINARY})
+    @action(detail=True, methods=["get"], url_path="kit-model")
+    def kit_model(self, request, pk=None):
+        """The rack kit this rack is built from (binary glTF; ``?far=1`` its
+        far box), for a reader who may view the rack but not rack types
+        (api.rack_kits.kit_doc)."""
+        from django.http import Http404
+
+        from .rack_kit_views import serve_kit
+        from .rack_look import resolve
+
+        rack = self.get_object()
+        kit = resolve(rack)["kit"]
+        if kit is None:
+            raise Http404("No rack kit.")
+        return serve_kit(kit, request)
 
     @elevation_pdf.pdf_schema("rack")
     @action(detail=True, methods=["post"], url_path="export/pdf")
@@ -14541,8 +14557,10 @@ class FloorPlanViewSet(TenantScopedViewSet):
         # bays in one batch, and which types the reader may view.
         rack_types = scene_geo.prepare_rack_models(racks.values(), user, tenant)
 
+        look_ctx = scene_geo.look_context(user, tenant)
+
         def rack_geo(r):
-            return scene_geo.rack_geo(r, img, feed_types, rack_types)
+            return scene_geo.rack_geo(r, img, feed_types, rack_types, look_ctx)
 
         def cabinet_geo(c):
             return scene_geo.cabinet_geo(c, cabinet_counts.get(c.id, 0))

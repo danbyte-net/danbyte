@@ -64,7 +64,12 @@ from django.core.exceptions import ValidationError
 
 #: Where a pack keeps its accessory YAML.
 ACCESSORY_DIR = "accessory-types/"
-KINDS = ("plug", "transceiver", "cord")
+KINDS = ("plug", "transceiver", "cord", "blanking", "cable-manager", "shelf")
+#: Rack parts (§14): drawn in a rack's units, never seated in a port, so
+#: they fit no port type and give their height instead.
+RACK_KINDS = ("blanking", "cable-manager", "shelf")
+#: A rack part's triangle budget (the spec gives none; a 1U device's share).
+RACK_PART_TRIANGLES = 5_000
 #: The export spec's budgets for one accessory (§13): a transceiver, and a
 #: cord or plug.
 TRANSCEIVER_TRIANGLES = 1_500
@@ -81,6 +86,8 @@ CABLE_MM_MAX = {"jacket_mm": 50.0, "pitch_mm": 100.0, "min_bend_mm": 2_000.0}
 
 def triangle_budget(kind: str) -> int:
     """The triangle budget for an accessory of ``kind``."""
+    if kind in RACK_KINDS:
+        return RACK_PART_TRIANGLES
     return TRANSCEIVER_TRIANGLES if kind == "transceiver" else ACCESSORY_TRIANGLES
 NAME_MAX = 100
 MAX_FITS = 64
@@ -193,19 +200,28 @@ def read_accessory(path: str, data) -> tuple[dict | None, list[str]]:
     kind = str(data.get("kind") or "").strip().lower()
     if kind not in KINDS:
         return None, [f"kind: {data.get('kind')!r} is not one of {', '.join(KINDS)}."]
-    raw = data.get("fits")
-    if not isinstance(raw, list) or not raw:
-        return None, ["fits: list the port types it plugs into."]
     notes: list[str] = []
     fits: list[str] = []
-    for x in raw[:MAX_FITS]:
-        s = str(x).strip().lower()
-        if not _SLUG.match(s):
-            notes.append(f"fits: {x!r} is not a type slug - ignored.")
-        elif s not in fits:
-            fits.append(s)
-    if not fits:
-        return None, ["fits: no usable type slug.", *notes]
+    u_height = None
+    if kind in RACK_KINDS:
+        u_height = data.get("u_height")
+        if isinstance(u_height, bool) or not isinstance(u_height, int) or not (
+                1 <= u_height <= 10):
+            return None, [f"u_height: a {kind} needs its height, 1 to 10 U."]
+        if data.get("fits"):
+            notes.append("fits: a rack part plugs into no port - ignored.")
+    else:
+        raw = data.get("fits")
+        if not isinstance(raw, list) or not raw:
+            return None, ["fits: list the port types it plugs into."]
+        for x in raw[:MAX_FITS]:
+            s = str(x).strip().lower()
+            if not _SLUG.match(s):
+                notes.append(f"fits: {x!r} is not a type slug - ignored.")
+            elif s not in fits:
+                fits.append(s)
+        if not fits:
+            return None, ["fits: no usable type slug.", *notes]
     block = data.get("model3d")
     rel = _clean_path(block.get("file")) if isinstance(block, dict) else None
     if rel is None:
@@ -219,7 +235,7 @@ def read_accessory(path: str, data) -> tuple[dict | None, list[str]]:
     return {"vendor": vendor_of(path)[:100], "name": name, "kind": kind,
             "connector": connector, "fits": fits, "parts": parts,
             "standard": standard, "wavelength_nm": wavelength, "cable": cable,
-            "file": rel}, notes
+            "u_height": u_height, "file": rel}, notes
 
 
 def _mm(block: dict, key: str, notes: list[str]) -> float | None:
@@ -427,6 +443,7 @@ def apply_accessory(tenant, path: str, data, files, *, dry_run: bool = False,
     # sets the rest.
     kept = [f for f in HAND_FIELDS if f in (obj.hand_edited or [])]
     obj.kind, obj.connector = fields["kind"], fields["connector"]
+    obj.u_height = fields["u_height"]
     for f in ("fits", "parts", "standard", "wavelength_nm", "cable"):
         if f in kept:
             if getattr(obj, f) != fields[f]:
@@ -437,7 +454,8 @@ def apply_accessory(tenant, path: str, data, files, *, dry_run: bool = False,
         obj.cable = None
     obj.pack_import = {"pack": {"name": pack_name, "version": pack_version},
                        "file": fields["file"], "triangles": tri}
-    notes.append(f"{fields['kind']}, fits {', '.join(fields['fits'])}.")
+    notes.append(f"{fields['kind']}, {fields['u_height']}U." if fields["u_height"] else
+                 f"{fields['kind']}, fits {', '.join(fields['fits'])}.")
     if fields["parts"]:
         notes.append(f"parts: {', '.join(fields['parts'])}.")
     if fields["cable"]:

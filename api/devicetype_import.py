@@ -317,9 +317,14 @@ def import_devicetype_yaml(
     if subdevice_role and subdevice_role not in ("parent", "child"):
         skipped.append(f"subdevice_role {subdevice_role!r} not recognised - dropped")
         subdevice_role = ""
+    from .rack_mount import read_yaml as read_rack_mount
+
+    rack_mount = (read_rack_mount(data.get("rack_mount"), skipped)
+                  if "rack_mount" in data else None)
     dt = DeviceType.objects.create(
         tenant=tenant,
         owning_site=owning_site,
+        rack_mount=rack_mount,
         name=model,
         manufacturer=manufacturer,
         model=part_number or model,
@@ -667,14 +672,17 @@ def import_moduletype_yaml(tenant, text: str, *, owning_site=None, files=None) -
 _TO_MM = {"mm": 1.0, "in": 25.4}
 
 
-def import_racktype_yaml(tenant, text: str) -> dict:
+def import_racktype_yaml(tenant, text: str, *, kit_vendor: str = "") -> dict:
     """Create a RackType from a rack-types YAML doc: model, width, height,
     unit numbering, outer size and load budget, plus Danbyte's own
     ``max_power_w``, ``cooling_capability`` and ``cooling_capacity_w`` (the
     library carries no power or cooling figures). What Danbyte's rack types
     don't hold (form factor, outer height, own weight, mounting depth) is
-    reported as skipped."""
+    reported as skipped. The Look (api.rack_kits.read_look) comes from a
+    ``look:`` block, ``form_factor`` and ``mounting_depth``; ``look.kit``
+    names a rack kit of the tenant's (``kit_vendor``'s first)."""
     from .models import Rack, RackType
+    from .rack_kits import read_look, set_look
 
     try:
         data = yaml.safe_load(text)
@@ -744,6 +752,10 @@ def import_racktype_yaml(tenant, text: str) -> dict:
             return None
         return int(w)
 
+    for key in ("outer_width", "outer_depth"):
+        # The export spec's rack types give millimetres outright (§14).
+        if data.get(key) in (None, "") and data.get(f"{key}_mm") not in (None, ""):
+            data[key] = data[f"{key}_mm"]
     outer_width = outer("outer_width", 100, 2000)
     outer_depth = outer("outer_depth", 100, 3000)
     max_weight = data.get("max_weight")
@@ -757,12 +769,13 @@ def import_racktype_yaml(tenant, text: str) -> dict:
     if capability and capability not in VALID_COOLING_CAPABILITY:
         skipped.append(f"cooling_capability {capability!r} not recognised - dropped")
         capability = ""
-    for key in ("form_factor", "outer_height", "weight", "mounting_depth"):
+    for key in ("outer_height", "weight"):
         if data.get(key) not in (None, ""):
             skipped.append(f"{key}: not modelled on rack types - skipped")
+    look = read_look(data, skipped)
 
     description = str(data.get("description") or data.get("comments") or "").strip()
-    RackType.objects.create(
+    rt = RackType(
         tenant=tenant,
         manufacturer=_get_or_create_manufacturer(tenant, manufacturer_name),
         name=model, width=width, u_height=u_height, starting_unit=starting_unit,
@@ -775,6 +788,8 @@ def import_racktype_yaml(tenant, text: str) -> dict:
         cooling_capacity_w=cooling_capacity,
         description=description,
     )
+    set_look(rt, look, skipped, kit_vendor)
+    rt.save()
     return {"ok": True, "name": model, "id": None, "created": {"rack_type": 1},
             "skipped": skipped, "error": None}
 

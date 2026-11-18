@@ -27,6 +27,14 @@ What it checks:
   budget (a transceiver 1,500 triangles, a cord or plug 2,000), the
   ``port:<connector>`` / ``cable`` empties stacking needs, listed under
   ``types: accessory:``, and no part number claimed twice;
+* rack kits (``rack-kits/<Vendor>/<NAME>/kit.yaml``, api.rack_kits): name,
+  frame, ``model3d.file`` and ``far``, the parts the room reads
+  (``post:segment`` at least), stretched parts' ``danbyte_ref_mm``, doors'
+  ``hinge`` empties, the kit's 20,000 and the far box's 2,000 triangles,
+  listed under ``types: rack-kit:``;
+* rack types (``rack-types/``): manufacturer and model, the ``look:``
+  values, a ``look.kit`` naming a kit in the pack (or the tenant), listed
+  under ``types: rack-type:``;
 * renders: the files, WebP or PNG, front and rear exactly the type's face
   frame at 2000 px, a transparent background, ``model_sha256`` equal to the
   ``.glb``, and ``modules`` naming real bays and module types in the pack
@@ -76,7 +84,7 @@ class Finding:
 @dataclass
 class Part:
     """One type's row in the report table."""
-    kind: str           # "device-type" | "module-type" | "accessory-type"
+    kind: str           # "device-type" | "module-type" | "accessory-type" | "rack-kit" | "rack-type"
     path: str
     part: str = ""
     triangles: int | None = None
@@ -196,6 +204,8 @@ class _Checker:
         self.glbs: dict[str, tuple[bytes, dict] | None] = {}
         self.referenced: set[str] = set()
         self.accessories: dict[str, dict] = {}
+        self.kits: dict[str, dict] = {}
+        self.rack_types: dict[str, dict] = {}
 
     def add(self, level, path, message, part: Part | None = None):
         self.report.findings.append(Finding(level, path, message))
@@ -298,6 +308,15 @@ class _Checker:
         for name in sorted(have - listed):
             if name:
                 self.add("warning", "pack.yaml", f"types.accessory doesn't list {name}.")
+        for key, docs, attr in (("rack-kit", self.kits, "name"),
+                                ("rack-type", self.rack_types, "model")):
+            listed = types.get(key) or []
+            listed = {str(x) for x in listed} if isinstance(listed, list) else set()
+            have = {str(d.get(attr) or "") for d in docs.values()} - {""}
+            for name in sorted(listed - have):
+                self.add("error", "pack.yaml", f"types.{key} lists {name}, which has no YAML.")
+            for name in sorted(have - listed):
+                self.add("warning", "pack.yaml", f"types.{key} doesn't list {name}.")
 
     # an accessory -----------------------------------------------------
 
@@ -342,6 +361,73 @@ class _Checker:
                                      f"budget is {budget}.", row)
         for w in empty_warnings(doc, fields):
             self.add("warning", rel, w, row)
+
+    # a rack kit and a rack type -------------------------------------
+
+    def kit(self, path: str, data):
+        from .rack_kits import FAR_TRIANGLES, KIT_TRIANGLES, kit_errors, read_kit, scan_parts
+
+        row = Part(kind="rack-kit", path=path,
+                   part=str(data.get("name") or "") if isinstance(data, dict) else "")
+        self.report.parts.append(row)
+        fields, notes = read_kit(path, data)
+        for n in notes:
+            self.add("warning" if fields is not None else "error", path, n, row)
+        if fields is None:
+            return
+        row.part = fields["name"]
+        for key in ("file", "far"):
+            rel = fields[key]
+            if rel is None:
+                if key == "far":
+                    self.add("warning", path, "No model3d.far; far off the room draws "
+                                              "the plain box.", row)
+                continue
+            self.referenced.add(rel)
+            if rel not in self.names:
+                self.add("error", path, f"model3d.{key} {rel} is not in the pack.", row)
+                continue
+            got = self.glb(rel)
+            if got is None:
+                row.errors += 1
+                continue
+            data_bytes, doc = got
+            tri = triangles(doc)
+            if key == "far":
+                row.far_triangles, row.far_bytes = tri, len(data_bytes)
+                if tri > FAR_TRIANGLES:
+                    self.add("warning", rel, f"{tri} triangles; a kit's far box's budget "
+                                             f"is {FAR_TRIANGLES}.", row)
+                continue
+            row.triangles, row.bytes = tri, len(data_bytes)
+            if tri > KIT_TRIANGLES:
+                self.add("warning", rel, f"{tri} triangles; a kit's budget is "
+                                         f"{KIT_TRIANGLES}.", row)
+            parts, scan_notes = scan_parts(doc)
+            row.ports = len(parts)
+            errs = set(kit_errors(scan_notes))
+            for n in scan_notes:
+                self.add("error" if n in errs else "warning", rel, n, row)
+
+    def rack_type(self, path: str, data):
+        from .rack_kits import find_kit, read_look
+
+        row = Part(kind="rack-type", path=path,
+                   part=str(data.get("model") or "") if isinstance(data, dict) else "")
+        self.report.parts.append(row)
+        if not isinstance(data, dict) or not data.get("manufacturer") or not data.get("model"):
+            self.add("error", path, "Needs manufacturer and model.", row)
+            return
+        notes: list[str] = []
+        look = read_look(data, notes)
+        for n in notes:
+            self.add("warning", path, n, row)
+        name = look.get("kit_name")
+        if name:
+            in_pack = {str(d.get("name") or "").lower() for d in self.kits.values()}
+            if name.lower() not in in_pack and not (
+                    self.tenant is not None and find_kit(self.tenant, name) is not None):
+                self.add("error", path, f"look.kit {name} is not a kit in the pack.", row)
 
     # a type -----------------------------------------------------------
 
@@ -569,6 +655,7 @@ class _Checker:
 
     def run(self) -> CheckReport:
         from .port_plugs import ACCESSORY_DIR
+        from .rack_kits import RACK_TYPE_DIR, is_kit_yaml
 
         for r in self.files.refusals():
             self.add("error", r.split(":", 1)[0], r)
@@ -584,6 +671,17 @@ class _Checker:
                 self.accessories[p] = doc if isinstance(doc, dict) else {}
                 self.accessory(p, doc)
                 continue
+            if (is_kit_yaml(p) or p.startswith(RACK_TYPE_DIR)) and p.endswith(
+                    (".yaml", ".yml")):
+                try:
+                    doc = yaml.safe_load(
+                        (self.files.read(p, MAX_YAML_BYTES) or b"").decode("utf-8"))
+                except (ValidationError, UnicodeDecodeError, yaml.YAMLError) as exc:
+                    self.add("error", p, f"Not readable: {exc}")
+                    continue
+                (self.kits if is_kit_yaml(p) else self.rack_types)[p] = (
+                    doc if isinstance(doc, dict) else {})
+                continue
             if not p.startswith(("device-types/", "module-types/")) or not p.endswith(
                     (".yaml", ".yml")):
                 continue
@@ -597,6 +695,10 @@ class _Checker:
                 continue
             yamls[p] = doc
         self.accessory_parts()
+        for p in sorted(self.kits):
+            self.kit(p, self.kits[p])
+        for p in sorted(self.rack_types):
+            self.rack_type(p, self.rack_types[p])
         self.manifest(yamls)
         module_parts = {str(d.get("part_number") or d.get("model"))
                         for p, d in yamls.items() if p.startswith("module-types/")}

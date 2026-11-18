@@ -74,7 +74,9 @@ class RackTypeImportTests(_Base):
         self.assertEqual((float(rt.max_weight), rt.max_weight_unit), (1361.0, "kg"))
         self.assertEqual(rt.manufacturer.name, "APC")
         self.assertEqual(rt.description, "NetShelter SX 42U")
-        self.assertTrue(any("form_factor" in s for s in r["skipped"]))
+        # form_factor gives the Look's frame (api.rack_kits.read_look).
+        self.assertEqual(rt.frame, "cabinet")
+        self.assertFalse(any("form_factor" in s for s in r["skipped"]))
         self.assertTrue(any("outer_height" in s for s in r["skipped"]))
 
     def test_inches_convert_and_a_bad_width_is_refused(self):

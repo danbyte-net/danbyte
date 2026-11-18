@@ -6,7 +6,9 @@ A pack is a folder (or a zip of one)::
     pack.yaml
     device-types/<Vendor>/<PART>.yaml
     module-types/<Vendor>/<PART>.yaml
-    accessory-types/<Vendor>/<NAME>.yaml      # plugs, transceivers, cords
+    accessory-types/<Vendor>/<NAME>.yaml      # plugs, transceivers, cords, rack parts
+    rack-kits/<Vendor>/<NAME>/kit.yaml        # a rack style's parts (api.rack_kits)
+    rack-types/<Vendor>/<MODEL>.yaml          # rack types with their Look
     models/<Vendor>/<PART>.glb
     models/<Vendor>/<PART>.far.glb
 
@@ -240,7 +242,8 @@ class PackFiles:
                 top = next(iter(tops))
                 if f"{top}/pack.yaml" in names or any(
                         n.startswith((f"{top}/device-types/", f"{top}/module-types/",
-                                      f"{top}/accessory-types/"))
+                                      f"{top}/accessory-types/", f"{top}/rack-kits/",
+                                      f"{top}/rack-types/"))
                         for n in names):
                     self._prefix = top + "/"
         elif not self.source.is_dir():
@@ -696,7 +699,7 @@ def apply_renders(dt, block, files: PackFiles, *, pack_name: str = "", pack_vers
 
 @dataclass
 class TypeResult:
-    kind: str           # "device-type" | "module-type" | "accessory-type"
+    kind: str           # "device-type" | "module-type" | "accessory-type" | "rack-kit" | "rack-type"
     path: str
     name: str = ""
     action: str = ""    # "matched" | "created" | "error"
@@ -774,10 +777,29 @@ def apply_bay_modules(dt, data: dict) -> list[str]:
     return notes
 
 
+def apply_rack_mount(dt, data: dict) -> list[str]:
+    """Set a matched device type's ``rack_mount`` from its YAML's block
+    (api.rack_mount); a type the pack doesn't describe keeps its own."""
+    from .rack_mount import read_yaml
+
+    if "rack_mount" not in data:
+        return []
+    notes: list[str] = []
+    block = read_yaml(data.get("rack_mount"), notes)
+    if block is not None and block != dt.rack_mount:
+        offered = set(block["positions"])
+        if dt.device_set.exclude(ear_position="").exclude(ear_position__in=offered).exists():
+            return [*notes, "rack_mount: devices are fitted at a position it drops - kept."]
+        dt.rack_mount = block
+        dt.save(update_fields=["rack_mount", "updated_at"])
+        notes.append("rack_mount: set.")
+    return notes
+
+
 def import_pack(tenant, files: PackFiles, *, dry_run: bool = True,
                 replace_photos: bool = False, label: str = "",
                 progress=None) -> PackResult:
-    """Import every device type, module type and accessory type YAML in the
+    """Import every device type, module type, accessory type, rack kit and rack type YAML in the
     pack with its models and renders. Inside one transaction, rolled back on ``dry_run``
     (which also stores no file). Audited as ordinary saves, with ``label``
     (default: the command and the pack) as the cause. ``replace_photos``
@@ -792,6 +814,7 @@ def import_pack(tenant, files: PackFiles, *, dry_run: bool = True,
     )
     from .models import DeviceType, ModuleType
     from .port_plugs import ACCESSORY_DIR, apply_accessory
+    from .rack_kits import KIT_DIR, RACK_TYPE_DIR, apply_kit, apply_rack_type, is_kit_yaml
 
     result = PackResult()
     names = files.names()
@@ -805,12 +828,15 @@ def import_pack(tenant, files: PackFiles, *, dry_run: bool = True,
             result.name = str(meta.get("name") or meta.get("id") or "")
             result.version = str(meta.get("version") or "")
     yamls = [n for n in names
-             if n.startswith(("module-types/", "device-types/", ACCESSORY_DIR))
+             if (n.startswith(("module-types/", "device-types/", ACCESSORY_DIR,
+                               RACK_TYPE_DIR)) or is_kit_yaml(n))
              and n.endswith((".yaml", ".yml"))][:MAX_YAML_FILES]
-    # Accessories, then module types: a device type's scan doesn't need
-    # them, but a reader sees the parts before the chassis that holds them.
-    yamls.sort(key=lambda n: (not n.startswith(ACCESSORY_DIR),
-                              not n.startswith("module-types/"), n))
+    # Accessories, then rack kits and the rack types built from them, then
+    # module types: a device type's scan doesn't need them, but a reader
+    # sees the parts before the chassis that holds them.
+    order = (ACCESSORY_DIR, KIT_DIR, RACK_TYPE_DIR, "module-types/")
+    yamls.sort(key=lambda n: (next((i for i, d in enumerate(order) if n.startswith(d)),
+                                   len(order)), n))
     referenced: set[str] = set()
     if not label:
         label = f"manage.py import_model_pack {result.name or files.source.name}"
@@ -821,6 +847,8 @@ def import_pack(tenant, files: PackFiles, *, dry_run: bool = True,
             if progress is not None:
                 progress(done, len(yamls))
             kind = ("accessory-type" if path.startswith(ACCESSORY_DIR) else
+                    "rack-kit" if path.startswith(KIT_DIR) else
+                    "rack-type" if path.startswith(RACK_TYPE_DIR) else
                     "module-type" if path.startswith("module-types/") else "device-type")
             tr = TypeResult(kind=kind, path=path)
             result.types.append(tr)
@@ -830,15 +858,21 @@ def import_pack(tenant, files: PackFiles, *, dry_run: bool = True,
             except (ValidationError, UnicodeDecodeError, yaml.YAMLError) as exc:
                 tr.action, tr.notes = "error", [f"Not readable: {exc}"]
                 continue
-            if kind == "accessory-type":
+            if kind in ("accessory-type", "rack-kit"):
                 block = data.get("model3d") if isinstance(data, dict) else None
                 for p in model3d_paths(block):
                     if (c := _clean_path(p)) is not None:
                         referenced.add(c)
+                apply = apply_accessory if kind == "accessory-type" else apply_kit
                 with transaction.atomic():
-                    tr.action, tr.name, tr.id, tr.notes = apply_accessory(
+                    tr.action, tr.name, tr.id, tr.notes = apply(
                         tenant, path, data, files, dry_run=dry_run,
                         pack_name=result.name, pack_version=result.version)
+                continue
+            if kind == "rack-type":
+                with transaction.atomic():
+                    tr.action, tr.name, tr.id, tr.notes = apply_rack_type(
+                        tenant, path, text, data, dry_run=dry_run)
                 continue
             if not isinstance(data, dict) or not data.get("manufacturer") or not data.get(
                     "model"):
@@ -877,6 +911,7 @@ def import_pack(tenant, files: PackFiles, *, dry_run: bool = True,
                         tr.notes.append(f"power-ports: added {n}.")
                     if kind == "device-type":
                         tr.notes += apply_bay_modules(obj, data)
+                        tr.notes += apply_rack_mount(obj, data)
                 if not dry_run:
                     tr.id = str(obj.pk)
                 tr.notes += apply_model3d(obj, block, files, dry_run=dry_run) or [
