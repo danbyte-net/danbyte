@@ -765,7 +765,10 @@ ceiling, underfloor runs sit beneath the slab) and zones tint the floor.
     else on its box's port side - at the port's photo marker where there is
     one, else the middle of the panel - and rise straight up from there. Far off, every box in the room is one draw call
     without photos. A model over 500,000 triangles, or past the room's
-    budget of 2,000,000 for all models together, draws as its bounding box,
+    budget for all models together (6,000,000 triangles on a capable GPU,
+    2,000,000 on a software renderer or a device under 4 GB; the browser's
+    `danbyte:model-budget` key, `low`, `high` or a number, overrides it),
+    draws as its bounding box,
     and a **Model too detailed** card names it. A
     [modular model](../dcim/model-packs.md) draws with its installed
     modules in their bays, every part counted: past the budget it draws its
@@ -792,7 +795,7 @@ ceiling, underfloor runs sit beneath the slab) and zones tint the floor.
       not drawn one by one, the box with its face photos, which the
       [generated images](../dcim/model-packs.md#generated-images) make look
       the same from there.
-    - **Budget**: the room's 2,000,000-triangle budget is shared with the
+    - **Budget**: the room's triangle budget (above) is shared with the
       devices on the floor, which spend first; racked devices take what is
       left across every rack: the ones up close get their far copy (with up
       to half of it), the nearest of them are then raised to their full

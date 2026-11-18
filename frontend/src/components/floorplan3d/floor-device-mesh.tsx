@@ -24,7 +24,7 @@ import {
 import {
   MODEL_TRIANGLE_LIMIT,
   PlacedModel,
-  SCENE_TRIANGLE_BUDGET,
+  sceneTriangleBudget,
   fittedModel,
   readyParts,
   useDeviceModel,
@@ -624,7 +624,7 @@ export function FloorDevicesLayer({
       const level = budgetLevel(
         e.triangles,
         parts.map((r) => r.entry.triangles),
-        SCENE_TRIANGLE_BUDGET - spent,
+        sceneTriangleBudget() - spent,
         MODEL_TRIANGLE_LIMIT
       )
       if (level === "box") {

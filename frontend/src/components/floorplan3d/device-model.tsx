@@ -42,8 +42,63 @@ import type { SceneModel } from "./world"
 /** A model this big draws as its bounding box - more triangles than the
  * whole of a well-filled hall. */
 export const MODEL_TRIANGLE_LIMIT = 500_000
-/** Every model in the room together; past this, the rest draw as boxes. */
+/** Every model in the room together on a weak GPU (software renderer, low
+ * memory); past this, the rest draw as far copies or boxes. */
 export const SCENE_TRIANGLE_BUDGET = 2_000_000
+/** The same on a capable GPU: room for a well-filled rack and its
+ * neighbours in full detail. */
+export const SCENE_TRIANGLE_BUDGET_FULL = 6_000_000
+/** `localStorage` override: "low" or "high" (or a triangle count). */
+export const SCENE_BUDGET_KEY = "danbyte:model-budget"
+
+const SOFTWARE_GPU =
+  /swiftshader|llvmpipe|softpipe|software|basic render driver|mesa offscreen/i
+
+/** The scene budget for this GPU, worked out once: a probe WebGL 2 context
+ * names the renderer. Software renderers and devices under 4 GB keep the
+ * low budget. */
+export function budgetFor(
+  renderer: string | null,
+  deviceMemoryGb?: number,
+  override?: string | null
+): number {
+  if (override === "low") return SCENE_TRIANGLE_BUDGET
+  if (override === "high") return SCENE_TRIANGLE_BUDGET_FULL
+  const n = Number(override)
+  if (override && Number.isFinite(n) && n > 0) return n
+  if (renderer === null || SOFTWARE_GPU.test(renderer))
+    return SCENE_TRIANGLE_BUDGET
+  if (deviceMemoryGb !== undefined && deviceMemoryGb < 4)
+    return SCENE_TRIANGLE_BUDGET
+  return SCENE_TRIANGLE_BUDGET_FULL
+}
+
+let sceneBudget: number | null = null
+export function sceneTriangleBudget(): number {
+  if (sceneBudget !== null) return sceneBudget
+  let override: string | null = null
+  try {
+    override = localStorage.getItem(SCENE_BUDGET_KEY)
+  } catch {
+    // No storage: decide from the GPU.
+  }
+  let renderer: string | null = null
+  try {
+    const ctx = document.createElement("canvas").getContext("webgl2")
+    if (ctx) {
+      const info = ctx.getExtension("WEBGL_debug_renderer_info")
+      renderer = info
+        ? String(ctx.getParameter(info.UNMASKED_RENDERER_WEBGL) ?? "")
+        : ""
+      ctx.getExtension("WEBGL_lose_context")?.loseContext()
+    }
+  } catch {
+    renderer = null
+  }
+  const mem = (navigator as { deviceMemory?: number }).deviceMemory
+  sceneBudget = budgetFor(renderer, mem, override)
+  return sceneBudget
+}
 
 /** How long an unused model stays parsed before it is freed (ms). */
 const RELEASE_AFTER_MS = 30_000

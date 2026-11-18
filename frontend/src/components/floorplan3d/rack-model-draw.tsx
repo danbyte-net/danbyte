@@ -21,9 +21,9 @@ import type { PlannedPart } from "@/lib/model-assembly"
 import { isCameraMoving } from "./camera-motion"
 import {
   MODEL_TRIANGLE_LIMIT,
-  SCENE_TRIANGLE_BUDGET,
   fittedModel,
   readyParts,
+  sceneTriangleBudget,
   useDeviceModels,
 } from "./device-model"
 import type { ModelEntry, ReadyPart } from "./device-model"
@@ -66,7 +66,7 @@ import type { SceneDevice, SceneModel, SceneRack } from "./world"
 export const ModelBudgetContext = createContext<ModelBudget | null>(null)
 
 export function newModelBudget(): ModelBudget {
-  return createModelBudget(SCENE_TRIANGLE_BUDGET, MODEL_TRIANGLE_LIMIT)
+  return createModelBudget(sceneTriangleBudget(), MODEL_TRIANGLE_LIMIT)
 }
 
 /** The room's budget - passed in, else from context; a view with no room
