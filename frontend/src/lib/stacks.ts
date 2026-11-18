@@ -3,10 +3,13 @@ import type { PortPlug } from "@/lib/port-plugs"
 import type { StacksMode } from "@/lib/stacks-pref"
 import {
   add,
+  bendMm,
   cordLead,
+  jacketCount,
   len,
   mul,
   roundCorners,
+  runCable,
   sub,
   unit,
 } from "@/lib/cord-run"
@@ -149,23 +152,38 @@ export const STACK_MIN_BEND_M = 0.03
  * empties, or the port anchors when no head is drawn): each end's short
  * lead out along its +Z, then a loop bowed out further along the two
  * ends' mean out direction - a stack cable hangs out of the back of the
- * stack and turns round to the next member - its corners rounded. The
- * same ends give the same points.
+ * stack and turns round to the next member - its corners rounded to the
+ * head's bend (`stackBendM`). The same ends give the same points.
  */
-export function stackRunPoints(a: CordEnd, b: CordEnd): Vec3[] {
+export function stackRunPoints(
+  a: CordEnd,
+  b: CordEnd,
+  link?: Pick<StackLink, "derived" | "label"> | null
+): Vec3[] {
   const [a0, a1] = cordLead(a)
   const [b0, b1] = cordLead(b)
   const out = unit(add(unit(a.z), unit(b.z)))
   const dist = len(sub(b1, a1))
   const bow = Math.max(STACK_BOW_MIN_M, dist * STACK_BOW)
   const dir: Vec3 = len(out) > 1e-6 ? out : unit(a.z)
-  const minBend =
-    (a.cable?.min_bend_mm ?? b.cable?.min_bend_mm ?? STACK_MIN_BEND_M * 1000) /
-    1000
   return roundCorners(
     [a0, a1, add(a1, mul(dir, bow)), add(b1, mul(dir, bow)), b1, b0],
-    minBend * (a.scale || 1)
+    stackBendM(a, b, link) * (a.scale || 1)
   )
+}
+
+/** A stack cable's tightest bend (m, before the model's scale): a recorded
+ * cable's label naming one of the head's `min_bend_by_part` lengths takes
+ * that, else the head's `min_bend_mm`, else the plain one. A derived link
+ * names no length. */
+export function stackBendM(
+  a: CordEnd,
+  b: CordEnd,
+  link?: Pick<StackLink, "derived" | "label"> | null
+): number {
+  const label = link && !link.derived ? link.label : ""
+  const mm = bendMm(a.cable, label) ?? bendMm(b.cable, label)
+  return (mm ?? STACK_MIN_BEND_M * 1000) / 1000
 }
 
 /** A stack cable's jacket radius (m) in the room: the head's `cable:`
@@ -173,4 +191,35 @@ export function stackRunPoints(a: CordEnd, b: CordEnd): Vec3[] {
 export function stackRadiusM(a: CordEnd, b: CordEnd): number {
   const mm = a.cable?.jacket_mm ?? b.cable?.jacket_mm ?? STACK_JACKET_MM
   return (mm / 2000) * (a.scale || 1)
+}
+
+/** A stack cable's cross-section, from the head's `cable:` block (the A
+ * end's, else the B end's): one round jacket, or a zip cord's or ribbon's
+ * jackets side by side along the heads' `cable` empties' ±X, `pitch`
+ * apart (m, at the model's scale). No block: one plain round jacket. */
+export type StackProfile =
+  | { kind: "round"; radius: number }
+  | {
+      kind: "jackets"
+      radius: number
+      pitch: number
+      count: number
+      startUp: Vec3
+      endUp: Vec3
+    }
+
+export function stackProfile(a: CordEnd, b: CordEnd): StackProfile {
+  const radius = stackRadiusM(a, b)
+  const drawn = runCable(a, b)
+  const count = jacketCount(drawn?.cable)
+  if (!drawn || count === 1) return { kind: "round", radius }
+  const pitchMm = drawn.cable.pitch_mm ?? drawn.cable.jacket_mm
+  return {
+    kind: "jackets",
+    radius,
+    count,
+    pitch: (pitchMm / 1000) * (a.scale || 1),
+    startUp: a.y,
+    endUp: b.y,
+  }
 }

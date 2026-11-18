@@ -229,13 +229,51 @@ describe("runs from a cord", () => {
     expect(tightestBend(run.points)).toBeGreaterThan(0.03 * 0.999)
   })
 
+  it("bend no tighter than the length the cable's label names", () => {
+    const store = new CordEndStore()
+    const c = cord()
+    store.setDevice(
+      "sw",
+      new Map([
+        [
+          "Gi1",
+          { ...c, cable: { ...c.cable!, min_bend_by_part: { "LC-3M": 80 } } },
+        ],
+      ])
+    )
+    const named = cableRun(scene, sites, { ...fibre, label: "lc-3m=" }, store)!
+    const other = cableRun(scene, sites, { ...fibre, label: "LC-1M" }, store)!
+    const plainRun = cableRun(scene, sites, fibre, store)!
+    expect(other.points).toEqual(plainRun.points)
+    expect(named.points).not.toEqual(plainRun.points)
+  })
+
+  it("draw a ribbon's jackets side by side", () => {
+    const store = new CordEndStore()
+    const ribbon = {
+      profile: "ribbon" as const,
+      count: 3,
+      jacket_mm: 6,
+      pitch_mm: 8,
+      min_bend_mm: 40,
+    }
+    store.setDevice("sw", new Map([["Gi1", cord({ cable: ribbon })]]))
+    const p = runProfile(cableRun(scene, sites, fibre, store)!)!
+    expect(p.kind).toBe("jackets")
+    if (p.kind !== "jackets") return
+    expect(p.count).toBe(3)
+    expect(p.pitch).toBeCloseTo(0.008)
+    expect(p.radius).toBeCloseTo(0.003)
+  })
+
   it("draw a zip cord at life size, in the fibre's colour", () => {
     const store = new CordEndStore()
     store.setDevice("sw", new Map([["Gi1", cord()]]))
     const run = cableRun(scene, sites, fibre, store)!
     const p = runProfile(run, 2)!
-    expect(p.kind).toBe("zipcord")
-    if (p.kind !== "zipcord") return
+    expect(p.kind).toBe("jackets")
+    if (p.kind !== "jackets") return
+    expect(p.count).toBe(2)
     expect(p.radius).toBeCloseTo(0.0018)
     expect(p.pitch).toBeCloseTo(0.00368)
     expect(p.startUp).toEqual([0, 1, 0])

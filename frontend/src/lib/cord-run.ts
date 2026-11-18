@@ -228,18 +228,71 @@ export function transportFrames(
   return ns.map((n, i) => ({ t: ts[i], n, x: unit(cross(n, ts[i])) }))
 }
 
+/** The most jackets a ribbon holds (export spec §13 v1.12). */
+export const MAX_JACKETS = 8
+
+/** How many jackets a cord's run has side by side: one round, a zip
+ * cord's two, a ribbon's `count` (2-8). */
+export function jacketCount(cable: CordCable | null | undefined): number {
+  if (!cable || cable.profile === "round") return 1
+  if (cable.profile === "ribbon")
+    return Math.max(2, Math.min(MAX_JACKETS, Math.round(cable.count ?? 2)))
+  return 2
+}
+
+/** The jackets' offsets from the run's centre, `pitchM` apart along the
+ * frame's +X, centred: `[-p/2, p/2]` for two, `[-p, 0, p]` for three. */
+export function jacketOffsets(count: number, pitchM: number): number[] {
+  const n = Math.max(1, Math.round(count))
+  return Array.from({ length: n }, (_, i) => (i - (n - 1) / 2) * pitchM)
+}
+
+/** A zip cord's or ribbon's jackets: the run offset along its frames' ±X
+ * (the cord's `cable` empty's X carried untwisted), centred on it, from
+ * -X to +X. */
+export function jacketRails(
+  points: readonly Vec3[],
+  frames: readonly Frame[],
+  pitchM: number,
+  count: number
+): Vec3[][] {
+  return jacketOffsets(count, pitchM).map((o) =>
+    points.map((p, i) => add(p, mul(frames[i].x, o)))
+  )
+}
+
 /** A zip cord's two jackets: the run offset by half the pitch to either
- * side of its frames. */
+ * side of its frames (+X first). */
 export function zipcordRails(
   points: readonly Vec3[],
   frames: readonly Frame[],
   pitchM: number
 ): [Vec3[], Vec3[]] {
-  const h = pitchM / 2
-  return [
-    points.map((p, i) => add(p, mul(frames[i].x, h))),
-    points.map((p, i) => sub(p, mul(frames[i].x, h))),
-  ]
+  const [l, r] = jacketRails(points, frames, pitchM, 2)
+  return [r, l]
+}
+
+/** A part number as the server matches it: case-insensitive, a trailing
+ * `=` (the spare-part suffix) ignored (api.port_plugs `part_key`). */
+export function partKey(part: string): string {
+  return part.trim().replace(/=+$/, "").trim().toUpperCase()
+}
+
+/**
+ * The tightest bend a cord's run may take (mm), or null for none: the
+ * `min_bend_by_part` entry a recorded cable's `label` names (one length
+ * of the part may need more), else `min_bend_mm`.
+ */
+export function bendMm(
+  cable: CordCable | null | undefined,
+  label?: string | null
+): number | null {
+  if (!cable) return null
+  const key = label ? partKey(label) : ""
+  if (key && cable.min_bend_by_part)
+    for (const [part, mm] of Object.entries(cable.min_bend_by_part))
+      if (partKey(part) === key && mm > 0) return mm
+  return cable.min_bend_mm ?? null
 }
 
 /** The cable block a run draws with: the A end's cord's, else the B

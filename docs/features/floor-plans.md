@@ -968,7 +968,7 @@ ceiling, underfloor runs sit beneath the slab) and zones tint the floor.
 - **Runs start at the cord.** Where a device is drawn at full detail with a
   cord in the port (a pack's accessory types), the run leaves the cord's
   cable end instead of the port, at the cord's own size: an LC zip cord as
-  two jackets side by side, an MPO trunk as one, its corners no tighter than
+  two jackets side by side, a ribbon as its jackets, an MPO trunk as one, its corners no tighter than
   the cord's bend radius where there is room. See
   [Accessory types](../dcim/model-packs.md#which-parts-a-port-shows).
 - **Same-rack runs dress at the rail.** A lead between two devices in one

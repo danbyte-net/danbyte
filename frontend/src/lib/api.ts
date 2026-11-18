@@ -4724,10 +4724,16 @@ export function accessoryKindLabel(kind: string): string {
 
 /** How a cord's run is drawn (the pack's `cable:` block). Sizes in mm. */
 export interface AccessoryCable {
-  profile: "zipcord" | "round"
+  profile: "zipcord" | "round" | "ribbon"
   jacket_mm: number
+  /** Centre to centre: a zip cord's or ribbon's. */
   pitch_mm: number | null
   min_bend_mm: number | null
+  /** A ribbon's jackets side by side (2-8); absent on the others. */
+  count?: number
+  /** Per part number: where one length needs a wider bend than
+   * `min_bend_mm`. Absent when none. */
+  min_bend_by_part?: Record<string, number>
 }
 
 /** A field a hand edit marks; a pack re-import keeps it. */

@@ -25,10 +25,14 @@ export interface PlugPart {
 /** How a cord's run is drawn from its `cable` empty (the pack's
  * `cable:` block). Sizes in mm. */
 export interface CordCable {
-  profile: "zipcord" | "round"
+  profile: "zipcord" | "round" | "ribbon"
   jacket_mm: number
   pitch_mm: number | null
   min_bend_mm: number | null
+  /** A ribbon's jackets (2-8). */
+  count?: number
+  /** A tighter limit for one length of the part, by part number. */
+  min_bend_by_part?: Record<string, number>
 }
 
 export interface CordPart extends PlugPart {

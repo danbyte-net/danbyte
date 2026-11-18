@@ -153,11 +153,20 @@ function Body({ part: p }: { part: AccessoryType }) {
     ? [
         {
           label: "Profile",
-          value: p.cable.profile === "zipcord" ? "Zip cord" : "Round",
+          value:
+            p.cable.profile === "zipcord"
+              ? "Zip cord"
+              : p.cable.profile === "ribbon"
+                ? `Ribbon of ${p.cable.count ?? 2}`
+                : "Round",
         },
         { label: "Jacket", value: mm(p.cable.jacket_mm) },
         { label: "Pitch", value: mm(p.cable.pitch_mm) },
         { label: "Minimum bend", value: mm(p.cable.min_bend_mm) },
+        ...Object.entries(p.cable.min_bend_by_part ?? {}).map(([part, v]) => ({
+          label: `Bend ${part}`,
+          value: mm(v),
+        })),
       ]
     : [{ label: "Cable", value: dash }]
   const pack = p.pack_import

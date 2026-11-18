@@ -98,6 +98,17 @@ class EditTests(_Base):
         self.assertTrue(ChangeLogEntry.objects.filter(
             object_type="api.accessorytype", object_id=str(self.lcd.pk)).exists())
 
+    def test_a_ribbon_cable_by_hand(self):
+        cable = {"profile": "ribbon", "count": 3, "jacket_mm": 6.0, "pitch_mm": 8.0,
+                 "min_bend_mm": 40.0, "min_bend_by_part": {"X-3M": 80.0}}
+        res = self._patch(self.lcd, {"cable": cable})
+        self.assertEqual(res.status_code, 200, res.content)
+        self.lcd.refresh_from_db()
+        self.assertEqual(self.lcd.cable, cable)
+        res = self._patch(self.lcd, {"cable": {**cable, "count": 12}})
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("cable", res.json())
+
     def test_an_unchanged_value_marks_nothing(self):
         res = self._patch(self.lr, {"standard": "10GBASE-LR", "parts": ["SFP-10G-LR"]})
         self.assertEqual(res.status_code, 200, res.content)

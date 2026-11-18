@@ -84,9 +84,11 @@ lists a port whether or not its device has a 3D model.
 - **Part numbers:** one per line; a duplicate (ignoring case and a trailing
   `=`) is dropped.
 - **Standard**, **Wavelength (nm)**, **Reach (m)**.
-- **Cable** (plugs and cords only): profile (zip cord or round, or no
-  cable), jacket, pitch (zip cord only) and minimum bend, in mm, with the
-  same limits a pack's `cable:` block has.
+- **Cable** (plugs and cords only): profile (zip cord, round or ribbon, or
+  no cable), jacket, pitch (zip cord and ribbon), a ribbon's jackets (2-8)
+  and minimum bend, in mm, with the same limits a pack's `cable:` block
+  has. A pack's per-length bends (`min_bend_by_part`) show on the Overview
+  and are kept on save.
 
 **Replace model** on the Overview uploads a new model through the same
 converter and checks as a module type's (GLB, glTF, STEP, STL…). The upload

@@ -8,7 +8,6 @@ import {
 import { useFrame, useThree } from "@react-three/fiber"
 import { Line } from "@react-three/drei"
 import * as THREE from "three"
-import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js"
 
 import { isCameraMoving } from "./camera-motion"
 import type { Line2 } from "three-stdlib"
@@ -22,14 +21,16 @@ import {
   cordLead,
   endSignature,
   roundCorners,
+  bendMm,
+  jacketCount,
   runCable,
-  transportFrames,
-  zipcordRails,
 } from "@/lib/cord-run"
 import type { CordEnd } from "@/lib/cord-run"
 import { fibreColor, fibreGrade } from "@/lib/fibre-colours"
 
 import { useCordEnds } from "./cord-ends"
+import { jacketsGeometry } from "./jacket-geometry"
+import type { JacketsProfile } from "./jacket-geometry"
 import { findModelPort, floorModelPortLocal } from "./device-model-ports"
 
 import {
@@ -517,11 +518,11 @@ export function cableRun(
 
   const A = endRun(cp.a_points, cp.a_tiles[0], 0)
   const B = endRun(cp.b_points, cp.b_tiles[0], 1)
-  // A drawn cord's minimum bend, at the model's scale.
+  // A drawn cord's minimum bend - the length the cable's label names,
+  // else the cord's - at the model's scale.
   const drawn = runCable(ends[0], ends[1])
-  const minBend = drawn?.cable.min_bend_mm
-    ? (drawn.cable.min_bend_mm / 1000) * drawn.scale
-    : 0
+  const bend = drawn ? bendMm(drawn.cable, cp.label) : null
+  const minBend = drawn && bend ? (bend / 1000) * drawn.scale : 0
   const fillet = (pts: Vec3[], r: number): CableRun => ({
     points: minBend > 0 ? roundCorners(pts, minBend, r) : filletPath(pts, r),
     a: ends[0],
@@ -903,7 +904,7 @@ function CableTube({
       return new THREE.TubeGeometry(path, segments, radius, 10, false)
     if (profile.kind === "round")
       return new THREE.TubeGeometry(path, segments, profile.radius, 8, false)
-    return zipcordGeometry(path, segments, profile)
+    return jacketsGeometry(path, segments, profile)
     // `profileKey` stands for `profile`.
   }, [points, radius, profileKey])
   useEffect(() => () => geometry.dispose(), [geometry])
@@ -939,27 +940,22 @@ function CableTube({
 }
 
 /** A run's cross-section from the cord at its ends (lib/cord-run): a round
- * jacket, or a zip cord's two jackets at their pitch, both at life size
- * times the View menu's scale. */
+ * jacket, or a zip cord's two jackets or a ribbon's `count` at their
+ * pitch, all at life size times the View menu's scale. */
 export type RunProfile =
-  | { kind: "round"; radius: number }
-  | {
-      kind: "zipcord"
-      radius: number
-      pitch: number
-      startUp: [number, number, number] | null
-      endUp: [number, number, number] | null
-    }
+  { kind: "round"; radius: number } | ({ kind: "jackets" } & JacketsProfile)
 
 export function runProfile(run: CableRun, scale = 1): RunProfile | null {
   const drawn = runCable(run.a, run.b)
   if (!drawn) return null
   const k = (drawn.scale * scale) / 1000
   const radius = (drawn.cable.jacket_mm / 2) * k
-  if (drawn.cable.profile === "round") return { kind: "round", radius }
+  const count = jacketCount(drawn.cable)
+  if (count === 1) return { kind: "round", radius }
   return {
-    kind: "zipcord",
+    kind: "jackets",
     radius,
+    count,
     pitch: (drawn.cable.pitch_mm ?? drawn.cable.jacket_mm) * k,
     startUp: run.a?.y ?? null,
     endUp: run.b?.y ?? null,
@@ -976,38 +972,6 @@ export function runColor(
   if (runCable(run.a, run.b) && fibreGrade(cp.type))
     return fibreColor(cp.color, cp.type)
   return cp.color || CABLE_FALLBACK
-}
-
-/** Two jackets side by side, carried untwisted along the run. */
-function zipcordGeometry(
-  path: THREE.Curve<THREE.Vector3>,
-  segments: number,
-  p: Extract<RunProfile, { kind: "zipcord" }>
-): THREE.BufferGeometry {
-  const centre = path
-    .getSpacedPoints(segments)
-    .map((q) => [q.x, q.y, q.z] as [number, number, number])
-  const frames = transportFrames(centre, p.startUp ?? [0, 1, 0], p.endUp)
-  const rails = zipcordRails(centre, frames, p.pitch)
-  const tubes = rails.map(
-    (rail) =>
-      new THREE.TubeGeometry(
-        new THREE.CatmullRomCurve3(
-          rail.map((q) => new THREE.Vector3(q[0], q[1], q[2]))
-        ),
-        segments,
-        p.radius,
-        6,
-        false
-      )
-  )
-  const merged = mergeGeometries(tubes) as THREE.BufferGeometry | null
-  if (merged) {
-    tubes.forEach((t) => t.dispose())
-    return merged
-  }
-  tubes[1].dispose()
-  return tubes[0]
 }
 
 /** The cord store's version, for memos that read it (0 without one). */

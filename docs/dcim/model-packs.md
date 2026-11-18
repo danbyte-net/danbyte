@@ -526,7 +526,7 @@ render's module part number may then be a module type the tenant has.
 |---|---|---|
 | Archive | A refusal from [the limits above](#security-limits). | |
 | `pack.yaml` | Missing; no `name`, `id`, `version` or `license`; `types` lists a part with no YAML. | No `types`; a YAML it doesn't list. |
-| Accessory types | No `name`; a `kind` other than `plug`, `transceiver` or `cord`; no usable `fits`; `model3d.file` missing, outside the pack or not a valid `.glb`. | A `fits` entry that isn't a type slug; `parts` not a list, or an entry that isn't a part number; a `wavelength_nm` that isn't a whole number of nm; a `cable:` block that isn't usable (unknown `profile`, no `jacket_mm`, a size that isn't a positive number of mm, a key Danbyte doesn't read), or one on a transceiver; a part number two accessory types list; over the triangle budget (a transceiver 1,500, a cord or plug 2,000); a transceiver with a connector but no `port:<connector>` empty; a cord with a `cable:` block but no `cable` empty; a part `types: accessory:` doesn't list. |
+| Accessory types | No `name`; a `kind` other than `plug`, `transceiver` or `cord`; no usable `fits`; `model3d.file` missing, outside the pack or not a valid `.glb`. | A `fits` entry that isn't a type slug; `parts` not a list, or an entry that isn't a part number; a `wavelength_nm` that isn't a whole number of nm; a `cable:` block that isn't usable (unknown `profile`, no `jacket_mm`, a size that isn't a positive number of mm, a ribbon without a `count` of 2-8 or a `pitch_mm` at least its jacket, a key Danbyte doesn't read), a `min_bend_by_part` entry that isn't a positive size or names a part the accessory doesn't list, or one on a transceiver; a part number two accessory types list; over the triangle budget (a transceiver 1,500, a cord or plug 2,000); a transceiver with a connector but no `port:<connector>` empty; a cord with a `cable:` block but no `cable` empty; a part `types: accessory:` doesn't list. |
 | Models | Not a valid `.glb`; over the triangle budget (chassis 150,000, far 15,000; module 30,000, far 3,000) or the size budget (8 MB, far 1 MB). | A model no YAML names; no far copy on a chassis or on a module of 5,000 triangles or more. |
 | Names | `bay:` with no module bay in the YAML; `bay:` in a module; `empty:` without its `bay:`; `port:` with no interface or other port (console, power, aux, front or rear port) in the YAML, `led:port:` with no interface (module names with `{module}`, as written); a name twice; an LED not on the `LED` material; the far copy missing a `bay:`, `empty:` or `led:` of the full model. | A module bay without a `bay:`; interfaces without a `port:`. |
 | LEDs | A `leds:` entry that doesn't parse or names no `led:` in the model; on a module type, a `led:` without an entry. | On a chassis, a `led:` without an entry (it stays off); a glob matching nothing. |
@@ -602,7 +602,8 @@ transceiver's model holds the module alone, plus an empty
 receptacle face: centred between the bores, +Z out, +Y up. Danbyte seats
 the cord at that empty. A cord's origin is its mating face, and its stub
 ends in an empty named **`cable`**: +Z along the cable, +Y up, a zip
-cord's two jackets along ±X. Both ends of a cable use the same cord model.
+cord's or ribbon's jackets along ±X, centred on it (turn the empty so its X
+runs the way the jackets lie). Both ends of a cable use the same cord model.
 
 A real transceiver, modelled by its part number:
 
@@ -629,9 +630,9 @@ kind: plug
 connector: lc
 fits: [lc-duplex, lc-apc-duplex]   # LC panel front ports
 cable:
-  profile: zipcord      # zipcord (two jackets side by side) | round
+  profile: zipcord      # zipcord (two jackets side by side) | round | ribbon
   jacket_mm: 1.8        # each jacket's diameter
-  pitch_mm: 1.84        # zipcord only: centre to centre
+  pitch_mm: 1.84        # zipcord and ribbon: centre to centre
   min_bend_mm: 30
 model3d:
   file: models/Generic/LC-DUPLEX.glb
@@ -639,13 +640,16 @@ model3d:
 
 | `cable` key | Meaning |
 |---|---|
-| `profile` | `zipcord`: two jackets side by side, `pitch_mm` apart. `round`: one jacket. |
+| `profile` | `zipcord`: two jackets side by side, `pitch_mm` apart. `round`: one jacket. `ribbon`: `count` jackets side by side, `pitch_mm` apart. |
 | `jacket_mm` | Each jacket's diameter. Needed. |
-| `pitch_mm` | A zip cord's centre-to-centre spacing; it defaults to, and is never less than, `jacket_mm`. A round cable has none. |
+| `pitch_mm` | Centre-to-centre spacing. A zip cord's defaults to, and is never less than, `jacket_mm`; a ribbon needs one no less than `jacket_mm`. A round cable has none. |
+| `count` | A ribbon's jackets, 2 to 8. Needed for a ribbon; a zip cord is always two, a round cable one. |
 | `min_bend_mm` | Optional. The tightest bend Danbyte draws where there is room. |
+| `min_bend_by_part` | Optional. `{part number: mm}` for a length that needs a wider bend than `min_bend_mm`. A recorded cable whose label is that part number bends by it. A part the accessory's `parts` doesn't list is kept with a warning. |
 
 Sizes are positive numbers of mm (up to 50 for a jacket, 100 for a pitch,
-2,000 for a bend). A block Danbyte can't use is left out with a warning;
+2,000 for a bend). A ribbon without a usable `count` or `pitch_mm` is left
+out with a warning. A block Danbyte can't use is left out with a warning;
 the cord then draws, and its run is drawn as before.
 
 ### Stack-cable heads {#stack-cable-heads}
@@ -657,20 +661,29 @@ length it stands for in `parts`, with a `cable:` block for the run.
 ```yaml
 name: STACK-T1
 kind: cord
-connector: stackwise
-fits: [cisco-stackwise-480, cisco-stackwise]
+connector: stack
+fits: [cisco-stackwise-480, cisco-stackwise-1t]
 parts: [STACK-T1-50CM, STACK-T1-1M, STACK-T1-3M]
 cable:
-  profile: round
-  jacket_mm: 6
-  min_bend_mm: 40
+  profile: ribbon
+  count: 3
+  pitch_mm: 11.2
+  jacket_mm: 6.1
+  min_bend_mm: 41
+  min_bend_by_part:
+    STACK-T1-3M: 82
 model3d:
   file: models/Cisco/STACK-T1.glb
 ```
 
-Danbyte picks the head by the stack port's type (`fits`): the part whose
+`connector: stack` marks a stack-cable head for every vendor. It names no
+medium (not fibre, copper or DAC), so the head is never picked for a data
+port's cable, and the pack check doesn't flag it. Danbyte picks the head by the stack port's type (`fits`): the part whose
 `parts` lists a recorded cable's label first, else the first by vendor and
-name. The run is drawn between the two heads' `cable` empties. Without a
+name. The run is drawn between the two heads' `cable` empties in the head's
+`cable:` profile: one round jacket, or a zip cord's or ribbon's jackets side
+by side along the empties' ±X, untwisted. A recorded cable whose label names
+a `min_bend_by_part` length bends by it; a derived ring uses `min_bend_mm`. Without a
 fitting part, a plain cable runs between the port anchors. A stack over data
 ports needs no special part: mark the interfaces `stack: true` in the device
 type's YAML (a Danbyte key, ignored elsewhere; it sets the template's
@@ -739,9 +752,11 @@ where a cord is drawn at an end, the cable's run starts at the cord's
 `cable` empty and leaves straight along its +Z, so it continues the stub.
 With the cord's `cable:` block the run takes its cross-section at life size
 (times the View menu's cable scale): a zip cord as two jackets side by side,
-carried along the route without twisting from the `cable` empty's +Y and
-turned evenly to meet the far end's; a round cable as one jacket. Corners
-bend no tighter than `min_bend_mm` where the route leaves room; between two
+a ribbon as its `count`, centred on the route, carried along it without
+twisting from the `cable` empty's +Y and turned evenly to meet the far
+end's; a round cable as one jacket. Corners bend no tighter than
+`min_bend_mm` - or the `min_bend_by_part` entry the cable's label names -
+where the route leaves room; between two
 close ports it bends as tightly as it must. A fibre run with a cord takes
 the `FIBRE` colour. An end without a cord drawn - a far copy, or a device
 without a model - starts at the port as before.

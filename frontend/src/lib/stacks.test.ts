@@ -9,6 +9,9 @@ import {
   stackLinkText,
   stackMembers,
   stackModeLeds,
+  STACK_MIN_BEND_M,
+  stackBendM,
+  stackProfile,
   stackRadiusM,
   stackRunPoints,
   withStackMode,
@@ -143,5 +146,49 @@ describe("stack cable run", () => {
       },
     }
     expect(stackRadiusM(head, b)).toBeCloseTo(0.004)
+  })
+
+  const head = (cable: CordEnd["cable"], at: Vec3 = [0, 0, 0]): CordEnd => ({
+    ...end(at),
+    cable,
+  })
+  const T1 = {
+    profile: "ribbon" as const,
+    count: 3,
+    jacket_mm: 6.1,
+    pitch_mm: 11.2,
+    min_bend_mm: 41,
+    min_bend_by_part: { "STACK-T1-3M": 82 },
+  }
+
+  it("draws the head's profile", () => {
+    expect(stackProfile(a, b)).toEqual({
+      kind: "round",
+      radius: STACK_JACKET_MM / 2000,
+    })
+    const zip = { ...T1, profile: "zipcord" as const, count: undefined }
+    const z = stackProfile(head(zip), b)
+    expect(z.kind === "jackets" && z.count).toBe(2)
+    const r = stackProfile(head(T1), head(T1, [0, -0.0445, 0]))
+    expect(r.kind).toBe("jackets")
+    if (r.kind !== "jackets") return
+    expect(r.count).toBe(3)
+    expect(r.pitch).toBeCloseTo(0.0112)
+    expect(r.radius).toBeCloseTo(0.00305)
+    expect(r.startUp).toEqual([0, 1, 0])
+  })
+
+  it("bends by the recorded cable's length, a derived one by the head's", () => {
+    const h = head(T1)
+    const recorded = { derived: false, label: "STACK-T1-3M" }
+    expect(stackBendM(h, b, recorded)).toBeCloseTo(0.082)
+    expect(
+      stackBendM(h, b, { derived: true, label: "STACK-T1-3M" })
+    ).toBeCloseTo(0.041)
+    expect(
+      stackBendM(h, b, { derived: false, label: "STACK-T1-1M" })
+    ).toBeCloseTo(0.041)
+    expect(stackBendM(h, b)).toBeCloseTo(0.041)
+    expect(stackBendM(a, b, recorded)).toBe(STACK_MIN_BEND_M)
   })
 })

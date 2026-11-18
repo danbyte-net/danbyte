@@ -162,7 +162,10 @@ stack lights with it. The hover card names the stack, the member number
 **Stack-cable heads.** On a dedicated stacking port, when the tenant has a
 stack-cable part - an [accessory type](model-packs.md#stack-cable-heads) of
 `kind: cord` that fits the port's type - one is seated at each end and the
-cable runs between their `cable` empties. A marked data port takes what any
+cable runs between their `cable` empties, drawn in the head's profile: one
+round jacket, or a zip cord's or ribbon's jackets side by side. Its corners
+bend no tighter than the head's bend, or the per-length one a recorded
+cable's label names. A marked data port takes what any
 cabled port of its type takes: a DAC head, an optic and its cord, an RJ45
 plug. Without a part, a plain dark cable runs from the ports.
 

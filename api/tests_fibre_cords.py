@@ -92,7 +92,7 @@ class CableBlockTests(SimpleTestCase):
 
     def test_bad_blocks_are_noted_and_dropped(self):
         for raw, why in (("zipcord", "not a mapping"),
-                         ({"profile": "ribbon", "jacket_mm": 2}, "cable.profile"),
+                         ({"profile": "flat", "jacket_mm": 2}, "cable.profile"),
                          ({"profile": "round"}, "jacket_mm: needed"),
                          ({"profile": "round", "jacket_mm": -1}, "cable.jacket_mm"),
                          ({"profile": "round", "jacket_mm": True}, "cable.jacket_mm")):
@@ -104,6 +104,65 @@ class CableBlockTests(SimpleTestCase):
                           "colour": "red"}, notes)
         self.assertIsNone(got["min_bend_mm"])
         self.assertEqual(len(notes), 2)
+
+    def test_a_ribbon(self):
+        notes = []
+        got = read_cable({"profile": "ribbon", "count": 3, "jacket_mm": 6.1,
+                          "pitch_mm": 11.2, "min_bend_mm": 41}, notes)
+        self.assertEqual(got, {"profile": "ribbon", "jacket_mm": 6.1, "pitch_mm": 11.2,
+                               "min_bend_mm": 41.0, "count": 3})
+        self.assertEqual(notes, [])
+
+    def test_a_ribbon_needs_a_count_and_a_pitch(self):
+        base = {"profile": "ribbon", "jacket_mm": 6, "pitch_mm": 8}
+        for raw, why in (({**base, "count": None}, "cable.count"),
+                         ({**base, "count": 1}, "cable.count"),
+                         ({**base, "count": 9}, "cable.count"),
+                         ({**base, "count": 2.5}, "cable.count"),
+                         ({**base, "count": True}, "cable.count"),
+                         ({**base, "count": 3, "pitch_mm": None}, "cable.pitch_mm"),
+                         ({**base, "count": 3, "pitch_mm": 5}, "cable.pitch_mm")):
+            notes = []
+            self.assertIsNone(read_cable(raw, notes), raw)
+            self.assertTrue(any(why in n and "ignored" in n for n in notes), (raw, notes))
+        for n in (2, 8):
+            self.assertEqual(read_cable({**base, "count": n}, [])["count"], n)
+        notes = []
+        self.assertEqual(read_cable({**base, "count": 2, "pitch_mm": 6}, notes)["pitch_mm"], 6.0)
+
+    def test_count_belongs_to_a_ribbon(self):
+        notes = []
+        got = read_cable({**ZIP, "count": 2}, notes)
+        self.assertEqual((got, notes), (ZIP, []))
+        got = read_cable({**ZIP, "count": 3}, notes)
+        self.assertNotIn("count", got)
+        self.assertEqual(notes, ["cable.count: only a ribbon has a count - ignored."])
+
+    def test_bends_by_part(self):
+        notes = []
+        raw = {"profile": "ribbon", "count": 3, "jacket_mm": 6.1, "pitch_mm": 11.2,
+               "min_bend_mm": 41, "min_bend_by_part": {"STACK-T1-3M": 82, "STACK-T1-9M": 90,
+                                                       "STACK-T1-1M": 0, "": 50,
+                                                       "STACK-T1-50CM": "x"}}
+        got = read_cable(raw, notes, ["STACK-T1-50CM", "STACK-T1-1M", "STACK-T1-3M"])
+        self.assertEqual(got["min_bend_by_part"], {"STACK-T1-3M": 82.0, "STACK-T1-9M": 90.0})
+        self.assertEqual(len(notes), 4, notes)
+        self.assertIn("cable.min_bend_by_part.STACK-T1-9M: not one of the part's parts; "
+                      "kept, but no cable of it is told apart.", notes)
+        # No parts given (a hand edit): nothing to check against.
+        notes = []
+        got = read_cable({**ZIP, "min_bend_by_part": {"X-1M": 50}}, notes)
+        self.assertEqual((got["min_bend_by_part"], notes), ({"X-1M": 50.0}, []))
+        notes = []
+        self.assertNotIn("min_bend_by_part",
+                         read_cable({**ZIP, "min_bend_by_part": [1]}, notes))
+        self.assertEqual(notes, ["cable.min_bend_by_part: not a mapping - ignored."])
+
+    def test_a_stack_connector_has_no_medium(self):
+        from .port_plugs import connector_medium
+
+        self.assertEqual(connector_medium("stack"), "")
+        self.assertEqual(connector_medium("st"), "fibre")
 
     def test_read_accessory_carries_it(self):
         doc = {"name": "LC-DUPLEX", "kind": "plug", "connector": "lc",
@@ -298,8 +357,33 @@ class CheckTests(SimpleTestCase):
             msgs = _msgs(_check(p))
         finally:
             p.cleanup()
-        self.assertIn("warning accessory-types/Generic/LC-DUPLEX.yaml: cable.profile: "
-                      "'ribbon' is not one of zipcord, round - the block is ignored.", msgs)
+        self.assertIn("warning accessory-types/Generic/LC-DUPLEX.yaml: cable.count: a ribbon "
+                      "needs 2-8 jackets, not None - the block is ignored.", msgs)
+
+    def test_a_stack_head_ribbon_checks_clean(self):
+        p = _CordPack()
+        p.write("accessory-types/Generic/LC-DUPLEX.yaml", CORD.replace(
+            "connector: lc", "connector: stack\nparts: [STACK-T1-1M, STACK-T1-3M]").replace(
+            "profile: zipcord", "profile: ribbon\n  count: 3").replace(
+            "pitch_mm: 1.84", "pitch_mm: 2").replace(
+            "min_bend_mm: 30", "min_bend_mm: 30\n  min_bend_by_part: {STACK-T1-3M: 60}"))
+        try:
+            rep = _check(p)
+        finally:
+            p.cleanup()
+        self.assertEqual(rep.warnings, 0, _msgs(rep))
+
+    def test_a_by_part_bend_for_another_part_warns(self):
+        p = _CordPack()
+        p.write("accessory-types/Generic/LC-DUPLEX.yaml", CORD.replace(
+            "min_bend_mm: 30", "min_bend_mm: 30\n  min_bend_by_part: {LC-9M: 60}"))
+        try:
+            msgs = _msgs(_check(p))
+        finally:
+            p.cleanup()
+        self.assertIn("warning accessory-types/Generic/LC-DUPLEX.yaml: "
+                      "cable.min_bend_by_part.LC-9M: not one of the part's parts; "
+                      "kept, but no cable of it is told apart.", msgs)
 
     def test_budgets_by_kind(self):
         # 1,600 triangles: over a transceiver's budget, within a cord's.

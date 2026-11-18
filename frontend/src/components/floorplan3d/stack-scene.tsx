@@ -15,12 +15,18 @@ import type { Vec3 } from "@/lib/cord-run"
 import {
   memberText,
   stackLinkText,
-  stackRadiusM,
+  stackProfile,
   stackRunPoints,
 } from "@/lib/stacks"
-import type { DeviceStack, SceneStack, StackLink } from "@/lib/stacks"
+import type {
+  DeviceStack,
+  SceneStack,
+  StackLink,
+  StackProfile,
+} from "@/lib/stacks"
 import type { StacksMode } from "@/lib/stacks-pref"
 
+import { jacketsGeometry } from "./jacket-geometry"
 import { KeepInView } from "./keep-in-view"
 import { GHOST_OPACITY } from "./port-plugs"
 import { PLUG_RENDER_ORDER } from "./plug-overlay"
@@ -164,7 +170,7 @@ export function StackCables({
       link: StackLink
       names: [string, string]
       points: Vec3[]
-      radius: number
+      profile: StackProfile
     }[] = []
     for (const s of stacks) {
       const name = new Map(s.members.map((m) => [m.device, m.name]))
@@ -179,8 +185,8 @@ export function StackCables({
             `${name.get(link.a.device) ?? ""} ${link.a.name}`.trim(),
             `${name.get(link.b.device) ?? ""} ${link.b.name}`.trim(),
           ],
-          points: stackRunPoints(a, b),
-          radius: stackRadiusM(a, b),
+          points: stackRunPoints(a, b, link),
+          profile: stackProfile(a, b),
         })
       }
     }
@@ -193,7 +199,7 @@ export function StackCables({
         <StackTube
           key={r.key}
           points={r.points}
-          radius={r.radius}
+          profile={r.profile}
           link={r.link}
           names={r.names}
           ghost={mode === "ghost"}
@@ -203,28 +209,35 @@ export function StackCables({
   )
 }
 
+/** One stack cable: the head's profile - one round jacket, or a zip cord's
+ * or ribbon's jackets side by side, untwisted from the heads' `cable`
+ * empties (lib/cord-run frames). */
 function StackTube({
   points,
-  radius,
+  profile,
   link,
   names,
   ghost,
 }: {
   points: Vec3[]
-  radius: number
+  profile: StackProfile
   link: StackLink
   names: [string, string]
   ghost: boolean
 }) {
   const [hover, setHover] = useState<Vec3 | null>(null)
+  const profileKey = JSON.stringify(profile)
   const geometry = useMemo(() => {
     const v = points.map((p) => new THREE.Vector3(p[0], p[1], p[2]))
     const path = new THREE.CatmullRomCurve3(v, false, "centripetal")
     let length = 0
     for (let i = 0; i < v.length - 1; i++) length += v[i].distanceTo(v[i + 1])
     const segments = Math.min(400, Math.max(32, Math.round(length / 0.01)))
-    return new THREE.TubeGeometry(path, segments, radius, 10, false)
-  }, [points, radius])
+    if (profile.kind === "round")
+      return new THREE.TubeGeometry(path, segments, profile.radius, 10, false)
+    return jacketsGeometry(path, segments, profile, 8)
+    // `profileKey` stands for `profile`.
+  }, [points, profileKey])
   useEffect(() => () => geometry.dispose(), [geometry])
   return (
     <>

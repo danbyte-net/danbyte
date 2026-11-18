@@ -24,25 +24,32 @@ export function linesOf(text: string): string[] {
 const num = (v: string): number | null => (v.trim() ? Number(v) : null)
 const str = (v: number | null | undefined) => (v != null ? String(v) : "")
 
-/** The cable block as the API takes it, or null for none. */
+/** The cable block as the API takes it, or null for none. A ribbon sends
+ * its count; the per-part bends (`byPart`, the pack's) ride along. */
 export function cablePayload(c: {
   profile: string
   jacket: string
   pitch: string
   bend: string
+  count?: string
+  byPart?: Record<string, number> | null
 }): AccessoryCable | null {
   if (!c.profile) return null
-  return {
+  const out: AccessoryCable = {
     profile: c.profile as AccessoryCable["profile"],
     jacket_mm: Number(c.jacket),
-    pitch_mm: c.profile === "zipcord" ? num(c.pitch) : null,
+    pitch_mm: c.profile === "round" ? null : num(c.pitch),
     min_bend_mm: num(c.bend),
   }
+  if (c.profile === "ribbon") out.count = Number(c.count ?? "")
+  if (c.byPart && Object.keys(c.byPart).length) out.min_bend_by_part = c.byPart
+  return out
 }
 
 const PROFILE_OPTIONS = [
   { value: "zipcord", label: "Zip cord" },
   { value: "round", label: "Round" },
+  { value: "ribbon", label: "Ribbon" },
 ]
 
 /**
@@ -73,6 +80,7 @@ export function PluggableForm({
   const [jacket, setJacket] = useState(str(part.cable?.jacket_mm))
   const [pitch, setPitch] = useState(str(part.cable?.pitch_mm))
   const [bend, setBend] = useState(str(part.cable?.min_bend_mm))
+  const [count, setCount] = useState(str(part.cable?.count))
   const hasCable = part.kind !== "transceiver"
 
   const mutation = useMutation({
@@ -88,7 +96,16 @@ export function PluggableForm({
           wavelength_nm: num(wavelength),
           reach_m: num(reach),
           ...(hasCable
-            ? { cable: cablePayload({ profile, jacket, pitch, bend }) }
+            ? {
+                cable: cablePayload({
+                  profile,
+                  jacket,
+                  pitch,
+                  bend,
+                  count,
+                  byPart: part.cable?.min_bend_by_part,
+                }),
+              }
             : {}),
         },
       }),
@@ -161,7 +178,7 @@ export function PluggableForm({
       </FormSection>
       {hasCable && (
         <FormSection title="Cable" card>
-          <div className="grid gap-3 @md:grid-cols-4">
+          <div className="grid gap-3 @md:grid-cols-3">
             <FormSelect
               label="Profile"
               value={profile || null}
@@ -182,7 +199,14 @@ export function PluggableForm({
               type="number"
               value={pitch}
               onChange={setPitch}
-              disabled={profile !== "zipcord"}
+              disabled={!profile || profile === "round"}
+            />
+            <FormText
+              label="Jackets"
+              type="number"
+              value={profile === "ribbon" ? count : ""}
+              onChange={setCount}
+              disabled={profile !== "ribbon"}
             />
             <FormText
               label="Minimum bend (mm)"

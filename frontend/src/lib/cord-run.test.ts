@@ -3,9 +3,13 @@ import { describe, expect, it } from "vitest"
 import {
   CORD_STUB_M,
   CordEndStore,
+  bendMm,
   cordLead,
   cross,
   dot,
+  jacketCount,
+  jacketOffsets,
+  jacketRails,
   len,
   roundCorners,
   runCable,
@@ -165,6 +169,58 @@ describe("a zip cord's frame", () => {
     const [l, r] = zipcordRails(route, frames, 0.00184)
     l.forEach((p, i) => expect(len(sub(p, r[i]))).toBeCloseTo(0.00184))
     expect(l[0][0]).toBeCloseTo(0.00092)
+  })
+
+  it("lays a ribbon's jackets centred, a pitch apart along the frame's X", () => {
+    expect(jacketOffsets(3, 0.01)).toEqual([-0.01, 0, 0.01])
+    expect(jacketOffsets(2, 0.01)).toEqual([-0.005, 0.005])
+    expect(jacketOffsets(1, 0.01)).toEqual([0])
+    const frames = transportFrames(route, [0, 1, 0])
+    for (const n of [3, 4, 8]) {
+      const rails = jacketRails(route, frames, 0.0112, n)
+      expect(rails).toHaveLength(n)
+      route.forEach((c, i) => {
+        // Centred on the run, each step along the frame's X, square to
+        // the run and to its up: flat, no twist.
+        const mid = [0, 1, 2].map(
+          (k) => rails.reduce((t, r) => t + r[i][k], 0) / n
+        )
+        expect(len(sub(mid as Vec3, c))).toBeCloseTo(0, 9)
+        for (let j = 1; j < n; j++) {
+          const d = sub(rails[j][i], rails[j - 1][i])
+          expect(len(d)).toBeCloseTo(0.0112)
+          expect(dot(d, frames[i].x) / len(d)).toBeCloseTo(1)
+          expect(dot(d, frames[i].n)).toBeCloseTo(0)
+          expect(dot(d, frames[i].t)).toBeCloseTo(0)
+        }
+      })
+      // At the A end the jackets lie along the cable empty's ±X.
+      expect(rails[0][0][0]).toBeCloseTo((-(n - 1) / 2) * 0.0112)
+    }
+  })
+
+  it("counts the jackets by profile", () => {
+    expect(jacketCount(null)).toBe(1)
+    expect(jacketCount({ ...ZIP, profile: "round" })).toBe(1)
+    expect(jacketCount(ZIP)).toBe(2)
+    expect(jacketCount({ ...ZIP, profile: "ribbon", count: 5 })).toBe(5)
+    expect(jacketCount({ ...ZIP, profile: "ribbon", count: 20 })).toBe(8)
+    expect(jacketCount({ ...ZIP, profile: "ribbon" })).toBe(2)
+  })
+})
+
+describe("bend by part", () => {
+  const cable = { ...ZIP, min_bend_by_part: { "STACK-T1-3M": 82 } }
+
+  it("takes the length the label names, else the cord's", () => {
+    expect(bendMm(cable, "STACK-T1-3M")).toBe(82)
+    expect(bendMm(cable, " stack-t1-3m= ")).toBe(82)
+    expect(bendMm(cable, "STACK-T1-1M")).toBe(30)
+    expect(bendMm(cable, "")).toBe(30)
+    expect(bendMm(cable, null)).toBe(30)
+    expect(bendMm(ZIP, "STACK-T1-3M")).toBe(30)
+    expect(bendMm({ ...ZIP, min_bend_mm: null }, "X")).toBeNull()
+    expect(bendMm(null, "STACK-T1-3M")).toBeNull()
   })
 })
 

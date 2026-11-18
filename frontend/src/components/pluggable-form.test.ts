@@ -28,4 +28,31 @@ describe("pluggable form", () => {
       min_bend_mm: 30,
     })
   })
+
+  it("sends a ribbon's count and keeps the per-part bends", () => {
+    const blank = { jacket: "6", pitch: "8", bend: "40" }
+    expect(
+      cablePayload({
+        profile: "ribbon",
+        ...blank,
+        count: "3",
+        byPart: { "X-3M": 80 },
+      })
+    ).toEqual({
+      profile: "ribbon",
+      jacket_mm: 6,
+      pitch_mm: 8,
+      min_bend_mm: 40,
+      count: 3,
+      min_bend_by_part: { "X-3M": 80 },
+    })
+    expect(
+      cablePayload({ profile: "zipcord", ...blank, count: "3", byPart: {} })
+    ).toEqual({
+      profile: "zipcord",
+      jacket_mm: 6,
+      pitch_mm: 8,
+      min_bend_mm: 40,
+    })
+  })
 })

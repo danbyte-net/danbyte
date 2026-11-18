@@ -70,7 +70,11 @@ KINDS = ("plug", "transceiver", "cord")
 TRANSCEIVER_TRIANGLES = 1_500
 ACCESSORY_TRIANGLES = 2_000
 #: A cord's run (``cable:``, §13 v1.9).
-CABLE_PROFILES = ("zipcord", "round")
+CABLE_PROFILES = ("zipcord", "round", "ribbon")
+#: How many jackets a ribbon holds (§13 v1.12); a zip cord is two, round one.
+RIBBON_COUNT = (2, 8)
+#: The most per-part bends a ``cable:`` block may give.
+MAX_BENDS_BY_PART = 64
 #: The largest jacket, pitch and bend a ``cable:`` block may give (mm).
 CABLE_MM_MAX = {"jacket_mm": 50.0, "pitch_mm": 100.0, "min_bend_mm": 2_000.0}
 
@@ -115,7 +119,8 @@ def connector_medium(connector: str) -> str:
     """``fibre``, ``dac``, ``copper`` or ``""`` for an accessory's
     ``connector``."""
     c = (connector or "").strip().lower()
-    if not c:
+    if not c or c == "stack":
+        # ``stack``: a stack-cable head (§13 v1.12), chosen by ``fits``.
         return ""
     if c.startswith(("dac", "twinax")):
         return "dac"
@@ -207,7 +212,7 @@ def read_accessory(path: str, data) -> tuple[dict | None, list[str]]:
         return None, ["model3d.file: missing or leaves the pack."]
     connector = str(data.get("connector") or "").strip().lower()[:32]
     parts, standard, wavelength = _read_part_facts(data, notes)
-    cable = read_cable(data.get("cable"), notes)
+    cable = read_cable(data.get("cable"), notes, parts)
     if cable is not None and kind == "transceiver":
         notes.append("cable: a transceiver has no cable of its own; its cord does - ignored.")
         cable = None
@@ -229,11 +234,15 @@ def _mm(block: dict, key: str, notes: list[str]) -> float | None:
     return round(float(v), 3)
 
 
-def read_cable(raw, notes: list[str]) -> dict | None:
+def read_cable(raw, notes: list[str], parts=None) -> dict | None:
     """A cord's ``cable:`` block - ``{profile, jacket_mm, pitch_mm,
-    min_bend_mm}`` - or None when there is none or it can't be used (noted).
-    ``pitch_mm`` belongs to a zip cord only; a zip cord without one, or with
-    one narrower than its jacket, takes the jacket as its pitch."""
+    min_bend_mm}``, plus ``count`` for a ribbon and ``min_bend_by_part``
+    when given - or None when there is none or it can't be used (noted).
+    ``pitch_mm`` belongs to a zip cord or ribbon; a zip cord without one, or
+    with one narrower than its jacket, takes the jacket as its pitch. A
+    ribbon needs ``count`` (2-8) and a ``pitch_mm`` no narrower than its
+    jacket. ``parts`` (the accessory's part numbers), when given, warns on
+    a ``min_bend_by_part`` key it doesn't list."""
     if raw is None:
         return None
     if not isinstance(raw, dict):
@@ -249,20 +258,68 @@ def read_cable(raw, notes: list[str]) -> dict | None:
         notes.append("cable.jacket_mm: needed - the block is ignored.")
         return None
     pitch = _mm(raw, "pitch_mm", notes)
+    count = None
     if profile == "round":
         if pitch is not None:
             notes.append("cable.pitch_mm: a round cable has no pitch - ignored.")
         pitch = None
+    elif profile == "ribbon":
+        lo, hi = RIBBON_COUNT
+        n = raw.get("count")
+        if isinstance(n, bool) or not isinstance(n, int) or not lo <= n <= hi:
+            notes.append(f"cable.count: a ribbon needs {lo}-{hi} jackets, not {n!r} - "
+                         "the block is ignored.")
+            return None
+        if pitch is None or pitch < jacket:
+            notes.append("cable.pitch_mm: a ribbon needs a pitch no narrower than its "
+                         "jacket - the block is ignored.")
+            return None
+        count = n
     elif pitch is None or pitch < jacket:
         if pitch is not None:
             notes.append(f"cable.pitch_mm: {pitch:g} is narrower than the jacket; "
                          f"{jacket:g} is used.")
         pitch = jacket
-    known = {"profile", "jacket_mm", "pitch_mm", "min_bend_mm"}
+    if profile != "ribbon" and raw.get("count") not in (None, 1 if profile == "round" else 2):
+        notes.append("cable.count: only a ribbon has a count - ignored.")
+    known = {"profile", "jacket_mm", "pitch_mm", "min_bend_mm", "count", "min_bend_by_part"}
     for k in sorted(set(map(str, raw)) - known):
         notes.append(f"cable.{k}: not a key Danbyte reads - ignored.")
-    return {"profile": profile, "jacket_mm": jacket, "pitch_mm": pitch,
-            "min_bend_mm": _mm(raw, "min_bend_mm", notes)}
+    out = {"profile": profile, "jacket_mm": jacket, "pitch_mm": pitch,
+           "min_bend_mm": _mm(raw, "min_bend_mm", notes)}
+    if count is not None:
+        out["count"] = count
+    by_part = _bends_by_part(raw.get("min_bend_by_part"), notes, parts)
+    if by_part:
+        out["min_bend_by_part"] = by_part
+    return out
+
+
+def _bends_by_part(raw, notes: list[str], parts) -> dict:
+    """``min_bend_by_part``: ``{PART: mm}``, positive sizes; a bad entry is
+    noted and left out, a part the accessory doesn't list only noted."""
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        notes.append("cable.min_bend_by_part: not a mapping - ignored.")
+        return {}
+    listed = {part_key(p) for p in parts} if parts is not None else None
+    out: dict[str, float] = {}
+    for k, v in list(raw.items())[:MAX_BENDS_BY_PART]:
+        part = str(k).strip() if isinstance(k, (str, int)) else ""
+        if not part or len(part) > PART_MAX or not part_key(part):
+            notes.append(f"cable.min_bend_by_part: {k!r} is not a part number - ignored.")
+            continue
+        top = CABLE_MM_MAX["min_bend_mm"]
+        if isinstance(v, bool) or not isinstance(v, (int, float)) or not 0 < v <= top:
+            notes.append(f"cable.min_bend_by_part.{part}: {v!r} is not a size in mm up to "
+                         f"{top:g} - ignored.")
+            continue
+        if listed is not None and part_key(part) not in listed:
+            notes.append(f"cable.min_bend_by_part.{part}: not one of the part's parts; "
+                         "kept, but no cable of it is told apart.")
+        out[part] = round(float(v), 3)
+    return out
 
 
 def _read_part_facts(data: dict, notes: list[str]):
@@ -385,9 +442,13 @@ def apply_accessory(tenant, path: str, data, files, *, dry_run: bool = False,
         notes.append(f"parts: {', '.join(fields['parts'])}.")
     if fields["cable"]:
         c = fields["cable"]
-        notes.append(f"cable: {c['profile']}, jacket {c['jacket_mm']:g} mm"
+        notes.append(f"cable: {c['profile']}"
+                     + (f" x{c['count']}" if c.get("count") else "")
+                     + f", jacket {c['jacket_mm']:g} mm"
                      + (f", pitch {c['pitch_mm']:g} mm" if c["pitch_mm"] else "")
-                     + (f", bend {c['min_bend_mm']:g} mm" if c["min_bend_mm"] else "") + ".")
+                     + (f", bend {c['min_bend_mm']:g} mm" if c["min_bend_mm"] else "")
+                     + (f", {len(c['min_bend_by_part'])} per-part bend(s)"
+                        if c.get("min_bend_by_part") else "") + ".")
     keep_model = "model" in kept and bool(obj.model_3d)
     if keep_model:
         notes.append("model: replaced by hand - kept.")
