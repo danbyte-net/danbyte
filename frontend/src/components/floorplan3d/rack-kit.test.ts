@@ -8,8 +8,8 @@ import {
   partName,
   wantedParts,
 } from "./rack-kit"
-import { LEGACY_LOOK  } from "./rack-kit-math"
-import type {SceneLook} from "./rack-kit-math";
+import { LEGACY_LOOK } from "./rack-kit-math"
+import type { SceneLook } from "./rack-kit-math"
 
 const LOOK: SceneLook = {
   ...LEGACY_LOOK,

@@ -1,11 +1,5 @@
-import {
-  EAR_POSITION_LABELS,
-  EAR_POSITIONS
-  
-  
-  
-} from "@/lib/rack-mount"
-import type {EarPosition, RackMountDraft, RailKind} from "@/lib/rack-mount";
+import { EAR_POSITION_LABELS, EAR_POSITIONS } from "@/lib/rack-mount"
+import type { EarPosition, RackMountDraft, RailKind } from "@/lib/rack-mount"
 import {
   FormCheckbox,
   FormSection,

@@ -4,14 +4,8 @@ import * as THREE from "three"
 
 import { PANEL_MM } from "@/lib/faceplate-geometry"
 
-import {
-  doorKey,
-  reducedMotion,
-  toggleDoor,
-  useDoorOpen
-  
-} from "./door-state"
-import type {DoorSide} from "./door-state";
+import { doorKey, reducedMotion, toggleDoor, useDoorOpen } from "./door-state"
+import type { DoorSide } from "./door-state"
 import {
   blankingSlots,
   doorInfill,
@@ -19,11 +13,9 @@ import {
   isEnclosed,
   postSpots,
   railPlanesM,
-  stepDoor
-  
-  
+  stepDoor,
 } from "./rack-kit-math"
-import type {RackDoor, SceneLook} from "./rack-kit-math";
+import type { RackDoor, SceneLook } from "./rack-kit-math"
 import { rackFrameWidthM } from "./rack-models"
 import { useDeviceModel } from "./device-model"
 import { RACK_BASE_M, RACK_CAP_M, TRANSPARENT_ORDER, mm } from "./world"
@@ -56,11 +48,7 @@ function Steel({
   shadows?: boolean
 }) {
   return (
-    <mesh
-      position={pos}
-      castShadow={shadows}
-      receiveShadow={shadows}
-    >
+    <mesh position={pos} castShadow={shadows} receiveShadow={shadows}>
       <boxGeometry args={size} />
       <meshStandardMaterial
         color={color}
