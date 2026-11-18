@@ -387,6 +387,10 @@ CABLE_TYPE_CHOICES: GroupedChoices = [
     ("Fiber - other", [
         ("aoc", "Active Optical Cabling (AOC)"),
     ]),
+    ("Stacking", [
+        ("stack", "Stack cable"),
+        ("stack-power", "StackPower cable"),
+    ]),
     ("Power / other", [
         ("power", "Power"),
         ("usb", "USB"),

@@ -199,10 +199,17 @@ class PayloadTests(_Base):
             "b": {"device": str(self.members[2].id), "port": "StackPort1/2",
                   "name": "StackPort3/2", "id": str(ids["StackPort3/2"])},
             "kind": "data", "derived": False, "cable": str(cable.id), "color": "#00ff00",
-            "label": "X", "length_m": None, "parts": []}])
+            "label": "X", "length_m": None, "parts": []}, {
+            "a": {"device": str(self.members[2].id), "port": "StackPort1/1",
+                  "name": "StackPort3/1", "id": str(ids["StackPort3/1"])},
+            "b": {"device": str(self.dev.id), "port": "StackPort1/2", "name": "StackPort1/2",
+                  "id": str(ids["StackPort1/2"])},
+            "kind": "data", "derived": True, "cable": None, "color": None,
+            "label": "", "length_m": None, "parts": []}])
         one = out["devices"][str(self.dev.id)]
-        # A cabled port hides its cover as any does; nothing is derived.
-        self.assertEqual((one["covers"], one["stack_covers"]), (["StackPort1/1"], []))
+        # A cabled port hides its cover as any does; the free link stays derived.
+        self.assertEqual((one["covers"], one["stack_covers"]),
+                         (["StackPort1/1"], ["StackPort1/2"]))
         self.assertEqual(out["devices"][str(self.members[1].id)]["stack_plugs"], [])
 
     def test_a_recorded_cable_takes_its_terminations_sides(self):
@@ -210,13 +217,17 @@ class PayloadTests(_Base):
         self._cable("StackPort3/2", "StackPort1/1")
         out = self._payload()
         ends = {(dev, p["name"]): p["end"] for dev, e in out["devices"].items()
-                for p in e["stack_plugs"]}
+                for p in e["stack_plugs"] if not p["derived"]}
         self.assertEqual(ends, {(str(self.dev.id), "StackPort1/1"): "b",
                                 (str(self.members[2].id), "StackPort3/2"): "a"})
 
-    def test_a_recorded_cable_elsewhere_in_the_stack_stops_the_ring(self):
+    def test_a_recorded_cable_replaces_only_its_own_link(self):
         self._cable("StackPort2/1", "StackPort3/2")
-        self.assertEqual(self._links(self.dev), [])
+        self.assertEqual(self._links(), [
+            ("StackPort2/1", "StackPort3/2", False),
+            ("StackPort1/1", "StackPort2/2", True),
+            ("StackPort3/1", "StackPort1/2", True),
+        ])
 
     def test_missing_ports_skip_their_links(self):
         Interface.objects.filter(name="StackPort2/2").delete()
@@ -330,8 +341,11 @@ class ScopeTests(_Base):
         self._cable("StackPort1/1", "StackPort2/2")
         self._reader(["device", "devicetype", "interface"])
         [s] = self._payload()["stacks"]
-        # Nor is a ring derived in their place.
-        self.assertEqual(s["links"], [])
+        # Not drawn, and not derived over: the free links stay derived.
+        self.assertEqual([(lk["a"]["name"], lk["b"]["name"], lk["derived"])
+                          for lk in s["links"]],
+                         [("StackPort2/1", "StackPort3/2", True),
+                          ("StackPort3/1", "StackPort1/2", True)])
 
     def test_another_tenants_stack_never_shows(self):
         other_vc = VirtualChassis.objects.create(tenant=self.other, name="OTHER")
@@ -380,7 +394,7 @@ class AnyVendorTests(_Base):
         dac.save()
         self._cable("1/1/49", "2/1/50", type="dac-passive")
         two = self._payload()["devices"][str(self.members[1].id)]
-        [p] = two["stack_plugs"]
+        [p] = [q for q in two["stack_plugs"] if q["name"] == "2/1/50"]
         self.assertEqual((p["name"], p["derived"], p["cord_part"]["connector"]),
                          ("2/1/50", False, "dac"))
 
@@ -398,7 +412,7 @@ class AnyVendorTests(_Base):
                                      part_id="SFP-10G-SR", serial_number="X1",
                                      interface=Interface.objects.get(name="1/1/49"))
         one = self._payload()["devices"][str(self.dev.id)]
-        [p] = one["stack_plugs"]
+        [p] = [q for q in one["stack_plugs"] if q["name"] == "1/1/49"]
         self.assertEqual((p["transceiver"], p["transceiver_part"]["kind"]),
                          ({"part_id": "SFP-10G-SR", "serial": "X1"}, "transceiver"))
         self.assertEqual(one["plugs"], [])
@@ -410,13 +424,17 @@ class AnyVendorTests(_Base):
             ("StackPort2/1", "StackPort3/2", True),
         ])
 
-    def test_a_cable_off_the_stack_does_not_stop_the_ring(self):
+    def test_a_cable_off_the_stack_takes_only_its_port(self):
         uplink = Interface.objects.create(device=self.dev, name="Te1/0/9")
         cable = Cable.objects.create(tenant=self.tenant)
         CableTermination.objects.create(cable=cable, end="A",
                                         interface=Interface.objects.get(name="StackPort2/1"))
         CableTermination.objects.create(cable=cable, end="B", interface=uplink)
-        self.assertEqual(len(self._links()), 3)
+        # The port is taken: no stack cable is derived into it.
+        self.assertEqual(self._links(), [
+            ("StackPort1/1", "StackPort2/2", True),
+            ("StackPort3/1", "StackPort1/2", True),
+        ])
 
     def test_the_mark_is_copied_from_the_template(self):
         from .models import materialize_device_components
@@ -618,7 +636,9 @@ class StackPowerTests(_PowerBase):
             "b": {"device": str(m3.id), "port": "StackPower1/B", "name": "StackPower1/B",
                   "id": str(pb.id)},
             "kind": "power", "derived": False, "cable": str(cable.id), "color": "#808080",
-            "label": "CAB-SPWR-30CM", "length_m": 0.3, "parts": []}])
+            "label": "CAB-SPWR-30CM", "length_m": 0.3, "parts": []}] + power[1:])
+        # The rest of the power ring stays derived.
+        self.assertEqual([lk["derived"] for lk in power], [False, True, True])
         # The data ring is decided apart and still derived.
         self.assertEqual([lk["derived"] for lk in s["links"] if lk["kind"] == "data"],
                          [True] * 3)
@@ -626,16 +646,18 @@ class StackPowerTests(_PowerBase):
         # A cabled power port hides its cover as any cabled port does.
         self.assertEqual(one["covers"], ["StackPower1/A"])
         self.assertNotIn("StackPower1/A", one["stack_covers"])
-        self.assertEqual([p["end"] for p in one["stack_plugs"] if p["port_type"] == SPWR],
-                         ["a"])
+        self.assertEqual([p["end"] for p in one["stack_plugs"]
+                          if p["port_type"] == SPWR and not p["derived"]], ["a"])
+        # Member 2's StackPower ports are in the two derived links.
         self.assertEqual([p["port_type"] for p in out["devices"][str(m2.id)]["stack_plugs"]],
-                         [STACK, STACK])
+                         [STACK, STACK, SPWR, SPWR])
 
     def test_a_recorded_data_cable_leaves_the_power_ring(self):
         self._cable("StackPort1/1", "StackPort2/2")
         links = self._payload()["stacks"][0]["links"]
         self.assertEqual([(lk["kind"], lk["derived"]) for lk in links],
-                         [("data", False)] + [("power", True)] * 3)
+                         [("data", False), ("data", True), ("data", True)]
+                         + [("power", True)] * 3)
 
     def test_the_stackpower_head_seats_at_each_end(self):
         acc = AccessoryType(tenant=self.tenant, vendor="Cisco", name="CAB-SPWR",
@@ -698,7 +720,9 @@ class StackPowerScopeTests(_PowerBase):
     def test_without_cable_view_recorded_power_cables_are_not_drawn(self):
         self._power_cable(self.members[0], "StackPower1/B", self.members[1], "StackPower1/A")
         self._reader(["device", "devicetype", "interface", "powerport"])
-        self.assertEqual(self._power_links(), [])
+        # Not drawn; only the links between free ports stay derived.
+        self.assertTrue(self._power_links())
+        self.assertTrue(all(lk[-1] for lk in self._power_links()))
         # The port is cabled and theirs to view: its cover still hides.
         one = self._payload()["devices"][str(self.dev.id)]
         self.assertIn("StackPower1/B", one["covers"])

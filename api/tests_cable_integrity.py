@@ -140,6 +140,21 @@ class CompatibilityTests(_Case):
         self.assertEqual(r.json(), {"b": ["An interface can't be cabled to a power outlet."]})
         self.assertFalse(Cable.objects.exists())
 
+    def test_stackpower_ports_join_each_other(self):
+        a = PowerPort.objects.create(device=self.sw1, name="StackPower1/B",
+                                     type="cisco-stackpower")
+        b = PowerPort.objects.create(device=self.sw2, name="StackPower2/A",
+                                     type="cisco-stackpower")
+        r = self.cable([("power_port", a)], [("power_port", b)])
+        self.assertEqual(r.status_code, 201, r.content)
+
+    def test_plain_power_ports_still_refused(self):
+        a = PowerPort.objects.create(device=self.sw1, name="PSU1", type="iec-60320-c14")
+        b = PowerPort.objects.create(device=self.sw2, name="StackPower2/A",
+                                     type="cisco-stackpower")
+        r = self.cable([("power_port", a)], [("power_port", b)])
+        self.assertEqual(r.status_code, 400, r.content)
+
     def test_the_rule_table(self):
         for a in KINDS:
             for b in KINDS:

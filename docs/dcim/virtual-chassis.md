@@ -140,16 +140,17 @@ A rack's [3D view](racks.md#the-rack-in-3d) and the floor plan's
   again by the room's cable layer. [Auto-connect](#auto-connect) cables
   and cables made with [Record cable](#record-a-derived-cable) are recorded
   cables.
-- **Derived ring.** When no such cable is recorded, Danbyte draws the ring
-  the member order implies. Each member's stack ports are put in natural
+- **Derived ring.** Between ports that have no cable, Danbyte draws the
+  ring the member order implies. A recorded cable replaces only its own
+  link; the rest of the ring stays derived. A port cabled to anything else
+  gets no derived cable either. Each member's stack ports are put in natural
   name order and the first two are its **A** and **B**: member *n*'s A to
   member *n+1*'s B, and the last member back to the first. `StackPort2/1` /
   `StackPort2/2`, `vcp-255/1/0` / `/1` and `1/1/49` / `50` all work, with no
   name patterns. A two-member stack gets two cables, A1 to B2 and A2 to B1.
   A stack whose **Topology** is **Chain** leaves out the closing cable. A
   member without one of the ports skips that cable; one with more than two
-  uses A and B only - draw the rest by recording the cables. Recorded cables
-  always win.
+  uses A and B only - draw the rest by recording the cables.
 
 ### StackPower {#stackpower}
 
@@ -162,8 +163,9 @@ way:
   In natural name order the first two are its **A** and **B**
   (`StackPower1/A`, `StackPower1/B` on a Catalyst 9300).
 - **Recorded cables.** Any cable between two StackPower ports of members of
-  the same stack.
-- **Derived ring.** When none is recorded: member *n*'s B to member
+  the same stack. A cable may join two power ports only when both are
+  StackPower ports.
+- **Derived ring.** Between free ports, as for the data ring: member *n*'s B to member
   *n+1*'s A, the last back to the first. A StackPower ring joins at most
   **four** switches (Cisco's limit on the C9300), so members 1-4, 5-8, …
   each close their own ring; a last member left on its own gets none. The
@@ -247,7 +249,8 @@ head's per-length bend when the label names a `min_bend_by_part` part.
 
 ### Tracing a cable {#tracing-a-cable}
 
-Click a stack or StackPower cable, or the head at either end, to pick it:
+Click a stack or StackPower cable, or the head at either end, to pick it.
+Hovering a head previews its cable the same way.
 
 - The cable draws solid in the selection colour, with both ends marked.
   Every other stack cable is ghosted.
@@ -277,11 +280,11 @@ A derived cable is a drawing aid. To make it data, pick it and press
 
 **Record all** has **Length for all** at the top, which sets every row
 from one part; each row stays editable. The cable gets the two ports as
-its A and B terminations and the type **Power** for a StackPower cable
-(none for a stack cable). Each is an ordinary cable create: it needs
+its A and B terminations and the cable type **Stack cable** or
+**StackPower cable** (the **Stacking** group of cable types). Each is an ordinary cable create: it needs
 cable add, is scoped and validated like any cable, and is logged in the
 change log. The views then draw it as recorded - and, as a recorded
-cable always does, it stops the derived ring of its kind for the stack.
+cable always does, it takes the place of its own derived link.
 
 ### On a port's page {#on-a-ports-page}
 
@@ -368,7 +371,7 @@ real cables that Danbyte keeps in step with the stack:
   chain without its closing link, StackPower in rings of at most four - is
   recorded as a cable between the two ports. Its label is the head's
   shortest part number (`STACK-T1-50CM`, `CAB-SPWR-30CM`) with that length,
-  when the tenant has a head part; a StackPower cable is typed **Power**.
+  when the tenant has a head part; typed **Stack cable** or **StackPower cable**.
 - **Kept in step:** a member added, removed or renumbered, the stack's
   topology changed, or a stack port added, removed or retyped, and the
   stack's auto cables are brought in line when the change commits: a cable

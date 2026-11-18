@@ -313,20 +313,26 @@ def stacks(devices, owners: dict, user, tenant, accessories=()) -> tuple[list, d
                 for name, _t, _vis, cable, _pk in stack_ports[m[0]]:
                     if cable is not None:
                         by_cable.setdefault(cable, []).append((m[0], name))
-            if any(len(ends) == 2 for ends in by_cable.values()):
-                for cable, ends in sorted(by_cable.items(), key=lambda kv: str(kv[0])):
-                    if len(ends) != 2 or cable not in cables:
-                        continue
-                    a, b = (end(*e) for e in ends)
-                    if a and b:
-                        color, ctype, label, metres = cables[cable]
-                        links.append((a, b, False, cable, color, ctype, label or "", kind,
-                                      metres))
-                continue
+            for cable, ends in sorted(by_cable.items(), key=lambda kv: str(kv[0])):
+                if len(ends) != 2 or cable not in cables:
+                    continue
+                a, b = (end(*e) for e in ends)
+                if a and b:
+                    color, ctype, label, metres = cables[cable]
+                    links.append((a, b, False, cable, color, ctype, label or "", kind,
+                                  metres))
+            # Derived: the ring by member order, for the links whose two
+            # ports are both still free - a recorded cable replaces only
+            # its own link, not the rest of the ring.
+            cabled = {(m[0], name) for m in members
+                      for name, _t, _vis, cable, _pk in stack_ports[m[0]]
+                      if cable is not None}
             order = [(m[0], [p[0] for p in stack_ports[m[0]]]) for m in members]
             derived = (ring(order, closed=s["closed"]) if kind == "data"
                        else power_ring(order))
             for (ad, ap), (bd, bp) in derived:
+                if (ad, ap) in cabled or (bd, bp) in cabled:
+                    continue
                 a, b = end(ad, ap), end(bd, bp)
                 if a and b:
                     links.append((a, b, True, None, "", "", "", kind, None))

@@ -146,8 +146,8 @@ def _parts_for(accessories, ptype: str) -> list[str]:
 
 def derived_for_device(device, user, tenant) -> dict:
     """``{port id: {kind, name, far: {device, device_name, port, id}, parts}}``
-    for ``device``'s stack ports in a derived link (no stack port of the
-    stack cabled for that kind, as the 3D views draw it), the far end one
+    for ``device``'s stack ports in a derived link (both its ports free,
+    as the 3D views draw it), the far end one
     the reader may view; ``parts`` the head's part numbers, for Record
     cable. Three queries at most; none when the device is in no stack."""
     vc = device.virtual_chassis
@@ -158,9 +158,10 @@ def derived_for_device(device, user, tenant) -> dict:
     out: dict = {}
     for kind in ("data", "power"):
         members = ports.get((vc.pk, kind), [])
-        if any(p[3] is not None for m in members for p in m[3]):
-            continue
         for (am, ap), (bm, bp) in _ring(members, kind, vc.stack_topology != "chain"):
+            # A recorded cable replaces only its own link.
+            if ap[3] is not None or bp[3] is not None:
+                continue
             for (mine, mp), (far, fp) in (((am, ap), (bm, bp)), ((bm, bp), (am, ap))):
                 if mine[0] != device.pk or not (far[2] and fp[4]):
                     continue
@@ -233,7 +234,7 @@ def reconcile(vc) -> dict:
                         _parts_for(accessories, a[1]) or _parts_for(accessories, b[1]))
                     cable = Cable.objects.create(
                         tenant=vc.tenant, label=label,
-                        type="power" if kind == "power" else "",
+                        type="stack-power" if kind == "power" else "stack",
                         length=length[0] if length else None,
                         length_unit=length[1] if length else "m",
                         auto_source=source, auto_chassis=vc)

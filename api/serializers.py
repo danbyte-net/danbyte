@@ -6941,11 +6941,18 @@ class CableSerializer(TableSerializerMixin, CustomFieldsSerializerMixin, StatusS
         if ends_changed:
             from .cable_points import compatible_ends
 
+            from .dcim_choices import STACK_POWER_PORT_TYPES
+
             a_kinds = {k for k, _ in eff_a}
             b_kinds = {k for k, _ in eff_b}
+            # A StackPower cable joins two power ports, both StackPower.
+            stack_power = a_kinds == b_kinds == {"power_port"} and all(
+                getattr(o, "type", "") in STACK_POWER_PORT_TYPES
+                for _k, o in (*eff_a, *eff_b)
+            )
             for ak in sorted(a_kinds):
                 for bk in sorted(b_kinds):
-                    if not compatible_ends(ak, bk):
+                    if not compatible_ends(ak, bk) and not stack_power:
                         side = "b" if b is not None else "a"
                         raise serializers.ValidationError({side: (
                             f"{_kind_label(ak, article=True)} can't be cabled to "

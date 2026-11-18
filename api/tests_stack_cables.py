@@ -55,10 +55,11 @@ class DerivedLinkTests(_PowerBase):
         iface = Interface.objects.get(device=self.members[1], name="StackPort2/1")
         self.assertIn(str(iface.id), ports)
 
-    def test_a_recorded_cable_stops_the_derived_ring(self):
+    def test_a_recorded_cable_replaces_only_its_own_link(self):
         self._cable("StackPort1/1", "StackPort2/2")
         ports = self._get(self.members[1])
-        self.assertEqual({v["kind"] for v in ports.values()}, {"power"})
+        names = sorted(v["name"] for v in ports.values())
+        self.assertEqual(names, ["StackPort2/1", "StackPower1/A", "StackPower1/B"])
 
     def test_parts_for_record_cable(self):
         AccessoryType.objects.create(tenant=self.tenant, vendor="Cisco", name="STACK-T1",
@@ -140,7 +141,7 @@ class AutoConnectTests(_PowerBase):
         power = self._auto("stack-power")
         self.assertEqual(len(power), 4)
         self.assertIn(("sw4:StackPower1/B", "sw1:StackPower1/A"), power)
-        self.assertEqual(Cable.objects.filter(auto_source="stack-power").first().type, "power")
+        self.assertEqual(Cable.objects.filter(auto_source="stack-power").first().type, "stack-power")
 
     def test_existing_cable_respected(self):
         manual = self._cable("StackPort1/1", "StackPort3/2", label="MINE")
