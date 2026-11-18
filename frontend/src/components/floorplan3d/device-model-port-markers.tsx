@@ -38,7 +38,7 @@ import {
 
 import { PORT_MARKERS_KEY } from "./port-pick"
 import { KeepInView } from "./keep-in-view"
-import { usePlugOverlay } from "./plug-overlay"
+import { MARKER_RENDER_ORDER, usePlugOverlay } from "./plug-overlay"
 
 /**
  * The ports mapped onto a floor device's 3D model, each drawn as its own
@@ -601,6 +601,7 @@ function OpeningGroup({
         key={`fill-${members.length}`}
         ref={fillRef}
         args={[fillGeo, undefined, members.length]}
+        renderOrder={MARKER_RENDER_ORDER}
       >
         <meshBasicMaterial
           toneMapped={false}
@@ -614,8 +615,17 @@ function OpeningGroup({
         key={`rim-${members.length}`}
         ref={rimRef}
         args={[rimGeo, undefined, members.length]}
+        renderOrder={MARKER_RENDER_ORDER}
       >
-        <meshBasicMaterial toneMapped={false} side={THREE.DoubleSide} />
+        {/* Full strength, but drawn with the see-through things so it can
+            come after the ghosted pluggables (PLUG_RENDER_ORDER). */}
+        <meshBasicMaterial
+          toneMapped={false}
+          side={THREE.DoubleSide}
+          transparent
+          opacity={1}
+          depthWrite={false}
+        />
       </instancedMesh>
     </>
   )

@@ -17,7 +17,7 @@ import type { CordCable, PortPlug } from "@/lib/port-plugs"
 import { useCordEnds } from "./cord-ends"
 import { useDeviceModels } from "./device-model"
 import type { ModelEntry } from "./device-model"
-import { usePlugOverlay } from "./plug-overlay"
+import { PLUG_RENDER_ORDER, usePlugOverlay } from "./plug-overlay"
 
 /**
  * Parts seated in a device's ports (docs/dcim/model-packs.md → Accessory
@@ -406,6 +406,7 @@ function PartInstances({
         im.raycast = () => {}
         im.castShadow = false
         im.receiveShadow = !ghost
+        im.renderOrder = PLUG_RENDER_ORDER
         return im
       }),
     [meshes, count, ghost]
@@ -573,9 +574,7 @@ export function PortPlugs({
       {groups.map(([gk, g]) => {
         const e = entries.get(g.url)
         if (e?.status !== "ready" || !e.scene) return null
-        return (
-          <PartInstances key={gk} entry={e} seats={g.at} ghost={g.ghost} />
-        )
+        return <PartInstances key={gk} entry={e} seats={g.at} ghost={g.ghost} />
       })}
     </>
   )

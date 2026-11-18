@@ -6,6 +6,13 @@ import {
 } from "react"
 import type { ReactNode } from "react"
 
+/** Draw order among see-through things: ghosted pluggables first, the port
+ * washes and rims after them. A ghost writes no depth, so a wash drawn later
+ * reads through it untinted - left to three's distance sort, several stacked
+ * ghost meshes (body, boot, cable) greyed the speed colour out. */
+export const PLUG_RENDER_ORDER = 1
+export const MARKER_RENDER_ORDER = 2
+
 /**
  * What one drawn device's seated parts (port-plugs) and its port markers
  * (device-model-port-markers) tell each other, so the Ports overlay reads
