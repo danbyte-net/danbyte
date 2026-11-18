@@ -578,6 +578,38 @@ def _watts(value):
     return n if 0 <= n <= 2_147_483_647 else None
 
 
+def add_device_power_ports(dt, data: dict) -> int:
+    """Power port templates from a device-types YAML's ``power-ports:`` that
+    ``dt`` lacks by name - a chassis' StackPower ports or inlets a pack
+    names after the type was imported. A type whose interfaces carry
+    ``{position}`` gets the names positionized as its import did. Returns
+    the created count; existing templates and devices are left as they
+    are (the type's Sync devices stamps the new ports)."""
+    rows = data.get("power-ports")
+    rows = [r for r in rows if isinstance(r, dict)] if isinstance(rows, list) else []
+    if not rows:
+        return 0
+    stacked = dt.interface_templates.filter(name__contains="{position").exists()
+    have = set(dt.power_port_templates.values_list("name", flat=True))
+    made, seen = [], set()
+    for r in rows:
+        name = str(r.get("name") or "").strip()
+        if stacked:
+            name = positionize(name)
+        name = name[:64]
+        if not name or name in have or name in seen:
+            continue
+        seen.add(name)
+        made.append(PowerPortTemplate(
+            device_type=dt, name=name,
+            type=str(r.get("type") or "")[:32],
+            maximum_draw=_watts(r.get("maximum_draw")),
+            allocated_draw=_watts(r.get("allocated_draw")),
+        ))
+    PowerPortTemplate.objects.bulk_create(made)
+    return len(made)
+
+
 def add_module_power_ports(mt, data: dict) -> int:
     """Power port templates from a module-types YAML's ``power-ports:`` (a
     PSU's inlet; ``{module}`` kept) that ``mt`` lacks by name. Returns the

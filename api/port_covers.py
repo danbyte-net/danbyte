@@ -4,7 +4,7 @@ A model names a removable blank or dust plug in a port ``cover:port:<interface
 name>`` (export spec v1.5; api.model_anchors stores them as ``port_covers``).
 The model is drawn as authored - every cover in place - and a device hides
 the covers of its ports that are in use: cabled (a ``CableTermination`` on the
-interface) or marked connected. A type's own view and its generated faces
+interface or power port - a StackPower port's blank) or marked connected. A type's own view and its generated faces
 have no cabling, so they keep every cover.
 
 ``hidden_covers`` answers that for many devices at once, in one query, for one
@@ -25,23 +25,25 @@ def cover_names(anchors) -> list[str]:
     return [str(k) for k in covers] if isinstance(covers, dict) else []
 
 
-def _wanted(device, owner) -> list[tuple[str | None, str, str]]:
-    """``[(bay or None, cover name as drawn, interface name)]`` for one
-    device: its chassis' covers, and each installed module's."""
-    from .anchor_names import chassis_interface, module_interface
+def _wanted(device, owner) -> list[tuple[str | None, str, tuple[str, str]]]:
+    """``[(bay or None, cover name as drawn, (port kind, port name))]`` for
+    one device: its chassis' covers, and each installed module's. A cover
+    names an interface, or another port-like component its type has a
+    template of (a StackPower power port) as a ``port:`` anchor does."""
+    from .anchor_names import chassis_port, module_port
     from .models import render_module_name
 
     out = []
     if owner is not None:
         for name in cover_names(owner.model_anchors):
-            out.append((None, name, chassis_interface(device, name)))
+            out.append((None, name, chassis_port(device, name)))
     for row in getattr(device, "_installed_parts", ()):
         mt = row.get("type")
         if mt is None or row.get("module") is None:
             continue
         for raw in cover_names(mt.model_anchors):
             out.append((row["name"], render_module_name(raw, row["position"]),
-                        module_interface(device, mt, raw, row["position"])))
+                        module_port(device, mt, raw, row["position"])))
     return out
 
 
@@ -55,25 +57,49 @@ def has_covers(device, owner) -> bool:
                if r.get("type") is not None and r.get("module") is not None)
 
 
-def in_use(device_ids, user, tenant) -> dict[str, set[str]]:
-    """``{device id: {interface name}}`` - the interfaces of ``device_ids``
-    the reader may view that are cabled or marked connected. One query."""
-    from django.db.models import Exists, OuterRef, Q
+#: The port kinds a cover may hide on: (kind, model, rbac slug,
+#: CableTermination field, whether it has ``mark_connected``).
+_COVER_KINDS = (
+    ("interface", "Interface", "interface", "interface", True),
+    ("power-port", "PowerPort", "powerport", "power_port", False),
+)
+
+
+def in_use(device_ids, user, tenant, kinds=("interface",)) -> dict[str, set[tuple[str, str]]]:
+    """``{device id: {(port kind, name)}}`` - the ports of ``device_ids``
+    of ``kinds`` (``interface``, ``power-port``) the reader may view that
+    are cabled or (an interface) marked connected. One query (a UNION ALL
+    when both kinds are asked for)."""
+    from django.apps import apps
+    from django.db.models import CharField, Exists, OuterRef, Q, Value
 
     from auth_api import rbac
 
-    from .models import CableTermination, Interface
+    from .models import CableTermination
 
     if not device_ids:
         return {}
-    qs = Interface.objects.filter(device__tenant=tenant, device_id__in=list(device_ids))
-    if not getattr(user, "is_superuser", False):
-        qs = rbac.restrict_queryset(qs, user, tenant, "interface", "view")
-    cabled = CableTermination.objects.filter(interface_id=OuterRef("pk"))
-    out: dict[str, set[str]] = {}
-    for dev_id, name in (qs.filter(Q(mark_connected=True) | Q(Exists(cabled)))
-                         .order_by().values_list("device_id", "name")):
-        out.setdefault(str(dev_id), set()).add(name)
+    superuser = getattr(user, "is_superuser", False)
+    parts = []
+    for kind, model_name, slug, field, connected in _COVER_KINDS:
+        if kind not in kinds:
+            continue
+        model = apps.get_model("api", model_name)
+        qs = model.objects.filter(device__tenant=tenant, device_id__in=list(device_ids))
+        if not superuser:
+            qs = rbac.restrict_queryset(qs, user, tenant, slug, "view")
+        used = Q(Exists(CableTermination.objects.filter(**{f"{field}_id": OuterRef("pk")})))
+        if connected:
+            used |= Q(mark_connected=True)
+        parts.append(qs.filter(used).order_by()
+                     .annotate(_kind=Value(kind, output_field=CharField()))
+                     .values_list("device_id", "_kind", "name"))
+    if not parts:
+        return {}
+    rows = parts[0].union(*parts[1:], all=True) if len(parts) > 1 else parts[0]
+    out: dict[str, set] = {}
+    for dev_id, kind, name in rows:
+        out.setdefault(str(dev_id), set()).add((kind, name))
     return out
 
 
@@ -84,15 +110,18 @@ def hidden_covers(devices, owners: dict, user, tenant) -> dict[str, dict]:
     ``_installed_parts`` are loaded (api.model_3d.installed_parts). A
     device with nothing to hide gets empty lists."""
     wanted = {str(d.id): _wanted(d, owners.get(d.id)) for d in devices}
-    used = in_use([d.id for d in devices if wanted[str(d.id)]], user, tenant)
+    # Power ports are asked about only when a cover names one.
+    kinds = {"interface"} | {port[0] for rows in wanted.values() for _b, _n, port in rows
+                             if port[0] == "power-port"}
+    used = in_use([d.id for d in devices if wanted[str(d.id)]], user, tenant, kinds)
     out: dict[str, dict] = {}
     for d in devices:
         key = str(d.id)
         names = used.get(key, set())
         covers: list[str] = []
         bays: dict[str, list[str]] = {}
-        for bay, drawn, iface in wanted[key]:
-            if iface not in names:
+        for bay, drawn, port in wanted[key]:
+            if port not in names:
                 continue
             if bay is None:
                 covers.append(drawn)
@@ -103,15 +132,15 @@ def hidden_covers(devices, owners: dict, user, tenant) -> dict[str, dict]:
     return out
 
 
-def stack_covers(device, owner, interfaces: set, hidden) -> list[str]:
-    """The chassis covers of ``device`` on ``interfaces`` (its ports in a
-    derived stack ring, api.stack_links) that ``hidden`` does not already
-    name: the client hides them while it draws the ring. No query - the
-    device's anchor names are loaded."""
-    if not interfaces or owner is None:
+def stack_covers(device, owner, ports: set, hidden) -> list[str]:
+    """The chassis covers of ``device`` on ``ports`` (the names of its ports
+    in a derived stack or StackPower ring, api.stack_links) that ``hidden``
+    does not already name: the client hides them while it draws the ring.
+    No query - the device's anchor names are loaded."""
+    if not ports or owner is None:
         return []
-    from .anchor_names import chassis_interface
+    from .anchor_names import chassis_port
 
     have = set(hidden)
     return sorted({name for name in cover_names(owner.model_anchors)
-                   if name not in have and chassis_interface(device, name) in interfaces})
+                   if name not in have and chassis_port(device, name)[1] in ports})

@@ -431,7 +431,7 @@ class LedStates:
         cables' ends and ``stack_covers`` the covers only a derived stack
         ring hides (api.stack_links). ``self.stacks`` lists the stacks."""
         from .anchor_names import chassis_interface, module_interface
-        from .dcim_choices import STACK_INTERFACE_TYPES
+        from .dcim_choices import STACK_INTERFACE_TYPES, STACK_POWER_PORT_TYPES
         from .model_3d import effective_owner, has_bays, installed_parts
         from .models import render_module_name
         from .port_covers import has_covers, hidden_covers, stack_covers
@@ -496,7 +496,8 @@ class LedStates:
                         if p["bay"] is None and p["name"] in ends}
                 for sp in entry["stack_plugs"]:
                     hit = mine.get(sp["name"])
-                    if hit is not None and sp["port_type"] not in STACK_INTERFACE_TYPES:
+                    if (hit is not None and sp["port_type"] not in STACK_INTERFACE_TYPES
+                            and sp["port_type"] not in STACK_POWER_PORT_TYPES):
                         sp.update({k: hit[k] for k in ("transceiver", "transceiver_part",
                                                        "cord_part")})
                 entry["plugs"] = [p for p in entry["plugs"]

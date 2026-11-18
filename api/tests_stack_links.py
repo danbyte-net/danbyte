@@ -21,10 +21,12 @@ from .models import (
     DeviceType,
     Interface,
     InterfaceTemplate,
+    PowerPort,
+    PowerPortTemplate,
     VirtualChassis,
 )
 from .port_utilization import utilization_payload
-from .stack_links import head_for, ring
+from .stack_links import head_for, power_ring, ring
 from .tests_led_state import _Base as _LedBase
 
 STACK = "cisco-stackwise-480"
@@ -170,7 +172,8 @@ class PayloadTests(_Base):
             "a": {"device": str(self.dev.id), "port": "StackPort1/1", "name": "StackPort1/1"},
             "b": {"device": str(self.members[2].id), "port": "StackPort1/2",
                   "name": "StackPort3/2"},
-            "derived": False, "cable": str(cable.id), "color": "#00ff00", "label": "X"}])
+            "kind": "data", "derived": False, "cable": str(cable.id), "color": "#00ff00",
+            "label": "X"}])
         one = out["devices"][str(self.dev.id)]
         # A cabled port hides its cover as any does; nothing is derived.
         self.assertEqual((one["covers"], one["stack_covers"]), (["StackPort1/1"], []))
@@ -409,3 +412,347 @@ interfaces:
         dt = DeviceType.objects.get(tenant=self.tenant, name="Stacker")
         marks = dict(dt.interface_templates.values_list("name", "stack_port"))
         self.assertEqual(marks, {"1/1/49": True, "1/1/1": False})
+
+
+# ── StackPower ──────────────────────────────────────────────────────────────
+
+SPWR = "cisco-stackpower"
+
+
+class PowerRingTests(SimpleTestCase):
+    def _ports(self, n):
+        return [(f"m{i}", ["StackPower1/A", "StackPower1/B"]) for i in range(1, n + 1)]
+
+    def _pairs(self, n):
+        return [(a[0], b[0]) for a, b in power_ring(self._ports(n))]
+
+    def test_two_members_get_two_cables(self):
+        self.assertEqual(power_ring(self._ports(2)), [
+            (("m1", "StackPower1/B"), ("m2", "StackPower1/A")),
+            (("m2", "StackPower1/B"), ("m1", "StackPower1/A")),
+        ])
+
+    def test_three_and_four_close_one_ring(self):
+        self.assertEqual(self._pairs(3), [("m1", "m2"), ("m2", "m3"), ("m3", "m1")])
+        self.assertEqual(self._pairs(4), [("m1", "m2"), ("m2", "m3"), ("m3", "m4"),
+                                          ("m4", "m1")])
+
+    def test_five_split_into_four_and_a_lone_member(self):
+        self.assertEqual(self._pairs(5), self._pairs(4))
+
+    def test_nine_split_into_two_rings_of_four(self):
+        self.assertEqual(self._pairs(9), [
+            ("m1", "m2"), ("m2", "m3"), ("m3", "m4"), ("m4", "m1"),
+            ("m5", "m6"), ("m6", "m7"), ("m7", "m8"), ("m8", "m5"),
+        ])
+
+    def test_six_leave_a_ring_of_two(self):
+        self.assertEqual(self._pairs(6)[4:], [("m5", "m6"), ("m6", "m5")])
+
+    def test_a_member_without_the_port_skips_its_links(self):
+        ports = self._ports(3)
+        ports[1] = ("m2", ["StackPower1/A"])
+        self.assertEqual(power_ring(ports), [
+            (("m1", "StackPower1/B"), ("m2", "StackPower1/A")),
+            (("m3", "StackPower1/B"), ("m1", "StackPower1/A")),
+        ])
+
+    def test_the_type_is_a_power_port_choice(self):
+        from .dcim_choices import POWER_PORT_TYPE_CHOICES, STACK_POWER_PORT_TYPES
+
+        self.assertEqual(STACK_POWER_PORT_TYPES, frozenset({SPWR}))
+        self.assertIn((SPWR, "Cisco StackPower"),
+                      [o for _g, opts in POWER_PORT_TYPE_CHOICES for o in opts])
+
+
+class _PowerBase(_Base):
+    """The stack's members with a C9300's two StackPower ports, anchored
+    and covered on the model."""
+
+    def setUp(self):
+        super().setUp()
+        for t in ("StackPower1/A", "StackPower1/B"):
+            PowerPortTemplate.objects.create(device_type=self.dt, name=t, type=SPWR)
+        anchors = self.dt.model_anchors
+        self.dt.model_anchors = {
+            **anchors,
+            "ports": {**anchors["ports"], "StackPower1/A": {"node": 50},
+                      "StackPower1/B": {"node": 51}},
+            "port_covers": {**anchors["port_covers"], "StackPower1/A": {"node": 52},
+                            "StackPower1/B": {"node": 53}},
+        }
+        DeviceType.objects.filter(pk=self.dt.pk).update(model_anchors=self.dt.model_anchors)
+        for m in self.members:
+            self._power(m)
+
+    def _power(self, dev):
+        for name in ("StackPower1/A", "StackPower1/B"):
+            PowerPort.objects.get_or_create(device=dev, name=name, defaults={"type": SPWR})
+
+    def _add(self, n):
+        for i in range(len(self.members) + 1, n + 1):
+            m = self._member(self._device(f"sw{i}", modules=False), i)
+            self._power(m)
+            self.members.append(m)
+
+    def _power_links(self, *devs):
+        stacks = self._payload(*devs)["stacks"]
+        pos = {str(m.id): m.vc_position for m in self.members}
+        return [(pos[lk["a"]["device"]], lk["a"]["name"], pos[lk["b"]["device"]],
+                 lk["b"]["name"], lk["derived"])
+                for s in stacks for lk in s["links"] if lk["kind"] == "power"]
+
+    def _power_cable(self, a_dev, a, b_dev, b, **kw):
+        cable = Cable.objects.create(tenant=self.tenant, **{"type": "power", **kw})
+        CableTermination.objects.create(cable=cable, end="A",
+                                        power_port=PowerPort.objects.get(device=a_dev, name=a))
+        CableTermination.objects.create(cable=cable, end="B",
+                                        power_port=PowerPort.objects.get(device=b_dev, name=b))
+        return cable
+
+
+class StackPowerTests(_PowerBase):
+    def test_derived_power_ring_of_three_beside_the_data_ring(self):
+        out = self._payload()
+        [s] = out["stacks"]
+        self.assertEqual([lk["kind"] for lk in s["links"]], ["data"] * 3 + ["power"] * 3)
+        self.assertEqual(self._power_links(), [
+            (1, "StackPower1/B", 2, "StackPower1/A", True),
+            (2, "StackPower1/B", 3, "StackPower1/A", True),
+            (3, "StackPower1/B", 1, "StackPower1/A", True),
+        ])
+        two = out["devices"][str(self.members[1].id)]
+        power = [(p["port"], p["port_type"], p["derived"], p["end"])
+                 for p in two["stack_plugs"] if p["port_type"] == SPWR]
+        # Member 2's A is the B end of 1→2, its B the A end of 2→3.
+        self.assertEqual(power, [("StackPower1/A", SPWR, True, "b"),
+                                 ("StackPower1/B", SPWR, True, "a")])
+        self.assertEqual(two["stack_covers"], ["StackPort1/1", "StackPort1/2",
+                                               "StackPower1/A", "StackPower1/B"])
+        self.assertEqual(two["covers"], [])
+
+    def test_two_and_four_members(self):
+        Device.objects.filter(pk=self.members[2].pk).update(virtual_chassis=None,
+                                                            vc_position=None)
+        self.assertEqual(self._power_links(*self.members[:2]), [
+            (1, "StackPower1/B", 2, "StackPower1/A", True),
+            (2, "StackPower1/B", 1, "StackPower1/A", True),
+        ])
+        Device.objects.filter(pk=self.members[2].pk).update(virtual_chassis=self.vc,
+                                                            vc_position=3)
+        self._add(4)
+        self.assertEqual([(a, b) for a, _, b, _, _ in self._power_links()],
+                         [(1, 2), (2, 3), (3, 4), (4, 1)])
+
+    def test_five_members_ring_four_and_leave_the_fifth(self):
+        self._add(5)
+        self.assertEqual([(a, b) for a, _, b, _, _ in self._power_links()],
+                         [(1, 2), (2, 3), (3, 4), (4, 1)])
+        # The data ring still runs through all five.
+        links = self._payload()["stacks"][0]["links"]
+        self.assertEqual(len([lk for lk in links if lk["kind"] == "data"]), 5)
+        five = self._payload()["devices"][str(self.members[4].id)]
+        self.assertFalse([p for p in five["stack_plugs"] if p["port_type"] == SPWR])
+
+    def test_nine_members_make_two_rings(self):
+        self._add(9)
+        self.assertEqual([(a, b) for a, _, b, _, _ in self._power_links()],
+                         [(1, 2), (2, 3), (3, 4), (4, 1), (5, 6), (6, 7), (7, 8), (8, 5)])
+
+    def test_a_chain_stack_still_closes_its_power_ring(self):
+        VirtualChassis.objects.filter(pk=self.vc.pk).update(stack_topology="chain")
+        self.assertEqual(len(self._power_links()), 3)
+
+    def test_recorded_power_cables_win(self):
+        m1, m2, m3 = self.members
+        cable = self._power_cable(m1, "StackPower1/A", m3, "StackPower1/B",
+                                  label="CAB-SPWR-30CM", color="#808080")
+        out = self._payload()
+        [s] = out["stacks"]
+        power = [lk for lk in s["links"] if lk["kind"] == "power"]
+        self.assertEqual(power, [{
+            "a": {"device": str(m1.id), "port": "StackPower1/A", "name": "StackPower1/A"},
+            "b": {"device": str(m3.id), "port": "StackPower1/B", "name": "StackPower1/B"},
+            "kind": "power", "derived": False, "cable": str(cable.id), "color": "#808080",
+            "label": "CAB-SPWR-30CM"}])
+        # The data ring is decided apart and still derived.
+        self.assertEqual([lk["derived"] for lk in s["links"] if lk["kind"] == "data"],
+                         [True] * 3)
+        one = out["devices"][str(m1.id)]
+        # A cabled power port hides its cover as any cabled port does.
+        self.assertEqual(one["covers"], ["StackPower1/A"])
+        self.assertNotIn("StackPower1/A", one["stack_covers"])
+        self.assertEqual([p["end"] for p in one["stack_plugs"] if p["port_type"] == SPWR],
+                         ["a"])
+        self.assertEqual([p["port_type"] for p in out["devices"][str(m2.id)]["stack_plugs"]],
+                         [STACK, STACK])
+
+    def test_a_recorded_data_cable_leaves_the_power_ring(self):
+        self._cable("StackPort1/1", "StackPort2/2")
+        links = self._payload()["stacks"][0]["links"]
+        self.assertEqual([(lk["kind"], lk["derived"]) for lk in links],
+                         [("data", False)] + [("power", True)] * 3)
+
+    def test_the_stackpower_head_seats_at_each_end(self):
+        acc = AccessoryType(tenant=self.tenant, vendor="Cisco", name="CAB-SPWR",
+                            kind="cord", connector="stack", fits=[SPWR],
+                            parts=["CAB-SPWR-30CM", "CAB-SPWR-150CM"],
+                            cable={"profile": "round", "jacket_mm": 8.5, "pitch_mm": None,
+                                   "min_bend_mm": 40.0})
+        acc.model_3d.name = "device-models/cab-spwr.glb"
+        acc.save()
+        two = self._payload()["devices"][str(self.members[1].id)]
+        heads = {p["name"]: p["cord_part"] for p in two["stack_plugs"]}
+        self.assertEqual(heads["StackPower1/A"]["cable"]["jacket_mm"], 8.5)
+        self.assertEqual(heads["StackPower1/A"]["connector"], "stack")
+        # A StackWise port does not take it.
+        self.assertIsNone(heads["StackPort2/1"])
+
+    def test_not_counted_as_connected(self):
+        self._payload()
+        self.assertFalse(CableTermination.objects.filter(power_port__isnull=False).exists())
+
+    def test_query_count_does_not_grow_with_members(self):
+        with CaptureQueriesContext(connection) as two:
+            self._payload(*self.members[:2])
+        self._add(8)
+        with CaptureQueriesContext(connection) as eight:
+            self.assertEqual(len(self._power_links()), 8)
+        self.assertEqual(len(eight), len(two))
+
+    def test_power_ports_add_no_query(self):
+        with CaptureQueriesContext(connection) as with_power:
+            self._payload()
+        PowerPort.objects.all().delete()
+        with CaptureQueriesContext(connection) as without:
+            self._payload()
+        self.assertEqual(len(with_power), len(without))
+
+
+class StackPowerScopeTests(_PowerBase):
+    def _reader(self, types):
+        user = User.objects.create_user("u", password="x")
+        UserProfile.objects.create(user=user).tenants.add(self.tenant)
+        grant = ObjectPermission.objects.create(name="r", object_types=types,
+                                                actions=["view"])
+        grant.users.add(user)
+        grant.tenants.add(self.tenant)
+        self._login(user)
+
+    def test_without_power_port_view_no_power_links(self):
+        self._reader(["device", "devicetype", "interface", "cable"])
+        out = self._payload()
+        [s] = out["stacks"]
+        self.assertEqual({lk["kind"] for lk in s["links"]}, {"data"})
+        one = out["devices"][str(self.dev.id)]
+        self.assertNotIn("StackPower1/A", one["stack_covers"])
+
+    def test_with_power_port_view_power_links(self):
+        self._reader(["device", "devicetype", "interface", "powerport", "cable"])
+        self.assertEqual(len(self._power_links()), 3)
+
+    def test_without_cable_view_recorded_power_cables_are_not_drawn(self):
+        self._power_cable(self.members[0], "StackPower1/B", self.members[1], "StackPower1/A")
+        self._reader(["device", "devicetype", "interface", "powerport"])
+        self.assertEqual(self._power_links(), [])
+        # The port is cabled and theirs to view: its cover still hides.
+        one = self._payload()["devices"][str(self.dev.id)]
+        self.assertIn("StackPower1/B", one["covers"])
+
+    def test_without_power_port_view_a_cabled_port_keeps_its_cover(self):
+        self._power_cable(self.members[0], "StackPower1/B", self.members[1], "StackPower1/A")
+        self._reader(["device", "devicetype", "interface", "cable"])
+        one = self._payload()["devices"][str(self.dev.id)]
+        self.assertNotIn("StackPower1/B", one["covers"])
+
+    def test_another_tenants_member_never_joins_the_power_ring(self):
+        other_vc = VirtualChassis.objects.create(tenant=self.other, name="OTHER")
+        Device.objects.filter(pk=self.members[1].pk).update(virtual_chassis=other_vc)
+        self.assertEqual([(a, b) for a, _, b, _, _ in self._power_links()],
+                         [(1, 3), (3, 1)])
+
+
+class StackPowerImportTests(_Base):
+    YAML = """\
+manufacturer: Cisco
+model: C9300-24P
+part_number: C9300-24P
+u_height: 1
+interfaces:
+  - name: GigabitEthernet1/0/1
+    type: 1000base-t
+power-ports:
+  - name: StackPower1/A
+    type: cisco-stackpower
+  - name: StackPower1/B
+    type: cisco-stackpower
+"""
+
+    def test_a_new_type_keeps_the_stackpower_type(self):
+        from .devicetype_import import import_devicetype_yaml
+
+        r = import_devicetype_yaml(self.tenant, self.YAML)
+        self.assertTrue(r["ok"], r)
+        dt = DeviceType.objects.get(tenant=self.tenant, name="C9300-24P")
+        self.assertEqual(sorted(dt.power_port_templates.values_list("name", "type")),
+                         [("StackPower1/A", SPWR), ("StackPower1/B", SPWR)])
+
+    def test_a_matched_type_gains_its_stackpower_ports(self):
+        import os
+        import shutil
+        import tempfile
+
+        from .devicetype_import import import_devicetype_yaml
+        from .model_pack import PackFiles, import_pack
+
+        old = self.YAML.split("power-ports:")[0]
+        self.assertTrue(import_devicetype_yaml(self.tenant, old)["ok"])
+        dt = DeviceType.objects.get(tenant=self.tenant, name="C9300-24P")
+        root = tempfile.mkdtemp()
+        try:
+            os.makedirs(os.path.join(root, "device-types/Cisco"))
+            with open(os.path.join(root, "pack.yaml"), "w") as fh:
+                fh.write("name: Test\nversion: 1.0.0\n")
+            with open(os.path.join(root, "device-types/Cisco/C9300-24P.yaml"), "w") as fh:
+                fh.write(self.YAML)
+            files = PackFiles(root)
+            try:
+                result = import_pack(self.tenant, files, dry_run=False)
+            finally:
+                files.close()
+            [row] = result.types
+            self.assertEqual(row.action, "matched")
+            self.assertIn("power-ports: added 2.", row.notes)
+            self.assertEqual(dt.power_port_templates.filter(type=SPWR).count(), 2)
+            # Again: nothing more to add.
+            files = PackFiles(root)
+            try:
+                again = import_pack(self.tenant, files, dry_run=False)
+            finally:
+                files.close()
+            self.assertFalse([n for n in again.types[0].notes if n.startswith("power-ports")])
+        finally:
+            shutil.rmtree(root, ignore_errors=True)
+
+    def test_a_positioned_type_gets_positioned_names(self):
+        from .devicetype_import import add_device_power_ports
+
+        # self.dt carries StackPort{position}/n interface templates.
+        n = add_device_power_ports(self.dt, {"power-ports": [
+            {"name": "StackPower1/A", "type": SPWR}, {"name": "StackPower1/B", "type": SPWR},
+            {"name": "StackPower1/B", "type": SPWR}, {"type": SPWR}, "junk"]})
+        self.assertEqual(n, 2)
+        self.assertEqual(sorted(self.dt.power_port_templates.values_list("name", flat=True)),
+                         ["StackPower{position}/A", "StackPower{position}/B"])
+
+    def test_the_anchor_matches_the_chassis_power_port(self):
+        from .anchor_names import chassis_port
+
+        PowerPortTemplate.objects.create(device_type=self.dt, name="StackPower1/A", type=SPWR)
+        dev = Device.objects.get(pk=self.dev.pk)
+        self.assertEqual(chassis_port(dev, "StackPower1/A"), ("power-port", "StackPower1/A"))
+        from .model_anchors import interface_matcher, mismatches
+
+        warnings = mismatches({"ports": {"StackPower1/A": {}}}, None,
+                              interface_matcher(self.dt, ["StackPort{position}/1"]))
+        self.assertFalse([w for w in warnings if "StackPower" in w])

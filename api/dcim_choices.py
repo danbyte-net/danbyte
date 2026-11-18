@@ -436,11 +436,22 @@ POWER_PORT_TYPE_CHOICES: GroupedChoices = [
         ("dc-terminal", "DC Terminal"),
         ("saf-d-grid", "Saf-D-Grid"),
     ]),
+    # A switch stack's power-sharing ports (Danbyte's own; NetBox has none):
+    # the 3D views draw StackPower cables between them (api.stack_links).
+    ("Stack power", [
+        ("cisco-stackpower", "Cisco StackPower"),
+    ]),
     ("Other", [
         ("hardwired", "Hardwired"),
         ("other", "Other"),
     ]),
 ]
+
+#: Power port types of a switch stack's power-sharing ports (the "Stack
+#: power" group above): the 3D views draw StackPower rings between them.
+STACK_POWER_PORT_TYPES: frozenset[str] = frozenset(
+    v for g, opts in POWER_PORT_TYPE_CHOICES if g == "Stack power" for v, _ in opts
+)
 
 # ─── Power outlet types (PDU outlets) ────────────────────────────────────────
 POWER_OUTLET_TYPE_CHOICES: GroupedChoices = [

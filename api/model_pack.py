@@ -810,7 +810,10 @@ def import_pack(tenant, files: PackFiles, *, dry_run: bool = True,
     from audit.context import cause
 
     from .devicetype_import import (
-        add_module_power_ports, import_devicetype_yaml, import_moduletype_yaml,
+        add_device_power_ports,
+        add_module_power_ports,
+        import_devicetype_yaml,
+        import_moduletype_yaml,
     )
     from .models import DeviceType, ModuleType
     from .port_plugs import ACCESSORY_DIR, apply_accessory
@@ -908,6 +911,10 @@ def import_pack(tenant, files: PackFiles, *, dry_run: bool = True,
                     # A PSU type imported before module types carried power
                     # ports gains the inlets its YAML names.
                     if kind == "module-type" and (n := add_module_power_ports(obj, data)):
+                        tr.notes.append(f"power-ports: added {n}.")
+                    # A chassis gains the power ports its YAML names since
+                    # (a C9300's StackPower ports).
+                    if kind == "device-type" and (n := add_device_power_ports(obj, data)):
                         tr.notes.append(f"power-ports: added {n}.")
                     if kind == "device-type":
                         tr.notes += apply_bay_modules(obj, data)
