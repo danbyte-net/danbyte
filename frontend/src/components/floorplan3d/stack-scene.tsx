@@ -13,10 +13,14 @@ import * as THREE from "three"
 import { CordEndStore } from "@/lib/cord-run"
 import type { Vec3 } from "@/lib/cord-run"
 import {
+  StackLinkStore,
+  linkEndText,
   memberText,
+  stackLinkKey,
   stackLinkText,
   stackProfile,
-  stackRunPoints,
+  stackRadiusM,
+  stackRuns,
 } from "@/lib/stacks"
 import type {
   DeviceStack,
@@ -26,6 +30,7 @@ import type {
 } from "@/lib/stacks"
 import type { StacksMode } from "@/lib/stacks-pref"
 
+import { DEVICE_SELECTED } from "./device-mesh"
 import { jacketsGeometry } from "./jacket-geometry"
 import { KeepInView } from "./keep-in-view"
 import { GHOST_OPACITY } from "./port-plugs"
@@ -39,7 +44,10 @@ import { PLUG_RENDER_ORDER } from "./plug-overlay"
  *   interface - the head's `cable` empty, or the port's anchor when no
  *   head is drawn (port-plugs publishes them);
  * - `highlight`: the stack the pointer is over and the selected one, so
- *   every member lights together.
+ *   every member lights together;
+ * - `links`: the stack cable picked or previewed (lib/stacks
+ *   StackLinkStore) and the stacks drawn, for the cable list and card
+ *   outside the canvas (stack-cable-tools).
  */
 export class StackHighlightStore {
   private hoveredId: string | null = null
@@ -98,13 +106,28 @@ export class StackHighlightStore {
 export interface StackScene {
   ends: CordEndStore
   highlight: StackHighlightStore
+  links: StackLinkStore
 }
 
-export function newStackScene(): StackScene {
-  return { ends: new CordEndStore(), highlight: new StackHighlightStore() }
+export function newStackScene(links?: StackLinkStore): StackScene {
+  return {
+    ends: new CordEndStore(),
+    highlight: new StackHighlightStore(),
+    links: links ?? new StackLinkStore(),
+  }
 }
 
 export const StackSceneContext = createContext<StackScene | null>(null)
+
+/** The highlighted cable's store, re-rendering on a change. */
+export function useStackLinks(store: StackLinkStore | null | undefined) {
+  useSyncExternalStore(
+    store?.subscribe ?? noSubscribe,
+    store?.getVersion ?? noVersion,
+    noVersion
+  )
+  return store ?? null
+}
 
 /** The view's stacks; null outside a rack or room view. */
 export function useStackScene(): StackScene | null {
@@ -143,11 +166,32 @@ export function useStackSelect(
 /** A stack cable's colour when its cable names none: a dark jacket. */
 export const STACK_CABLE_COLOR = "#27272a"
 
+/** The userData flag of a stack view's member hit box: a cable behind one
+ * takes no hover or click through it. */
+export const STACK_HIT_BOX = "stackHitBox"
+
+/** Whether a member's hit box is nearer along the ray than this hit. */
+function behindBox(e: ThreeEvent<PointerEvent | MouseEvent>): boolean {
+  return e.intersections.some(
+    (h) => !!h.object.userData[STACK_HIT_BOX] && h.distance < e.distance
+  )
+}
+
+/** The highlighted cable's end markers' radius (m, before scale). */
+const END_MARK_M = 0.009
+
 /**
  * Every stack cable of `stacks` between members drawn in this view, from
  * the ends their models published: recorded cables, or the ring derived
- * from member order. Ghost draws them see-through without writing depth,
- * before the port markers (PLUG_RENDER_ORDER); Hide draws none.
+ * from member order, each stack's cables routed together in lanes
+ * (lib/stacks stackRuns). Ghost draws them see-through without writing
+ * depth, before the port markers (PLUG_RENDER_ORDER); Hide draws none.
+ *
+ * A click on a cable or its end picks it (the view's StackLinkStore): it
+ * draws solid in the selection colour with its two ends marked, every
+ * other cable ghosted; a click on it again, on anything else in the view
+ * or Esc lets it go. The card and the cable list live outside the canvas
+ * (stack-cable-tools).
  */
 export function StackCables({
   stacks,
@@ -158,11 +202,26 @@ export function StackCables({
 }) {
   const scene = useStackScene()
   const ends = scene?.ends ?? null
+  const links = useStackLinks(scene?.links)
   const version = useSyncExternalStore(
     ends?.subscribe ?? noSubscribe,
     ends?.getVersion ?? noVersion,
     noVersion
   )
+  useEffect(() => {
+    links?.setStacks(mode === "hide" ? [] : stacks)
+  }, [links, stacks, mode])
+  // Gone from the view: nothing left to list or pick.
+  useEffect(() => () => links?.setStacks([]), [links])
+  const selected = links?.selected ?? null
+  useEffect(() => {
+    if (!links || !selected) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") links.clear()
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [links, selected])
   const runs = useMemo(() => {
     if (!ends || mode === "hide") return []
     const out: {
@@ -171,22 +230,28 @@ export function StackCables({
       names: [string, string]
       points: Vec3[]
       profile: StackProfile
+      marks: [Vec3, Vec3]
+      markR: number
     }[] = []
     for (const s of stacks) {
-      const name = new Map(s.members.map((m) => [m.device, m.name]))
-      for (const link of s.links) {
+      const found = s.links.flatMap((link) => {
         const a = ends.get(link.a.device, link.a.name)
         const b = ends.get(link.b.device, link.b.name)
-        if (!a || !b) continue
+        return a && b ? [{ key: stackLinkKey(link), a, b, link }] : []
+      })
+      const points = stackRuns(found)
+      for (const f of found) {
         out.push({
-          key: `${link.a.device}:${link.a.name}>${link.b.device}:${link.b.name}`,
-          link,
-          names: [
-            `${name.get(link.a.device) ?? ""} ${link.a.name}`.trim(),
-            `${name.get(link.b.device) ?? ""} ${link.b.name}`.trim(),
-          ],
-          points: stackRunPoints(a, b, link),
-          profile: stackProfile(a, b),
+          key: f.key,
+          link: f.link,
+          names: [linkEndText([s], f.link.a), linkEndText([s], f.link.b)],
+          points: points.get(f.key)!,
+          profile: stackProfile(f.a, f.b),
+          marks: [f.a.at, f.b.at],
+          markR: Math.max(
+            END_MARK_M * (f.a.scale || 1),
+            stackRadiusM(f.a, f.b) * 2
+          ),
         })
       }
     }
@@ -194,36 +259,52 @@ export function StackCables({
     // `version` stands for what `ends` holds.
   }, [stacks, ends, mode, version])
   return (
-    <>
-      {runs.map((r) => (
-        <StackTube
-          key={r.key}
-          points={r.points}
-          profile={r.profile}
-          link={r.link}
-          names={r.names}
-          ghost={mode === "ghost"}
-        />
-      ))}
-    </>
+    <group onPointerMissed={() => links?.clear()}>
+      {runs.map((r) => {
+        const look = links?.look(r.key) ?? null
+        return (
+          <StackTube
+            key={r.key}
+            points={r.points}
+            profile={r.profile}
+            link={r.link}
+            names={r.names}
+            marks={r.marks}
+            markR={r.markR}
+            ghost={mode === "ghost" || look === "dim"}
+            active={look === "active"}
+            onPick={links ? () => links.toggle(r.key) : undefined}
+          />
+        )
+      })}
+    </group>
   )
 }
 
 /** One stack cable: the head's profile - one round jacket, or a zip cord's
  * or ribbon's jackets side by side, untwisted from the heads' `cable`
- * empties (lib/cord-run frames). */
+ * empties (lib/cord-run frames). Active, it draws in the selection colour
+ * with its ends marked; a pick target sits at each end, over the head. */
 function StackTube({
   points,
   profile,
   link,
   names,
+  marks,
+  markR,
   ghost,
+  active,
+  onPick,
 }: {
   points: Vec3[]
   profile: StackProfile
   link: StackLink
   names: [string, string]
+  marks: [Vec3, Vec3]
+  markR: number
   ghost: boolean
+  active: boolean
+  onPick?: () => void
 }) {
   const [hover, setHover] = useState<Vec3 | null>(null)
   const profileKey = JSON.stringify(profile)
@@ -239,20 +320,35 @@ function StackTube({
     // `profileKey` stands for `profile`.
   }, [points, profileKey])
   useEffect(() => () => geometry.dispose(), [geometry])
+  const over = (e: ThreeEvent<PointerEvent>) => {
+    if (behindBox(e)) return
+    e.stopPropagation()
+    if (onPick) document.body.style.cursor = "pointer"
+    setHover([e.point.x, e.point.y, e.point.z])
+  }
+  const out = () => {
+    if (onPick) document.body.style.cursor = ""
+    setHover(null)
+  }
+  const click = (e: ThreeEvent<MouseEvent>) => {
+    if (!onPick || behindBox(e)) return
+    e.stopPropagation()
+    onPick()
+  }
   return (
     <>
       <mesh
         geometry={geometry}
         renderOrder={ghost ? PLUG_RENDER_ORDER : 0}
         castShadow={!ghost}
-        onPointerOver={(e: ThreeEvent<PointerEvent>) => {
-          e.stopPropagation()
-          setHover([e.point.x, e.point.y, e.point.z])
-        }}
-        onPointerOut={() => setHover(null)}
+        onPointerOver={over}
+        onPointerOut={out}
+        onClick={click}
       >
         <meshStandardMaterial
-          color={link.color ?? STACK_CABLE_COLOR}
+          color={active ? DEVICE_SELECTED : (link.color ?? STACK_CABLE_COLOR)}
+          emissive={active ? DEVICE_SELECTED : "#000000"}
+          emissiveIntensity={active ? 0.45 : 0}
           roughness={0.6}
           metalness={0.05}
           transparent={ghost}
@@ -260,7 +356,27 @@ function StackTube({
           depthWrite={!ghost}
         />
       </mesh>
-      {hover && (
+      {marks.map((m, i) => (
+        <mesh
+          key={i}
+          position={m}
+          renderOrder={active ? PLUG_RENDER_ORDER + 1 : 0}
+          onPointerOver={over}
+          onPointerOut={out}
+          onClick={click}
+        >
+          <sphereGeometry args={[markR, 16, 12]} />
+          <meshBasicMaterial
+            color={DEVICE_SELECTED}
+            colorWrite={active}
+            transparent
+            opacity={active ? 0.55 : 0}
+            depthWrite={false}
+            depthTest={!active}
+          />
+        </mesh>
+      ))}
+      {hover && !active && (
         <Html
           position={hover}
           zIndexRange={[20, 0]}

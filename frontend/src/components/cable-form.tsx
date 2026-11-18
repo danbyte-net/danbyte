@@ -75,7 +75,7 @@ const endName = (terms: Termination[]) =>
   terms.map((t) => `${t.device.name}:${t.name}`).join(", ")
 
 /** Everything a new or removed cable makes stale. */
-function invalidateCableCaches(qc: QueryClient) {
+export function invalidateCableCaches(qc: QueryClient) {
   qc.invalidateQueries({ queryKey: ["cables"] })
   // The drawn run caches its own trace - without this, a colour or type
   // change only showed after a reload.

@@ -15,6 +15,7 @@ import { PowerOutletDialog } from "@/components/power-outlet-dialog"
 import { useRegisterAddActions } from "@/components/device-add-actions"
 import { ComponentDeleteDialog } from "@/components/component-delete-dialog"
 import { useMe } from "@/lib/use-me"
+import { useDerivedStackLinks } from "@/components/stack-link-row"
 
 export function DevicePowerPane({ deviceId }: { deviceId: string }) {
   const { canDo } = useMe()
@@ -47,10 +48,17 @@ export function DevicePowerPane({ deviceId }: { deviceId: string }) {
       apiAll<PowerOutlet>(`/api/power-outlets/?device=${deviceId}`),
   })
 
+  // StackPower ports in a derived ring say so in their cable cell.
+  const stackLinks = useDerivedStackLinks(deviceId)
+  const derivedStack = useMemo(
+    () => new Set(Object.keys(stackLinks.data ?? {})),
+    [stackLinks.data]
+  )
   const portCols = useMemo<ColumnDef<PowerPort>[]>(
     () => [
       selectionColumn<PowerPort>(),
       ...buildPowerPortColumns({
+        derivedStack,
         actions: {
           canEdit: canEditPort,
           canDelete: canDeletePort,
@@ -61,7 +69,7 @@ export function DevicePowerPane({ deviceId }: { deviceId: string }) {
         },
       }),
     ],
-    [canConnect, canReserve, canEditPort, canDeletePort]
+    [canConnect, canReserve, canEditPort, canDeletePort, derivedStack]
   )
   const outletCols = useMemo<ColumnDef<PowerOutlet>[]>(
     () => [

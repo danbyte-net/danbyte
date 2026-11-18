@@ -3,17 +3,13 @@ import type { ColumnDef } from "@tanstack/react-table"
 import type { PowerPort } from "@/lib/api"
 import { SortHeader } from "@/components/data-table"
 import { CableChip } from "@/components/cells/cable-chip"
+import { DerivedStackNote } from "@/components/stack-link-row"
 import { cablePortActionsColumn } from "@/components/columns/component-port-actions"
 import type { CablePortActionOpts } from "@/components/columns/component-port-actions"
 
 /** A power port: the device's inlet (PSU). */
 export type PowerPortColumnId =
-  | "name"
-  | "type"
-  | "max_draw"
-  | "allocated_draw"
-  | "cable"
-  | "description"
+  "name" | "type" | "max_draw" | "allocated_draw" | "cable" | "description"
 
 export const POWER_PORT_COLUMNS: PowerPortColumnId[] = [
   "name",
@@ -29,8 +25,12 @@ const dash = <span className="text-muted-foreground">-</span>
 export function buildPowerPortColumns({
   include = POWER_PORT_COLUMNS,
   actions,
+  derivedStack,
 }: {
   include?: PowerPortColumnId[]
+  /** Ids of uncabled StackPower ports in a ring derived from member order
+   * (components/stack-link-row): their cable cell says `derived`. */
+  derivedStack?: ReadonlySet<string>
   /** Row actions; omitted, the table is read-only. */
   actions?: CablePortActionOpts<PowerPort>
 } = {}): ColumnDef<PowerPort>[] {
@@ -75,7 +75,12 @@ export function buildPowerPortColumns({
       id: "cable",
       accessorFn: (r) => r.cable?.type ?? "",
       header: "Cable",
-      cell: ({ row }) => <CableChip cable={row.original.cable} />,
+      cell: ({ row }) =>
+        !row.original.cable && derivedStack?.has(row.original.id) ? (
+          <DerivedStackNote />
+        ) : (
+          <CableChip cable={row.original.cable} />
+        ),
     }),
     description: () => ({
       id: "description",

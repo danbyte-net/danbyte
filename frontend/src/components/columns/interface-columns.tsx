@@ -1,3 +1,4 @@
+import { DerivedStackNote } from "@/components/stack-link-row"
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import type { ColumnDef } from "@tanstack/react-table"
@@ -179,6 +180,9 @@ export interface InterfaceColumnOpts<T extends Interface> {
   cableControl?: { canEdit: boolean }
   /** Wire tag chips to a page-level tag filter (defaults to inert). */
   tagFilter?: { activeSlugs: Set<string>; onToggle: (slug: string) => void }
+  /** Ids of uncabled stack ports in a ring derived from member order
+   * (components/stack-link-row): their cable cell says `derived`. */
+  derivedStack?: ReadonlySet<string>
   /** Trailing RowActions column. */
   actions?: ActionsColumnOpts<T>
 }
@@ -548,6 +552,8 @@ export function buildInterfaceColumns<T extends Interface = NestedInterface>(
         if (!cable && row.original.mark_connected) return <UndocumentedBadge />
         const resv = row.original.reservation
         if (!cable && resv) return <ReservedBadge reservation={resv} />
+        if (!cable && opts.derivedStack?.has(row.original.id))
+          return <DerivedStackNote />
         return (
           <span className="num text-xs text-muted-foreground">
             {row.original.cable_count || "-"}

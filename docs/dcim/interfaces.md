@@ -192,6 +192,12 @@ name under it opens its [Pluggables](pluggables.md) page (for a reader who
 may view pluggables).
 A port that shows no part has none.
 
+A stack port with no cable, in a stack's ring derived from member order,
+has a **Stack cable** row: `Stack cable (derived from member order) → sw3 ·
+StackPort3/1`, with the far member linked and **Record cable** to save it
+as a real cable. On the device's Interfaces tab its cable cell says
+*derived*. See [On a port's page](virtual-chassis.md#on-a-ports-page).
+
 On the Overview, the **Switching** card has an **Uplink** row: the
 interface's setting and, for Automatic, what the
 [uplink rules](../features/snmp-discovery.md#uplinks) decided -

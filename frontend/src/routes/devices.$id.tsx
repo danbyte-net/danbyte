@@ -1,3 +1,4 @@
+import { useDerivedStackLinks } from "@/components/stack-link-row"
 import { UpcomingMaintenancePanel } from "@/components/monitoring/upcoming-maintenance"
 import { EAR_POSITION_LABELS } from "@/lib/rack-mount"
 import { PlatformCell } from "@/components/cells/platform-cell"
@@ -2053,6 +2054,13 @@ function DeviceInterfacesPane({
     () => learnedByInterface(stackMacsQ.data, { deviceId, view: "observed" }),
     [stackMacsQ.data, deviceId]
   )
+  // Stack ports in a ring derived from member order say so in their cable
+  // cell (components/stack-link-row).
+  const stackLinks = useDerivedStackLinks(deviceId, !!virtualChassis)
+  const derivedStack = useMemo(
+    () => new Set(Object.keys(stackLinks.data ?? {})),
+    [stackLinks.data]
+  )
   const columns = useMemo<ColumnDef<NestedInterface>[]>(() => {
     // Same columns + same row actions as the whole-stack table (shared builders)
     // - the two views must never drift apart.
@@ -2075,11 +2083,13 @@ function DeviceInterfacesPane({
         driftByIface,
         planned: plannedMap,
         learnedMacs,
+        derivedStack,
       }),
       ...actions,
     ]
   }, [
     deviceId,
+    derivedStack,
     canAddIp,
     canAssignIp,
     canEdit,

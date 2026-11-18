@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useContext, useEffect, useMemo, useState } from "react"
 import type { ReactNode } from "react"
 import type { ThreeEvent } from "@react-three/fiber"
 import { useQueries } from "@tanstack/react-query"
@@ -30,11 +30,14 @@ import { FittedContent, ViewerFailed, ViewerLoading } from "./model-viewer"
 import type { ModelViewerProps, Pickers } from "./model-viewer"
 import { PlugOverlayScope } from "./plug-overlay"
 import {
+  STACK_HIT_BOX,
   StackCables,
   StackCard,
   StackSceneContext,
   newStackScene,
 } from "./stack-scene"
+import { StackLinksContext } from "@/components/stack-cable-tools"
+
 import { ViewerStage } from "./viewer-stage"
 import type { ViewPreset } from "./viewer-stage"
 import { modelTargetM } from "./world"
@@ -182,7 +185,15 @@ export function StackModels({
   const onHover = useCallback((id: string, on: boolean) => {
     setHovered((prev) => (on ? id : prev === id ? null : prev))
   }, [])
-  const [scene] = useState(newStackScene)
+  // The card's toolbar may hold the cable store (its Cables menu).
+  const outerLinks = useContext(StackLinksContext)
+  const [scene] = useState(() => newStackScene(outerLinks ?? undefined))
+  // A click on one of this device's ports picks the stack cable at it.
+  const pickedPort =
+    pickers.selection?.kind === "port" ? pickers.selection.port.name : null
+  useEffect(() => {
+    if (pickedPort) scene.links.selectPort(deviceId, pickedPort)
+  }, [scene, deviceId, pickedPort])
   const view: { preset: ViewPreset; n: number } = props.view ?? {
     preset: "front",
     n: 0,
@@ -351,7 +362,7 @@ function Member({
         <mesh
           position={[0, mh / 2, 0]}
           geometry={sharedBox(mw, mh, md)}
-          userData={{ [CURRENT_HIT_KEY]: true }}
+          userData={{ [CURRENT_HIT_KEY]: true, [STACK_HIT_BOX]: true }}
           onPointerOver={() => onHover(x.device, true)}
           onPointerOut={() => onHover(x.device, false)}
           onClick={() => pickers.onClearSelection?.()}
@@ -362,6 +373,7 @@ function Member({
         <mesh
           position={[0, mh / 2, 0]}
           geometry={sharedBox(mw, mh, md)}
+          userData={{ [STACK_HIT_BOX]: true }}
           onPointerMove={(e: ThreeEvent<PointerEvent>) => {
             if (behindCurrent(e)) {
               if (hovered) {

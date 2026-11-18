@@ -30,6 +30,10 @@ import { TagList } from "@/components/cells/tag-list"
 import { TimeCell } from "@/components/cells/time-ago"
 import { hereUrl } from "@/lib/return-url"
 import { KvCard, dash, type KvRow } from "@/components/kv-card"
+import {
+  DerivedStackLinkValue,
+  useDerivedStackLinks,
+} from "@/components/stack-link-row"
 import { QueryError } from "@/components/query-error"
 import { InterfaceDeleteDialog } from "@/components/interface-delete-dialog"
 import {
@@ -401,6 +405,10 @@ function InterfaceOverview({
   const { canDo } = useMe()
   const choices = useDcimChoices()
   const pluggable = new Set(choices.pluggable_interface_types)
+  // A stack port in a ring derived from member order: where its cable
+  // would be (components/stack-link-row).
+  const stackLinks = useDerivedStackLinks(i.device.id, !i.cable)
+  const derived = (!i.cable && stackLinks.data?.[i.id]) || null
   const attributes: KvRow[] = [
     {
       label: "Device",
@@ -529,6 +537,20 @@ function InterfaceOverview({
         ),
     },
     { label: "Cables", value: <span className="num">{i.cable_count}</span> },
+    ...(derived
+      ? [
+          {
+            label: "Stack cable",
+            value: (
+              <DerivedStackLinkValue
+                portId={i.id}
+                deviceName={i.device.name}
+                link={derived}
+              />
+            ),
+          },
+        ]
+      : []),
     { label: "Description", value: i.description || dash },
   ]
 

@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import type { ReactNode } from "react"
 import { Camera } from "lucide-react"
 import { useQuery } from "@tanstack/react-query"
@@ -36,6 +36,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { QueryError } from "@/components/query-error"
+import { StackCableCard, StackCablesMenu } from "@/components/stack-cable-tools"
 import { useLegendCollector } from "@/components/speed-scale"
 import { PartMarkerMenu, useCanSetPartStatus } from "@/components/part-status"
 import { useDeviceMenus } from "@/components/model-viewer-menus"
@@ -59,7 +60,12 @@ import {
 import type { ObjectView } from "./object-view"
 import { RackMesh } from "./rack-mesh"
 import { newModelBudget, useDrawnModelDevices } from "./rack-model-draw"
-import { StackCables, StackSceneContext, newStackScene } from "./stack-scene"
+import {
+  StackCables,
+  StackSceneContext,
+  newStackScene,
+  useStackScene,
+} from "./stack-scene"
 import type { Sel } from "./rack-mesh"
 import {
   NoWebGL,
@@ -185,6 +191,14 @@ function RackView({
   const start = viewpoint("angle")
 
   const [selection, setSelection] = useState<Sel | null>(null)
+  // The stack cables' picked one (stack-cable-tools); a click on a port
+  // with a stack cable picks that cable.
+  const stackLinks = useStackScene()!.links
+  const portSel = selection?.kind === "port" ? selection : null
+  useEffect(() => {
+    if (portSel?.deviceId && portSel.portName)
+      stackLinks.selectPort(portSel.deviceId, portSel.portName)
+  }, [stackLinks, portSel?.deviceId, portSel?.portName])
   // A right-click on a disk or a PSU: its part's statuses at the pointer.
   const canSetStatus = useCanSetPartStatus()
   const [partMenu, setPartMenu] = useState<PartMarkerAt | null>(null)
@@ -232,6 +246,7 @@ function RackView({
             labels={STACKS_LABEL}
             onChange={(v) => setStacksMode(readStacksMode(v))}
           />
+          {stacksMode !== "hide" && <StackCablesMenu store={stackLinks} />}
           <BarButton
             className="ml-auto"
             onClick={() =>
@@ -324,6 +339,7 @@ function RackView({
             className={CARD_PLACE[card.place]}
           />
         )}
+        <StackCableCard store={stackLinks} />
         <PartMarkerMenu menu={partMenu} onClose={() => setPartMenu(null)} />
         {deviceMenus.menus}
       </div>

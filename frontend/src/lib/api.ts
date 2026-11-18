@@ -13760,6 +13760,10 @@ export interface VirtualChassis {
   /** How the members are cabled: `ring` closes back to the first, a
    * `chain` does not (the derived stack ring in 3D). */
   stack_topology?: "ring" | "chain"
+  /** Auto-connect: the derived rings recorded as cables Danbyte keeps in
+   * step with the members (data stack ports, StackPower ports). */
+  auto_connect_stack?: boolean
+  auto_connect_power?: boolean
   members: VirtualChassisMember[]
   member_count: number
   primary_ip: { id: string; ip_address: string } | null
@@ -13776,6 +13780,8 @@ export interface VirtualChassisWritePayload {
   name: string
   domain?: string
   stack_topology?: "ring" | "chain"
+  auto_connect_stack?: boolean
+  auto_connect_power?: boolean
   master_id?: string | null
   description?: string
   comments?: string

@@ -33,7 +33,13 @@ import {
   setStacksMode,
   useStacksMode,
 } from "@/lib/stacks-pref"
+import { StackLinkStore } from "@/lib/stacks"
 import { cn } from "@/lib/utils"
+import {
+  StackCableCard,
+  StackCablesMenu,
+  StackLinksContext,
+} from "@/components/stack-cable-tools"
 import type {
   ModelViewerProps,
   ViewPreset,
@@ -109,6 +115,9 @@ export function ModelViewerFrame({
   const stackPref = useStackViewOn()
   const stackOn =
     (stackOnly || stackPref) && !!source.deviceId && !!source.stackId
+  // The stack view's cables, for the Cables list and the picked one's
+  // card (stack-cable-tools).
+  const [links] = useState(() => new StackLinkStore())
   // The frame while it is fullscreen: menus mount inside it.
   const [fullEl, setFullEl] = useState<HTMLElement | null>(null)
   const full = fullEl !== null
@@ -179,6 +188,9 @@ export function ModelViewerFrame({
             onChange={(v) => setStacksMode(readStacksMode(v))}
           />
         )}
+        {stackOn && stacksMode !== "hide" && (
+          <StackCablesMenu store={links} container={fullEl} />
+        )}
         <span className="ml-auto flex items-center gap-2">
           {note && (
             <span className="text-[11px] whitespace-nowrap text-muted-foreground">
@@ -196,15 +208,20 @@ export function ModelViewerFrame({
           </BarIconButton>
         </span>
       </div>
-      <Suspense fallback={<Loading className={className} />}>
-        <LazyModelViewer
-          {...source}
-          outlineAll={outlineAll}
-          stackView={stackOn}
-          view={view}
-          className={full ? "min-h-0 flex-1" : className}
-        />
-      </Suspense>
+      <div className={cn("relative", full && "flex min-h-0 flex-1 flex-col")}>
+        <StackLinksContext.Provider value={stackOn ? links : null}>
+          <Suspense fallback={<Loading className={className} />}>
+            <LazyModelViewer
+              {...source}
+              outlineAll={outlineAll}
+              stackView={stackOn}
+              view={view}
+              className={full ? "min-h-0 flex-1" : className}
+            />
+          </Suspense>
+        </StackLinksContext.Provider>
+        {stackOn && <StackCableCard store={links} />}
+      </div>
     </div>
   )
 }

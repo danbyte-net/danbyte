@@ -70,6 +70,8 @@ import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
 import { useMe } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
+import { useSaveObject } from "@/lib/save-object"
+import { Switch } from "@/components/ui/switch"
 import { naturalCompare } from "@/lib/natural-sort"
 
 export const Route = createFileRoute("/virtual-chassis/$id")({
@@ -264,6 +266,14 @@ function Overview({
     {
       label: "Topology",
       value: vc.stack_topology === "chain" ? "Chain" : "Ring",
+    },
+    {
+      label: "Auto-connect stack ports",
+      value: <AutoConnectSwitch vc={vc} field="auto_connect_stack" />,
+    },
+    {
+      label: "Auto-connect StackPower",
+      value: <AutoConnectSwitch vc={vc} field="auto_connect_power" />,
     },
     {
       label: "Master",
@@ -716,5 +726,58 @@ function MembersTable({
         </AlertDialogContent>
       </AlertDialog>
     </section>
+  )
+}
+
+/**
+ * A stack's auto-connect switch on its Overview (docs/dcim/virtual-chassis.md
+ * → Auto-connect): on, Danbyte records the derived ring as cables and keeps
+ * them in step; off, it deletes the ones it still manages. Turning it
+ * either way needs stack change and cable add and delete.
+ */
+function AutoConnectSwitch({
+  vc,
+  field,
+}: {
+  vc: VirtualChassis
+  field: "auto_connect_stack" | "auto_connect_power"
+}) {
+  const qc = useQueryClient()
+  const { canDo } = useMe()
+  const saveObject = useSaveObject()
+  const may =
+    canDo("virtualchassis", "change") &&
+    canDo("cable", "add") &&
+    canDo("cable", "delete")
+  const on = !!vc[field]
+  const save = useMutation({
+    mutationFn: (value: boolean) =>
+      saveObject<VirtualChassis>({
+        objectType: "api.virtualchassis",
+        endpoint: "/api/virtual-chassis/",
+        id: vc.id,
+        payload: { [field]: value },
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["virtual-chassis", vc.id] })
+      qc.invalidateQueries({ queryKey: ["device-leds"] })
+      qc.invalidateQueries({ queryKey: ["stack-links"] })
+      qc.invalidateQueries({ queryKey: ["cables"] })
+      invalidatePortCounts(qc)
+    },
+    onError: (e) => apiErrorToast(e),
+  })
+  return (
+    <Switch
+      size="sm"
+      checked={save.isPending ? !!save.variables : on}
+      disabled={!may || save.isPending}
+      aria-label={
+        field === "auto_connect_stack"
+          ? "Auto-connect stack ports"
+          : "Auto-connect StackPower"
+      }
+      onCheckedChange={(v) => save.mutate(v)}
+    />
   )
 }

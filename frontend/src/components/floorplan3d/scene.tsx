@@ -42,6 +42,7 @@ import {
 } from "@/components/ui/dialog"
 import { CableForm } from "@/components/cable-form"
 import { QueryError } from "@/components/query-error"
+import { StackCableCard } from "@/components/stack-cable-tools"
 import { useMe } from "@/lib/use-me"
 import { usePortLabelsShown } from "@/lib/port-labels-pref"
 
@@ -325,6 +326,13 @@ export default function FloorScene3D({
   const stacksMode = useStacksMode()
   const stackCables = useMemo(() => stackCableIds(roomStacks), [roomStacks])
   const [selection, setSelection] = useState<Sel | null>(null)
+  // A click on a port with a stack cable picks that cable (the card,
+  // stack-cable-tools).
+  const portSel = selection?.kind === "port" ? selection : null
+  useEffect(() => {
+    if (portSel?.deviceId && portSel.portName)
+      stackScene.links.selectPort(portSel.deviceId, portSel.portName)
+  }, [stackScene, portSel?.deviceId, portSel?.portName])
   // A right-click on a disk or a PSU: its part's statuses at the pointer.
   const canSetStatus = useCanSetPartStatus()
   const [partMenu, setPartMenu] = useState<PartMarkerAt | null>(null)
@@ -1589,6 +1597,7 @@ export default function FloorScene3D({
           onToggleFocus={() => setFocusOn((v) => !v)}
         />
       )}
+      <StackCableCard store={stackScene.links} className="bottom-3 left-3" />
       {tooDetailed.length > 0 && (
         <div className="pointer-events-none absolute right-3 bottom-3 max-w-72 rounded-lg border border-border bg-popover/95 px-3 py-2 text-[12px] text-popover-foreground shadow-lg backdrop-blur">
           <Badge variant="warning">Model too detailed</Badge>

@@ -24,6 +24,7 @@ records each member's position and master-election priority.
 | **Name** | A label for the stack (must be unique within the tenant). |
 | **Domain** | The stack / VC domain identifier, where the platform has one. |
 | **Topology** | **Ring** (default) or **Chain**: whether the last member is cabled back to the first. The 3D views draw a [derived ring](#in-3d) this way. |
+| **Auto-connect stack ports** / **Auto-connect StackPower ports** | Record the derived rings as real cables and keep them in step with the members. Off by default. See [Auto-connect](#auto-connect). |
 | **Master** | The member acting as stack master, if designated. Must be a member of this stack - Danbyte rejects anything else. |
 | **Description / comments** | A short note, and long-form notes. |
 
@@ -136,7 +137,9 @@ A rack's [3D view](racks.md#the-rack-in-3d) and the floor plan's
   carry the mark to each device; a pack's YAML sets it with `stack: true`.
 - **Recorded cables.** Any cable between two stack ports of members of the
   same stack is drawn between them. It is drawn once, by the stack, not
-  again by the room's cable layer.
+  again by the room's cable layer. [Auto-connect](#auto-connect) cables
+  and cables made with [Record cable](#record-a-derived-cable) are recorded
+  cables.
 - **Derived ring.** When no such cable is recorded, Danbyte draws the ring
   the member order implies. Each member's stack ports are put in natural
   name order and the first two are its **A** and **B**: member *n*'s A to
@@ -218,6 +221,84 @@ end, and its bottom is at least two bends wide. Corners bend no tighter
 than the head's bend where the run leaves room; ends right above each
 other bend tighter at the bottom.
 
+A stack's cables, data and StackPower, are laid out together so they lie
+beside and on each other instead of through each other:
+
+- They are taken in order of their upper end, lowest first, then stack
+  cables before StackPower cables. Each takes the first **lane** no earlier
+  cable across the same width holds.
+- A lane is one jacket diameter and 3 mm further out from the stack. Its
+  drops move in from the ports by as much, so a lead out to an outer lane
+  passes beside the inner cables' drops, never through them.
+- A lane's loop rests on the one inside it: its bottom one lane higher,
+  below the lowest end of the cables it shares the width with.
+
+The lanes are worked out from the cables' ends alone, so a refresh draws
+the same picture. In a large stack, where the drops run out of room
+between the ports, lanes are best-effort.
+
+**A recorded cable hangs to its length.** A recorded cable with a
+**Length** has its loop sized so the drawn cable is that long: a longer
+cable hangs lower. It is never drawn shorter than its lane's run. Below
+600 mm under its lower end it hangs no deeper, and the rest lies back
+along the bottom of the loop, away from the stack. A derived link and a
+cable without a length keep the default sag. The length also picks the
+head's per-length bend when the label names a `min_bend_by_part` part.
+
+### Tracing a cable {#tracing-a-cable}
+
+Click a stack or StackPower cable, or the head at either end, to pick it:
+
+- The cable draws solid in the selection colour, with both ends marked.
+  Every other stack cable is ghosted.
+- A card pinned in the view's corner names it (**Stack cable** or
+  **StackPower cable**, **Derived** or **Recorded**), both ends (member
+  and port), its label, and **Open cable** for a recorded one.
+- Click it again, click anything else in the view, or press **Esc** to
+  let it go. A click on a port that has a stack cable picks that cable.
+
+**Cables**, on the toolbar of the device page's Stack view, the stack
+page's 3D tab and the rack's 3D view, lists each drawn cable as `1/1 →
+2/2`, grouped **Stack** and **StackPower** (by stack too where a rack holds
+more than one). Pick a row to pick its cable; hover a row to preview it.
+It is hidden while **Stacks** is **Hide**. The 3D room picks cables by
+click and shows the same card.
+
+### Record a derived cable {#record-a-derived-cable}
+
+A derived cable is a drawing aid. To make it data, pick it and press
+**Record cable** on its card, or use **Record all** at the bottom of
+**Cables** for every derived cable drawn:
+
+| Field | What it sets |
+|---|---|
+| **Part number** | The cable's **Label**. The head's part numbers (`STACK-T1-50CM`, `STACK-T1-1M`, `CAB-SPWR-30CM`, …) are offered; any text is accepted. |
+| **Length** / **Unit** | The cable's length. A part number that ends in a plain length (`50CM`, `1M`, `150CM`) fills them in; otherwise type it. |
+
+**Record all** has **Length for all** at the top, which sets every row
+from one part; each row stays editable. The cable gets the two ports as
+its A and B terminations and the type **Power** for a StackPower cable
+(none for a stack cable). Each is an ordinary cable create: it needs
+cable add, is scoped and validated like any cable, and is logged in the
+change log. The views then draw it as recorded - and, as a recorded
+cable always does, it stops the derived ring of its kind for the stack.
+
+### On a port's page {#on-a-ports-page}
+
+A stack port in a derived link shows where its cable would be: the
+interface page's **Interface** card gains a **Stack cable** row, `Stack
+cable (derived from member order) → sw3 · StackPort3/1`, the far member
+linked, with **Record cable** for a reader who may add cables. On the
+device's **Interfaces** and **Power ports** tabs the cable cell of such a
+port says *derived*. It still counts as not connected. A recorded cable
+shows as any cable does.
+
+The rows come from `GET /api/devices/<id>/stack-links/`: `{"ports":
+{"<port id>": {kind, name, far: {device, device_name, port, id},
+parts}}}`, the far end listed only when the reader may view its device
+and port. It follows the 3D rule: a kind with any recorded stack cable in
+the stack has no derived links.
+
 **Show, ghost or hide.** **Stacks** sits next to **Pluggables** in the 3D
 room's View menu, on the rack's 3D toolbar and, with **Stack** on, on a
 member's 3D card:
@@ -277,6 +358,42 @@ stack, so there is no Stack switch: every member, the stack and StackPower
 cables, and the Stacks Show / Ghost / Hide choice. The master is the
 highlighted member.
 
+## Auto-connect {#auto-connect}
+
+A stack's **Auto-connect stack ports** and **Auto-connect StackPower
+ports** switches (on its form and its Overview) turn the derived rings into
+real cables that Danbyte keeps in step with the stack:
+
+- **On:** each link of the [derived ring](#in-3d) - by member order, a
+  chain without its closing link, StackPower in rings of at most four - is
+  recorded as a cable between the two ports. Its label is the head's
+  shortest part number (`STACK-T1-50CM`, `CAB-SPWR-30CM`) with that length,
+  when the tenant has a head part; a StackPower cable is typed **Power**.
+- **Kept in step:** a member added, removed or renumbered, the stack's
+  topology changed, or a stack port added, removed or retyped, and the
+  stack's auto cables are brought in line when the change commits: a cable
+  whose link is gone is deleted, a missing one is made.
+- **Your cables win:** a port that already has a cable that is not auto is
+  skipped, and no such cable is ever changed. Editing an auto cable in
+  any way (through the API or a form) makes it an ordinary cable that
+  Danbyte no longer manages.
+- **Off:** deletes only the cables still auto; released ones stay.
+- Deleting the stack leaves its auto cables as ordinary cables.
+
+Auto cables are ordinary cables: they count as connected, show on the
+ports and cables pages, and are logged in the change log with the cause
+**Auto-connect: stack *name***. The cable records `auto_source` (`stack`
+or `stack-power`) and `auto_chassis` (the stack), read-only in the API.
+The work runs as the system within the stack's tenant. Turning a switch
+on or off needs **change** on the stack and cable **add** and **delete**
+at every member's site; without them the save is refused with a field
+error.
+
+`manage.py reconcile_stack_cables` brings every stack with a switch on (or
+auto cables left) in line - for changes made by writes that skip the
+model's signals, such as a bulk update of member positions. It is
+idempotent.
+
 ## SNMP
 
 A stack is polled once, through its master (or lowest member), and the
@@ -302,7 +419,8 @@ address. A member device's own SLA panel shows the stack's figure.
 Deleting a virtual chassis **releases its members** - their positions and
 priorities are cleared and they carry on as standalone devices, each release
 recorded in that device's change log. The devices themselves are never
-deleted with the stack.
+deleted with the stack. Its [auto-connect](#auto-connect) cables stay, as
+ordinary cables.
 
 To delete several stacks, tick them in **Virtual chassis** and press **Delete**
 in the bar. The confirmation says how many member devices are released, and

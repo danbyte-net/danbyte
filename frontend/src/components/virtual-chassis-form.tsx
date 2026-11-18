@@ -11,6 +11,7 @@ import { apiAll } from "@/lib/api-all"
 import { TagMultiSelect } from "@/components/cells/tag-multi-select"
 import {
   Field,
+  FormCheckbox,
   FormFooter,
   FormSection,
   FormSelect,
@@ -49,6 +50,8 @@ export function VirtualChassisForm({
   const [topology, setTopology] = useState<"ring" | "chain">(
     item?.stack_topology ?? "ring"
   )
+  const [autoStack, setAutoStack] = useState(!!item?.auto_connect_stack)
+  const [autoPower, setAutoPower] = useState(!!item?.auto_connect_power)
   const [description, setDescription] = useState(item?.description ?? "")
   const [comments, setComments] = useState(item?.comments ?? "")
   const [customFields, setCustomFields] = useState<Record<string, unknown>>(
@@ -68,6 +71,8 @@ export function VirtualChassisForm({
     setName(item.name)
     setDomain(item.domain)
     setTopology(item.stack_topology ?? "ring")
+    setAutoStack(!!item.auto_connect_stack)
+    setAutoPower(!!item.auto_connect_power)
     setDescription(item.description)
     setComments(item.comments)
     setCustomFields(item.custom_fields ?? {})
@@ -81,6 +86,8 @@ export function VirtualChassisForm({
         name: name.trim(),
         domain: domain.trim(),
         stack_topology: topology,
+        auto_connect_stack: autoStack,
+        auto_connect_power: autoPower,
         description: description.trim(),
         comments: comments.trim(),
         custom_fields: customFields,
@@ -143,6 +150,26 @@ export function VirtualChassisForm({
             info="How the members are cabled. A ring closes back from the last member to the first; a chain does not. The 3D views draw the stack cables this way when none are recorded."
             error={fieldErrors.stack_topology}
           />
+        </div>
+        <div className="grid gap-2">
+          <FormCheckbox
+            label="Auto-connect stack ports"
+            checked={autoStack}
+            onChange={setAutoStack}
+            info="Records the ring of stack ports as cables and keeps it in step with the members. A port with another cable is left alone; editing an auto cable makes it an ordinary one."
+          />
+          <FormCheckbox
+            label="Auto-connect StackPower ports"
+            checked={autoPower}
+            onChange={setAutoPower}
+            info="The same for the StackPower ports, in rings of at most four."
+          />
+          {(fieldErrors.auto_connect_stack ||
+            fieldErrors.auto_connect_power) && (
+            <p className="text-xs text-destructive">
+              {fieldErrors.auto_connect_stack || fieldErrors.auto_connect_power}
+            </p>
+          )}
         </div>
       </FormSection>
 
