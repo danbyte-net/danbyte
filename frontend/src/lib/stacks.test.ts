@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 
+import { dot, sub, tightestBend, unit } from "./cord-run"
 import type { CordEnd, Vec3 } from "./cord-run"
 import type { DeviceLeds } from "./led-state"
 import {
@@ -13,7 +14,10 @@ import {
   stackBendM,
   stackProfile,
   stackRadiusM,
+  STACK_SAG_M,
+  stackHangDir,
   stackRunPoints,
+  straightened,
   withStackMode,
 } from "./stacks"
 import type { SceneStack } from "./stacks"
@@ -121,17 +125,106 @@ describe("stack cable run", () => {
     expect(pts[pts.length - 1]).toEqual([0, -0.0445, 0])
   })
 
-  it("bows out behind the ports and never goes in front", () => {
+  it("hangs behind the ports and never goes in front", () => {
     const pts = stackRunPoints(a, b)
-    const depth = Math.max(...pts.map((p) => p[2]))
-    expect(depth).toBeGreaterThan(0.05)
+    expect(Math.max(...pts.map((p) => p[2]))).toBeGreaterThan(0.03)
     expect(Math.min(...pts.map((p) => p[2]))).toBeGreaterThanOrEqual(0)
+    // The loop hangs below the lower end.
+    expect(Math.min(...pts.map((p) => p[1]))).toBeLessThan(
+      -0.0445 - STACK_SAG_M + 1e-9
+    )
   })
 
-  it("bows further for members further apart", () => {
-    const far = end([0, -0.4, 0])
-    const d = (q: CordEnd) => Math.max(...stackRunPoints(a, q).map((p) => p[2]))
-    expect(d(far)).toBeGreaterThan(d(b))
+  it("leaves each end along its +Z", () => {
+    const down = unit([0, -1, 1])
+    const ea = end([-0.05, 0, 0.04], down)
+    const eb = end([0.05, -0.0445, 0.04], down)
+    const pts = stackRunPoints(ea, eb)
+    const first = unit(sub(pts[1], pts[0]))
+    const last = unit(sub(pts[pts.length - 2], pts[pts.length - 1]))
+    expect(dot(first, down)).toBeGreaterThan(0.999)
+    expect(dot(last, down)).toBeGreaterThan(0.999)
+  })
+
+  // Three 1U members, 440 x 44.45 x 450 mm, their backs at z = 0; the
+  // stack ports in the back, the heads' cable empties 40 mm out.
+  const U = 0.04445
+  const box = (k: number) => ({
+    min: [-0.22, -k * U, -0.45] as Vec3,
+    max: [0.22, -k * U + U, 0] as Vec3,
+  })
+  const inside = (p: Vec3, bx: { min: Vec3; max: Vec3 }) =>
+    p.every((v, i) => v > bx.min[i] + 1e-9 && v < bx.max[i] - 1e-9)
+  const port = (k: number, n: 1 | 2, z: Vec3 = [0, 0, 1]) =>
+    end([n === 1 ? -0.06 : 0.06, -k * U + U / 2, 0.04], z)
+
+  it("never passes through a member between adjacent members", () => {
+    const boxes = [box(0), box(1), box(2)]
+    for (const z of [
+      [0, 0, 1],
+      unit([0, -1, 0.3]),
+      unit([0.3, -1, 0.5]),
+    ] as Vec3[]) {
+      // 1 -> 2, 2 -> 3 and the long return 3 -> 1.
+      for (const [i, j] of [
+        [0, 1],
+        [1, 2],
+        [2, 0],
+      ]) {
+        const pts = stackRunPoints(port(i, 1, z), port(j, 2, z))
+        for (const p of pts)
+          for (const bx of boxes) expect(inside(p, bx)).toBe(false)
+      }
+    }
+  })
+
+  it("bends no tighter than the head's bend where there is room", () => {
+    const T: CordEnd["cable"] = {
+      profile: "round",
+      jacket_mm: 6,
+      pitch_mm: null,
+      min_bend_mm: 41,
+    }
+    const ea = { ...port(0, 1), cable: T }
+    const eb = { ...port(1, 2), cable: T }
+    const pts = stackRunPoints(ea, eb)
+    expect(tightestBend(pts)).toBeGreaterThan(0.041 * 0.95)
+    // Ends right above each other: the bottom is spread two bends wide,
+    // its turns tighter but never a kink.
+    const over = stackRunPoints(
+      { ...end([0, 0, 0.04]), cable: T },
+      { ...end([0, -U, 0.04]), cable: T }
+    )
+    expect(tightestBend(over)).toBeGreaterThan(0.041 * 0.5)
+  })
+
+  it("hangs in one plane behind the stack", () => {
+    expect(stackHangDir(end([0, 0, 0]), end([0, -1, 0]))).toEqual([0, 0, 1])
+    const turned = stackHangDir(
+      end([0, 0, 0], unit([1, -1, 0])),
+      end([0, 0, 0], unit([1, -1, 0]))
+    )
+    expect(turned[0]).toBeCloseTo(1)
+    // Straight down: the level way falls back to +Z.
+    expect(
+      stackHangDir(end([0, 0, 0], [0, -1, 0]), end([0, 0, 0], [0, -1, 0]))
+    ).toEqual([0, 0, 1])
+  })
+
+  it("drops points that make no turn", () => {
+    expect(
+      straightened([
+        [0, 0, 0],
+        [0, 0, 1],
+        [0, 0, 2],
+        [0, 0, 2],
+        [0, -1, 2],
+      ])
+    ).toEqual([
+      [0, 0, 0],
+      [0, 0, 2],
+      [0, -1, 2],
+    ])
   })
 
   it("takes the head's jacket, else a plain one", () => {

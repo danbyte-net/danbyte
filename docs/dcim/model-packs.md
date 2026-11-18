@@ -683,9 +683,10 @@ port's cable, and the pack check doesn't flag it. Danbyte picks the head by the 
 `parts` lists a recorded cable's label first, else the first by vendor and
 name. The run is drawn between the two heads' `cable` empties in the head's
 `cable:` profile: one round jacket, or a zip cord's or ribbon's jackets side
-by side along the empties' ±X, untwisted. An `END_BAND` ring on the head is
-yellow at the cable's A end and green at its B end. A recorded cable whose
-label names
+by side along the empties' ±X, untwisted, hanging in a loop behind the
+stack ([how a cable hangs](virtual-chassis.md#in-3d)). An `END_BAND` ring on
+the head is yellow at the cable's A end and green at its B end. A recorded
+cable whose label names
 a `min_bend_by_part` length bends by it; a derived ring uses `min_bend_mm`. Without a
 fitting part, a plain cable runs between the port anchors. A stack over data
 ports needs no special part: mark the interfaces `stack: true` in the device

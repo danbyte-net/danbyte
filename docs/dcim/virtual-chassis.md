@@ -173,6 +173,16 @@ marked data port takes what any
 cabled port of its type takes: a DAC head, an optic and its cord, an RJ45
 plug. Without a part, a plain dark cable runs from the ports.
 
+**How a cable hangs.** A stack cable leaves each head along its `cable`
+empty's +Z for a short lead, bends down one bend radius behind the
+furthest head, drops past the members and loops under the lower end - the
+whole loop in one upright plane behind the ports, as a StackWise cable
+hangs, so a cable between adjacent members never passes through a
+chassis. The loop hangs at least 60 mm, and two bends, below the lower
+end, and its bottom is at least two bends wide. Corners bend no tighter
+than the head's bend where the run leaves room; ends right above each
+other bend tighter at the bottom.
+
 **Show, ghost or hide.** **Stacks** sits next to **Pluggables** in the 3D
 room's View menu and on the rack's 3D toolbar:
 

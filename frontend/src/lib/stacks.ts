@@ -5,6 +5,8 @@ import {
   add,
   bendMm,
   cordLead,
+  cross,
+  dot,
   jacketCount,
   len,
   mul,
@@ -138,38 +140,84 @@ export function stackLinkText(link: Pick<StackLink, "derived">): string {
 
 // ── the run ──────────────────────────────────────────────────────────────
 
-/** How far a stack cable bows out past its ends, as a share of their
- * distance, and at least this much (m). */
-export const STACK_BOW = 0.35
-export const STACK_BOW_MIN_M = 0.06
+/** How far a stack cable's loop hangs below the lower of its two ends
+ * at least (m, before the model's scale); it hangs at least two of its
+ * bends deep, so both turns at the bottom keep their radius. */
+export const STACK_SAG_M = 0.06
 /** A plain stack cable's jacket (mm) when no head names one. */
 export const STACK_JACKET_MM = 6
 /** Its tightest bend (m) when no head names one. */
 export const STACK_MIN_BEND_M = 0.03
 
+const UP: Vec3 = [0, 1, 0]
+
+/** The level way out of the back of the stack at two ends: their heads'
+ * mean +Z laid flat, else the A end's, else +Z. */
+export function stackHangDir(a: CordEnd, b: CordEnd): Vec3 {
+  const flat = (v: Vec3): Vec3 => sub(v, mul(UP, dot(v, UP)))
+  for (const v of [add(unit(a.z), unit(b.z)), unit(a.z), unit(b.z)]) {
+    const f = flat(v)
+    if (len(f) > 1e-3) return unit(f)
+  }
+  return [0, 0, 1]
+}
+
 /**
  * The run of one stack cable between its ends (the heads' `cable`
- * empties, or the port anchors when no head is drawn): each end's short
- * lead out along its +Z, then a loop bowed out further along the two
- * ends' mean out direction - a stack cable hangs out of the back of the
- * stack and turns round to the next member - its corners rounded to the
- * head's bend (`stackBendM`). The same ends give the same points.
+ * empties, or the port anchors when no head is drawn), as a StackWise
+ * cable hangs: each end's short lead out along its +Z, a tight bend down
+ * one bend radius behind the furthest lead, a drop past the members, a
+ * loop under the lower end and back up - the whole loop in one upright
+ * plane behind the ports (`stackHangDir`), so a cable between adjacent
+ * members never passes through a chassis. The loop's bottom is at least
+ * two bends wide and deep; every corner is rounded to the head's bend
+ * (`stackBendM`) where the segments leave room. The same ends give the
+ * same points.
  */
 export function stackRunPoints(
   a: CordEnd,
   b: CordEnd,
   link?: Pick<StackLink, "derived" | "label"> | null
 ): Vec3[] {
+  const scale = a.scale || 1
+  const r = stackBendM(a, b, link) * scale
   const [a0, a1] = cordLead(a)
   const [b0, b1] = cordLead(b)
-  const out = unit(add(unit(a.z), unit(b.z)))
-  const dist = len(sub(b1, a1))
-  const bow = Math.max(STACK_BOW_MIN_M, dist * STACK_BOW)
-  const dir: Vec3 = len(out) > 1e-6 ? out : unit(a.z)
-  return roundCorners(
-    [a0, a1, add(a1, mul(dir, bow)), add(b1, mul(dir, bow)), b1, b0],
-    stackBendM(a, b, link) * (a.scale || 1)
-  )
+  const h = stackHangDir(a, b)
+  // The hanging plane: one bend behind the furthest lead.
+  const plane = Math.max(dot(a1, h), dot(b1, h)) + r
+  const a2 = add(a1, mul(h, plane - dot(a1, h)))
+  const b2 = add(b1, mul(h, plane - dot(b1, h)))
+  const bottom = Math.min(a2[1], b2[1]) - Math.max(STACK_SAG_M * scale, 2 * r)
+  let a3: Vec3 = [a2[0], bottom, a2[2]]
+  let b3: Vec3 = [b2[0], bottom, b2[2]]
+  // Ends right above each other: spread the loop's bottom to two bends,
+  // sideways in the plane.
+  const across = sub(b3, a3)
+  if (len(across) < 2 * r) {
+    const side = len(across) > 1e-6 ? unit(across) : unit(cross(UP, h))
+    const mid = mul(add(a3, b3), 0.5)
+    a3 = sub(mid, mul(side, r))
+    b3 = add(mid, mul(side, r))
+  }
+  return roundCorners(straightened([a0, a1, a2, a3, b3, b2, b1, b0]), r)
+}
+
+/** `points` without the inner ones that make no turn or no length, so a
+ * corner gets the whole of a straight run to round on. */
+export function straightened(points: readonly Vec3[]): Vec3[] {
+  const out: Vec3[] = []
+  for (const p of points) {
+    if (out.length && len(sub(p, out[out.length - 1])) < 1e-6) continue
+    while (out.length >= 2) {
+      const u = unit(sub(out[out.length - 1], out[out.length - 2]))
+      const v = unit(sub(p, out[out.length - 1]))
+      if (dot(u, v) < 1 - 1e-9) break
+      out.pop()
+    }
+    out.push([...p] as Vec3)
+  }
+  return out
 }
 
 /** A stack cable's tightest bend (m, before the model's scale): a recorded
