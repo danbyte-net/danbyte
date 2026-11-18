@@ -5,11 +5,15 @@ import * as THREE from "three"
 import { areaColor, boxCorners } from "@/components/floorplan/shapes"
 import type { AreaShape } from "@/components/floorplan/shapes"
 
-import { cellM } from "./world"
+import { RAISED_FLOOR_TOP_M, cellM } from "./world"
 import type { ScenePayload } from "./world"
 
-/** Just over the room's grid lines, under the raised floors' slabs. */
-const Y = 0.003
+/** Over everything flat on the floor - the room's grid lines and the raised
+ * floors' finished top. Under a raised floor's top (3 mm against its 13 mm,
+ * seen through its 92 % opacity) a zone flickered in and out as the camera
+ * moved: the depth test against the floor above it won or lost by view
+ * angle. */
+const Y = RAISED_FLOOR_TOP_M + 0.002
 
 /** The ids of every area under a click, nearest first. */
 const areaIdsUnder = (e: ThreeEvent<MouseEvent>) =>

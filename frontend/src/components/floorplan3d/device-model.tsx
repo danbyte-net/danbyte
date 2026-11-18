@@ -178,8 +178,25 @@ export async function parseModel(buf: ArrayBuffer): Promise<THREE.Group> {
   const gltf = await loader.parseAsync(buf, "")
   keepNodeNames(gltf)
   const scene = gltf.scene
+  smoothCutouts(scene)
   scene.updateMatrixWorld(true)
   return scene
+}
+
+/**
+ * Alpha-masked (cut-out) materials - a perforated door, a brush strip -
+ * drawn with alpha to coverage. With a plain alpha test, the texture's
+ * smaller mip levels average holes and metal together; once that average
+ * falls under the cut-off the whole far side of a door vanished, along a
+ * line that moved with the camera. Coverage turns the average into how
+ * see-through it looks instead, as a perforated panel does from afar.
+ */
+export function smoothCutouts(obj: THREE.Object3D) {
+  obj.traverse((o) => {
+    if (!(o instanceof THREE.Mesh)) return
+    for (const m of Array.isArray(o.material) ? o.material : [o.material])
+      if (m.alphaTest > 0 && !m.transparent) m.alphaToCoverage = true
+  })
 }
 
 /** Whether any material in `obj` carries a baked ambient occlusion map. */
