@@ -1,4 +1,5 @@
 import { UpcomingMaintenancePanel } from "@/components/monitoring/upcoming-maintenance"
+import { EAR_POSITION_LABELS } from "@/lib/rack-mount"
 import { PlatformCell } from "@/components/cells/platform-cell"
 import {
   SoftwareVersionSourceText,
@@ -1600,6 +1601,16 @@ function rackRows(d: Device): KvRow[] {
         ),
     },
     { label: "Face", value: d.face || dash },
+    ...(d.rack_mount && d.position != null
+      ? [
+          {
+            label: "Ears",
+            value: d.rack_mount.ears
+              ? EAR_POSITION_LABELS[d.rack_mount.position || "front"]
+              : "None",
+          },
+        ]
+      : []),
   ]
 }
 

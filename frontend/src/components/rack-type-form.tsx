@@ -23,6 +23,8 @@ import {
   useFieldErrors,
 } from "@/components/forms"
 import { CoolingFields } from "@/components/cooling-fields"
+import { RackLookFields } from "@/components/rack-look-fields"
+import { LOOK_DEFAULTS, lookDraft, lookPayload } from "@/lib/rack-look"
 import { kwToWatts, wattsToKw } from "@/lib/rack-capacity"
 import { useSaveObject } from "@/lib/save-object"
 
@@ -85,6 +87,7 @@ export function RackTypeForm({
   const [tagIds, setTagIds] = useState<number[]>(
     rackType?.tags.map((t) => t.id) ?? []
   )
+  const [look, setLook] = useState(() => lookDraft(rackType ?? LOOK_DEFAULTS))
 
   useEffect(() => {
     if (!rackType) return
@@ -109,6 +112,7 @@ export function RackTypeForm({
     setCoolingCapacity(wattsToKw(rackType.cooling_capacity_w))
     setDescription(rackType.description)
     setTagIds(rackType.tags.map((t) => t.id))
+    setLook(lookDraft(rackType))
     reset()
   }, [rackType, reset])
 
@@ -136,6 +140,7 @@ export function RackTypeForm({
         cooling_capacity_w: kwToWatts(coolingCapacity),
         description: description.trim(),
         tag_ids: tagIds,
+        ...lookPayload(look),
       }
       return saveObject<RackType>({
         objectType: "api.racktype",
@@ -193,6 +198,12 @@ export function RackTypeForm({
               error={fieldErrors.manufacturer_id}
             />
           </FormSection>
+
+          <RackLookFields
+            value={look}
+            onChange={setLook}
+            errors={fieldErrors}
+          />
 
           <FormSection title="Notes" card>
             <FormTextarea

@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { lookKvRows } from "@/components/rack-look-fields"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Pencil, Plus, Trash2 } from "lucide-react"
@@ -185,6 +186,7 @@ function Body({ rackType: rt }: { rackType: RackType }) {
       <DetailTab value="overview">
         <div className="grid gap-6 lg:grid-cols-2">
           <KvCard title="Cabinet model" rows={rows} />
+          <KvCard title="Look" rows={lookKvRows(rt)} />
         </div>
         <div className="mt-6">
           <AccessoriesPane rackTypeId={rt.id} />

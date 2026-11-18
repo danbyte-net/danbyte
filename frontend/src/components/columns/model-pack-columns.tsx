@@ -138,6 +138,8 @@ const KIND_LABEL: Record<ModelPackType["kind"], string> = {
   "device-type": "Device type",
   "module-type": "Module type",
   "accessory-type": "Accessory",
+  "rack-kit": "Rack kit",
+  "rack-type": "Rack type",
 }
 
 export function buildModelPackTypeColumns(): ColumnDef<
@@ -152,9 +154,19 @@ export function buildModelPackTypeColumns(): ColumnDef<
       cell: ({ row }) => {
         const t = row.original
         const label = t.name || t.path
-        // Accessory types have no page of their own.
-        if (!t.id || t.kind === "accessory-type")
+        // Accessory types and rack kits have no page of their own.
+        if (!t.id || t.kind === "accessory-type" || t.kind === "rack-kit")
           return <span className="font-medium">{label}</span>
+        if (t.kind === "rack-type")
+          return (
+            <Link
+              to="/rack-types/$id"
+              params={{ id: t.id }}
+              className="link font-medium"
+            >
+              {label}
+            </Link>
+          )
         return t.kind === "module-type" ? (
           <Link
             to="/module-types/$id"
@@ -308,7 +320,11 @@ export function buildModelPackPartColumns(): ColumnDef<
           ? "Module"
           : row.original.kind === "accessory-type"
             ? "Accessory"
-            : "Device",
+            : row.original.kind === "rack-kit"
+              ? "Rack kit"
+              : row.original.kind === "rack-type"
+                ? "Rack type"
+                : "Device",
       meta: { label: "Kind" },
     },
     {

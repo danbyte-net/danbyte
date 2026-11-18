@@ -1,4 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react"
+import {
+  EAR_POSITION_LABELS,
+  earPositions,
+  rackMountOf,
+} from "@/lib/rack-mount"
+import type { EarPosition } from "@/lib/rack-mount"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useSiteOptions } from "@/lib/use-site-options"
 import { toast } from "sonner"
@@ -231,6 +237,10 @@ export function DeviceForm({
   const [mountOffset, setMountOffset] = useState(
     device?.mount_offset_mm != null ? String(device.mount_offset_mm) : ""
   )
+  // Which of the type's ear positions it is fitted at (api.rack_mount).
+  const [earPosition, setEarPosition] = useState<string>(
+    device?.ear_position ?? ""
+  )
   const [mountSpan, setMountSpan] = useState(
     device?.mount_span_u != null ? String(device.mount_span_u) : ""
   )
@@ -338,6 +348,7 @@ export function DeviceForm({
       device.mount_offset_mm != null ? String(device.mount_offset_mm) : ""
     )
     setMountSpan(device.mount_span_u != null ? String(device.mount_span_u) : "")
+    setEarPosition(device.ear_position ?? "")
     setMountIn(device.cabinet ? "cabinet" : "rack")
     setCabinetId(device.cabinet?.id ?? null)
     setRailId(device.din_rail?.id ?? null)
@@ -515,6 +526,7 @@ export function DeviceForm({
   const rackWidth: "full" | "half" =
     selectedType?.rack_width === "half" ? "half" : "full"
   const deviceHeight = Math.max(1, selectedType?.u_height ?? 1)
+  const earOffered = earPositions(selectedType?.rack_mount)
   // No type is drawn, and refused, as full depth (#375).
   const fullDepth = selectedType?.is_full_depth ?? true
 
@@ -641,6 +653,10 @@ export function DeviceForm({
           rackId && mount !== "" && mountSpan.trim() !== ""
             ? Number(mountSpan)
             : null,
+        // A position the new type doesn't offer goes back to its default.
+        ear_position: (earOffered as string[]).includes(earPosition)
+          ? (earPosition as EarPosition)
+          : "",
         // No offset with a rail: the server takes the first gap that fits.
         cabinet_id: cabinetId,
         din_rail_id: cabinetId ? railId : null,
@@ -1215,6 +1231,19 @@ export function DeviceForm({
                     ]}
                     error={fieldErrors.face}
                   />
+                  {earOffered.length > 1 && mount === "" && (
+                    <FormSelect
+                      label="Ear position"
+                      value={earPosition || null}
+                      onChange={(v) => setEarPosition(v ?? "")}
+                      noneLabel={`Type's (${EAR_POSITION_LABELS[rackMountOf(selectedType?.rack_mount).position || "front"]})`}
+                      options={earOffered.map((p) => ({
+                        value: p,
+                        label: EAR_POSITION_LABELS[p],
+                      }))}
+                      error={fieldErrors.ear_position}
+                    />
+                  )}
                   {rackWidth === "half" && (
                     <FormSelect
                       label="Side (half-width)"

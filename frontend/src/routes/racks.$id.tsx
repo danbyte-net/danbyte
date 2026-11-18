@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { lookKvRows } from "@/components/rack-look-fields"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { ShowOnFloorPlan } from "@/components/show-on-floor-plan"
 import { PrintLabelMenuItem } from "@/components/print-label-button"
@@ -526,6 +527,9 @@ function RackOverview({ rack: r }: { rack: Rack }) {
             layout="cards"
           />
           <KvCard title="Capacity" rows={capacityRows} />
+          {r.look && (
+            <KvCard title="Look" rows={lookKvRows(r.look, r.look.inherited)} />
+          )}
         </div>
         <RackFaces rack={r} ports={portState.data} />
       </div>

@@ -4,6 +4,13 @@
 
 // Type-only import (erased at compile time - api.ts stays runtime-import-free).
 // The faceplate doc types live beside their algorithms in faceplate-layout.ts.
+import type { RackMountBlock, RackMountInfo } from "./rack-mount"
+import type {
+  LookPayload,
+  RackLookFields,
+  RackLookOverrides,
+  ResolvedRackLook,
+} from "./rack-look"
 import type { FaceplateDoc } from "@/lib/faceplate-layout"
 import type { BuilderOp, Expr } from "@/lib/filter-expr"
 import type { ModelPortsDoc } from "@/lib/model-ports"
@@ -1763,6 +1770,8 @@ export interface DeviceType extends LifecycleInfo {
   /** The rail's centreline below the body's top edge, in mm; null = the
    * middle of the body. */
   din_rail_mm: number | null
+  /** Rack ears and where they fit (api.rack_mount); null = not recorded. */
+  rack_mount?: RackMountBlock | null
   tags: Tag[]
   custom_fields: Record<string, unknown>
   device_count: number
@@ -1809,6 +1818,7 @@ export interface DeviceTypeWritePayload {
   depth_mm?: number | null
   din_profiles?: DinProfile[]
   din_rail_mm?: number | null
+  rack_mount?: RackMountBlock | null
   release_date?: string | null
   end_of_sale?: string | null
   end_of_security_updates?: string | null
@@ -1836,6 +1846,8 @@ export interface DeviceTypeMini {
   din_profiles: DinProfile[]
   /** The rail's centreline below the body's top edge; null = the middle. */
   din_rail_mm: number | null
+  /** Rack ears and where they fit (api.rack_mount); null = not recorded. */
+  rack_mount?: RackMountBlock | null
   front_image: string | null
   rear_image: string | null
   /** The ¾ view rendered from the type's 3D model, or null. */
@@ -2265,6 +2277,10 @@ export interface Device {
   mount_offset_mm: number | null
   /** Vertical extent of the strip in U; null draws ~¾ of the rack. */
   mount_span_u: number | null
+  /** Which of its type's ear positions it is fitted at; "" the default. */
+  ear_position?: "front" | "mid" | "rear" | ""
+  /** How it sits on the rails (api.rack_mount), read-only. */
+  rack_mount?: RackMountInfo
   /** Read-only, derived from the device type. */
   u_height: number
   /** Read-only, derived from the device type ("full" when untyped). */
@@ -2315,6 +2331,7 @@ export interface DeviceWritePayload {
   mount?: "side_left" | "side_right" | ""
   mount_offset_mm?: number | null
   mount_span_u?: number | null
+  ear_position?: "front" | "mid" | "rear" | ""
   /** A rail sets its cabinet; a rail without an offset takes the first gap
    * from the left the device fits in. */
   cabinet_id?: string | null
@@ -3166,7 +3183,7 @@ export interface RackTypeAccessoryWritePayload {
 
 /** Picker shape (?picker=1) - carries the dims so the rack form can
  * pre-fill client-side; the rack stays the source of truth. */
-export interface RackTypeOption {
+export interface RackTypeOption extends RackLookFields {
   id: string
   name: string
   manufacturer: { id: string; name: string } | null
@@ -3196,7 +3213,7 @@ export interface RackType extends RackTypeOption {
   updated_at: string
 }
 
-export interface RackTypeWritePayload {
+export interface RackTypeWritePayload extends LookPayload {
   name: string
   manufacturer_id?: string | null
   width?: RackWidth
@@ -3246,11 +3263,13 @@ export interface RackCooling {
   mismatched: number
 }
 
-export interface Rack {
+export interface Rack extends Partial<RackLookOverrides> {
   id: string
   numid: number | null
   name: string
   facility_id: string
+  /** The Look it is drawn with: its own, else its type's (api.rack_look). */
+  look?: ResolvedRackLook
   site: SiteRegionMini
   role: {
     id: string
@@ -3306,7 +3325,7 @@ export interface Rack {
   updated_at: string
 }
 
-export interface RackWritePayload {
+export interface RackWritePayload extends LookPayload {
   location_id?: string | null
   room_id?: string | null
   max_weight?: string | null
@@ -4707,12 +4726,16 @@ export interface InventoryItemRow {
 
 /** A pluggable part (docs/dcim/pluggables.md): a transceiver, plug or
  * cord a model pack brings - `/api/accessory-types/`. */
-export type AccessoryKind = "plug" | "transceiver" | "cord"
+export type AccessoryKind =
+  "plug" | "transceiver" | "cord" | "blanking" | "cable-manager" | "shelf"
 
 export const ACCESSORY_KIND_LABEL: Record<AccessoryKind, string> = {
   transceiver: "Transceiver",
   plug: "Plug",
   cord: "Cord",
+  blanking: "Blanking panel",
+  "cable-manager": "Cable manager",
+  shelf: "Shelf",
 }
 
 /** A kind's label; an unknown one as it is. */
@@ -19583,7 +19606,8 @@ export interface ModelPackFinding {
 
 /** One type's row of the pack checker's table. */
 export interface ModelPackPart {
-  kind: "device-type" | "module-type" | "accessory-type"
+  kind:
+    "device-type" | "module-type" | "accessory-type" | "rack-kit" | "rack-type"
   path: string
   part: string
   triangles: number | null
@@ -19599,7 +19623,8 @@ export interface ModelPackPart {
 
 /** A type the dry run or the install matched or created. */
 export interface ModelPackType {
-  kind: "device-type" | "module-type" | "accessory-type"
+  kind:
+    "device-type" | "module-type" | "accessory-type" | "rack-kit" | "rack-type"
   path: string
   name: string
   action: "matched" | "created" | "error"

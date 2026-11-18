@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react"
+import { RackMountFields } from "@/components/rack-mount-fields"
+import { rackMountDraft, rackMountPayload } from "@/lib/rack-mount"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
@@ -109,6 +111,9 @@ export function DeviceTypeForm({
     src?.din_profiles ?? []
   )
   const [dinRailMm, setDinRailMm] = useState(mmText(src?.din_rail_mm))
+  const [rackMount, setRackMount] = useState(() =>
+    rackMountDraft(src?.rack_mount)
+  )
   const [tagIds, setTagIds] = useState<number[]>(
     src?.tags?.map((t) => t.id) ?? []
   )
@@ -144,6 +149,7 @@ export function DeviceTypeForm({
     setDepthMm(mmText(deviceType.depth_mm))
     setDinProfiles(deviceType.din_profiles)
     setDinRailMm(mmText(deviceType.din_rail_mm))
+    setRackMount(rackMountDraft(deviceType.rack_mount))
     setTagIds(deviceType.tags.map((t) => t.id))
     setCustomFields(deviceType.custom_fields ?? {})
     setLifecycle(lifecycleFormValue(deviceType))
@@ -188,6 +194,7 @@ export function DeviceTypeForm({
         depth_mm: mmOrNull(depthMm),
         din_profiles: DIN_PROFILES.filter((p) => dinProfiles.includes(p)),
         din_rail_mm: mmOrNull(dinRailMm),
+        rack_mount: rackMountPayload(rackMount),
         tag_ids: tagIds,
         custom_fields: customFields,
         ...lifecyclePayload(lifecycle),
@@ -335,6 +342,12 @@ export function DeviceTypeForm({
               />
             </div>
           </FormSection>
+
+          <RackMountFields
+            value={rackMount}
+            onChange={setRackMount}
+            error={fieldErrors.rack_mount}
+          />
 
           <FormSection title="Notes" card>
             <FormTextarea

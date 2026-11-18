@@ -12,7 +12,10 @@ import {
   renderTemplateName,
 } from "@/lib/faceplate-geometry"
 
+import type { RackMountInfo } from "@/lib/rack-mount"
+
 import { raisedContains } from "../floorplan/raised-floor-shape"
+import type { SceneLook } from "./rack-kit-math"
 import {
   planAngleToRotY,
   poseContains,
@@ -49,6 +52,9 @@ export interface SceneDevice {
   u_height: number
   rack_width: "full" | "half"
   is_full_depth: boolean
+  /** Ears and the faceplate's offset from the ear plane (api.rack_mount;
+   * lib/rack-mount.ts). Optional for older cached payloads. */
+  rack_mount?: RackMountInfo
   role_color: string
   role_name: string
   device_type: string
@@ -89,6 +95,9 @@ export interface SceneRack {
   width: number
   outer_width_mm: number | null
   outer_depth_mm: number | null
+  /** What it is built as (api.rack_look); absent in older cached
+   * payloads, which draw the legacy cabinet (rack-kit-math LEGACY_LOOK). */
+  look?: SceneLook
   devices: SceneDevice[]
 }
 

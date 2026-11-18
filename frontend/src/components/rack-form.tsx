@@ -32,6 +32,8 @@ import {
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
 import { FormRoomCombobox } from "@/components/room-field"
 import { CoolingFields } from "@/components/cooling-fields"
+import { RackLookFields } from "@/components/rack-look-fields"
+import { lookDraft, lookPayload } from "@/lib/rack-look"
 import { kwToWatts, wattsToKw } from "@/lib/rack-capacity"
 import { useSaveObject } from "@/lib/save-object"
 import { invalidateSiteViews } from "@/lib/site-cache"
@@ -122,6 +124,8 @@ export function RackForm({
   const [tagIds, setTagIds] = useState<number[]>(
     rack?.tags.map((t) => t.id) ?? []
   )
+  // The Look: blank fields take the rack type's (api.rack_look).
+  const [look, setLook] = useState(() => lookDraft(rack))
   const [customFields, setCustomFields] = useState<Record<string, unknown>>(
     rack?.custom_fields ?? {}
   )
@@ -154,6 +158,7 @@ export function RackForm({
     setDescription(rack.description)
     setTagIds(rack.tags.map((t) => t.id))
     setCustomFields(rack.custom_fields ?? {})
+    setLook(lookDraft(rack))
     reset()
   }, [rack, reset])
 
@@ -253,6 +258,7 @@ export function RackForm({
         description: description.trim(),
         tag_ids: tagIds,
         custom_fields: customFields,
+        ...lookPayload(look),
       }
       return saveObject<Rack>({
         objectType: "api.rack",
@@ -447,6 +453,13 @@ export function RackForm({
               />
             )}
           </FormSection>
+
+          <RackLookFields
+            value={look}
+            onChange={setLook}
+            inherit={chosenType}
+            errors={fieldErrors}
+          />
 
           <FormSection title="Notes" card>
             <FormTextarea

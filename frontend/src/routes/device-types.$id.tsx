@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { rackMountSummary } from "@/lib/rack-mount"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { useQuery } from "@tanstack/react-query"
 import { useCallback, useState } from "react"
@@ -320,6 +321,10 @@ function DeviceTypeOverview({ deviceType: d }: { deviceType: DeviceType }) {
     {
       label: "Rack units",
       value: <span className="num">{d.u_height}U</span>,
+    },
+    {
+      label: "Rack mounting",
+      value: rackMountSummary(d.rack_mount),
     },
     {
       label: "Airflow",

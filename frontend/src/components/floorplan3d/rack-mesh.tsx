@@ -14,10 +14,12 @@ import { SideStripMesh } from "./side-strip-mesh"
 import { RackRuler } from "./rack-ruler"
 import type { PortLabelSource } from "@/lib/api"
 import { FaceLabel } from "./text-sprite"
+import { RackKitFar, RackKitShell } from "./rack-kit"
+import { LEGACY_LOOK } from "./rack-kit-math"
+import type { SceneLook } from "./rack-kit-math"
+import { BlankingFill, RackShell } from "./rack-shell"
 import {
   rackOpeningM,
-  RACK_BASE_M,
-  RACK_CAP_M,
   TRANSPARENT_ORDER,
   tileWorldPose,
   deviceBoxM,
@@ -74,13 +76,17 @@ export function rackFrameColor({
   tint,
   selected,
   hovered,
+  base,
 }: {
   tint: string | null | undefined
   selected: boolean
   hovered: boolean
+  /** The rack's own colour (its Look); left out, painted steel. */
+  base?: string | null
 }): string {
   if (selected) return FRAME_SELECTED
   if (tint) return hovered ? lighter(tint) : tint
+  if (base) return hovered ? lighter(base) : base
   return hovered ? FRAME_HOVER : FRAME_COLOR
 }
 
@@ -305,10 +311,14 @@ export function RackMesh({
 
   const rackSelected =
     selection?.tileId === tile.id && selection.kind === "rack"
+  // What it is built as (rack-shell, rack-kit); an older cached payload
+  // draws the cabinet it always did.
+  const look = rack.look ?? LEGACY_LOOK
   const frameColor = rackFrameColor({
     tint,
     selected: rackSelected || highlighted,
     hovered: hovered && !ghosted,
+    base: rack.look ? look.colour : null,
   })
   const beacon = check ? (CHECK_COLOR[check] ?? null) : null
 
@@ -423,13 +433,24 @@ export function RackMesh({
         <group>
           {/* X-ray up close = the open cutaway frame; the see-through story
               is told by the ghosted DEVICES, not by transparent tin. */}
-          <Shell
+          <RackBody
+            rackId={rack.id}
+            look={look}
+            units={rack.u_height}
             w={width}
             h={height}
             d={depth}
             color={frameColor}
             mode={xray ? "cutaway" : shellMode}
           />
+          {look.blanking_fill && (
+            <BlankingFill
+              rack={rack}
+              look={look}
+              devices={positioned}
+              depth={depth}
+            />
+          )}
           {positioned.map((d) => {
             const isSel =
               (selection?.kind === "device" || selection?.kind === "port") &&
@@ -531,6 +552,18 @@ export function RackMesh({
               h={height}
               d={depth}
               color={tint ?? undefined}
+            />
+          ) : tier === "mid" && look.kit?.far_url ? (
+            // Mid range: the kit's far box; far off, the plain one.
+            <RackKitFar
+              url={look.kit.far_url}
+              w={width}
+              h={height}
+              d={depth}
+              color={frameColor}
+              fallback={
+                <Frame w={width} h={height} d={depth} color={frameColor} />
+              }
             />
           ) : (
             <Frame w={width} h={height} d={depth} color={frameColor} />
@@ -734,128 +767,54 @@ function OutlineShell({
   )
 }
 
-/** Corner-post size and how far posts sit in from the outer planes.
- *
- * Slim on purpose (was 50 mm): a fat front post stood over the outer ~20 mm
- * of every faceplate, so in cutaway and x-ray the "big pillars" hid the edges
- * of the gear. A real 19" upright is a thin channel; 18 mm reads as a frame
- * without covering a single port. */
-const POST = 0.018
-const POST_INSET = 0.006
 /**
- * Top/base overhang past the panel planes - on the DEPTH axis only.
- *
- * The lip used to run all four sides, which meant two cabinets bayed side by
- * side overlapped each other's caps by 12 mm: intersecting geometry that
- * z-fights and flickers as the camera moves. Real cabinets in a row butt
- * flush, so the width axis gets no lip and the front/rear lip (where it
- * actually reads) stays.
+ * Near-tier cabinet: built from its rack kit when it has one (rack-kit),
+ * else Danbyte's own drawn rack from its Look (rack-shell), which also
+ * stands in while the kit loads.
  */
-const CAP_LIP = 0.012
-
-/**
- * Near-tier cabinet shell:
- *  - cutaway: overhung top + plinth on four inset corner posts
- *  - solid:   overhung top + plinth, side panels, smoked-glass doors
- * Every piece is strictly inset or outset from its neighbours - the first
- * version ended posts, panels and caps on the SAME planes, which was
- * invisible under flat light and shimmered the moment shadows, AO and the
- * dynamic near-plane landed (classic coplanar z-fighting).
- */
-function Shell({
+function RackBody({
+  rackId,
+  look,
+  units,
   w,
   h,
   d,
   color,
   mode,
 }: {
+  rackId: string
+  look: SceneLook
+  units: number
   w: number
   h: number
   d: number
   color: string
   mode: "solid" | "cutaway"
 }) {
-  const t = RACK_CAP_M // panel thickness - also the cap headroom in rackFootprintM
-  const steel = (
-    key: string,
-    pos: [number, number, number],
-    size: [number, number, number]
-  ) => (
-    <mesh key={key} position={pos} castShadow receiveShadow>
-      <boxGeometry args={size} />
-      <meshStandardMaterial
-        color={color}
-        roughness={STEEL_ROUGHNESS}
-        metalness={STEEL_METALNESS}
-      />
-    </mesh>
+  const own = (
+    <RackShell
+      rackId={rackId}
+      look={look}
+      w={w}
+      h={h}
+      d={d}
+      color={color}
+      mode={mode}
+    />
   )
-  const px = w / 2 - POST / 2 - POST_INSET
-  const pz = d / 2 - POST / 2 - POST_INSET
-  const sideH = h - RACK_BASE_M - t
+  if (!look.kit?.model_url) return own
   return (
-    <group>
-      {/* Top cap + plinth overhang everything below them. */}
-      {steel("top", [0, h - t / 2, 0], [w, t, d + CAP_LIP])}
-      {steel("base", [0, RACK_BASE_M / 2, 0], [w, RACK_BASE_M, d + CAP_LIP])}
-      {mode === "cutaway" ? (
-        <>
-          {steel("p1", [-px, h / 2, -pz], [POST, h - t, POST])}
-          {steel("p2", [px, h / 2, -pz], [POST, h - t, POST])}
-          {steel("p3", [-px, h / 2, pz], [POST, h - t, POST])}
-          {steel("p4", [px, h / 2, pz], [POST, h - t, POST])}
-        </>
-      ) : (
-        <>
-          {steel(
-            "left",
-            [-w / 2 + t / 2, RACK_BASE_M + sideH / 2, 0],
-            [t, sideH, d]
-          )}
-          {steel(
-            "right",
-            [w / 2 - t / 2, RACK_BASE_M + sideH / 2, 0],
-            [t, sideH, d]
-          )}
-          <GlassDoor w={w} h={h} z={-(d / 2 + 0.006)} />
-          <GlassDoor w={w} h={h} z={d / 2 + 0.006} />
-        </>
-      )}
-    </group>
-  )
-}
-
-/** Door clearance under the top cap (panel thickness plus a hair). */
-const DOOR_HEADROOM = 0.034
-
-/**
- * Solid mode's door: one smoked-glass pane - gear silhouettes read through,
- * and no busy texture. Casts no shadow (a solid shadow from glass lies) and
- * is raycast-INERT: glass that ate clicks made every photo port behind it
- * unclickable in solid mode. Clicks pass through to devices and ports; the
- * cabinet itself still catches via panels, caps and gear.
- */
-function GlassDoor({ w, h, z }: { w: number; h: number; z: number }) {
-  const doorH = h - RACK_BASE_M - DOOR_HEADROOM
-  return (
-    <mesh
-      position={[0, RACK_BASE_M + doorH / 2, z]}
-      raycast={() => null}
-      // Fixed order instead of three.js's per-frame depth sort. Glass, ghosts
-      // and the lifted floor all compete in the same transparent pass; letting
-      // distance decide made them swap order as the camera moved, which is
-      // what "buggy when switching solid/cutaway/x-ray" looked like.
-      renderOrder={TRANSPARENT_ORDER.glass}
-    >
-      <boxGeometry args={[w - 0.02, doorH, 0.008]} />
-      <meshStandardMaterial
-        color="#0b0b0e"
-        roughness={0.15}
-        metalness={0.1}
-        transparent
-        opacity={0.35}
-        depthWrite={false}
-      />
-    </mesh>
+    <RackKitShell
+      rackId={rackId}
+      kit={look.kit}
+      look={look}
+      units={units}
+      w={w}
+      h={h}
+      d={d}
+      color={color}
+      mode={mode}
+      fallback={own}
+    />
   )
 }
