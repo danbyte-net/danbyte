@@ -12,7 +12,7 @@ import {
   renderTemplateName,
 } from "@/lib/faceplate-geometry"
 
-import { faceplateOffsetM } from "@/lib/rack-mount"
+import { earPlateM, faceplateOffsetM } from "@/lib/rack-mount"
 import type { RackMountInfo } from "@/lib/rack-mount"
 
 import { raisedContains } from "../floorplan/raised-floor-shape"
@@ -628,14 +628,15 @@ export function deviceBoxM(
     : dev.is_full_depth
       ? rackDepthM * 0.9
       : rackDepthM * 0.45
-  // Its faceplate stands on the rail plane, out by its ears' offset
-  // (lib/rack-mount; an earless device's faceplate is on the rail).
+  // Its faceplate stands on the rail plane, out by its ears' offset and
+  // the ears' plate (lib/rack-mount; an earless device's faceplate is on
+  // the rail).
   const mountedRear = dev.face === "rear"
   const front = rackFrontZM(
     rack,
     dev,
     rackDepthM,
-    faceplateOffsetM(dev.rack_mount)
+    faceplateOffsetM(dev.rack_mount) + earPlateM(dev.rack_mount)
   )
   const dz = mountedRear ? front - dd / 2 : front + dd / 2
   return { y, h, dx, dz, dw, dd, boxH: h * 0.94, mountedRear }

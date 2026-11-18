@@ -1,6 +1,7 @@
 import * as THREE from "three"
 import { describe, expect, it } from "vitest"
 
+import { EAR_PLATE_MM } from "@/lib/rack-mount"
 import { LED_MAX_DEVICES, ledRequestIds } from "@/lib/use-device-leds"
 
 import { fittedModel } from "./device-model"
@@ -119,7 +120,10 @@ describe("rack slot pose", () => {
     const pose = rackSlotPose(r, d, 1, size)
     expect(pose.rotY).toBeCloseTo(Math.PI, 9)
     // Turned half round, its front sits at +d/2 from its origin.
-    expect(pose.position[2] + size[2] / 2).toBeCloseTo(0.45, 6)
+    expect(pose.position[2] + size[2] / 2).toBeCloseTo(
+      0.45 + EAR_PLATE_MM / 1000,
+      6
+    )
   })
 
   it("puts half-width gear on its side", () => {
@@ -174,7 +178,7 @@ describe("rack slot pose", () => {
       ])
       // The rack's world front normal is (−sin, 0, −cos).
       const along = front[0] * -Math.sin(rotY) + front[2] * -Math.cos(rotY)
-      expect(along).toBeCloseTo(0.45, 6)
+      expect(along).toBeCloseTo(0.45 + EAR_PLATE_MM / 1000, 6)
     }
   })
 
@@ -184,7 +188,7 @@ describe("rack slot pose", () => {
     const m = slotMatrix(pose, fit)
     // The authored front centre (+Z, mm) lands on the rear rail.
     const p = new THREE.Vector3(0, 22, 229.25).applyMatrix4(m)
-    expect(p.z).toBeCloseTo(0.45, 4)
+    expect(p.z).toBeCloseTo(0.45 + EAR_PLATE_MM / 1000, 4)
     expect(p.x).toBeCloseTo(0, 6)
   })
 })

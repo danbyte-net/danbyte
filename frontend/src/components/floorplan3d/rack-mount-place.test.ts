@@ -1,7 +1,7 @@
 import * as THREE from "three"
 import { describe, expect, it } from "vitest"
 
-import { rackMountOf } from "@/lib/rack-mount"
+import { EAR_PLATE_MM, rackMountOf } from "@/lib/rack-mount"
 import type { RackMountBlock, RackMountInfo } from "@/lib/rack-mount"
 
 import { fittedModel } from "./device-model"
@@ -95,33 +95,36 @@ describe("rail planes", () => {
   })
 })
 
+/** Eared gear stands out by its ears' plate, whose back is on the rail. */
+const P = EAR_PLATE_MM / 1000
+
 describe("ear position", () => {
   it("leaves front-fitted and unrecorded gear where it stood", () => {
     for (const m of [undefined, rackMountOf(null), rackMountOf(BLOCK)]) {
-      expect(boxFront(rack(), dev(m))).toBeCloseTo(-0.45, 9)
-      expect(modelFront(rack(), dev(m))).toBeCloseTo(-0.45, 9)
+      expect(boxFront(rack(), dev(m))).toBeCloseTo(-0.45 - P, 9)
+      expect(modelFront(rack(), dev(m))).toBeCloseTo(-0.45 - P, 9)
     }
   })
 
   it("moves the faceplate out by each position's offset", () => {
     const mid = dev(rackMountOf(BLOCK, "mid"))
     const rear = dev(rackMountOf(BLOCK, "rear"))
-    expect(boxFront(rack(), mid)).toBeCloseTo(-0.45 - 0.22, 9)
-    expect(modelFront(rack(), mid)).toBeCloseTo(-0.45 - 0.22, 9)
-    expect(boxFront(rack(), rear)).toBeCloseTo(-0.45 - 0.43, 9)
-    expect(modelFront(rack(), rear)).toBeCloseTo(-0.45 - 0.43, 9)
+    expect(boxFront(rack(), mid)).toBeCloseTo(-0.45 - 0.22 - P, 9)
+    expect(modelFront(rack(), mid)).toBeCloseTo(-0.45 - 0.22 - P, 9)
+    expect(boxFront(rack(), rear)).toBeCloseTo(-0.45 - 0.43 - P, 9)
+    expect(modelFront(rack(), rear)).toBeCloseTo(-0.45 - 0.43 - P, 9)
   })
 
   it("stands a recessed fitting's model on its ears, the box on its faceplate", () => {
     const recessed = { ...BLOCK, positions: { front: -40, rear: 300 } }
     // Front: the ears on the rail, the faceplate 40 mm behind them.
     const f = dev(rackMountOf(recessed))
-    expect(modelFront(rack(), f)).toBeCloseTo(-0.45, 9)
-    expect(boxFront(rack(), f)).toBeCloseTo(-0.41, 9)
+    expect(modelFront(rack(), f)).toBeCloseTo(-0.45 - P, 9)
+    expect(boxFront(rack(), f)).toBeCloseTo(-0.41 - P, 9)
     // Rear fitting: the faceplate 300 mm out, the model's ears 40 mm more.
     const r = dev(rackMountOf(recessed, "rear"))
-    expect(boxFront(rack(), r)).toBeCloseTo(-0.75, 9)
-    expect(modelFront(rack(), r)).toBeCloseTo(-0.79, 9)
+    expect(boxFront(rack(), r)).toBeCloseTo(-0.75 - P, 9)
+    expect(modelFront(rack(), r)).toBeCloseTo(-0.79 - P, 9)
   })
 
   it("puts an earless device's faceplate on the front rail", () => {
@@ -137,22 +140,22 @@ describe("ear position", () => {
 
   it("shifts rear-mounted gear toward the rear, on the rear rail", () => {
     const d = dev(rackMountOf(BLOCK, "mid"), { face: "rear" })
-    expect(boxFront(rack(), d)).toBeCloseTo(0.45 + 0.22, 9)
-    expect(modelFront(rack(), d)).toBeCloseTo(0.45 + 0.22, 9)
+    expect(boxFront(rack(), d)).toBeCloseTo(0.45 + 0.22 + P, 9)
+    expect(modelFront(rack(), d)).toBeCloseTo(0.45 + 0.22 + P, 9)
     expect(rackSlotPose(rack(), d, 1, SIZE).rotY).toBeCloseTo(Math.PI, 9)
     // The rear rail of a rail depth: 740 mm behind the front one.
     const r = rack({ frame: "4-post", rail_depth_mm: 740 })
-    expect(boxFront(r, d)).toBeCloseTo(-0.45 + 0.74 + 0.22, 9)
+    expect(boxFront(r, d)).toBeCloseTo(-0.45 + 0.74 + 0.22 + P, 9)
   })
 
   it("mounts 2-post gear on the one mid-depth rail", () => {
     const r = rack({ frame: "2-post" })
     const front = dev(rackMountOf(BLOCK, "mid"))
-    expect(boxFront(r, front)).toBeCloseTo(-0.22, 9)
-    expect(modelFront(r, front)).toBeCloseTo(-0.22, 9)
+    expect(boxFront(r, front)).toBeCloseTo(-0.22 - P, 9)
+    expect(modelFront(r, front)).toBeCloseTo(-0.22 - P, 9)
     const back = dev(rackMountOf(BLOCK), { face: "rear" })
-    expect(boxFront(r, back)).toBeCloseTo(0, 9)
-    expect(modelFront(r, back)).toBeCloseTo(0, 9)
+    expect(boxFront(r, back)).toBeCloseTo(P, 9)
+    expect(modelFront(r, back)).toBeCloseTo(P, 9)
   })
 
   it("moves the box's port markers with it", () => {
@@ -243,8 +246,8 @@ describe("instanced models on the rails", () => {
       )
     )
     // The port sits 0.2 m behind the model's front (its box's −Z face).
-    expect(at[0].z).toBeCloseTo(-0.45, 5)
-    expect(at[1].z).toBeCloseTo(-0.67, 5)
-    expect(at[2].z).toBeCloseTo(-0.88, 5)
+    expect(at[0].z).toBeCloseTo(-0.45 - P, 5)
+    expect(at[1].z).toBeCloseTo(-0.67 - P, 5)
+    expect(at[2].z).toBeCloseTo(-0.88 - P, 5)
   })
 })

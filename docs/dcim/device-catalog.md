@@ -128,7 +128,9 @@ In the [3D racks](racks.md#the-rack-in-3d) a device stands on its rack's
 rail plane, out by its fitting: its faceplate `offset_mm` in front of the
 front rail, so gear fitted mid-chassis sticks out of the rack front by its
 mid offset. A rear-mounted device stands on the rear rail and moves toward
-the rear by the same rule. Gear without ears has its faceplate on the rail.
+the rear by the same rule. Ears are drawn 2 mm thick, their back on the
+rail's face, so eared gear stands that much further out. Gear without ears
+has its faceplate on the rail.
 On a 2-post frame both sides share the one mid-depth rail. Its model,
 plugs, port markers, hover box and cable ends move with it.
 

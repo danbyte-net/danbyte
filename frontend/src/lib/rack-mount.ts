@@ -94,15 +94,29 @@ export function modelShiftM(info: RackMountInfo | null | undefined): number {
   return info && info.ears ? info.shift_mm / 1000 : 0
 }
 
+/** A rack ear's plate thickness (mm). A model's origin is the front of its
+ * ears (spec §3), so the plate's back - what bolts onto the rail - stands
+ * this far behind it: the model sits this much further forward. */
+export const EAR_PLATE_MM = 2
+
+/** How far a device with ears stands forward of where its ears' front
+ * would put it (m): the plate, so its back is on the rail. An unrecorded
+ * type has ears; an earless device's faceplate is on the rail itself. */
+export function earPlateM(info: RackMountInfo | null | undefined): number {
+  return (info?.ears ?? true) ? EAR_PLATE_MM / 1000 : 0
+}
+
 /**
  * How far a fitted model's front - the most forward point of its box: the
  * faceplate, or the ears where they stand ahead of it (a recessed front
  * fitting) - stands in front of the rail plane (m). The fit centres the
  * model on its box, so this is where the box goes for its origin (the
- * front ears) to land `modelShiftM` in front of the rail. 0 without ears.
+ * front ears) to land `modelShiftM` in front of the rail, the ears' plate
+ * on the rail's face (`earPlateM`). 0 without ears.
  */
 export function modelFrontM(info: RackMountInfo | null | undefined): number {
-  return info && info.ears ? Math.max(info.shift_mm, info.offset_mm) / 1000 : 0
+  const out = info && info.ears ? Math.max(info.shift_mm, info.offset_mm) : 0
+  return out / 1000 + earPlateM(info)
 }
 
 /** Whether a device has rack ears (an unrecorded type does). */

@@ -4,6 +4,7 @@ import {
   earPositions,
   faceplateOffsetM,
   hasEars,
+  EAR_PLATE_MM,
   modelFrontM,
   modelShiftM,
   rackMountDraft,
@@ -63,13 +64,21 @@ describe("rackMountOf", () => {
   })
 
   it("puts a fitted model's front on its ears or its faceplate, the further out", () => {
-    expect(modelFrontM(rackMountOf(BLOCK, "mid"))).toBeCloseTo(0.22)
-    expect(modelFrontM(rackMountOf(null))).toBe(0)
+    // Plus the ear plate, whose back sits on the rail's face.
+    const plate = EAR_PLATE_MM / 1000
+    expect(modelFrontM(rackMountOf(BLOCK, "mid"))).toBeCloseTo(0.22 + plate, 4)
+    expect(modelFrontM(rackMountOf(null))).toBeCloseTo(plate, 4)
     const recessed = { ...BLOCK, positions: { front: -40, rear: 300 } }
-    expect(modelFrontM(rackMountOf(recessed))).toBe(0)
-    expect(modelFrontM(rackMountOf(recessed, "rear"))).toBeCloseTo(0.34)
+    expect(modelFrontM(rackMountOf(recessed))).toBeCloseTo(plate, 4)
+    expect(modelFrontM(rackMountOf(recessed, "rear"))).toBeCloseTo(
+      0.34 + plate,
+      4
+    )
     const bezel = { ...BLOCK, positions: { front: 25 } }
-    expect(modelFrontM(rackMountOf(bezel))).toBeCloseTo(0.025)
+    expect(modelFrontM(rackMountOf(bezel))).toBeCloseTo(0.025 + plate, 4)
+    expect(
+      modelFrontM(rackMountOf({ ...BLOCK, ears: false, positions: {} }))
+    ).toBe(0)
   })
 })
 
