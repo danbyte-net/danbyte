@@ -64,6 +64,16 @@ export function contactShadowFor(size: V3): {
 
 type OrbitLike = { target: THREE.Vector3; update: () => void }
 
+/** `size` held by value: a new array with the same numbers (a payload refresh
+ * rebuilding the stack's box every few seconds) keeps the previous one, so
+ * the camera only re-frames when the model really changes size - never
+ * snapping back while someone is turning it. */
+export function useStableSize(size: V3): V3 {
+  const key = size.map((v) => v.toFixed(6)).join(",")
+  // `key` stands for `size`'s values.
+  return useMemo(() => size, [key])
+}
+
 /** The camera for the preset - orthographic for a face, perspective for
  * 3D - framed on the model. Re-frames on a new preset, a replay, or a
  * resize (fullscreen). */
@@ -118,7 +128,7 @@ function Rig({
  * lighter. `shadowKey` re-draws the contact shadow (one frame's depth
  * pass per key, not one per frame). */
 export function ViewerStage({
-  size,
+  size: givenSize,
   baked,
   view,
   shadowKey,
@@ -130,6 +140,7 @@ export function ViewerStage({
   shadowKey: string
   children: ReactNode
 }) {
+  const size = useStableSize(givenSize)
   const shadow = useMemo(() => contactShadowFor(size), [size])
   // The key's shadow and the AO, fitted to the upright box.
   const keyShadow = useMemo(
