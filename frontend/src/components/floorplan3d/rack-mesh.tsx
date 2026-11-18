@@ -33,6 +33,8 @@ import type { PointerMenuAt } from "@/components/pointer-menu"
 import type { OnDeviceMenu } from "@/components/model-viewer-menus"
 import type { DeviceLeds } from "@/lib/led-state"
 import { useDeviceLeds } from "@/lib/use-device-leds"
+import { stackModeLeds } from "@/lib/stacks"
+import { useStacksMode } from "@/lib/stacks-pref"
 
 import type { ModelBudget } from "./rack-models"
 import {
@@ -378,7 +380,13 @@ export function RackMesh({
     roomLeds === undefined ? drawn : [],
     roomLeds === undefined
   )
-  const leds = roomLeds ?? ownLeds
+  // As the viewer's Stacks choice draws them (lib/stacks).
+  const stacksMode = useStacksMode()
+  const rawLeds = roomLeds ?? ownLeds
+  const leds = useMemo(
+    () => stackModeLeds(rawLeds, stacksMode),
+    [rawLeds, stacksMode]
+  )
 
   return (
     <group

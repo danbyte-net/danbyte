@@ -8,6 +8,8 @@ import { api } from "@/lib/api"
 import type { Cable, FacePorts } from "@/lib/api"
 import { renderTemplateName } from "@/lib/faceplate-geometry"
 import { bayHex } from "@/lib/faceplate-colors"
+import { memberText } from "@/lib/stacks"
+import type { DeviceStack } from "@/lib/stacks"
 import { useMe } from "@/lib/use-me"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -64,9 +66,12 @@ export function DeviceHud({
   focused,
   onToggleFocus,
   className,
+  stack,
 }: {
   tile: SceneTile
   dev: SceneDevice
+  /** Its switch stack, when it is a member (`/api/device-leds/`). */
+  stack?: DeviceStack | null
   focused?: boolean
   /** The room's Focus; left out, the card has no Focus button. */
   onToggleFocus?: () => void
@@ -128,6 +133,21 @@ export function DeviceHud({
             (dev.rack_width === "half" ? ` · half (${dev.rack_side})` : "") +
             (dev.face === "rear" ? " · rear" : "")
         )}
+        {stack &&
+          row(
+            "Stack",
+            <Link
+              to="/virtual-chassis/$id"
+              params={{ id: stack.id }}
+              className="hover:underline"
+            >
+              <span className="font-mono">{stack.name}</span>
+              <span className="text-muted-foreground">
+                {" · "}
+                {memberText(stack)}
+              </span>
+            </Link>
+          )}
         {dev.primary_ip &&
           row(
             "Primary IP",

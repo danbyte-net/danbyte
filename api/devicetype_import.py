@@ -365,6 +365,8 @@ def import_devicetype_yaml(
             poe_type=str(r.get("poe_type") or ""),
             enabled=bool(r.get("enabled", True)),
             mgmt_only=bool(r.get("mgmt_only", False)),
+            # Danbyte's overlay key: a data port the switch stacks over.
+            stack_port=r.get("stack") is True,
         )
         for r in rows("interfaces") if r.get("name")
     ]

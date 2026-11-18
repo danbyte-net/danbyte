@@ -798,6 +798,10 @@ class InterfaceTemplate(_ComponentTemplate):
         help_text="Combo/shared port group - materialised onto each device so "
                   "its alternate connectors stay mutually exclusive.",
     )
+    stack_port = models.BooleanField(
+        default=False, db_default=False,
+        help_text="A data port the switch stacks over - copied to each device.",
+    )
 
     class Meta:
         unique_together = ("device_type", "name")
@@ -1341,6 +1345,7 @@ def materialize_device_components(device) -> dict[str, int]:
                   virtual=t.type in VIRTUAL_INTERFACE_TYPES,
                   enabled=t.enabled,
                   mgmt_only=t.mgmt_only, combo_group=t.combo_group,
+                  stack_port=t.stack_port,
                   poe_mode=t.poe_mode, poe_type=t.poe_type,
                   description=t.description)
         for t in dt.interface_templates.all()
@@ -3146,6 +3151,13 @@ class VirtualChassis(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMi
         related_name="+",
         help_text="The member acting as stack master, if designated.",
     )
+    STACK_TOPOLOGY_CHOICES = [("ring", "Ring"), ("chain", "Chain")]
+    stack_topology = models.CharField(
+        max_length=8, choices=STACK_TOPOLOGY_CHOICES, default="ring",
+        db_default="ring",
+        help_text="How the members are cabled: a ring closes back from the last "
+                  "member to the first, a chain does not.",
+    )
     description = models.CharField(max_length=255, blank=True, default="")
     comments = models.TextField(blank=True, default="")
 
@@ -4189,6 +4201,11 @@ class Interface(TimestampedModel, CustomFieldsMixin, TaggableMixin):
         help_text="There is a cable in this port, it just isn't documented "
                   "yet. Counts as connected in port utilization; cleared "
                   "automatically when a real cable is attached.",
+    )
+    stack_port = models.BooleanField(
+        default=False, db_default=False,
+        help_text="A data port the switch stacks over: drawn as a stack port "
+                  "in 3D, whatever its media type.",
     )
     hide_label = models.BooleanField(
         default=False, db_default=False,

@@ -433,7 +433,10 @@ Ports on the photos are coloured as the room colours them - cabled by
 speed, free faint, disabled grey, live SNMP where it is polled - and a port
 held for a cable shows amber. Click a device or a port for its card;
 **PNG** saves the view. The view draws at the quality picked in a floor
-plan's 3D View menu on this device. Cables are not drawn in this view yet.
+plan's 3D View menu on this device. **Pluggables** and **Stacks** choose
+how the parts in model ports and a switch stack's
+[stack cables](virtual-chassis.md#in-3d) draw (**Show**, **Ghost** or
+**Hide**, kept in this browser). Other cables are not drawn in this view yet.
 
 Racks roll up **power**: supply is every *primary* power
 feed delivered to the rack (volts × amps × max-utilisation%,

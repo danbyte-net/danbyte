@@ -56,7 +56,7 @@ def _params(request):
 @permission_classes([IsAuthenticated])
 def device_leds_view(request):
     """``{as_of, poll_seconds, devices: {id: {leds, bays, locate, covers,
-    bay_covers, plugs}}}``:
+    bay_covers, plugs, stack, stack_plugs, stack_covers}}, stacks}``:
     ``leds`` the chassis' lit LEDs by id (``SYS``, ``port:Te1/0/1``),
     ``bays`` each bay's installed module's lit LEDs, ``locate`` the beacon
     while it is on. An LED left out is off. States are green, amber, red,
@@ -67,7 +67,11 @@ def device_leds_view(request):
     seated in cabled ports and in ports holding a transceiver record -
     ``{port, bay, name, port_type, cabled, color, cable_type, transceiver,
     transceiver_part, cord_part}`` - when the tenant has accessory types
-    (api.port_plugs)."""
+    (api.port_plugs). ``stacks`` lists the switch stacks among the devices
+    with the stack cables to draw between them, recorded or derived from
+    member order; ``stack`` names a member's stack, ``stack_plugs`` the
+    heads at its stack cables' ends (not in ``plugs``) and ``stack_covers``
+    the covers only a derived ring hides (api.stack_links)."""
     from .models import Device, Rack
     from .topology_views import _parse_uuid, _uuid_list_param
     from .views import _get_active_tenant
@@ -104,8 +108,10 @@ def device_leds_view(request):
         .order_by()[:MAX_DEVICES]
     )
     loader = LedStates(request.user, tenant, now=timezone.now())
+    payload = loader.payload(devices)
     return Response({
         "as_of": loader.now.isoformat(),
         "poll_seconds": POLL_SECONDS,
-        "devices": loader.payload(devices),
+        "devices": payload,
+        "stacks": loader.stacks,
     })

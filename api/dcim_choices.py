@@ -284,6 +284,8 @@ INTERFACE_TYPE_CHOICES: GroupedChoices = [
         ("cisco-stackwise-480", "Cisco StackWise-480"),
         ("cisco-stackwise-1t", "Cisco StackWise-1T"),
         ("juniper-vcp", "Juniper VCP"),
+        ("hpe-2930-stacking", "HPE Aruba 2930 stacking"),
+        ("dell-stacking", "Dell stacking"),
         ("extreme-summitstack", "Extreme SummitStack"),
         ("extreme-summitstack-128", "Extreme SummitStack-128"),
         ("extreme-summitstack-256", "Extreme SummitStack-256"),
@@ -307,6 +309,12 @@ PLUGGABLE_INTERFACE_TYPES: frozenset[str] = frozenset(
     [v for g, opts in INTERFACE_TYPE_CHOICES
      if g in ("Ethernet (pluggable transceivers)", "Fibre Channel") for v, _ in opts]
     + ["other"]
+)
+
+#: Interface types of a switch stack's stacking ports (the "Stacking" group
+#: above): the ports the 3D views draw stack cables between (api.stack_links).
+STACK_INTERFACE_TYPES: frozenset[str] = frozenset(
+    v for g, opts in INTERFACE_TYPE_CHOICES if g == "Stacking" for v, _ in opts
 )
 
 #: The connector a transceiver takes (InventoryItem.connector).

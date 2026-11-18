@@ -6,11 +6,35 @@ import * as THREE from "three"
 
 import { api } from "@/lib/api"
 import { legendIsEmpty } from "@/lib/faceplate-colors"
+import {
+  PLUGGABLES_LABEL,
+  PLUGGABLES_MODES,
+  readPluggablesMode,
+  setPluggablesMode,
+  usePluggablesMode,
+} from "@/lib/pluggables-pref"
+import {
+  STACKS_LABEL,
+  STACKS_MODES,
+  readStacksMode,
+  setStacksMode,
+  useStacksMode,
+} from "@/lib/stacks-pref"
+import { stackOf } from "@/lib/stacks"
+import { useDeviceLedsPayload } from "@/lib/use-device-leds"
+import { cn } from "@/lib/utils"
 import { usePortLabelsShown } from "@/lib/port-labels-pref"
 import { useMe } from "@/lib/use-me"
 import { FaceplateLegend } from "@/components/device-faceplate"
 import { Loading } from "@/components/loading"
-import { BarButton } from "@/components/map-toolbar"
+import { BarButton, BarMenuTrigger } from "@/components/map-toolbar"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { QueryError } from "@/components/query-error"
 import { useLegendCollector } from "@/components/speed-scale"
 import { PartMarkerMenu, useCanSetPartStatus } from "@/components/part-status"
@@ -34,6 +58,8 @@ import {
 } from "./object-view"
 import type { ObjectView } from "./object-view"
 import { RackMesh } from "./rack-mesh"
+import { newModelBudget, useDrawnModelDevices } from "./rack-model-draw"
+import { StackCables, StackSceneContext, newStackScene } from "./stack-scene"
 import type { Sel } from "./rack-mesh"
 import {
   NoWebGL,
@@ -110,7 +136,22 @@ export function RackScene({
         <Loading className="h-[40rem] max-h-[80vh]" />
       </div>
     )
-  return <RackView rack={scene.data} toolbar={toolbar} />
+  return (
+    <StackRoot>
+      <RackView rack={scene.data} toolbar={toolbar} />
+    </StackRoot>
+  )
+}
+
+/** The view's switch stacks (stack-scene), for the canvas and the cards;
+ * the canvas bridges the context in. */
+function StackRoot({ children }: { children: ReactNode }) {
+  const [stackScene] = useState(newStackScene)
+  return (
+    <StackSceneContext.Provider value={stackScene}>
+      {children}
+    </StackSceneContext.Provider>
+  )
 }
 
 export default RackScene
@@ -128,6 +169,14 @@ function RackView({
   const { faceplatePortLabels, faceplatePortLabelColor } = useMe()
   const portLabelsShown = usePortLabelsShown()
   const tile = useMemo(() => soloTile(rack.id, { rack }), [rack])
+  // The rack's model budget and LED request, held here so the stacks in
+  // the same answer reach the stack cables and the device card.
+  const [budget] = useState(newModelBudget)
+  const { devices: leds, stacks } = useDeviceLedsPayload(
+    useDrawnModelDevices(budget)
+  )
+  const stacksMode = useStacksMode()
+  const pluggables = usePluggablesMode()
   const { width, depth, height } = rackFootprintM(rack)
   const size = Math.max(width, depth, height)
   const dist = fitDistance({ width, height, depth })
@@ -169,6 +218,20 @@ function RackView({
             <BarButton onClick={() => look("front")}>Front</BarButton>
             <BarButton onClick={() => look("rear")}>Rear</BarButton>
           </div>
+          <ModeMenu
+            label="Pluggables"
+            value={pluggables}
+            modes={PLUGGABLES_MODES}
+            labels={PLUGGABLES_LABEL}
+            onChange={(v) => setPluggablesMode(readPluggablesMode(v))}
+          />
+          <ModeMenu
+            label="Stacks"
+            value={stacksMode}
+            modes={STACKS_MODES}
+            labels={STACKS_LABEL}
+            onChange={(v) => setStacksMode(readStacksMode(v))}
+          />
           <BarButton
             className="ml-auto"
             onClick={() =>
@@ -203,6 +266,8 @@ function RackView({
         >
           <RackMesh
             plan={SOLO_PLAN}
+            leds={leds}
+            budget={budget}
             tile={tile}
             selection={selection}
             showUNumbers
@@ -239,12 +304,14 @@ function RackView({
                 : undefined
             }
           />
+          <StackCables stacks={stacks} mode={stacksMode} />
           <ShadowFloor size={size * 3} />
         </Stage>
         {picked && selection?.kind === "device" && (
           <DeviceHud
             tile={tile}
             dev={picked}
+            stack={stackOf(leds, picked.id)}
             className={CARD_PLACE[card.place]}
           />
         )}
@@ -266,5 +333,41 @@ function RackView({
         <FaceplateLegend className="mt-3" observed content={legend} />
       )}
     </div>
+  )
+}
+
+/** A Show / Ghost / Hide choice on the toolbar, muted at its default. */
+function ModeMenu<TMode extends string>({
+  label,
+  value,
+  modes,
+  labels,
+  onChange,
+}: {
+  label: string
+  value: TMode
+  modes: readonly TMode[]
+  labels: Record<TMode, string>
+  onChange: (v: string) => void
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <BarMenuTrigger
+          className={cn(value === modes[0] && "text-muted-foreground")}
+        >
+          {label}
+        </BarMenuTrigger>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="min-w-32">
+        <DropdownMenuRadioGroup value={value} onValueChange={onChange}>
+          {modes.map((m) => (
+            <DropdownMenuRadioItem key={m} value={m}>
+              {labels[m]}
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }

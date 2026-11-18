@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import type { ReactNode } from "react"
 import { Scan } from "lucide-react"
 import * as THREE from "three"
 
@@ -75,7 +76,9 @@ import { Room } from "./room"
 import type { DrawingFloor } from "./room"
 import { RackMesh } from "./rack-mesh"
 import { newModelBudget, useDrawnModelDevices } from "./rack-model-draw"
-import { useDeviceLeds } from "@/lib/use-device-leds"
+import { useDeviceLedsPayload } from "@/lib/use-device-leds"
+import { stackCableIds, stackOf } from "@/lib/stacks"
+import { useStacksMode } from "@/lib/stacks-pref"
 import type { Sel, ShellMode } from "./rack-mesh"
 import { RackHud } from "./rack-hud"
 import { roomStamp } from "./room-stamp"
@@ -105,6 +108,8 @@ import { BuildingLevels, RiserRuns, Roofline, Slab } from "./building"
 import { levelsBounds, placeLevels } from "./building-math"
 import { ExplodeDriver } from "./level-explode-3d"
 import { CordEndsContext } from "./cord-ends"
+import { StackCables, StackSceneContext, newStackScene } from "./stack-scene"
+import type { StackScene } from "./stack-scene"
 import { CordEndStore } from "@/lib/cord-run"
 import { poseBounds, tilePose } from "../floorplan/tile-pose"
 import type { LevelMode } from "./building-math"
@@ -308,12 +313,17 @@ export default function FloorScene3D({
       (sceneTiles ?? []).flatMap((t) => (t.device?.model ? [t.device.id] : [])),
     [sceneTiles]
   )
-  const roomLeds = useDeviceLeds(
+  const { devices: roomLeds, stacks: roomStacks } = useDeviceLedsPayload(
     useMemo(
       () => [...floorModelIds, ...rackModelIds],
       [floorModelIds, rackModelIds]
     )
   )
+  // Switch stacks (stack-scene): their cables are drawn by the stack
+  // layer, as the viewer's Stacks choice says - never twice by the room's.
+  const [stackScene] = useState(newStackScene)
+  const stacksMode = useStacksMode()
+  const stackCables = useMemo(() => stackCableIds(roomStacks), [roomStacks])
   const [selection, setSelection] = useState<Sel | null>(null)
   // A right-click on a disk or a PSU: its part's statuses at the pointer.
   const canSetStatus = useCanSetPartStatus()
@@ -1093,7 +1103,7 @@ export default function FloorScene3D({
           setFocusOn(false)
         }}
       >
-        <CordEndsContext.Provider value={cordEnds}>
+        <RoomContexts cordEnds={cordEnds} stacks={stackScene}>
           <ExplodeDriver store={explodeStore} />
           <Room
             scene={data}
@@ -1447,6 +1457,7 @@ export default function FloorScene3D({
               scale={cableScale}
               look={cableLook}
               selectedId={cableSel}
+              skip={stackCables}
               onSelect={(id) => {
                 setSelection(null)
                 setStructSel(null)
@@ -1464,7 +1475,8 @@ export default function FloorScene3D({
               scale={cableScale}
             />
           )}
-        </CordEndsContext.Provider>
+          <StackCables stacks={roomStacks} mode={stacksMode} />
+        </RoomContexts>
       </Stage>
       {readableNames && (
         <SummaryMembers3D
@@ -1593,6 +1605,7 @@ export default function FloorScene3D({
           <DeviceHud
             tile={selTile}
             dev={selDevice}
+            stack={stackOf(roomLeds, selDevice.id)}
             focused={focusOn}
             onToggleFocus={() => setFocusOn((v) => !v)}
           />
@@ -2026,4 +2039,24 @@ function cameraViewsStamp(views: readonly CameraView[]): string {
       return `${v.id}:${v.polygon.length}:${v.color}:${p[0].toFixed(3)},${p[1].toFixed(3)}`
     })
     .join(";")
+}
+
+/** The room's shared stores inside the canvas: its cords' ends
+ * (cord-ends) and its switch stacks (stack-scene). */
+function RoomContexts({
+  cordEnds,
+  stacks,
+  children,
+}: {
+  cordEnds: CordEndStore
+  stacks: StackScene
+  children: ReactNode
+}) {
+  return (
+    <CordEndsContext.Provider value={cordEnds}>
+      <StackSceneContext.Provider value={stacks}>
+        {children}
+      </StackSceneContext.Provider>
+    </CordEndsContext.Provider>
+  )
 }

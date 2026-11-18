@@ -13,12 +13,18 @@ import {
   Field,
   FormFooter,
   FormSection,
+  FormSelect,
   FormText,
   FormTextarea,
   useFieldErrors,
 } from "@/components/forms"
 import { CustomFieldInputs } from "@/components/custom-field-inputs"
 import { useSaveObject } from "@/lib/save-object"
+
+const TOPOLOGIES = [
+  { value: "ring", label: "Ring" },
+  { value: "chain", label: "Chain" },
+]
 
 export interface VirtualChassisFormProps {
   item?: VirtualChassis
@@ -40,6 +46,9 @@ export function VirtualChassisForm({
   const saveObject = useSaveObject()
   const [name, setName] = useState(item?.name ?? "")
   const [domain, setDomain] = useState(item?.domain ?? "")
+  const [topology, setTopology] = useState<"ring" | "chain">(
+    item?.stack_topology ?? "ring"
+  )
   const [description, setDescription] = useState(item?.description ?? "")
   const [comments, setComments] = useState(item?.comments ?? "")
   const [customFields, setCustomFields] = useState<Record<string, unknown>>(
@@ -58,6 +67,7 @@ export function VirtualChassisForm({
     if (!item) return
     setName(item.name)
     setDomain(item.domain)
+    setTopology(item.stack_topology ?? "ring")
     setDescription(item.description)
     setComments(item.comments)
     setCustomFields(item.custom_fields ?? {})
@@ -70,6 +80,7 @@ export function VirtualChassisForm({
       const payload: VirtualChassisWritePayload = {
         name: name.trim(),
         domain: domain.trim(),
+        stack_topology: topology,
         description: description.trim(),
         comments: comments.trim(),
         custom_fields: customFields,
@@ -123,6 +134,14 @@ export function VirtualChassisForm({
             mono
             placeholder="stack-domain-1"
             error={fieldErrors.domain}
+          />
+          <FormSelect
+            label="Topology"
+            value={topology}
+            onChange={(v) => setTopology(v === "chain" ? "chain" : "ring")}
+            options={TOPOLOGIES}
+            info="How the members are cabled. A ring closes back from the last member to the first; a chain does not. The 3D views draw the stack cables this way when none are recorded."
+            error={fieldErrors.stack_topology}
           />
         </div>
       </FormSection>

@@ -251,6 +251,10 @@ function Overview({
     { label: "Name", value: vc.name },
     { label: "Domain", value: mono(vc.domain), copy: vc.domain || undefined },
     {
+      label: "Topology",
+      value: vc.stack_topology === "chain" ? "Chain" : "Ring",
+    },
+    {
       label: "Master",
       value: vc.master ? (
         <Link

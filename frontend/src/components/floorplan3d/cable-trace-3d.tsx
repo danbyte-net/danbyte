@@ -739,6 +739,7 @@ export function CablesLayer({
   look = "auto",
   selectedId,
   onSelect,
+  skip,
 }: {
   planId: string
   scene: ScenePayload
@@ -754,6 +755,8 @@ export function CablesLayer({
   look?: "auto" | "tubes" | "lines"
   selectedId: string | null
   onSelect: (cableId: string) => void
+  /** Cables another layer draws (a switch stack's, stack-scene). */
+  skip?: ReadonlySet<string>
 }) {
   const paths = useCablePaths(planId)
   const sites = useMemo(() => deviceSites(scene), [scene])
@@ -774,6 +777,7 @@ export function CablesLayer({
     const cables = paths.data?.cables ?? []
     const out: { cp: FloorPlanCablePath; run: CableRun }[] = []
     for (const cp of cables) {
+      if (skip?.has(cp.id)) continue
       const [a, b] = cords ? runCords(scene, sites, cp, cords) : [null, null]
       const sig = `${endSignature(a)}\u0000${endSignature(b)}`
       let hit = kept.get(cp.id)
@@ -785,7 +789,7 @@ export function CablesLayer({
     }
     return out
     // `version` stands for what `cords` holds.
-  }, [paths.data, scene, sites, cords, version])
+  }, [paths.data, scene, sites, cords, version, skip])
 
   // Each run is its own Line2/tube draw call, so a big hall is well over a
   // thousand per frame - the dominant cost while orbiting. Hide the bulk layer

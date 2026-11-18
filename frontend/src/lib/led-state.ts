@@ -12,6 +12,7 @@
  */
 
 import type { PortPlug } from "@/lib/port-plugs"
+import type { DeviceStack, StackPlug, SceneStack } from "@/lib/stacks"
 
 export type LedColor = "green" | "amber" | "red" | "blue"
 export type LedBase = LedColor | "neutral" | "off"
@@ -31,6 +32,13 @@ export interface DeviceLeds {
   bay_covers?: Partial<Record<string, string[]>>
   /** The parts seated in its cabled ports (lib/port-plugs). */
   plugs?: PortPlug[]
+  /** Its switch stack, when it is a member (lib/stacks). */
+  stack?: DeviceStack | null
+  /** The parts at its stack cables' ends - not in `plugs`. */
+  stack_plugs?: StackPlug[]
+  /** The covers only a derived stack ring hides: hidden while stacks
+   * are drawn. */
+  stack_covers?: string[]
 }
 
 /** `GET|POST /api/device-leds/`. */
@@ -38,6 +46,8 @@ export interface DeviceLedsPayload {
   as_of: string
   poll_seconds: number
   devices: Record<string, DeviceLeds>
+  /** The switch stacks among the devices, with their stack cables. */
+  stacks?: SceneStack[]
 }
 
 /** How a state is drawn: its colour (null: unlit), how bright it glows

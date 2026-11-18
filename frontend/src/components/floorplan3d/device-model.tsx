@@ -10,11 +10,13 @@ import { ledsKey, prefersReducedMotion } from "@/lib/led-state"
 import type { DeviceLeds } from "@/lib/led-state"
 import { coversKey } from "@/lib/port-covers"
 import type { PluggablesMode } from "@/lib/pluggables-pref"
+import { useStacksMode } from "@/lib/stacks-pref"
 
 import { applyLeds, findLeds, useLedBlink } from "./led-binding"
 import { anchorNames, assembleModel } from "./model-assembly"
 import { applyPortCovers, findPortCovers } from "./port-covers"
 import { PortPlugs } from "./port-plugs"
+import { useStackScene } from "./stack-scene"
 import { modelRotation, modelScale } from "./world"
 import type { SceneModel } from "./world"
 
@@ -361,6 +363,11 @@ export function PlacedModel({
   overlay?: (root: THREE.Object3D, drawn: ReadonlySet<string>) => ReactNode
 }) {
   const invalidate = useThree((s) => s.invalidate)
+  // A stack member's cable heads (stack-scene): their ends go to the
+  // view's stack cables. Shown or ghosted by the Stacks choice - the
+  // payload has none left when it is Hide (lib/stacks withStackMode).
+  const stackScene = useStackScene()
+  const stacksMode = useStacksMode()
   const partsKey = parts
     .map((p) => `${p.bay}\u0001${p.position}\u0001${p.entry.scene?.uuid}`)
     .join("\u0000")
@@ -450,6 +457,18 @@ export function PlacedModel({
             plugs={leds.plugs}
             deviceId={deviceId}
             ghost={pluggables === "ghost"}
+            scale={fit.scale}
+          />
+        ) : null}
+        {showPlugs && !ghosted && leds?.stack_plugs?.length ? (
+          <PortPlugs
+            root={obj}
+            plugs={leds.stack_plugs}
+            deviceId={deviceId}
+            ends={stackScene?.ends ?? null}
+            anchorEnds
+            fronts={false}
+            ghost={stacksMode === "ghost"}
             scale={fit.scale}
           />
         ) : null}

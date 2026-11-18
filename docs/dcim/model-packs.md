@@ -648,6 +648,34 @@ Sizes are positive numbers of mm (up to 50 for a jacket, 100 for a pitch,
 2,000 for a bend). A block Danbyte can't use is left out with a warning;
 the cord then draws, and its run is drawn as before.
 
+### Stack-cable heads {#stack-cable-heads}
+
+A switch stack's [stack cables](virtual-chassis.md#in-3d) seat a head at
+each end: one `kind: cord` part per stack port family, listing every
+length it stands for in `parts`, with a `cable:` block for the run.
+
+```yaml
+name: STACK-T1
+kind: cord
+connector: stackwise
+fits: [cisco-stackwise-480, cisco-stackwise]
+parts: [STACK-T1-50CM, STACK-T1-1M, STACK-T1-3M]
+cable:
+  profile: round
+  jacket_mm: 6
+  min_bend_mm: 40
+model3d:
+  file: models/Cisco/STACK-T1.glb
+```
+
+Danbyte picks the head by the stack port's type (`fits`): the part whose
+`parts` lists a recorded cable's label first, else the first by vendor and
+name. The run is drawn between the two heads' `cable` empties. Without a
+fitting part, a plain cable runs between the port anchors. A stack over data
+ports needs no special part: mark the interfaces `stack: true` in the device
+type's YAML (a Danbyte key, ignored elsewhere; it sets the template's
+**Stack port**) and their DAC, optic or RJ45 head is used.
+
 ### Which parts a port shows
 
 A port shows parts once it has a cable on it, is marked connected, or
@@ -846,7 +874,7 @@ floor plan scene's device `model`) adds `far_url`, `empty_mode` and `bays`:
 each of its module bays with `installed` and the installed module type's
 model URLs as `part` (`url`, `far_url`), or null.
 
-`/api/device-leds/` answers `{as_of, poll_seconds, devices}`. Each device
+`/api/device-leds/` answers `{as_of, poll_seconds, devices, stacks}`. Each device
 the reader may view has `leds` (the chassis' lit lights by id, such as
 `SYS` or `port:Te1/0/1`), `bays` (each bay's installed module's lit lights
 by id, `{module}` resolved to the bay's position) and `locate`. `covers`
@@ -863,7 +891,15 @@ when unknown), and the record's `{part_id, serial}` or null.
 `cord_part` (`{url, kind, connector, cable}`, `cable` the cord's `cable:`
 block or null) at the transceiver's `port:<connector>`, or at the anchor
 when there is no transceiver. Either may be null; a port with a record
-that draws nothing is still listed, for its hover card. A light left
+that draws nothing is still listed, for its hover card. A switch stack
+member also has `stack` (`{id, name, position, master, master_name}`, or
+null), `stack_plugs` (rows like `plugs`, plus `derived`, for the ends of its
+[stack cables](virtual-chassis.md#in-3d); those ports are not in `plugs`)
+and `stack_covers` (the covers only a derived ring hides - the viewer hides
+them while stacks are drawn). `stacks` lists the stacks among the devices:
+`{id, name, master, members: [{device, name, position}], links}`, each link
+`{a, b, derived, cable, color, label}` with ends `{device, port, name}`
+(the anchor as drawn and the interface). A light left
 out is off. A state is `green`, `amber`, `red`, `blue` or `neutral`, with
 `_blink` added when it blinks. The query count is the same for one device
 as for five hundred.

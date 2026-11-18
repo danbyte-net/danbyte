@@ -322,6 +322,8 @@ class LedStates:
         from django.utils import timezone
 
         self.user, self.tenant = user, tenant
+        #: The stacks ``payload`` found among its devices (api.stack_links).
+        self.stacks: list = []
         self.now = now or timezone.now()
         self._super = bool(getattr(user, "is_superuser", False))
 
@@ -421,15 +423,20 @@ class LedStates:
     # the states
 
     def payload(self, devices) -> dict:
-        """``{device id: {leds, bays, locate, covers, bay_covers, plugs}}``
-        for ``devices``: ``covers`` / ``bay_covers`` the port covers to hide
-        (api.port_covers), ``plugs`` the parts seated in cabled ports
-        (api.port_plugs)."""
+        """``{device id: {leds, bays, locate, covers, bay_covers, plugs,
+        stack, stack_plugs, stack_covers}}`` for ``devices``: ``covers`` /
+        ``bay_covers`` the port covers to hide (api.port_covers), ``plugs``
+        the parts seated in cabled ports (api.port_plugs); ``stack`` the
+        device's switch stack, ``stack_plugs`` the parts at its stack
+        cables' ends and ``stack_covers`` the covers only a derived stack
+        ring hides (api.stack_links). ``self.stacks`` lists the stacks."""
         from .anchor_names import chassis_interface, module_interface
+        from .dcim_choices import STACK_INTERFACE_TYPES
         from .model_3d import effective_owner, has_bays, installed_parts
         from .models import render_module_name
-        from .port_covers import has_covers, hidden_covers
+        from .port_covers import has_covers, hidden_covers, stack_covers
         from .port_plugs import accessories_of, has_ports, plugs
+        from .stack_links import stacks as stack_links
 
         devices = list(devices)
         owners = {d.id: effective_owner(d) for d in devices}
@@ -445,11 +452,16 @@ class LedStates:
         # carry port covers (api.port_covers) or plugs - one batch either way.
         drawn = [d for d in devices if d.id in lit_ids or has_bays(owners[d.id])
                  or has_covers(d, owners[d.id])
-                 or (accessories and has_ports(d, owners[d.id]))]
+                 or ((accessories or d.virtual_chassis_id) and has_ports(d, owners[d.id]))]
         installed_parts(drawn, self.user, self.tenant)
         covers = hidden_covers([d for d in drawn if has_covers(d, owners[d.id])],
                                owners, self.user, self.tenant)
         seated = plugs(drawn, owners, self.user, self.tenant, accessories) if accessories else {}
+        # Switch stacks: the cables between drawn members (api.stack_links).
+        # Their ends' parts ride in ``stack_plugs``, not ``plugs``.
+        self.stacks, stacked = stack_links(
+            [d for d in drawn if d.virtual_chassis_id and has_ports(d, owners[d.id])],
+            owners, self.user, self.tenant, accessories)
 
         # Which sources are in play, so a scene without port LEDs costs no
         # interface query.
@@ -472,6 +484,26 @@ class LedStates:
                            "covers": [], "bay_covers": {},
                            "plugs": seated.get(str(d.id), [])}
             entry.update(covers.get(str(d.id), {}))
+            st = stacked.get(str(d.id))
+            entry["stack"] = st["stack"] if st else None
+            entry["stack_plugs"] = st["stack_plugs"] if st else []
+            entry["stack_covers"] = []
+            if st:
+                ends = st["stack_ends"]
+                # A cabled data port keeps what it seats as any port does -
+                # its transceiver record's part too; only the list moves.
+                mine = {p["name"]: p for p in entry["plugs"]
+                        if p["bay"] is None and p["name"] in ends}
+                for sp in entry["stack_plugs"]:
+                    hit = mine.get(sp["name"])
+                    if hit is not None and sp["port_type"] not in STACK_INTERFACE_TYPES:
+                        sp.update({k: hit[k] for k in ("transceiver", "transceiver_part",
+                                                       "cord_part")})
+                entry["plugs"] = [p for p in entry["plugs"]
+                                  if p["bay"] is not None or p["name"] not in ends]
+                entry["stack_covers"] = stack_covers(
+                    d, owners[d.id], {i for i, derived in ends.items() if derived},
+                    entry["covers"])
             out[str(d.id)] = entry
             owner = owners[d.id]
             if d.id not in lit_ids:

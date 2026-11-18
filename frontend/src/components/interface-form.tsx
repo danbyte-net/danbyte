@@ -97,6 +97,7 @@ export function InterfaceForm({
   )
   const [mac, setMac] = useState(iface?.mac_address ?? "")
   const [mgmtOnly, setMgmtOnly] = useState(iface?.mgmt_only ?? false)
+  const [stackPort, setStackPort] = useState(iface?.stack_port ?? false)
   const [markConnected, setMarkConnected] = useState(
     iface?.mark_connected ?? false
   )
@@ -185,6 +186,7 @@ export function InterfaceForm({
     setStatusId(iface.status?.id ?? null)
     setMac(iface.mac_address)
     setMgmtOnly(iface.mgmt_only)
+    setStackPort(iface.stack_port ?? false)
     setHideLabel(iface.hide_label ?? false)
     setLabelColor(iface.label_color ?? "")
     setMarkConnected(iface.mark_connected ?? false)
@@ -334,6 +336,7 @@ export function InterfaceForm({
         status_id: statusId,
         mac_address: mac.trim(),
         mgmt_only: mgmtOnly,
+        stack_port: stackPort,
         mark_connected: markConnected,
         combo_group: comboGroup.trim(),
         snmp_name: snmpName.trim(),
@@ -695,6 +698,11 @@ export function InterfaceForm({
                 label="Management only"
                 checked={mgmtOnly}
                 onChange={setMgmtOnly}
+              />
+              <FormCheckbox
+                label="Stack port"
+                checked={stackPort}
+                onChange={setStackPort}
               />
               <FormCheckbox
                 label="Mark connected"

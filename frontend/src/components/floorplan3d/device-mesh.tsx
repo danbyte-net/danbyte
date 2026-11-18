@@ -36,6 +36,12 @@ import { facePortsOnSide } from "@/lib/faceplate-layout"
 
 import { PlacedModel } from "./device-model"
 import { PlugOverlayScope } from "./plug-overlay"
+import {
+  StackCard,
+  useStackLook,
+  useStackScene,
+  useStackSelect,
+} from "./stack-scene"
 import { ModelPortMarkers } from "./device-model-port-markers"
 import { BayHits } from "./bay-hits"
 import type { MappedPortPick } from "./device-model-port-markers"
@@ -55,6 +61,15 @@ export const DEVICE_SELECTED = "#0ea5e9"
 /** Standing edge line - the box's silhouette, dark enough to read against
  * both a pale faceplate photo and a dark role colour. */
 export const DEVICE_EDGE = "#18181b"
+
+/** A device's edge line: the selection's colour when it, or a member of
+ * its stack, is selected; else the plain edge. */
+export function edgeColor(
+  selected: boolean,
+  stackLook: "hover" | "select" | null
+): string {
+  return selected || stackLook === "select" ? DEVICE_SELECTED : DEVICE_EDGE
+}
 
 // Photo-port quad tint: the SAME status colours the 2D faceplate uses (speed
 // tint via portState / PORT_STATE_HEX, live SNMP via liveHex), so a port lights
@@ -691,9 +706,17 @@ export function DeviceMesh({
     onLegend,
   })
 
+  // A stack member lights with its stack (stack-scene): hovering or
+  // selecting any member highlights every one.
+  const stack = leds?.stack ?? null
+  const stackScene = useStackScene()
+  const stackLook = useStackLook(stack?.id)
+  useStackSelect(stack?.id, selected)
+  const lit = hovered || stackLook !== null
+
   const bodyColor = selected
     ? DEVICE_SELECTED
-    : hovered && !ghosted
+    : lit && !ghosted
       ? "#71717a"
       : dev.role_color || DEVICE_FALLBACK
 
@@ -722,10 +745,12 @@ export function DeviceMesh({
     onPointerOver: (e: ThreeEvent<PointerEvent>) => {
       e.stopPropagation()
       setHovered(true)
+      if (stack) stackScene?.highlight.hover(stack.id)
       document.body.style.cursor = "pointer"
     },
     onPointerOut: () => {
       setHovered(false)
+      if (stack) stackScene?.highlight.hover(null, stack.id)
       document.body.style.cursor = ""
     },
   }
@@ -770,18 +795,21 @@ export function DeviceMesh({
           <mesh position={[0, mh / 2, 0]} geometry={sharedBox(mw, mh, md)}>
             <meshBasicMaterial colorWrite={false} depthWrite={false} />
           </mesh>
-          {(selected || hovered) && (
+          {(selected || lit) && (
             <lineSegments
               position={[0, mh / 2, 0]}
               geometry={sharedEdges(mw, mh, md)}
               raycast={() => null}
             >
               <lineBasicMaterial
-                color={selected ? DEVICE_SELECTED : DEVICE_EDGE}
+                color={edgeColor(selected, stackLook)}
                 transparent={!selected}
                 opacity={selected ? 1 : 0.5}
               />
             </lineSegments>
+          )}
+          {hovered && stack && (
+            <StackCard stack={stack} at={[-mw / 2, mh, -md / 2]} />
           )}
           {model.level === "full" && showModelPorts && onSelectModelPort && (
             <ModelPortMarkers
@@ -879,10 +907,13 @@ export function DeviceMesh({
           />
         </group>
       )}
+      {hovered && stack && (
+        <StackCard stack={stack} at={[-dw / 2, boxH / 2, -dd / 2]} />
+      )}
       {edges && (
         <lineSegments geometry={edges} raycast={() => null}>
           <lineBasicMaterial
-            color={selected ? DEVICE_SELECTED : DEVICE_EDGE}
+            color={edgeColor(selected, stackLook)}
             transparent={!selected}
             opacity={selected ? 1 : 0.5}
           />

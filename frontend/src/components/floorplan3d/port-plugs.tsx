@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef } from "react"
 import { useFrame, useThree } from "@react-three/fiber"
 import * as THREE from "three"
 
-import type { CordEnd, Vec3 } from "@/lib/cord-run"
+import type { CordEnd, CordEndStore, Vec3 } from "@/lib/cord-run"
 import { recolourChannel } from "@/lib/fibre-colours"
 import type { RecolourChannel } from "@/lib/fibre-colours"
 import { parseAnchor } from "@/lib/model-assembly"
@@ -381,6 +381,7 @@ export function cordEndOf(
 
 const _m = new THREE.Matrix4()
 const _c = new THREE.Color()
+const IDENTITY = new THREE.Matrix4()
 
 /** One part at many ports, instanced; `ghost` draws them see-through. */
 function PartInstances({
@@ -455,14 +456,26 @@ export function PortPlugs({
   deviceId,
   ghost = false,
   scale = 1,
+  ends,
+  anchorEnds = false,
+  fronts: publishFronts = true,
 }: {
   root: THREE.Object3D
   plugs: readonly PortPlug[]
   deviceId?: string
   ghost?: boolean
   scale?: number
+  /** Where the cord ends go instead of the room's (cord-ends): a stack
+   * cable's (stack-scene). Null publishes none. */
+  ends?: CordEndStore | null
+  /** Also publish the port's own anchor as the end of a plug whose cord
+   * is not drawn, so a run reaches the port (stack cables). */
+  anchorEnds?: boolean
+  /** Publish the part fronts to the device's markers (plug-overlay). */
+  fronts?: boolean
 }) {
-  const overlay = usePlugOverlay()
+  const plugOverlay = usePlugOverlay()
+  const overlay = publishFronts ? plugOverlay : null
   const key = plugsKey({ plugs: [...plugs] })
   // Keyed on the values: a poll with the same plugs keeps the draws.
   // `key` stands for `plugs`.
@@ -523,26 +536,37 @@ export function PortPlugs({
 
   // Where each cord's cable starts, in the room's frame: re-published when
   // the cords or the model's place change.
-  const store = useCordEnds()
-  const cords = useMemo(
-    () =>
-      seats.flatMap((s) => {
-        if (s.role !== "cord") return []
-        const sc = sceneOf(s.url)
-        const local = sc ? cableEmptyMatrix(sc) : null
-        return local
-          ? [
-              {
-                name: s.plug.name,
-                seat: s.matrix,
-                local,
-                cable: s.plug.cord_part?.cable ?? null,
-              },
-            ]
-          : []
-      }),
-    [seats, readyKey]
-  )
+  const roomEnds = useCordEnds()
+  const store = ends !== undefined ? ends : roomEnds
+  const cords = useMemo(() => {
+    const out = seats.flatMap((s) => {
+      if (s.role !== "cord") return []
+      const sc = sceneOf(s.url)
+      const local = sc ? cableEmptyMatrix(sc) : null
+      return local
+        ? [
+            {
+              name: s.plug.name,
+              seat: s.matrix,
+              local,
+              cable: s.plug.cord_part?.cable ?? null,
+            },
+          ]
+        : []
+    })
+    if (anchorEnds) {
+      const have = new Set(out.map((c) => c.name))
+      list.forEach((p, i) => {
+        const a = anchors[i]
+        if (!a || have.has(p.name)) return
+        // A head still loading: its end comes when it lands.
+        if (p.cord_part && sceneOf(p.cord_part.url) === undefined) return
+        out.push({ name: p.name, seat: a, local: IDENTITY, cable: null })
+      })
+    }
+    return out
+    // `readyKey` stands for `entries`.
+  }, [seats, readyKey, anchorEnds, list, anchors])
   const last = useRef<{ cords: typeof cords; world: number[] } | null>(null)
   useFrame(() => {
     if (!store || !deviceId) return
@@ -556,10 +580,13 @@ export function PortPlugs({
     )
       return
     last.current = { cords, world: [...world] }
-    const ends = new Map<string, CordEnd>()
+    const published = new Map<string, CordEnd>()
     for (const c of cords)
-      ends.set(c.name, cordEndOf(root.matrixWorld, c.seat, c.local, c.cable))
-    store.setDevice(deviceId, ends)
+      published.set(
+        c.name,
+        cordEndOf(root.matrixWorld, c.seat, c.local, c.cable)
+      )
+    store.setDevice(deviceId, published)
   })
   useEffect(() => {
     if (!store || !deviceId) return

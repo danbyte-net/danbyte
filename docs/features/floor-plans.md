@@ -822,6 +822,11 @@ ceiling, underfloor runs sit beneath the slab) and zones tint the floor.
   in this browser and shared with the device viewer and the rack's 3D view;
   **Hide** starts cable runs at the port again. See
   [Show, ghost or hide](../dcim/model-packs.md#pluggables-show-ghost-hide).
+- **Stacks** (View menu, 3D, under Pluggables): **Show**, **Ghost** or
+  **Hide** the stack cables between switch stack members - recorded, or
+  the ring derived from member order when none is recorded. Kept in this
+  browser and shared with the rack's 3D view. See
+  [Virtual chassis → In 3D](../dcim/virtual-chassis.md#in-3d).
 - **Device names** (View menu, 3D): name plates per device. Underneath,
   **All racks / Highlighted rack** limits them to the rack you have selected
   or are focused on, and **Names off the gear** starts each plate at the

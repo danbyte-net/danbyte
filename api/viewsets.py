@@ -5652,7 +5652,7 @@ class InterfaceViewSet(
     )
     bulk_bool_fields = (
         "enabled", "mgmt_only", "mark_connected", "is_uplink", "never_uplink",
-        "macsec_enabled",
+        "macsec_enabled", "stack_port",
     )
     bulk_int_fields = ("mtu", "lag_min_links", "lag_miimon", "macsec_replay_window")
     bulk_fk_fields = {

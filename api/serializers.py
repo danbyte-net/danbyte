@@ -4863,7 +4863,7 @@ class InterfaceSerializer(TableSerializerMixin, StatusSerializerMixin, CustomFie
                   "evpn_mh_uplink", "type",
                   "type_display",
                   "speed", "mtu",
-                  "enabled", "status", "status_id", "mgmt_only", "combo_group", "mark_connected", "custom_fields",
+                  "enabled", "status", "status_id", "mgmt_only", "combo_group", "mark_connected", "stack_port", "custom_fields",
                   "duplex", "poe_mode",
                   "poe_type",
                   "wwn", "mac_address", "mac_addresses", "description",
@@ -5355,7 +5355,7 @@ class _ComponentTemplateSerializer(serializers.ModelSerializer):
 class InterfaceTemplateSerializer(_ComponentTemplateSerializer):
     class Meta(_ComponentTemplateSerializer.Meta):
         model = InterfaceTemplate
-        fields = _ComponentTemplateSerializer.Meta.fields + ["enabled", "mgmt_only", "combo_group", "poe_mode", "poe_type",]
+        fields = _ComponentTemplateSerializer.Meta.fields + ["enabled", "mgmt_only", "combo_group", "stack_port", "poe_mode", "poe_type",]
 
 
 class ConsolePortTemplateSerializer(_ComponentTemplateSerializer):
@@ -11476,7 +11476,7 @@ class VirtualChassisSerializer(
 
     class Meta:
         model = VirtualChassis
-        fields = ["id", "name", "domain", "master", "master_id",
+        fields = ["id", "name", "domain", "master", "master_id", "stack_topology",
                   "members", "member_count", "primary_ip", "oob_ip",
                   "description", "comments",
                   "tags", "tag_ids", "custom_fields",

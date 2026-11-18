@@ -23,6 +23,7 @@ records each member's position and master-election priority.
 |---|---|
 | **Name** | A label for the stack (must be unique within the tenant). |
 | **Domain** | The stack / VC domain identifier, where the platform has one. |
+| **Topology** | **Ring** (default) or **Chain**: whether the last member is cabled back to the first. The 3D views draw a [derived ring](#in-3d) this way. |
 | **Master** | The member acting as stack master, if designated. Must be a member of this stack - Danbyte rejects anything else. |
 | **Description / comments** | A short note, and long-form notes. |
 
@@ -121,6 +122,65 @@ card refreshes after a cable, port or reservation change anywhere.
     A stack's SVIs and port-channels no longer count as ports by default, so
     the stack reads fuller than before. Until 0.17 the card also kept its old
     numbers after a cable change until the page was reloaded.
+
+## In 3D {#in-3d}
+
+A rack's [3D view](racks.md#the-rack-in-3d) and the floor plan's
+[3D room](../features/floor-plans.md#the-3d-room-view) draw a stack's
+**stack cables** between the members drawn with their 3D model:
+
+- **Stack ports.** An interface of a type in the catalog's **Stacking**
+  group (dedicated stacking ports), or any interface marked
+  [**Stack port**](interfaces.md) - the data ports a VSF or IRF stack runs
+  over, their media type unchanged. A device type's interface templates
+  carry the mark to each device; a pack's YAML sets it with `stack: true`.
+- **Recorded cables.** Any cable between two stack ports of members of the
+  same stack is drawn between them. It is drawn once, by the stack, not
+  again by the room's cable layer.
+- **Derived ring.** When no such cable is recorded, Danbyte draws the ring
+  the member order implies. Each member's stack ports are put in natural
+  name order and the first two are its **A** and **B**: member *n*'s A to
+  member *n+1*'s B, and the last member back to the first. `StackPort2/1` /
+  `StackPort2/2`, `vcp-255/1/0` / `/1` and `1/1/49` / `50` all work, with no
+  name patterns. A two-member stack gets two cables, A1 to B2 and A2 to B1.
+  A stack whose **Topology** is **Chain** leaves out the closing cable. A
+  member without one of the ports skips that cable; one with more than two
+  uses A and B only - draw the rest by recording the cables. Recorded cables
+  always win.
+
+Hover a stack cable for its card: **Stack cable**, or **Stack cable (derived
+from member order)**, and the two ports. A derived ring is a drawing aid, not
+data: its ports hide their [port covers](model-packs.md#port-covers) while
+it is drawn, and count for nothing else - not port utilization, capacity or a
+port's connected state.
+
+**The stack as one.** Hover or select any member and every member of its
+stack lights with it. The hover card names the stack, the member number
+(`Member 1 · master` on the master) and the master. The device card gains a
+**Stack** line linking to the stack.
+
+**Stack-cable heads.** On a dedicated stacking port, when the tenant has a
+stack-cable part - an [accessory type](model-packs.md#stack-cable-heads) of
+`kind: cord` that fits the port's type - one is seated at each end and the
+cable runs between their `cable` empties. A marked data port takes what any
+cabled port of its type takes: a DAC head, an optic and its cord, an RJ45
+plug. Without a part, a plain dark cable runs from the ports.
+
+**Show, ghost or hide.** **Stacks** sits next to **Pluggables** in the 3D
+room's View menu and on the rack's 3D toolbar:
+
+| Choice | What draws |
+|---|---|
+| **Show** (default) | The stack cables and their heads. |
+| **Ghost** | The same at a quarter opacity, so the port markers read through them. |
+| **Hide** | No stack cables. The covers come back on the ports of a derived ring; a recorded cable's ports keep theirs hidden, as any cabled port does. |
+
+The choice is kept in this browser and shared by the rack's 3D view and the
+room.
+
+**Scope.** Only members the reader may view are drawn or listed, and no
+cable is drawn to a member they may not view. A recorded cable needs view
+on the cable and both interfaces; without interface view nothing is drawn.
 
 ## SNMP
 

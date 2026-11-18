@@ -2,6 +2,7 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query"
 
 import { api } from "@/lib/api"
 import type { DeviceLeds, DeviceLedsPayload } from "@/lib/led-state"
+import type { SceneStack } from "@/lib/stacks"
 
 /** How often the lights are asked for again - the floor plan's live state
  * cadence. */
@@ -12,6 +13,7 @@ export const LED_POLL_MS = 30_000
 export const LED_MAX_DEVICES = 500
 
 const NONE: Record<string, DeviceLeds> = {}
+const NO_STACKS: SceneStack[] = []
 
 /** The ids one request asks about: each once, in the caller's order (so
  * the ones it lists first are the ones kept past the limit), then sorted
@@ -32,6 +34,15 @@ export function useDeviceLeds(
   deviceIds: readonly string[],
   enabled = true
 ): Record<string, DeviceLeds> {
+  return useDeviceLedsPayload(deviceIds, enabled).devices
+}
+
+/** `useDeviceLeds` with the switch stacks among the devices (lib/stacks):
+ * the same request. */
+export function useDeviceLedsPayload(
+  deviceIds: readonly string[],
+  enabled = true
+): { devices: Record<string, DeviceLeds>; stacks: SceneStack[] } {
   const ids = ledRequestIds(deviceIds)
   const q = useQuery({
     queryKey: ["device-leds", ids.join(",")],
@@ -45,5 +56,9 @@ export function useDeviceLeds(
     staleTime: LED_POLL_MS / 2,
     placeholderData: keepPreviousData,
   })
-  return (enabled && ids.length > 0 ? q.data?.devices : null) ?? NONE
+  const on = enabled && ids.length > 0
+  return {
+    devices: (on ? q.data?.devices : null) ?? NONE,
+    stacks: (on ? q.data?.stacks : null) ?? NO_STACKS,
+  }
 }

@@ -101,3 +101,17 @@ def hidden_covers(devices, owners: dict, user, tenant) -> dict[str, dict]:
         out[key] = {"covers": sorted(set(covers)),
                     "bay_covers": {b: sorted(set(v)) for b, v in bays.items()}}
     return out
+
+
+def stack_covers(device, owner, interfaces: set, hidden) -> list[str]:
+    """The chassis covers of ``device`` on ``interfaces`` (its ports in a
+    derived stack ring, api.stack_links) that ``hidden`` does not already
+    name: the client hides them while it draws the ring. No query - the
+    device's anchor names are loaded."""
+    if not interfaces or owner is None:
+        return []
+    from .anchor_names import chassis_interface
+
+    have = set(hidden)
+    return sorted({name for name in cover_names(owner.model_anchors)
+                   if name not in have and chassis_interface(device, name) in interfaces})

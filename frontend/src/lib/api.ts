@@ -4039,6 +4039,8 @@ export interface Interface {
   status: StatusMini | null
   mgmt_only: boolean
   mark_connected: boolean
+  /** A data port the switch stacks over (docs/dcim/virtual-chassis.md). */
+  stack_port?: boolean
   combo_group: string
   custom_fields: Record<string, unknown>
   duplex: string
@@ -4140,6 +4142,7 @@ export interface InterfaceWritePayload {
   evpn_mh_uplink?: boolean
   mgmt_only?: boolean
   mark_connected?: boolean
+  stack_port?: boolean
   hide_label?: boolean
   label_color?: string
   combo_group?: string
@@ -4914,6 +4917,8 @@ export interface InterfaceTemplate extends ComponentTemplateBase {
   enabled: boolean
   mgmt_only: boolean
   combo_group: string
+  /** Copied to each device's interface as its Stack port mark. */
+  stack_port?: boolean
 }
 
 export type ConsolePortTemplate = ComponentTemplateBase
@@ -13723,6 +13728,9 @@ export interface VirtualChassis {
   name: string
   domain: string
   master: { id: string; name: string } | null
+  /** How the members are cabled: `ring` closes back to the first, a
+   * `chain` does not (the derived stack ring in 3D). */
+  stack_topology?: "ring" | "chain"
   members: VirtualChassisMember[]
   member_count: number
   primary_ip: { id: string; ip_address: string } | null
@@ -13738,6 +13746,7 @@ export interface VirtualChassis {
 export interface VirtualChassisWritePayload {
   name: string
   domain?: string
+  stack_topology?: "ring" | "chain"
   master_id?: string | null
   description?: string
   comments?: string

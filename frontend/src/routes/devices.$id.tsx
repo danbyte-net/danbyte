@@ -2242,6 +2242,7 @@ function DeviceInterfacesPane({
             choices: "interface_duplex",
           },
           { key: "mgmt_only", label: "Management only", kind: "bool" },
+          { key: "stack_port", label: "Stack port", kind: "bool" },
           {
             // One choice, two fields (#284) - see uplinkFields.
             key: "uplink",

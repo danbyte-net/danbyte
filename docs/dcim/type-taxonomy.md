@@ -35,7 +35,7 @@ imports, operator muscle memory, and external tooling carry over 1:1.
 | Serial / WAN | `t1`, `e1`, `t3`, `e3` |
 | Broadband (DSL / coax) | `xdsl`, `docsis`, `moca` |
 | PON | `bpon` → `50g-pon` (all ITU-T / IEEE generations) |
-| Stacking | Cisco StackWise family, Juniper VCP, Extreme SummitStack |
+| Stacking | Cisco StackWise family, Juniper VCP, Extreme SummitStack, HPE Aruba 2930 stacking, Dell stacking |
 | Other | `other` |
 
 **Fixed vs pluggable:** media-specific slugs (`10gbase-lr`) say *what the
@@ -92,8 +92,11 @@ Added in the 2026-07 expansion:
   in AI-fabric gear.
 - **SONET/SDH OC-3 → OC-3840** - legacy carrier/WAN links still in every
   telco inventory.
-- **Stacking media** (StackWise, VCP, SummitStack) - stack ports are cabled
-  ports; without a type they pollute "other".
+- **Stacking media** (StackWise, VCP, SummitStack, the HPE Aruba 2930
+  stacking module, Dell stacking ports) - stack ports are cabled ports;
+  without a type they pollute "other". A stack that runs over ordinary data
+  ports keeps their real type and marks them **Stack port** instead
+  ([interfaces](interfaces.md)).
 - **PON generations** `bpon`, `25g-pon`, `50g-pon` on top of the existing
   GPON/XGS-PON set - 50G-PON (ITU-T G.9804) is the current build-out edge.
 - **Wi-Fi 7 / LR-WPAN / MoCA / DOCSIS / 4G / 5G** - access-edge completeness.

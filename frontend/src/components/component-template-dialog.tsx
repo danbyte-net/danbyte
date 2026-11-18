@@ -111,7 +111,12 @@ export const TEMPLATE_NOUN: Record<TemplateKind, string> = {
 /** Union-ish row shape so one dialog/table can hold any of the 7 kinds -
  * the per-kind extras are simply absent on the kinds that lack them. */
 export type AnyTemplate = ComponentTemplateBase &
-  Partial<Pick<InterfaceTemplate, "enabled" | "mgmt_only" | "combo_group">> &
+  Partial<
+    Pick<
+      InterfaceTemplate,
+      "enabled" | "mgmt_only" | "combo_group" | "stack_port"
+    >
+  > &
   Partial<{ poe_mode: string; poe_type: string }> &
   Partial<Pick<PowerPortTemplate, "maximum_draw" | "allocated_draw">> &
   Partial<Pick<PowerOutletTemplate, "power_port_template" | "feed_leg">> &
@@ -185,6 +190,7 @@ export function ComponentTemplateDialog({
   // Interface extras
   const [enabled, setEnabled] = useState(true)
   const [mgmtOnly, setMgmtOnly] = useState(false)
+  const [stackPort, setStackPort] = useState(false)
   const [comboGroup, setComboGroup] = useState("")
   const [poeMode, setPoeMode] = useState("")
   const [poeType, setPoeType] = useState("")
@@ -239,6 +245,7 @@ export function ComponentTemplateDialog({
     setDescription(template?.description ?? "")
     setEnabled(template?.enabled ?? true)
     setMgmtOnly(template?.mgmt_only ?? false)
+    setStackPort(template?.stack_port ?? false)
     setComboGroup(template?.combo_group ?? "")
     setPoeMode(template?.poe_mode ?? "")
     setPoeType(template?.poe_type ?? "")
@@ -346,6 +353,7 @@ export function ComponentTemplateDialog({
         payload.type = type
         payload.enabled = enabled
         payload.mgmt_only = mgmtOnly
+        payload.stack_port = stackPort
         payload.combo_group = comboGroup.trim()
         payload.poe_mode = poeMode
         payload.poe_type = poeType
@@ -754,6 +762,12 @@ export function ComponentTemplateDialog({
                   checked={mgmtOnly}
                   onChange={setMgmtOnly}
                   hint="Out-of-band interface"
+                />
+                <FormCheckbox
+                  label="Stack port"
+                  checked={stackPort}
+                  onChange={setStackPort}
+                  hint="The switch stacks over it"
                 />
               </div>
               <FormText

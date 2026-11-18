@@ -18,6 +18,13 @@ import {
   usePluggablesMode,
 } from "@/lib/pluggables-pref"
 import type { PluggablesMode } from "@/lib/pluggables-pref"
+import {
+  STACKS_LABEL,
+  STACKS_MODES,
+  setStacksMode,
+  useStacksMode,
+} from "@/lib/stacks-pref"
+import type { StacksMode } from "@/lib/stacks-pref"
 import { CABLE_SCALE_MAX, CABLE_SCALE_MIN } from "@/lib/render-quality"
 import type { CableLook, RenderQualitySetting } from "@/lib/render-quality"
 import { useMe } from "@/lib/use-me"
@@ -102,6 +109,7 @@ export function DisplayMenu({
   // The parts in the ports - this viewer's choice, shared with the device
   // viewer and the rack's 3D view.
   const pluggables = usePluggablesMode()
+  const stacks = useStacksMode()
   return (
     <Popover>
       <PopoverTrigger asChild>
@@ -372,6 +380,20 @@ export function DisplayMenu({
                 items={PLUGGABLES_MODES.map((m) => ({
                   value: m,
                   label: PLUGGABLES_LABEL[m],
+                }))}
+              />
+            </div>
+            <div className="px-2 pt-1 pb-1.5">
+              <span className="mb-1 block text-[10px] font-medium tracking-[0.08em] text-muted-foreground uppercase">
+                Stacks
+              </span>
+              <SegmentedTabs<StacksMode>
+                value={stacks}
+                onValueChange={setStacksMode}
+                label="Stacks"
+                items={STACKS_MODES.map((m) => ({
+                  value: m,
+                  label: STACKS_LABEL[m],
                 }))}
               />
             </div>
