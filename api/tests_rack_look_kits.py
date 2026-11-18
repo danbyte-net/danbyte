@@ -35,9 +35,12 @@ from .tests_model_anchors import model
 STRETCH_Y = {"danbyte_stretch": "x", "danbyte_ref_mm": 1000}
 
 
-def kit_glb(*, segment=True, hinge=True):
+def kit_glb(*, segment=True, hinge=True, v2=False):
     """A tiny kit: a post segment, a width beam, a solid top, a plinth, a
-    side panel and a perforated door with its hinge empty."""
+    side panel and a perforated door with its hinge empty. ``v2`` adds the
+    spec v1.15 parts: split door and panel, ``base:panel``, a 0U channel
+    with its ``pdu:bracket``, and the pathway names Danbyte knows but
+    does not draw."""
     nodes = []
     if segment:
         nodes.append({"name": "post:segment", "mesh": "FRAME",
@@ -64,6 +67,30 @@ def kit_glb(*, segment=True, hinge=True):
         nodes += [door, {"name": "hinge", "translation": [-0.29, 0, 0]}]
     else:
         nodes.append(door)
+    if v2:
+        nodes += [
+            {"name": "door:perforated:stile", "mesh": "FRAME",
+             "extras": {"danbyte_stretch": "z", "danbyte_ref_mm": 1000}},
+            {"name": "door:perforated:rail", "mesh": "FRAME",
+             "extras": {"danbyte_stretch": "x", "danbyte_ref_mm": 1000}},
+            {"name": "door:perforated:infill", "mesh": "FRAME",
+             "extras": {"danbyte_stretch": "xz", "danbyte_ref_mm": 1000}},
+            {"name": "side:panel:edge", "mesh": "FRAME",
+             "extras": {"danbyte_stretch": "y", "danbyte_ref_mm": 1000}},
+            {"name": "side:panel:infill", "mesh": "FRAME",
+             "extras": {"danbyte_stretch": "yz", "danbyte_ref_mm": 1000}},
+            {"name": "base:panel", "mesh": "FRAME",
+             "extras": {"danbyte_stretch": "xy", "danbyte_ref_mm": 1000}},
+            {"name": "channel:0u:left:rear", "translation": [-0.258, 0.165, -0.9308],
+             "rotation": [0, 0.7071068, 0, 0.7071068],
+             "extras": {"danbyte_depth": 830.8, "danbyte_len_u": 40},
+             "children": [len(nodes) + 7]},
+            {"name": "pdu:bracket", "mesh": "FRAME",
+             "extras": {"danbyte_stretch": "z", "danbyte_ref_mm": 1000}},
+            {"name": "entry:top:front-left", "extras": {"danbyte_kind": "brush"}},
+            {"name": "brush:front-left", "mesh": "Metal"},
+            {"name": "path:vertical:left:rear", "mesh": "FRAME"},
+        ]
     return model(nodes, materials=("FRAME", "Metal"))
 
 
@@ -204,9 +231,9 @@ class RackMountBlockTests(SimpleTestCase):
 
     def test_defaults_fill_in(self):
         self.assertIsNone(normalise(None))
-        self.assertEqual(normalise({"ears": True}),
+        self.assertEqual(normalise({"ears": True, "ear_mm": 3}),
                          {"ears": True, "positions": {"front": 0}, "default": "front",
-                          "rails": "none"})
+                          "rails": "none", "ear_mm": 3.0})
         self.assertEqual(normalise({"positions": {"mid": 100}})["default"], "mid")
 
     def test_earless_gear(self):
@@ -223,6 +250,9 @@ class RackMountBlockTests(SimpleTestCase):
             ({"ears": False, "positions": {"front": 0}}, "positions"),
             ({"positions": {"front": 0}, "default": "rear"}, "default"),
             ({"colour": 1}, "rack_mount"),
+            ({"ear_mm": 30}, "ear_mm"),
+            ({"ear_mm": True}, "ear_mm"),
+            ({"ears": False, "ear_mm": 2}, "ear_mm"),
             ([1, 2], None),
         ):
             with self.subTest(bad=bad), self.assertRaises(ValidationError) as cm:
@@ -233,7 +263,8 @@ class RackMountBlockTests(SimpleTestCase):
     def test_mount_of_a_device(self):
         dt = DeviceType(rack_mount=MOUNT)
         self.assertEqual(mount_of(dt), {"ears": True, "position": "front", "offset_mm": 0,
-                                        "shift_mm": 0, "rails": "none"})
+                                        "shift_mm": 0, "rails": "none", "reversed": False,
+                                        "ear_mm": 2})
         self.assertEqual(mount_of(dt, "mid")["offset_mm"], 220)
         self.assertEqual(mount_of(dt, "mid")["shift_mm"], 220)
         recessed = DeviceType(rack_mount={**MOUNT, "positions": {"front": -40, "rear": 300}})
@@ -245,6 +276,21 @@ class RackMountBlockTests(SimpleTestCase):
         self.assertFalse(mount_of(DeviceType(rack_mount={"ears": False, "positions": {},
                                                          "default": "",
                                                          "rails": "sliding"}))["ears"])
+
+    def test_reversed(self):
+        # Cisco's C9300 rear mount: the box turned round, its rear face on
+        # the ear plane (spec v1.15).
+        block = normalise({"positions": {"front": 0, "mid": 98, "reversed": 0},
+                           "ear_mm": 2.5})
+        self.assertEqual(list(block["positions"]), ["front", "mid", "reversed"])
+        dt = DeviceType(rack_mount=block)
+        got = mount_of(dt, "reversed")
+        self.assertEqual((got["position"], got["reversed"], got["offset_mm"],
+                          got["shift_mm"], got["ear_mm"]), ("reversed", True, 0, 0, 2.5))
+        self.assertFalse(mount_of(dt, "mid")["reversed"])
+        self.assertIsNone(check_ear_position(dt, "reversed"))
+        self.assertIn("front, mid", check_ear_position(DeviceType(rack_mount={
+            **MOUNT, "positions": {"front": 0, "mid": 200}}), "reversed"))
 
     def test_check_ear_position(self):
         dt = DeviceType(rack_mount={**MOUNT, "positions": {"front": 0, "mid": 200}})
@@ -315,6 +361,22 @@ class RackMountApiTests(_Base):
         self.assertTrue(rep["ok"], rep)
         self.assertTrue(any(n.startswith("rack_mount:") for n in rep["skipped"]))
         self.assertIsNone(DeviceType.objects.get(tenant=self.tenant, name="FW-10").rack_mount)
+
+    def test_reversed_is_kept_on_import_and_fitted_through_the_api(self):
+        text = ("manufacturer: Acme\nmodel: SW-9\nu_height: 1\nrack_mount:\n  ears: true\n"
+                "  positions: {front: 0, mid: 98, reversed: 0}\n  default: front\n"
+                "  rails: none\n")
+        rep = import_devicetype_yaml(self.tenant, text)
+        self.assertTrue(rep["ok"], rep)
+        self.assertFalse(any("reversed" in n for n in rep.get("skipped") or []), rep)
+        dt = DeviceType.objects.get(tenant=self.tenant, name="SW-9")
+        self.assertEqual(dt.rack_mount["positions"]["reversed"], 0)
+        res = self.client.post("/api/devices/", {
+            "name": "sw9", "device_type_id": str(dt.id), "site_id": str(self.site.id),
+            "ear_position": "reversed"}, format="json")
+        self.assertEqual(res.status_code, 201, res.content)
+        self.assertTrue(res.json()["rack_mount"]["reversed"])
+        self.assertEqual(Device.objects.get(pk=res.json()["id"]).ear_position, "reversed")
 
 
 # ── the Look ────────────────────────────────────────────────────────────────
@@ -442,6 +504,26 @@ class KitScanTests(SimpleTestCase):
         _parts, notes = scan_parts(validate_glb(kit_glb(segment=False, hinge=False)))
         self.assertTrue(any("can't build" in n for n in notes))
         self.assertTrue(any("no hinge empty" in n for n in notes))
+
+    def test_v1_15_parts_are_read_and_known_names_not_noted(self):
+        from .model_3d import validate_glb
+
+        parts, notes = scan_parts(validate_glb(kit_glb(v2=True)))
+        for name in ("door:perforated:stile", "door:perforated:rail",
+                     "door:perforated:infill", "side:panel:edge", "side:panel:infill",
+                     "base:panel", "pdu:bracket"):
+            self.assertIn(name, parts)
+        self.assertEqual(parts["door:perforated:infill"]["stretch"], "xz")
+        # The channel: where it is and the way its devices face (+x here).
+        chan = parts["channel:0u:left:rear"]
+        self.assertEqual(chan["at"], [-0.258, 0.165, -0.9308])
+        self.assertAlmostEqual(chan["out"][0], 1.0, places=3)
+        self.assertAlmostEqual(chan["out"][1], 0.0, places=3)
+        self.assertEqual((chan["depth_mm"], chan["len_u"]), (830.8, 40))
+        noted = " ".join(notes)
+        for name in ("entry:", "brush:", "path:", "channel:", "pdu:", "base:panel"):
+            self.assertNotIn(name, noted)
+        self.assertIn("frame:mystery", noted)
 
 
 class KitImportTests(_Base):

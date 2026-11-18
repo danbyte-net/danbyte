@@ -195,12 +195,17 @@ def prepare_rack_models(racks, user, tenant) -> set:
 
 def racked_device_geo(d, img, feed_types, viewable_types) -> dict:
     """A racked device and, with ``viewable_types`` (``prepare_rack_models``),
-    the 3D model the room draws in its slot (``model_3d.effective``)."""
+    the 3D model the room draws in its slot (``model_3d.effective``) - or,
+    side-mounted 0U gear, on its rack kit's 0U channel."""
     from .model_3d import effective
 
     geo = device_geo(d, img, feed_types)
     dt = d.device_type
-    geo["model"] = None if viewable_types is None or d.position is None else effective(
+    # A 0U device with no side recorded hangs on a rail too (the room's
+    # world.effectiveMount).
+    placed = d.position is not None or bool(d.mount) or (
+        dt is not None and dt.u_height == 0)
+    geo["model"] = None if viewable_types is None or not placed else effective(
         d, type_viewable=bool(dt and dt.id in viewable_types), load_parts=False
     )
     return geo
@@ -208,7 +213,7 @@ def racked_device_geo(d, img, feed_types, viewable_types) -> dict:
 
 def rack_geo(r, img, feed_types, viewable_types=None, look_ctx=None) -> dict:
     """One rack and the devices it holds, as the 3D views draw it. With
-    ``viewable_types`` each positioned device carries its 3D model; its
+    ``viewable_types`` each positioned or side-mounted device carries its 3D model; its
     ``look`` the kit URLs and blanks of ``look_ctx`` (``look_context``)."""
     return {
         "id": str(r.id),

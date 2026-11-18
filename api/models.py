@@ -2609,9 +2609,10 @@ class Device(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin, Mod
     )
     # Which of its type's ear positions it is fitted at (api.rack_mount);
     # blank takes the type's default.
-    EAR_POSITION_CHOICES = [("front", "Front"), ("mid", "Mid"), ("rear", "Rear")]
+    EAR_POSITION_CHOICES = [("front", "Front"), ("mid", "Mid"), ("rear", "Rear"),
+                            ("reversed", "Reversed")]
     ear_position = models.CharField(
-        max_length=5, choices=EAR_POSITION_CHOICES, blank=True, default="",
+        max_length=8, choices=EAR_POSITION_CHOICES, blank=True, default="",
         db_default="",
         help_text="Where its rack ears are fitted. Blank takes the type's default.",
     )

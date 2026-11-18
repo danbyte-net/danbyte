@@ -52,14 +52,26 @@ REF_MM = 1000
 NAME_MAX = 100
 
 #: The part names the room reads (§14). ``post:segment`` is the one every
-#: kit needs; the rest are used when the rack's Look asks for them.
+#: kit needs; the rest are used when the rack's Look asks for them. Doors
+#: and side panels may come split (v1.15): ``door:<kind>:stile`` / ``:rail``
+#: / ``:infill`` and ``side:panel:edge`` / ``:infill``, the whole leaf kept
+#: as the fallback.
+_DOOR_KINDS = ("perforated", "glass", "solid")
 PARTS = (
     "post:segment", "post:top", "post:bottom", "beam:width", "beam:depth",
     "corner:top", "corner:bottom", "top:vented", "top:solid", "top:fans", "top:brush",
-    "base:plinth", "base:casters", "base:feet", "base:plate", "side:panel",
-    "door:perforated", "door:glass", "door:solid", "door:handle", "door:hinge",
-    "door:lock", "label:u", "wall:bracket",
+    "base:plinth", "base:casters", "base:feet", "base:plate", "base:panel", "side:panel",
+    "side:panel:edge", "side:panel:infill",
+    *(f"door:{k}" for k in _DOOR_KINDS),
+    *(f"door:{k}:{p}" for k in _DOOR_KINDS for p in ("stile", "rail", "infill")),
+    "door:handle", "door:hinge", "door:lock", "label:u", "wall:bracket", "pdu:bracket",
 )
+#: 0U channels (§14 v1.13): ``channel:0u:<left|right>:<front|rear>``, where
+#: the room seats a rack's side-mounted 0U devices.
+CHANNEL = re.compile(r"^channel:0u:(left|right):(front|rear)$")
+#: Names the spec defines that the room does not draw yet (pathways, cable
+#: entries, brush strips): known, so not noted as unknown.
+KNOWN_PREFIXES = ("path:", "entry:", "brush:", "channel:0u:")
 REQUIRED = ("post:segment",)
 DOORS = ("door:perforated", "door:glass", "door:solid")
 _STRETCH = re.compile(r"^[xyz]{1,3}$")
@@ -159,13 +171,18 @@ def scan_parts(doc: dict) -> tuple[dict, list[str]]:
     for i in world:
         node = nodes[i]
         raw = part_name(str(node.get("name") or ""))
+        extras = node.get("extras") if isinstance(node.get("extras"), dict) else {}
+        if CHANNEL.match(raw):
+            if raw not in parts:
+                parts[raw] = _channel(world[i], extras)
+            continue
         if raw not in PARTS:
-            if ":" in raw and raw not in ("hinge", "rail"):
+            if ":" in raw and raw not in ("hinge", "rail") and not raw.startswith(
+                    KNOWN_PREFIXES):
                 unknown.add(raw)
             continue
         if raw in parts:
             continue
-        extras = node.get("extras") if isinstance(node.get("extras"), dict) else {}
         stretch = str(extras.get("danbyte_stretch") or "").strip().lower()
         if stretch and not _STRETCH.match(stretch):
             notes.append(f"{raw}: danbyte_stretch {stretch!r} is not x, y, z or a mix.")
@@ -192,6 +209,24 @@ def scan_parts(doc: dict) -> tuple[dict, list[str]]:
     for u in sorted(unknown):
         notes.append(f"{u}: not a part Danbyte reads - ignored.")
     return dict(sorted(parts.items())), notes
+
+
+def _channel(m, extras: dict) -> dict:
+    """A 0U channel empty as the room seats a device on it: ``at`` its lower
+    end and ``out`` the way its devices face (its local +Z, level), both in
+    the kit's glTF frame (m), with the empty's ``danbyte_depth`` (mm from the
+    front rail) and ``danbyte_len_u`` when given."""
+    def num(v):
+        return float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else None
+
+    out = {"stretch": "", "ref_mm": None, "hinge": False,
+           "at": [round(m[0][3], 4), round(m[1][3], 4), round(m[2][3], 4)],
+           "out": [round(m[0][2], 4) + 0.0, round(m[2][2], 4) + 0.0]}
+    if num(extras.get("danbyte_depth")) is not None:
+        out["depth_mm"] = round(num(extras["danbyte_depth"]), 1)
+    if num(extras.get("danbyte_len_u")) is not None:
+        out["len_u"] = round(num(extras["danbyte_len_u"]))
+    return out
 
 
 def kit_errors(notes: list[str]) -> list[str]:
