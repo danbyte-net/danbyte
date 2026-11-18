@@ -86,9 +86,13 @@ export function ModelViewerFrame({
   source,
   note,
   tools,
+  stackOnly = false,
   className = "h-80",
 }: {
   source: ViewerSource
+  /** Always the whole stack, with no Stack switch (the virtual chassis
+   * page, where the stack is the subject). */
+  stackOnly?: boolean
   note?: React.ReactNode
   /** More toolbar controls, after the views. */
   tools?: React.ReactNode
@@ -102,7 +106,9 @@ export function ModelViewerFrame({
   const [outlineAll, setOutlineAll] = useState(false)
   const pluggables = usePluggablesMode()
   const stacksMode = useStacksMode()
-  const stackOn = useStackViewOn() && !!source.deviceId && !!source.stackId
+  const stackPref = useStackViewOn()
+  const stackOn =
+    (stackOnly || stackPref) && !!source.deviceId && !!source.stackId
   // The frame while it is fullscreen: menus mount inside it.
   const [fullEl, setFullEl] = useState<HTMLElement | null>(null)
   const full = fullEl !== null
@@ -158,7 +164,7 @@ export function ModelViewerFrame({
             onChange={(v) => setPluggablesMode(readPluggablesMode(v))}
           />
         )}
-        {source.deviceId && source.stackId && (
+        {source.deviceId && source.stackId && !stackOnly && (
           <BarToggle pressed={stackOn} onClick={() => setStackViewOn(!stackOn)}>
             Stack
           </BarToggle>

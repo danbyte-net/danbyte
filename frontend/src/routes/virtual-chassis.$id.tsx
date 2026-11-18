@@ -48,6 +48,7 @@ import { VirtualChassisDeleteDialog } from "@/components/virtual-chassis-delete-
 import { FaceplateLegend } from "@/components/device-faceplate"
 import { useLegendCollector } from "@/components/speed-scale"
 import { StackElevation } from "@/components/stack-elevation"
+import { ModelViewerFrame } from "@/components/model-viewer-card"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import {
   StackInterfacesTable,
@@ -235,7 +236,17 @@ function Overview({
 }) {
   const { humanIds } = useMe()
   // Photo faceplates by default; the toggle forces the schematic.
-  const [renderMode, setRenderMode] = useState(false)
+  const [view, setStackView] = useState<"image" | "rendered" | "model">("image")
+  const renderMode = view === "rendered"
+  // The stack in 3D, anchored on the master (else the first member): the
+  // same whole-stack view as a member's device page (stack-viewer).
+  const anchorId = vc.master?.id ?? (members.length ? members[0].id : null)
+  const anchor = useQuery({
+    queryKey: ["device", anchorId],
+    queryFn: () => api<Device>(`/api/devices/${anchorId}/`),
+    enabled: !!anchorId,
+  })
+  const anchorModel = anchor.data?.model_3d_effective ?? null
   // One legend under the stack, keyed to what the members actually drew.
   const { content: legend, report: onLegend } = useLegendCollector()
 
@@ -327,22 +338,43 @@ function Overview({
               Stack
             </h2>
             <SegmentedTabs
-              value={renderMode ? "rendered" : "image"}
-              onValueChange={(v) => setRenderMode(v === "rendered")}
+              value={view}
+              onValueChange={(v) => setStackView(v)}
               items={[
                 { value: "image", label: "Photo" },
                 { value: "rendered", label: "Rendered" },
+                ...(anchorModel
+                  ? [{ value: "model" as const, label: "3D" }]
+                  : []),
               ]}
             />
           </div>
-          <StackElevation
-            members={members}
-            masterId={vc.master?.id ?? null}
-            interfacesByMember={ifacesByMember}
-            mode={renderMode ? "rendered" : "image"}
-            onLegend={onLegend}
-          />
-          <FaceplateLegend className="mt-2" content={legend} />
+          {view === "model" && anchorModel && anchor.data ? (
+            <div className="overflow-hidden rounded-lg border border-border bg-card">
+              <ModelViewerFrame
+                stackOnly
+                source={{
+                  model: anchorModel,
+                  sizeMm: anchor.data.device_type ?? undefined,
+                  deviceId: anchor.data.id,
+                  deviceName: anchor.data.name,
+                  manufacturerId: anchor.data.device_type?.manufacturer_id,
+                  stackId: vc.id,
+                }}
+              />
+            </div>
+          ) : (
+            <>
+              <StackElevation
+                members={members}
+                masterId={vc.master?.id ?? null}
+                interfacesByMember={ifacesByMember}
+                mode={renderMode ? "rendered" : "image"}
+                onLegend={onLegend}
+              />
+              <FaceplateLegend className="mt-2" content={legend} />
+            </>
+          )}
           {/* Every member's ports summed - the device page's card, stack-wide. */}
           <div className="mt-6">
             <PortUtilizationCard vcId={vc.id} />
