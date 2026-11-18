@@ -1,6 +1,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef } from "react"
 import * as THREE from "three"
 
+import { PANEL_MM } from "@/lib/faceplate-geometry"
+
 import { doorKey } from "./door-state"
 import { useDeviceModel } from "./device-model"
 import { SwingDoor } from "./rack-shell"
@@ -16,7 +18,8 @@ import {
   referenceBox,
   stretchedRepeat,
 } from "./rack-kit-math"
-import type { SceneKit, SceneLook } from "./rack-kit-math"
+import type { PostSpot, SceneKit, SceneLook } from "./rack-kit-math"
+import { RACK_BASE_M, TRANSPARENT_ORDER, mm } from "./world"
 
 /** Blender's ``.001`` suffix, dropped from a part's name (api.rack_kits). */
 export function partName(name: string): string {
@@ -45,6 +48,8 @@ interface KitPart {
   hinge: THREE.Vector3 | null
   /** The part node's origin, in the rack frame. */
   origin: THREE.Vector3
+  /** The `channel:0u:` empty a part (a `pdu:bracket`) hangs from. */
+  channel?: string
 }
 
 interface KitIndex {
@@ -66,10 +71,16 @@ export function indexKit(
   scene.updateMatrixWorld(true)
   const parts: KitPart[] = []
   const ref = new THREE.Box3()
-  const visit = (o: THREE.Object3D) => {
+  const visit = (o: THREE.Object3D, channel?: string) => {
     const raw =
       typeof o.userData.gltfName === "string" ? o.userData.gltfName : o.name
     const name = partName(String(raw))
+    // A 0U channel is an empty (the room seats devices on it, world
+    // kitChannelSeat); its `pdu:bracket` is a part of its own.
+    if (CHANNEL_RE.test(name)) {
+      o.children.forEach((c) => visit(c, name))
+      return
+    }
     if (name.includes(":")) {
       const meshes: PartMesh[] = []
       let hinge: THREE.Vector3 | null = null
@@ -106,11 +117,12 @@ export function indexKit(
           origin: new THREE.Vector3()
             .setFromMatrixPosition(o.matrixWorld)
             .applyMatrix4(TO_RACK),
+          ...(channel ? { channel } : {}),
         })
       }
       return
     }
-    o.children.forEach(visit)
+    o.children.forEach((c) => visit(c, channel))
   }
   visit(scene)
   // Stretched parts delivered at 1000 mm, laid out at their reference
@@ -144,18 +156,46 @@ export function indexKit(
   return out
 }
 
+const CHANNEL_RE = /^channel:0u:(left|right):(front|rear)$/
+
 const mirroredCache = new WeakMap<THREE.BufferGeometry, THREE.BufferGeometry>()
+
+/** An attribute as plain floats: a quantized one (KHR_mesh_quantization:
+ * unsigned shorts, normalised bytes) read through its normalisation. */
+function floatAttribute(
+  a: THREE.BufferAttribute | THREE.InterleavedBufferAttribute
+): THREE.BufferAttribute {
+  const out = new Float32Array(a.count * a.itemSize)
+  for (let i = 0; i < a.count; i++)
+    for (let k = 0; k < a.itemSize; k++)
+      out[i * a.itemSize + k] = a.getComponent(i, k)
+  return new THREE.BufferAttribute(out, a.itemSize)
+}
 
 /** `g` mirrored in x with its winding turned back, so an instance whose
  * matrix mirrors draws front faces out (instanced meshes don't flip the
- * winding the way a mesh with a mirrored matrix does). */
+ * winding the way a mesh with a mirrored matrix does). Positions, normals
+ * and tangents are read as floats first: a pack's are quantized to
+ * unsigned shorts, where a mirrored (negative) x wraps round to metres
+ * away - the posts that went missing. Normals come out unit length; a
+ * tangent's handedness turns with the mirror. */
 export function mirroredGeometry(
   g: THREE.BufferGeometry
 ): THREE.BufferGeometry {
   const hit = mirroredCache.get(g)
   if (hit) return hit
   const m = g.clone()
+  for (const key of ["position", "normal", "tangent"])
+    if (m.hasAttribute(key))
+      m.setAttribute(key, floatAttribute(m.getAttribute(key)))
   m.applyMatrix4(MIRROR_X)
+  if (m.hasAttribute("tangent")) {
+    const tan = m.getAttribute("tangent")
+    if (tan.itemSize === 4) {
+      for (let i = 0; i < tan.count; i++) tan.setW(i, -tan.getW(i))
+      tan.needsUpdate = true
+    }
+  }
   const idx = m.getIndex()
   if (idx) {
     const a = idx.array as Uint16Array | Uint32Array
@@ -192,10 +232,18 @@ export function wantedParts(
       if (have.has(n)) return out.add(n)
   }
   if (look.frame === "2-post") pick("base", "plate", ["plinth"])
+  else if (look.frame === "wall-cabinet")
+    pick("base", "panel", [look.base, "plinth", "plate"])
   else pick("base", look.base, ["plinth", "plate"])
   if (isEnclosed(look.frame)) {
     pick("top", look.top, ["solid", "vented"])
-    if (mode === "solid" && look.side_panels) out.add("side:panel")
+    if (mode === "solid" && look.side_panels) {
+      // Split (v1.15) when the kit has both pieces, else the whole panel.
+      if (have.has("side:panel:edge") && have.has("side:panel:infill")) {
+        out.add("side:panel:edge")
+        out.add("side:panel:infill")
+      } else out.add("side:panel")
+    }
   }
   if (look.frame === "wall-cabinet") out.add("wall:bracket")
   return out
@@ -205,6 +253,132 @@ interface Draw {
   geometry: THREE.BufferGeometry
   material: THREE.Material | THREE.Material[]
   matrix: THREE.Matrix4
+  /** See-through (the glass infill): drawn in the fixed glass order,
+   * after the gear behind it, and casting no shadow. */
+  renderOrder: number
+}
+
+/** A 0U channel a device is seated on, and the device's span (m). */
+export interface KitSeat {
+  name: string
+  y: number
+  h: number
+}
+
+/** Whether a material is drawn see-through (alpha BLEND: the spec's
+ * tinted glass): transparent, not writing depth. MASK cutouts (the
+ * perforation) stay opaque. */
+export function seeThrough(mat: THREE.Material | THREE.Material[]): boolean {
+  const all = Array.isArray(mat) ? mat : [mat]
+  return all.some((m) => m.transparent && m.opacity < 1)
+}
+
+/** The mirror across the plane `axis` (0 x, 1 y, 2 z) = `at`. */
+export function mirrorAbout(axis: 0 | 1 | 2, at: number): THREE.Matrix4 {
+  const t = [0, 0, 0]
+  t[axis] = at
+  const k = [1, 1, 1]
+  k[axis] = -1
+  return new THREE.Matrix4()
+    .makeTranslation(t[0], t[1], t[2])
+    .multiply(new THREE.Matrix4().makeScale(k[0], k[1], k[2]))
+    .multiply(new THREE.Matrix4().makeTranslation(-t[0], -t[1], -t[2]))
+}
+
+/** How one door leaf is built: from its split parts (spec v1.15: the
+ * stile at the hinge edge and mirrored to the free one, the rail at the
+ * bottom and mirrored to the top, the infill stretched between - frame
+ * members keep their real size on any leaf) or, without them, the whole
+ * leaf stretched. `ref` is the whole leaf's box in the reference cabinet;
+ * each piece is mapped from it to the leaf's box, keeping its distance to
+ * the leaf's edges. */
+export interface LeafBuild {
+  ref: THREE.Box3
+  hinge: THREE.Vector3 | null
+  pieces: { part: KitPart; stretch: string; mirrors: ("" | "x" | "y")[] }[]
+}
+
+export function doorParts(
+  parts: readonly KitPart[],
+  kind: "perforated" | "glass" | "solid"
+): LeafBuild | null {
+  const find = (n: string) => parts.find((p) => p.name === n)
+  const whole =
+    find(`door:${kind}`) ??
+    parts.find((p) => /^door:(perforated|glass|solid)$/.test(p.name))
+  const stile = find(`door:${kind}:stile`)
+  const rail = find(`door:${kind}:rail`)
+  const infill = find(`door:${kind}:infill`)
+  if (stile && rail && infill) {
+    let ref: THREE.Box3
+    if (whole) ref = whole.box.clone()
+    else {
+      // The pieces, with the free edge's stile they leave out.
+      ref = stile.box.clone().union(rail.box).union(infill.box)
+      const c = (rail.box.min.x + rail.box.max.x) / 2
+      const half = Math.max(ref.max.x - c, c - ref.min.x)
+      ref.min.x = c - half
+      ref.max.x = c + half
+    }
+    return {
+      ref,
+      hinge: stile.hinge ?? whole?.hinge ?? null,
+      pieces: [
+        { part: stile, stretch: stile.stretch || "z", mirrors: ["", "x"] },
+        { part: rail, stretch: rail.stretch || "x", mirrors: ["", "y"] },
+        { part: infill, stretch: infill.stretch || "xz", mirrors: [""] },
+      ],
+    }
+  }
+  if (!whole) return null
+  return {
+    ref: whole.box,
+    hinge: whole.hinge,
+    pieces: [{ part: whole, stretch: "xz", mirrors: [""] }],
+  }
+}
+
+/** Where a post's U-number strip stands (rack frame, m): its centre
+ * across and its face (`z`), facing the front (−Z) or the rear, from the
+ * rack's base up its units; `y0` / `lh` the kit's strip within each unit
+ * (from the unit's bottom, and its height). */
+export interface LabelStrip {
+  x: number
+  z: number
+  w: number
+  facing: "front" | "rear"
+  y0: number
+  lh: number
+  /** The strip's colour (the kit's label material, sRGB hex). */
+  color: string
+}
+
+/** The kit's `label:u` (one unit of the strip, modelled beside the
+ * reference post's holes) at every post spot, mirrored as its post. */
+export function labelStrips(
+  label: KitPart,
+  seg: THREE.Box3,
+  spots: readonly PostSpot[],
+  units: number
+): LabelStrip[] {
+  if (units <= 0) return []
+  const lb = label.box
+  const dx = (lb.min.x + lb.max.x) / 2 - seg.min.x
+  const dz = lb.min.z - seg.min.z
+  const mat = label.meshes[0]?.material
+  const first = Array.isArray(mat) ? mat[0] : mat
+  const c = (first as THREE.MeshStandardMaterial | undefined)?.color
+  const color = c ? `#${c.getHexString()}` : "#cccccc"
+  return spots.map((s) => ({
+    x: s.x + (s.mirrorX ? -dx : dx),
+    // A hair off the rail face, toward the viewer.
+    z: s.z + (s.mirrorZ ? -dz : dz) + (s.mirrorZ ? 0.0004 : -0.0004),
+    w: lb.max.x - lb.min.x,
+    facing: s.mirrorZ ? "rear" : "front",
+    y0: Math.max(0, lb.min.y - seg.min.y),
+    lh: lb.max.y - lb.min.y,
+    color,
+  }))
 }
 
 interface DoorDraw {
@@ -225,7 +399,9 @@ interface DoorDraw {
  * (stretched parts keep both ends' distance to the edges, the rest move
  * with the nearer edge; a stretched texture keeps its tile size), side
  * panels and doors in solid mode. The FRAME material takes the rack's
- * colour. Doors swing on their `hinge` empties when clicked.
+ * colour. Doors swing on their `hinge` empties when clicked. A seated
+ * 0U device gets its channel's `pdu:bracket`; `numbering` prints the
+ * rack's U numbers on the kit's `label:u` strips.
  *
  * Null until the kit has loaded - the caller draws Danbyte's own rack
  * meanwhile.
@@ -240,6 +416,8 @@ export function RackKitShell({
   d,
   color,
   mode,
+  seats = NO_SEATS,
+  numbering = null,
   fallback,
 }: {
   rackId: string
@@ -251,6 +429,9 @@ export function RackKitShell({
   d: number
   color: string
   mode: "solid" | "cutaway"
+  seats?: readonly KitSeat[]
+  /** The rack's numbering, to print on the strips; null: blank strips. */
+  numbering?: UNumbering | null
   fallback: React.ReactNode
 }) {
   const entry = useDeviceModel(kit.model_url)
@@ -267,10 +448,11 @@ export function RackKitShell({
             h,
             d,
             color,
-            mode
+            mode,
+            seats
           )
         : null,
-    [scene, rackId, look, units, w, h, d, color, mode]
+    [scene, rackId, look, units, w, h, d, color, mode, seats]
   )
   useEffect(() => () => built?.dispose(), [built])
   if (!built) return <>{fallback}</>
@@ -286,10 +468,14 @@ export function RackKitShell({
           material={p.material}
           matrixAutoUpdate={false}
           matrix={p.matrix}
-          castShadow
+          renderOrder={p.renderOrder}
+          castShadow={p.renderOrder === 0}
           receiveShadow
         />
       ))}
+      {built.labels.length > 0 && (
+        <ULabels strips={built.labels} units={units} numbering={numbering} />
+      )}
       {built.doors.map((door) => (
         <SwingDoor
           key={door.id}
@@ -308,9 +494,95 @@ export function RackKitShell({
               material={p.material}
               matrixAutoUpdate={false}
               matrix={p.matrix}
+              renderOrder={p.renderOrder}
             />
           ))}
         </SwingDoor>
+      ))}
+    </group>
+  )
+}
+
+const NO_SEATS: readonly KitSeat[] = []
+
+/** A rack's unit numbering (the 2D elevation's): `start` the lowest unit
+ * number, `desc` counting from the top. */
+export interface UNumbering {
+  start: number
+  desc: boolean
+}
+
+/** The number unit row `i` (0 the bottom) shows (as the rack ruler). */
+export function unitNumber(i: number, units: number, n: UNumbering): number {
+  return n.desc ? n.start + units - 1 - i : n.start + i
+}
+
+/** The U-number strips: one canvas texture for the rack (a row per unit,
+ * the kit's strip colour in each unit's label, its number on it) on one
+ * plane per post, facing that post's aisle. Numbers off (`numbering`
+ * null): the blank strips. Cutout alpha, so no transparency sort. */
+function ULabels({
+  strips,
+  units,
+  numbering,
+}: {
+  strips: readonly LabelStrip[]
+  units: number
+  numbering: UNumbering | null
+}) {
+  const s0 = strips[0]
+  const pitch = mm(PANEL_MM.uPitch)
+  const texture = useMemo(() => {
+    const W = 32
+    const rowPx = 48
+    const canvas = document.createElement("canvas")
+    canvas.width = W
+    canvas.height = units * rowPx
+    const ctx = canvas.getContext("2d")
+    if (!ctx) return null
+    // A texel is s0.w / W wide and pitch / rowPx tall: text is drawn
+    // squeezed by their ratio so it reads at its shape on the strip.
+    const squeeze = s0.w / W / (pitch / rowPx)
+    for (let i = 0; i < units; i++) {
+      const top = (units - 1 - i) * rowPx // canvas y 0 is the top
+      const y0 = top + rowPx - ((s0.y0 + s0.lh) / pitch) * rowPx
+      const lh = (s0.lh / pitch) * rowPx
+      ctx.fillStyle = s0.color
+      ctx.fillRect(0, y0, W, lh)
+      if (!numbering) continue
+      const text = String(unitNumber(i, units, numbering))
+      ctx.save()
+      ctx.translate(W / 2, y0 + lh / 2)
+      ctx.scale(1, squeeze)
+      ctx.fillStyle = "#18181b"
+      ctx.textAlign = "center"
+      ctx.textBaseline = "middle"
+      const size = Math.min(26, (W * 0.9) / (text.length * 0.62))
+      ctx.font = `700 ${size}px ui-monospace, monospace`
+      ctx.fillText(text, 0, 0)
+      ctx.restore()
+    }
+    const t = new THREE.CanvasTexture(canvas)
+    t.colorSpace = THREE.SRGBColorSpace
+    t.anisotropy = 8
+    return t
+  }, [units, numbering, s0, pitch])
+  useEffect(() => () => texture?.dispose(), [texture])
+  if (!texture) return null
+  const h = units * pitch
+  return (
+    <group>
+      {strips.map((s, i) => (
+        <mesh
+          key={i}
+          position={[s.x, RACK_BASE_M + h / 2, s.z]}
+          // A plane faces +Z; the front strips face the front (−Z).
+          rotation={[0, s.facing === "front" ? Math.PI : 0, 0]}
+          raycast={() => null}
+        >
+          <planeGeometry args={[s.w, h]} />
+          <meshBasicMaterial map={texture} alphaTest={0.5} />
+        </mesh>
       ))}
     </group>
   )
@@ -361,7 +633,10 @@ export function buildKit(
   h: number,
   d: number,
   color: string,
-  mode: "solid" | "cutaway"
+  mode: "solid" | "cutaway",
+  /** The 0U channels a device is seated on (world sideStripBoxM): a
+   * `pdu:bracket` is drawn behind each, as long as the device. */
+  seats: readonly KitSeat[] = []
 ) {
   const target = new THREE.Box3(
     new THREE.Vector3(-w / 2, 0, -d / 2),
@@ -372,13 +647,21 @@ export function buildKit(
   // The FRAME material in the rack's colour; a stretched texture at its
   // rescaled repeat. One copy per distinct look within this rack.
   type Lengths = { h: number | null; v: number | null; ref: number | null }
+  // A kit's baked AO is left off: its parts are repeated (a post segment
+  // per unit) or moved and stretched from where it was baked, so the bake
+  // shows as dark patches and seams between units.
   const dress = (mat: THREE.Material, len: Lengths | null): THREE.Material => {
     const frame = mat.name === "FRAME"
-    if (!frame && !len) return mat
+    const ao = !!(mat as THREE.MeshStandardMaterial).aoMap
+    if (!frame && !len && !ao) return mat
     const key = `${mat.uuid}|${len ? `${len.h?.toFixed(0)},${len.v?.toFixed(0)}` : ""}`
     const hit = materials.get(key)
     if (hit) return hit
     const m = mat.clone()
+    if (ao) {
+      ;(m as THREE.MeshStandardMaterial).aoMap = null
+      m.needsUpdate = true
+    }
     if (frame && "color" in m)
       (m as THREE.MeshStandardMaterial).color.set(color)
     if (len) {
@@ -460,9 +743,23 @@ export function buildKit(
     if (!g) groups.set(key, (g = { geometry, material, matrices: [] }))
     g.matrices.push(mat)
   }
+  // A part drawn as plain meshes at `m` (rack frame), its texture repeat
+  // for the size `m` gives it.
+  const draw = (part: KitPart, m: THREE.Matrix4, into: Draw[] = plain) => {
+    for (const pm of part.meshes) {
+      const material = dressAll(pm.material, repeatOf(part, m))
+      into.push({
+        geometry: pm.geometry,
+        material,
+        matrix: m.clone().multiply(pm.matrix),
+        renderOrder: seeThrough(material) ? TRANSPARENT_ORDER.glass : 0,
+      })
+    }
+  }
 
   const rails = railPlanesM(d, look)
   const seg = index.parts.find((p) => p.name === "post:segment")
+  let labels: LabelStrip[] = []
   if (seg) {
     // The reference post's side inset, kept on every post of this rack.
     const inset = Math.max(0, seg.box.min.x - index.ref.min.x)
@@ -473,26 +770,48 @@ export function buildKit(
       for (const m of mats)
         instance(pm, m.clone().multiply(pm.matrix), material)
     }
+    const label = index.parts.find((p) => p.name === "label:u")
+    if (label) labels = labelStrips(label, seg.box, spots, units)
   }
 
-  const sides = index.parts.filter((p) => p.name === "side:panel")
+  // Parts modelled once for both sides: the other is the mirror image.
+  const sides = (name: string) =>
+    index.parts.filter((p) => p.name === name).length === 1
+  // A split side panel's edge is its bottom one; the top is its mirror,
+  // about the panel's height (its infill's).
+  const infill = index.parts.find((p) => p.name === "side:panel:infill")
   for (const part of index.parts) {
     if (!wanted.has(part.name)) continue
     const m = partMatrix(part.box, index.ref, target, part.stretch)
-    const copies = [m]
-    // One side panel modelled: the other is its mirror image.
-    if (part.name === "side:panel" && sides.length === 1)
-      copies.push(MIRROR_X.clone().multiply(m))
-    for (const c of copies) {
-      for (const pm of part.meshes) {
-        const full = c.clone().multiply(pm.matrix)
-        plain.push({
-          geometry: pm.geometry,
-          material: dressAll(pm.material, repeatOf(part, c)),
-          matrix: full,
-        })
-      }
+    let copies = [m]
+    if (part.name === "side:panel:edge" && infill) {
+      const panel = infill.box
+        .clone()
+        .applyMatrix4(partMatrix(infill.box, index.ref, target, infill.stretch))
+        .union(part.box.clone().applyMatrix4(m))
+      copies.push(mirrorAbout(1, (panel.min.y + panel.max.y) / 2).multiply(m))
     }
+    if (part.name.startsWith("side:panel") && sides(part.name))
+      copies = copies.flatMap((c) => [c, MIRROR_X.clone().multiply(c)])
+    for (const c of copies) draw(part, c)
+  }
+
+  // A `pdu:bracket` behind each seated 0U device, as long as the device:
+  // across and front to back as its channel moves, up the device's span.
+  for (const seat of seats) {
+    const bracket = index.parts.find(
+      (p) => p.name === "pdu:bracket" && p.channel === seat.name
+    )
+    if (!bracket) continue
+    const m = partMatrix(bracket.box, index.ref, target, "")
+    const at = bracket.box.clone().applyMatrix4(m)
+    const bh = at.max.y - at.min.y
+    if (bh <= 1e-6 || seat.h <= 0) continue
+    const fit = new THREE.Matrix4()
+      .makeTranslation(0, seat.y, 0)
+      .multiply(new THREE.Matrix4().makeScale(1, seat.h / bh, 1))
+      .multiply(new THREE.Matrix4().makeTranslation(0, -at.min.y, 0))
+    draw(bracket, fit.multiply(m))
   }
 
   const doors: DoorDraw[] = []
@@ -503,90 +822,68 @@ export function buildKit(
     for (const side of ["front", "rear"] as const) {
       const door = side === "front" ? look.front_door : look.rear_door
       if (door === "none") continue
-      const infill = doorInfill(door)
-      const leafPart =
-        index.parts.find((p) => p.name === `door:${infill}`) ??
-        index.parts.find(
-          (p) => p.name.startsWith("door:") && !hardware.includes(p)
-        )
-      if (!leafPart) continue
-      const full = partMatrix(
-        leafPart.box,
-        index.ref,
-        target,
-        leafPart.stretch || "xz"
-      )
-      const mapped = leafPart.box.clone().applyMatrix4(full)
+      const kind = doorInfill(door)
+      const leaf = doorParts(index.parts, kind)
+      if (!leaf) continue
+      // The whole leaf at this rack's size, as modelled (hinge side and
+      // all): where its height and depth come from.
+      const full = partMatrix(leaf.ref, index.ref, target, "xz")
+      const mapped = leaf.ref.clone().applyMatrix4(full)
       const width = mapped.max.x - mapped.min.x
       // The modelled hinge side (rack frame x), from its hinge empty; as
       // you face the front your left is +x.
-      const modelHinge = leafPart.hinge
-        ? new THREE.Vector3().copy(leafPart.hinge).applyMatrix4(full).x
+      const modelHinge = leaf.hinge
+        ? new THREE.Vector3().copy(leaf.hinge).applyMatrix4(full).x
         : mapped.max.x
       const modelLeft = modelHinge > (mapped.min.x + mapped.max.x) / 2
       const leaves = doorLeaves(door, width, look.hinge)
-      leaves.forEach((leaf, i) => {
+      leaves.forEach((lf, i) => {
         // The leaf as you face it → the rack frame (front: x flips).
         const xs = side === "front" ? -1 : 1
-        const hingeX = xs * leaf.hingeX
-        const centreX = xs * leaf.x
+        const hingeX = xs * lf.hingeX
+        const centreX = xs * lf.x
         const wantLeftEdge = hingeX > centreX // hinge on +x side
-        const cx = (mapped.min.x + mapped.max.x) / 2
-        let m = new THREE.Matrix4()
-          .makeTranslation(centreX, 0, 0)
-          .multiply(new THREE.Matrix4().makeScale(leaf.w / width, 1, 1))
-          .multiply(new THREE.Matrix4().makeTranslation(-cx, 0, 0))
-        if (wantLeftEdge !== modelLeft)
-          m = new THREE.Matrix4()
-            .makeTranslation(centreX, 0, 0)
-            .multiply(MIRROR_X)
-            .multiply(new THREE.Matrix4().makeTranslation(-centreX, 0, 0))
-            .multiply(m)
+        // The leaf's box, hinged on the modelled side; turned to its own
+        // hinge side and to the rear after.
+        const box = new THREE.Box3(
+          new THREE.Vector3(centreX - lf.w / 2, mapped.min.y, mapped.min.z),
+          new THREE.Vector3(centreX + lf.w / 2, mapped.max.y, mapped.max.z)
+        )
+        let turn = new THREE.Matrix4()
+        if (wantLeftEdge !== modelLeft) turn = mirrorAbout(0, centreX)
         // The rear door is the front one turned to face the rear.
         if (side === "rear")
-          m = new THREE.Matrix4().makeScale(1, 1, -1).multiply(m)
-        const leafM = m.clone().multiply(full)
-        const box = leafPart.box.clone().applyMatrix4(leafM)
+          turn = new THREE.Matrix4().makeScale(1, 1, -1).multiply(turn)
         const draws: Draw[] = []
-        for (const pm of leafPart.meshes)
-          draws.push({
-            geometry: pm.geometry,
-            material: dressAll(pm.material, repeatOf(leafPart, leafM)),
-            matrix: leafM.clone().multiply(pm.matrix),
-          })
-        for (const hw of hardware) {
-          // Hardware moves with its leaf at its own size: where the leaf
-          // puts its centre, mirrored with the leaf, never squeezed.
-          const placed = partMatrix(hw.box, index.ref, target, "")
-          const c = hw.box.getCenter(new THREE.Vector3()).applyMatrix4(placed)
-          const at = c.clone().applyMatrix4(m)
-          let hm = new THREE.Matrix4().makeTranslation(
-            at.x - c.x,
-            at.y - c.y,
-            at.z - c.z
-          )
-          if (m.determinant() < 0)
-            hm = hm.multiply(
-              new THREE.Matrix4()
-                .makeTranslation(c.x, c.y, c.z)
-                .multiply(MIRROR_X)
-                .multiply(new THREE.Matrix4().makeTranslation(-c.x, -c.y, -c.z))
-            )
-          hm.multiply(placed)
-          for (const pm of hw.meshes)
-            draws.push({
-              geometry: pm.geometry,
-              material: dressAll(pm.material, null),
-              matrix: hm.clone().multiply(pm.matrix),
-            })
+        for (const piece of leaf.pieces) {
+          const m = partMatrix(piece.part.box, leaf.ref, box, piece.stretch)
+          for (const extra of piece.mirrors) {
+            const c = (box.min.x + box.max.x) / 2
+            const at =
+              extra === "x"
+                ? mirrorAbout(0, c)
+                : extra === "y"
+                  ? mirrorAbout(1, (box.min.y + box.max.y) / 2)
+                  : new THREE.Matrix4()
+            draw(piece.part, turn.clone().multiply(at).multiply(m), draws)
+          }
         }
+        // Hardware keeps its size and its distance to the leaf's nearer
+        // edges (the handle at the free edge, hinges at the hinge edge).
+        for (const hw of hardware)
+          draw(
+            hw,
+            turn.clone().multiply(partMatrix(hw.box, leaf.ref, box, "")),
+            draws
+          )
+        const placed = box.clone().applyMatrix4(turn)
         doors.push({
           id: doorKey(rackId, side, i),
           side,
           hingeX,
           centreX,
-          y: (box.min.y + box.max.y) / 2,
-          z: side === "front" ? box.min.z : box.max.z,
+          y: (placed.min.y + placed.max.y) / 2,
+          z: side === "front" ? placed.min.z : placed.max.z,
           draws,
         })
       })
@@ -597,6 +894,7 @@ export function buildKit(
     instanced: [...groups.values()],
     plain,
     doors,
+    labels,
     dispose: () => {
       for (const m of owned) {
         for (const v of Object.values(m))

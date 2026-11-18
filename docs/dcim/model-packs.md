@@ -897,11 +897,21 @@ The kit's model holds every part as a named object, modelled in place for a
 | `post:segment` | Exactly 1U of a rail post. Repeated for every unit at each post - front and rear, left and right (mirrored), two mid-depth posts on a 2-post frame - its rail face on the rack's rail plane. Every segment of a rack draws in one instanced draw call. Required. |
 | `post:top`, `post:bottom`, `beam:width`, `beam:depth`, `corner:top`, `corner:bottom` | The frame. |
 | `top:vented`, `top:solid`, `top:fans`, `top:brush` | The roof the Look's Top names (else solid, else vented). |
-| `base:plinth`, `base:casters`, `base:feet`, `base:plate` | The base the Look names; `base:plate` for a 2-post frame. |
+| `base:plinth`, `base:casters`, `base:feet`, `base:plate`, `base:panel` | The base the Look names; `base:plate` for a 2-post frame, `base:panel` (the bottom) for a wall cabinet. |
 | `side:panel` | Side panels, in solid mode, when the Look has them. One modelled is mirrored for the other side. |
+| `side:panel:edge`, `side:panel:infill` | A split side panel (v1.15), drawn in place of `side:panel` when the kit has both: the edge at the bottom and mirrored to the top, the infill stretched between, so the edge keeps its size at any height. |
 | `door:perforated`, `door:glass`, `door:solid` | The leaf the door type names; a split door is two half-width leaves. The rear door is the front one turned round. |
-| `door:handle`, `door:hinge`, `door:lock` | Hardware, swinging with its leaf. |
+| `door:<kind>:stile`, `door:<kind>:rail`, `door:<kind>:infill` | A split leaf (v1.15), drawn in place of the whole `door:<kind>` when the kit has all three: the stile at the hinge edge (it carries the `hinge` empty) and mirrored to the free edge, the rail at the bottom and mirrored to the top, the infill stretched between - so a half-width split leaf keeps 30 mm frame members. A glass infill in alpha BLEND (`RACK_Glass_Smoked`) is drawn see-through, after the gear behind it. |
+| `door:handle`, `door:hinge`, `door:lock` | Hardware, swinging with its leaf at its own size, at its distance to the leaf's nearer edges. |
 | `wall:bracket` | A wall cabinet's mounting plate. |
+| `label:u` | One unit of a post's U-number strip, beside the holes. Danbyte draws the strip on every post and, with U numbers on, prints the rack's own numbering on it. |
+| `channel:0u:<left\|right>:<front\|rear>` | An empty: a 0U channel. A side-mounted 0U device (a vertical PDU) is seated on it - its back on the empty, facing the empty's +Z - in place of where Danbyte puts it without a kit. |
+| `pdu:bracket` | A child of a `channel:0u:` empty: the bar a seated 0U device hangs on, drawn behind each one, as long as it. |
+
+Danbyte also knows the pathway names - `path:*`, `entry:*` and `brush:*`
+(the spec's vertical managers, cable entries and brush strips) - and reads
+no warning for them, but doesn't draw them yet; any other name with a `:`
+is noted on import.
 
 Every part is fitted to the rack: one that isn't stretched keeps its size
 and moves with the nearer edge of the cabinet (a corner, a caster); a part
@@ -919,7 +929,11 @@ first), and up to the roof's underside. Door hardware moves with its leaf at
 its own size. Objects with Blender's `.001` suffixes are the same part. The
 `FRAME` material takes the rack's colour; everything else keeps its own.
 A door's `hinge` empty gives its hinge side as modelled; Danbyte mirrors it
-for the other. `label:u` isn't drawn: the U numbers are Danbyte's own.
+for the other. A kit's baked ambient occlusion is left off: its parts are
+repeated per unit or moved from where they were baked, so a bake would show
+as patches and seams. The import records each `channel:0u:` empty's place
+and facing; a kit imported before 0.21 seats no 0U devices until it is
+imported again.
 
 The far box (`model3d.far`) is fitted to the rack's outer box and drawn at
 middle distance; far off the room draws its plain box, as for every rack.
@@ -978,7 +992,9 @@ model3d:
 ```
 
 Their origin is a device's: the front of the ears. A rack's
-[blanking fill](racks.md#look) draws the blanking parts in its empty units.
+[blanking fill](racks.md#look) draws the blanking parts in its empty units,
+put in from the front: the ears' back on the front rail's face, two empty
+units taking a `BLANK-2U`.
 Cable managers and shelves are imported and listed on the Pluggables page;
 the 3D view doesn't place them yet.
 

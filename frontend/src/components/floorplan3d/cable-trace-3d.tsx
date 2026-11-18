@@ -48,6 +48,7 @@ import {
   offsetPolyline,
   portLocalM,
   rackOpeningM,
+  effectiveMount,
   sideStripBoxM,
   stripPortLocalM,
   syntheticPortMarkers,
@@ -291,10 +292,11 @@ function portEndRun(
   // one layout both consume). Before this, every power cable in the room
   // resolved to null and simply was not drawn.
   if (dev.position == null) {
-    if (!dev.mount) return null
+    const mount = effectiveMount(rack, dev)
+    if (!mount) return null
     const strip = sideStripBoxM(rack, dev, width, depth)
     const p = stripPortLocalM(strip, dev, point.port)
-    const outward = dev.mount === "side_left" ? -1 : 1
+    const outward = mount === "side_left" ? -1 : 1
     const chanX = outward * (width / 2 + 0.04)
     const stubZ = p.z + p.out * 0.05
     return {

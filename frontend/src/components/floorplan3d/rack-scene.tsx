@@ -21,6 +21,7 @@ import {
   useStacksMode,
 } from "@/lib/stacks-pref"
 import { stackOf } from "@/lib/stacks"
+import { setBlanksShown, useBlanksShown } from "@/lib/blanks-pref"
 import { useDeviceLedsPayload } from "@/lib/use-device-leds"
 import { cn } from "@/lib/utils"
 import { usePortLabelsShown } from "@/lib/port-labels-pref"
@@ -28,7 +29,11 @@ import { useMe } from "@/lib/use-me"
 import { FaceplateLegend } from "@/components/device-faceplate"
 import { Loading } from "@/components/loading"
 import { CameraModeToggle } from "@/components/camera-mode-toggle"
-import { BarButton, BarMenuTrigger } from "@/components/map-toolbar"
+import {
+  BarButton,
+  BarMenuTrigger,
+  BarToggle,
+} from "@/components/map-toolbar"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -184,6 +189,7 @@ function RackView({
   )
   const stacksMode = useStacksMode()
   const pluggables = usePluggablesMode()
+  const blanks = useBlanksShown()
   const { width, depth, height } = rackFootprintM(rack)
   const size = Math.max(width, depth, height)
   const dist = fitDistance({ width, height, depth })
@@ -249,6 +255,9 @@ function RackView({
             onChange={(v) => setStacksMode(readStacksMode(v))}
           />
           {stacksMode !== "hide" && <StackCablesMenu store={stackLinks} />}
+          <BarToggle pressed={blanks} onClick={() => setBlanksShown(!blanks)}>
+            Blanks
+          </BarToggle>
           <BarButton
             className="ml-auto"
             onClick={() =>

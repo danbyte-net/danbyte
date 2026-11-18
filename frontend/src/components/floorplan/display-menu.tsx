@@ -25,6 +25,7 @@ import {
   useStacksMode,
 } from "@/lib/stacks-pref"
 import type { StacksMode } from "@/lib/stacks-pref"
+import { setBlanksShown, useBlanksShown } from "@/lib/blanks-pref"
 import { CABLE_SCALE_MAX, CABLE_SCALE_MIN } from "@/lib/render-quality"
 import type { CableLook, RenderQualitySetting } from "@/lib/render-quality"
 import { useMe } from "@/lib/use-me"
@@ -110,6 +111,7 @@ export function DisplayMenu({
   // viewer and the rack's 3D view.
   const pluggables = usePluggablesMode()
   const stacks = useStacksMode()
+  const blanks = useBlanksShown()
   return (
     <Popover>
       <PopoverTrigger asChild>
@@ -397,6 +399,12 @@ export function DisplayMenu({
                 }))}
               />
             </div>
+            <FormCheckbox
+              label="Blanks"
+              checked={blanks}
+              onChange={setBlanksShown}
+              className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
+            />
             <FormCheckbox
               label="Airflow"
               checked={show3dAirflow}

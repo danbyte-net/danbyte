@@ -16,6 +16,8 @@ import {
   stepDoor,
 } from "./rack-kit-math"
 import type { RackDoor, SceneLook } from "./rack-kit-math"
+import { EAR_PLATE_MM } from "@/lib/rack-mount"
+
 import { rackFrameWidthM } from "./rack-models"
 import { useDeviceModel } from "./device-model"
 import { RACK_BASE_M, RACK_CAP_M, TRANSPARENT_ORDER, mm } from "./world"
@@ -604,8 +606,12 @@ function DoorLeaf({
  * them (`blanking_fill`): draw-only, never devices, never counted. Each
  * slot takes the tenant's blanking part of its height (`look.blanks`, the
  * pack's BLANK-1U / BLANK-2U) where there is one, else a plain panel - all
- * the plain ones in one draw call. They sit on the front rail plane, where
- * gear faces stand.
+ * the plain ones in one draw call. A run of empty units takes the
+ * biggest parts there are models for (two units pair up into a BLANK-2U),
+ * else 2U and 1U plain panels. Each is put in from the front like an
+ * eared device: its origin - the front of its ears (spec §3) - one ear
+ * plate (`EAR_PLATE_MM`) in front of the front rail, so the plate's back
+ * is on the rail face, never behind it.
  */
 export function BlankingFill({
   rack,
@@ -629,11 +635,16 @@ export function BlankingFill({
     1: ready(m1),
     2: ready(m2),
   }
+  const sizes = useMemo(() => {
+    const modelled = look.blanks.map((b) => b.u_height).filter((u) => u >= 1)
+    return modelled.length ? modelled : [2, 1]
+  }, [look.blanks])
   const slots = useMemo(
-    () => blankingSlots(rack, devices, [2, 1]),
-    [rack, devices]
+    () => blankingSlots(rack, devices, sizes),
+    [rack, devices, sizes]
   )
   const front = railPlanesM(depth, look).front
+  const plate = EAR_PLATE_MM / 1000
   const panelW = rackFrameWidthM(rack)
   const plain = slots.filter((s) => !models[s.h])
   const modelled = slots.filter((s) => models[s.h])
@@ -649,17 +660,17 @@ export function BlankingFill({
         new THREE.Vector3(
           0,
           RACK_BASE_M + s.u * pitch + h / 2 + 0.0004,
-          front + 0.001
+          front - plate / 2
         ),
         new THREE.Quaternion(),
-        new THREE.Vector3(panelW, h, 0.002)
+        new THREE.Vector3(panelW, h, plate)
       )
       m.setMatrixAt(i, mat)
     })
     m.count = plain.length
     m.instanceMatrix.needsUpdate = true
     m.computeBoundingSphere()
-  }, [plain, pitch, front, panelW])
+  }, [plain, pitch, front, panelW, plate])
 
   return (
     <group>
@@ -683,7 +694,7 @@ export function BlankingFill({
         <BlankModel
           key={`${s.u}:${s.h}`}
           scene={models[s.h]!}
-          position={[0, RACK_BASE_M + s.u * pitch, front]}
+          position={[0, RACK_BASE_M + s.u * pitch, front - plate]}
         />
       ))}
     </group>

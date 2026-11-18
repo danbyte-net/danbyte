@@ -116,7 +116,14 @@ for that.
 never counted in space or utilisation. A pack's `BLANK-1U` / `BLANK-2U`
 [accessory types](model-packs.md#rack-accessories) give them their look,
 for a reader who may view pluggables; otherwise they are plain panels.
-A blanking panel you record as a device stays a real device.
+Two empty units next to each other take one 2U panel when there is a 2U
+model. Each panel goes in from the front like an eared device: its ears'
+back on the front rail's face. A blanking panel you record as a device
+stays a real device.
+
+The **Blanks** toggle on the 3D toolbars (the rack's 3D view, and the
+floor plan's **Display** menu in 3D) hides the fill everywhere for you; on,
+each rack shows the fill its Look asks for. It is kept in this browser.
 
 The API carries the fields under their names (`frame`, `rail_depth_mm`,
 `front_door`, `rear_door`, `hinge`, `side_panels`, `top`, `base`, `colour`,
@@ -311,7 +318,14 @@ know which channel they're in, so neither view claims otherwise.
 The elevation grows a slim **rail lane on each side** of the U grid listing
 that rail's strips (click one to open it; **+** hangs a new one with the
 rack and rail pre-picked), and the 3D room draws the strip on the cabinet's
-flank. **0U gear never counts against used units** - including 0U types
+flank. In a rack built from a [kit](model-packs.md#rack-kits) with 0U
+channels, the strip is seated on the kit's channel on its side (the left
+rail is the one the rack draws on the left without a kit) at its channel's
+end, rear by default, with the kit's PDU bracket behind it; up close it
+draws its device type's 3D model there when it has one. Without a kit, or
+without a channel there, it stands where it always did. A 0U device in a rack with neither a unit nor a side mount takes the
+rails in turn in 3D, by name - the first on the left, the next on the
+right - so it stands in its rack instead of not at all. **0U gear never counts against used units** - including 0U types
 parked at a U position, which previously (and wrongly) charged a full unit.
 
 ## Rack elevations
@@ -486,10 +500,14 @@ held for a cable shows amber. Click a device or a port for its card;
 plan's 3D View menu on this device. **Pluggables** and **Stacks** choose
 how the parts in model ports and a switch stack's
 [stack cables](virtual-chassis.md#in-3d) draw (**Show**, **Ghost** or
-**Hide**, kept in this browser). Other cables are not drawn in this view yet.
+**Hide**, kept in this browser), and **Blanks** shows or hides the
+[blanking fill](#look). Other cables are not drawn in this view yet.
 
 The cabinet is built from its [Look](#look): its frame, doors, side
 panels, top, base and colour, from its rack kit's parts when it has one.
+A kit's split doors and side panels keep their frame members at their real
+size on any rack, glass doors are see-through, and with **U numbers** on
+the rack's own numbering is printed on the kit's U strips, on every post.
 **Click a door to open it**: it swings out on its hinge side, and a split
 door's leaves open one at a time; click it again to close it. Open doors
 are yours alone and last until the page reloads - nothing is saved. With

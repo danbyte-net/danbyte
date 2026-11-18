@@ -12,7 +12,7 @@ import {
   renderTemplateName,
 } from "@/lib/faceplate-geometry"
 
-import { earPlateM, faceplateOffsetM } from "@/lib/rack-mount"
+import { earPlateM, faceplateOffsetM, isReversed } from "@/lib/rack-mount"
 import type { RackMountInfo } from "@/lib/rack-mount"
 
 import { raisedContains } from "../floorplan/raised-floor-shape"
@@ -630,15 +630,18 @@ export function deviceBoxM(
       : rackDepthM * 0.45
   // Its faceplate stands on the rail plane, out by its ears' offset and
   // the ears' plate (lib/rack-mount; an earless device's faceplate is on
-  // the rail).
-  const mountedRear = dev.face === "rear"
+  // the rail). A reversed device is turned round in its U: its rear face
+  // stands there, its faceplate toward the other aisle - `mountedRear`
+  // says which way its own front looks (+Z), the rail it is on is `face`.
+  const onRear = dev.face === "rear"
+  const mountedRear = onRear !== isReversed(dev.rack_mount)
   const front = rackFrontZM(
     rack,
     dev,
     rackDepthM,
     faceplateOffsetM(dev.rack_mount) + earPlateM(dev.rack_mount)
   )
-  const dz = mountedRear ? front - dd / 2 : front + dd / 2
+  const dz = onRear ? front - dd / 2 : front + dd / 2
   return { y, h, dx, dz, dw, dd, boxH: h * 0.94, mountedRear }
 }
 
@@ -1128,6 +1131,88 @@ export function fitsInChannel(rack: SceneRack): boolean {
 }
 
 /**
+ * The rail a 0U device in a rack hangs on in 3D: its `mount`, else - a 0U
+ * device with no unit and no side recorded - left and right in turn, by
+ * name among such devices in the rack (the first left, the second right…),
+ * so it stands in its rack instead of nowhere. "" for racked gear.
+ */
+export function effectiveMount(
+  rack: Pick<SceneRack, "devices">,
+  dev: Pick<SceneDevice, "id" | "name" | "mount" | "position" | "u_height">
+): "" | "side_left" | "side_right" {
+  if (dev.mount) return dev.mount
+  if (dev.position != null || dev.u_height > 0) return ""
+  const loose = rack.devices
+    .filter((d) => !d.mount && d.position == null && d.u_height <= 0)
+    .sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id))
+  const i = loose.findIndex((d) => d.id === dev.id)
+  if (i < 0) return ""
+  return i % 2 === 0 ? "side_left" : "side_right"
+}
+
+/** A rack kit's 0U channel seated in a rack (rack group frame, m): the
+ * channel's lower end (x, z - the strip's back), the way its devices face
+ * (`out`, level, unit length), and the kit part's name. */
+export interface KitChannelSeat {
+  name: string
+  x: number
+  y: number
+  z: number
+  out: [number, number]
+}
+
+/**
+ * Where a side-mounted 0U device sits on its rack's kit (the export spec
+ * §14 `channel:0u:<left|right>:<front|rear>` empties, api.rack_kits): the
+ * channel on the side the rack draws `mount` on without a kit (left −x)
+ * and in its `face`'s end (blank: the rear one, else the front), moved
+ * from the kit's reference cabinet to this rack as a kit part that is not
+ * stretched - keeping its distance to the nearer side and the nearer end.
+ * Null without a kit, or a channel there.
+ */
+export function kitChannelSeat(
+  look: SceneLook | null | undefined,
+  dev: Pick<SceneDevice, "mount" | "face">,
+  rackWidthM: number,
+  rackDepthM: number
+): KitChannelSeat | null {
+  const kit = look?.kit
+  if (!kit || !dev.mount) return null
+  const wRef = mm(kit.widths_mm?.[0] ?? rackWidthM * 1000)
+  const dRef = mm(kit.depths_mm?.[0] ?? rackDepthM * 1000)
+  const sign = dev.mount === "side_left" ? -1 : 1
+  const ends =
+    dev.face === "front"
+      ? ["front"]
+      : dev.face === "rear"
+        ? ["rear"]
+        : ["rear", "front"]
+  for (const end of ends) {
+    for (const [name, part] of Object.entries(kit.parts)) {
+      const m = /^channel:0u:(left|right):(front|rear)$/.exec(name)
+      if (!m || m[2] !== end || !part.at) continue
+      // glTF (front +Z at z 0) to the rack frame: x and z turned round.
+      const rx = -part.at[0]
+      if (Math.sign(rx) !== sign) continue
+      const fromFront = -part.at[2]
+      const x =
+        rx > 0
+          ? rackWidthM / 2 - (wRef / 2 - rx)
+          : -rackWidthM / 2 + (wRef / 2 + rx)
+      const z =
+        fromFront <= dRef / 2
+          ? -rackDepthM / 2 + fromFront
+          : rackDepthM / 2 - (dRef - fromFront)
+      const ox = -(part.out?.[0] ?? -sign)
+      const oz = -(part.out?.[1] ?? 0)
+      const len = Math.hypot(ox, oz) || 1
+      return { name, x, y: part.at[1], z, out: [ox / len, oz / len] }
+    }
+  }
+  return null
+}
+
+/**
  * Where a side-mounted 0U strip (a vertical PDU) sits, local to its rack
  * group.
  *
@@ -1147,7 +1232,14 @@ export function sideStripBoxM(
   dev: SceneDevice,
   rackWidthM: number,
   rackDepthM: number
-): { x: number; y: number; h: number; z: number } {
+): {
+  x: number
+  y: number
+  h: number
+  z: number
+  /** On its kit's 0U channel (`kitChannelSeat`), else today's place. */
+  seat: KitChannelSeat | null
+} {
   const pitch = mm(PANEL_MM.uPitch)
   const spanU = Math.min(
     dev.mount_span_u ?? Math.round(rack.u_height * 0.75),
@@ -1159,7 +1251,27 @@ export function sideStripBoxM(
     RACK_BASE_M + mm(dev.mount_offset_mm ?? 0),
     Math.max(RACK_BASE_M, rackTop - h)
   )
-  const sign = dev.mount === "side_left" ? -1 : 1
+  const mount = effectiveMount(rack, dev)
+  // A kit rack seats it on its 0U channel: its back on the channel (the
+  // kit's `pdu:bracket` behind it), the box running in from there the way
+  // the channel faces.
+  const seat = kitChannelSeat(
+    rack.look,
+    { mount, face: dev.face },
+    rackWidthM,
+    rackDepthM
+  )
+  if (seat) {
+    const off = STRIP_W_M / 2
+    return {
+      x: seat.x + seat.out[0] * off,
+      y,
+      h,
+      z: seat.z + seat.out[1] * off,
+      seat,
+    }
+  }
+  const sign = mount === "side_left" ? -1 : 1
   // `face` names the CHANNEL the strip bolts into: rear sits back in the
   // cabinet (where a vertical PDU actually lives), front sits forward.
   // Blank stays mid-depth - we genuinely don't know which channel it's in.
@@ -1178,7 +1290,7 @@ export function sideStripBoxM(
   const beside = openHalf + STRIP_GAP_M + STRIP_W_M / 2
   const panelMax = rackWidthM / 2 - STRIP_CLEARANCE_M - STRIP_W_M / 2
   const x = sign * Math.max(STRIP_W_M / 2, Math.min(beside, panelMax))
-  return { x, y, h, z }
+  return { x, y, h, z, seat: null }
 }
 
 /** Outlet spacing down a vertical strip (m) - about a real C13 pitch, so 24

@@ -122,6 +122,27 @@ describe("post segments", () => {
   it("draws two posts on a 2-post frame", () => {
     expect(postSpots("2-post", 0.6, { front: 0, rear: 0 }, 0)).toHaveLength(2)
   })
+
+  it("puts all four posts at the four corners, every unit abutting", () => {
+    // A quantized segment a hair short of 1U is fitted to the pitch.
+    const short = box([-0.29, 0.1, -0.05], [-0.27, 0.1 + 0.0444, -0.03])
+    for (const frame of ["cabinet", "4-post", "wall-cabinet"] as const) {
+      const spots = postSpots(frame, 0.6, { front: -0.45, rear: 0.3 }, 0.01)
+      const mats = postSegmentMatrices(short, spots, 42)
+      const corners = new Set<string>()
+      for (let k = 0; k < 4; k++) {
+        const units = mats.slice(k * 42, k * 42 + 42).map((m) =>
+          short.clone().applyMatrix4(m)
+        )
+        const b = units[0]
+        corners.add(`${Math.sign(b.min.x + b.max.x)},${Math.sign(b.min.z + b.max.z)}`)
+        for (let u = 1; u < 42; u++)
+          expect(units[u].min.y).toBeCloseTo(units[u - 1].max.y, 9)
+        expect(units[41].max.y).toBeCloseTo(RACK_BASE_M + 42 * U, 9)
+      }
+      expect(corners.size).toBe(4)
+    }
+  })
 })
 
 describe("blankingSlots", () => {

@@ -15,6 +15,7 @@ import { RackRuler } from "./rack-ruler"
 import type { PortLabelSource } from "@/lib/api"
 import { FaceLabel } from "./text-sprite"
 import { RackKitFar, RackKitShell } from "./rack-kit"
+import type { KitSeat, UNumbering } from "./rack-kit"
 import { LEGACY_LOOK } from "./rack-kit-math"
 import type { SceneLook } from "./rack-kit-math"
 import { BlankingFill, RackShell } from "./rack-shell"
@@ -28,6 +29,8 @@ import {
   rackFootprintM,
   occludesSightLine,
   rackViewpoint,
+  effectiveMount,
+  sideStripBoxM,
   tierFor,
 } from "./world"
 import type { ScenePayload, SceneTile, Tier } from "./world"
@@ -37,6 +40,7 @@ import type { DeviceLeds } from "@/lib/led-state"
 import { useDeviceLeds } from "@/lib/use-device-leds"
 import { stackModeLeds } from "@/lib/stacks"
 import { useStacksMode } from "@/lib/stacks-pref"
+import { useBlanksShown } from "@/lib/blanks-pref"
 
 import type { ModelBudget } from "./rack-models"
 import {
@@ -222,7 +226,13 @@ export function RackMesh({
     () => rack.devices.filter((d) => d.position != null),
     [rack.devices]
   )
-  const mounted = rack.devices.filter((d) => d.mount && d.position == null)
+  const mounted = useMemo(
+    () =>
+      rack.devices.filter(
+        (d) => d.position == null && effectiveMount(rack, d) !== ""
+      ),
+    [rack]
+  )
   // Turned by its whole facing about the tile's centre (tile-pose.ts).
   const {
     centre: [cx, cz],
@@ -321,6 +331,27 @@ export function RackMesh({
     base: rack.look ? look.colour : null,
   })
   const beacon = check ? (CHECK_COLOR[check] ?? null) : null
+  // The viewer's Blanks choice over the Look's fill (lib/blanks-pref).
+  const blanksShown = useBlanksShown()
+  // Side-mounted 0U gear on its kit's channels: a bracket behind each.
+  const seats = useMemo<KitSeat[]>(
+    () =>
+      mounted.flatMap((d) => {
+        const b = sideStripBoxM(rack, d, width, depth)
+        return b.seat ? [{ name: b.seat.name, y: b.y, h: b.h }] : []
+      }),
+    [mounted, rack, width, depth]
+  )
+  // A kit with U-number strips prints the numbers on them, in place of the
+  // ruler.
+  const kitLabels = !!(look.kit?.model_url && look.kit.parts["label:u"])
+  const numbering = useMemo<UNumbering | null>(
+    () =>
+      showUNumbers
+        ? { start: rack.starting_unit, desc: rack.desc_units }
+        : null,
+    [showUNumbers, rack.starting_unit, rack.desc_units]
+  )
 
   const flyTo = () => {
     // Same math as the HUD's front↔rear flip (world.rackViewpoint), so
@@ -442,8 +473,10 @@ export function RackMesh({
             d={depth}
             color={frameColor}
             mode={xray ? "cutaway" : shellMode}
+            seats={seats}
+            numbering={showOverlays ? numbering : null}
           />
-          {look.blanking_fill && (
+          {look.blanking_fill && blanksShown && (
             <BlankingFill
               rack={rack}
               look={look}
@@ -596,8 +629,10 @@ export function RackMesh({
                 ? selection.portName
                 : null
             }
-            // Outlet quads are a near-range affordance, like every overlay.
+            // Outlet quads are a near-range affordance, like every overlay;
+            // so is a seated strip's model.
             showPorts={tier === "detail"}
+            showModel={tier === "detail"}
             onSelect={() =>
               onSelect({ kind: "device", tileId: tile.id, deviceId: d.id })
             }
@@ -620,7 +655,7 @@ export function RackMesh({
       )}
       {/* Overlays - near tier only, and drawn FLAT on the front face so they
           stay anchored (billboards piled up in the aisle). */}
-      {showOverlays && showUNumbers && (
+      {showOverlays && showUNumbers && !kitLabels && (
         <RackRuler rack={rack} width={width} depth={depth} />
       )}
       {showOverlays &&
@@ -781,6 +816,8 @@ function RackBody({
   d,
   color,
   mode,
+  seats,
+  numbering,
 }: {
   rackId: string
   look: SceneLook
@@ -790,6 +827,8 @@ function RackBody({
   d: number
   color: string
   mode: "solid" | "cutaway"
+  seats: readonly KitSeat[]
+  numbering: UNumbering | null
 }) {
   const own = (
     <RackShell
@@ -814,6 +853,8 @@ function RackBody({
       d={d}
       color={color}
       mode={mode}
+      seats={seats}
+      numbering={numbering}
       fallback={own}
     />
   )

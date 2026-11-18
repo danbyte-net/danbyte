@@ -25,7 +25,18 @@ export interface SceneKit {
   frame: RackFrame
   parts: Record<
     string,
-    { stretch: string; ref_mm: number | null; hinge: boolean }
+    {
+      stretch: string
+      ref_mm: number | null
+      hinge: boolean
+      /** A `channel:0u:` empty's lower end and the way its devices face
+       * (its local +Z, level: x, z), in the kit's glTF frame (m). A kit
+       * imported before Danbyte read them has neither. */
+      at?: [number, number, number]
+      out?: [number, number]
+      depth_mm?: number
+      len_u?: number
+    }
   >
   colours: Record<string, string>
   /** The kit's sizes; the first width and depth are its reference. */
@@ -278,6 +289,11 @@ export function postSegmentMatrices(
   // The segment's outer side and rail face, as modelled (a left post).
   const ox = seg.min.x
   const oz = seg.min.z
+  // A segment a hair off 1U (a quantized export: 44.40 mm) is fitted to
+  // the pitch, so the units abut with no seam between them.
+  const segH = seg.max.y - seg.min.y
+  const fit =
+    segH > 0 && Math.abs(segH - pitch) <= pitch * 0.03 ? pitch / segH : 1
   const out: THREE.Matrix4[] = []
   for (const s of spots) {
     for (let u = 0; u < units; u++) {
@@ -286,7 +302,7 @@ export function postSegmentMatrices(
         .multiply(
           new THREE.Matrix4().makeScale(
             s.mirrorX ? -1 : 1,
-            1,
+            fit,
             s.mirrorZ ? -1 : 1
           )
         )

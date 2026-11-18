@@ -1,4 +1,5 @@
-import { useState } from "react"
+import { useMemo, useState } from "react"
+import type * as THREE from "three"
 
 import type { ImagePortMarker } from "@/lib/api"
 import { feedTint } from "@/lib/faceplate-colors"
@@ -10,7 +11,8 @@ import {
   sideStripBoxM,
   stripPortLocalM,
 } from "./world"
-import type { SceneDevice, SceneRack } from "./world"
+import type { KitChannelSeat, SceneDevice, SceneRack } from "./world"
+import { useDeviceModel } from "./device-model"
 
 /** Real rack PDUs are near-black extruded aluminium - dark so the outlet
  * cells and the feed spine read against it. */
@@ -31,6 +33,12 @@ const PORT_SELECTED = "#fbbf24"
  * its own phase leg. `showPorts` (detail tier) makes those cells clickable -
  * laid out by `world.stripPortLocalM`, the SAME function the cable layer
  * anchors runs with, so a cord and its outlet can't disagree.
+ *
+ * In a rack built from a kit with 0U channels it is seated on its channel
+ * (world `kitChannelSeat`) and, up close (`showModel`), draws its own 3D
+ * model there - its back on the channel, facing the way the channel does
+ * (the export spec §14: the PDU's origin is the centre of its back at its
+ * bottom end) - the box staying on as its invisible hit box.
  */
 export function SideStripMesh({
   rack,
@@ -40,6 +48,7 @@ export function SideStripMesh({
   selected,
   selectedPort,
   showPorts = false,
+  showModel = false,
   onSelect,
   onSelectPort,
 }: {
@@ -52,6 +61,8 @@ export function SideStripMesh({
   selectedPort?: string | null
   /** Detail tier only - a far hall must not carry thousands of quads. */
   showPorts?: boolean
+  /** Draw a seated strip's 3D model (near range only). */
+  showModel?: boolean
   onSelect: () => void
   /** An outlet/port quad was clicked - same contract as DeviceMesh's. */
   onSelectPort?: (marker: ImagePortMarker, side: "front" | "rear") => void
@@ -60,6 +71,10 @@ export function SideStripMesh({
   const [hoveredPort, setHoveredPort] = useState<string | null>(null)
   const box = sideStripBoxM(rack, dev, rackWidthM, rackDepthM)
   const { x, y, h, z } = box
+  const modelUrl = box.seat && showModel ? (dev.model?.url ?? null) : null
+  const entry = useDeviceModel(modelUrl)
+  const modelScene = entry?.status === "ready" ? entry.scene : null
+  const drawsModel = !!(modelScene && box.seat)
   const feedType = dev.power_feed_type ?? ""
   const legs = dev.power_legs ?? {}
   // Which face the outlets look out of, so the spine sits on the same side.
@@ -104,12 +119,24 @@ export function SideStripMesh({
         }}
       >
         <boxGeometry args={[STRIP_W_M, h, STRIP_D_M]} />
-        <meshStandardMaterial
-          color={bodyColor}
-          roughness={0.4}
-          metalness={0.5}
-        />
+        {drawsModel && !selected && !hovered ? (
+          // The model is the strip: the box is only what takes the click.
+          <meshBasicMaterial key="hit" colorWrite={false} depthWrite={false} />
+        ) : (
+          <meshStandardMaterial
+            key="body"
+            color={bodyColor}
+            roughness={0.4}
+            metalness={0.5}
+            transparent={drawsModel}
+            opacity={drawsModel ? 0.35 : 1}
+            depthWrite={!drawsModel}
+          />
+        )}
       </mesh>
+      {modelScene && box.seat && (
+        <SeatedModel scene={modelScene} seat={box.seat} y={y} />
+      )}
       {/* Feed spine - a slim bar down the outlet face in the feed's colour. */}
       {showSpine && (
         <mesh
@@ -168,5 +195,35 @@ export function SideStripMesh({
         )
       })}
     </group>
+  )
+}
+
+const noRaycast = () => null
+
+/** A 0U device's model on its kit channel: a copy sharing its geometry and
+ * materials, clicks passing through to the hit box. Its front (+Z as
+ * modelled, spec §3) turned to the channel's `out`. */
+function SeatedModel({
+  scene,
+  seat,
+  y,
+}: {
+  scene: THREE.Object3D
+  seat: KitChannelSeat
+  y: number
+}) {
+  const copy = useMemo(() => {
+    const c = scene.clone()
+    c.traverse((o) => {
+      o.raycast = noRaycast
+    })
+    return c
+  }, [scene])
+  return (
+    <primitive
+      object={copy}
+      position={[seat.x, y, seat.z]}
+      rotation={[0, Math.atan2(seat.out[0], seat.out[1]), 0]}
+    />
   )
 }

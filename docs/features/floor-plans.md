@@ -861,6 +861,10 @@ ceiling, underfloor runs sit beneath the slab) and zones tint the floor.
   the ring derived from member order when none is recorded. Kept in this
   browser and shared with the rack's 3D view. See
   [Virtual chassis → In 3D](../dcim/virtual-chassis.md#in-3d).
+- **Blanks** (View menu, 3D, under Stacks): off hides every rack's
+  blanking fill; on, each rack shows the fill its Look asks for. Kept in
+  this browser and shared with the rack's 3D view. See
+  [Look](../dcim/racks.md#look).
 - **Device names** (View menu, 3D): name plates per device. Underneath,
   **All racks / Highlighted rack** limits them to the rack you have selected
   or are focused on, and **Names off the gear** starts each plate at the

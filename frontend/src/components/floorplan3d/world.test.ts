@@ -25,6 +25,8 @@ import {
   rackViewpoint,
   segmentCrossing,
   sideStripBoxM,
+  kitChannelSeat,
+  effectiveMount,
   stripPortLocalM,
   STRIP_D_M,
   STRIP_PORT_PITCH_M,
@@ -48,6 +50,7 @@ import {
   occludesSightLine,
   tierFor,
 } from "./world"
+import { LEGACY_LOOK } from "./rack-kit-math"
 
 const plan: ScenePayload["plan"] = {
   id: "p",
@@ -560,6 +563,125 @@ describe("sideStripBoxM - vertical 0U strips hang on the rail", () => {
     )
     const rackTop = RACK_BASE_M + 42 * 0.04445
     expect(clamped.y + clamped.h).toBeLessThanOrEqual(rackTop + 1e-9)
+  })
+})
+
+describe("kitChannelSeat - 0U strips on their kit's channels", () => {
+  // The pack's CABINET: channels behind the rear rails, 42 mm in from
+  // the sides of its 600 x 1000 reference, facing in (api.rack_kits).
+  const kit = {
+    id: "k",
+    name: "CABINET",
+    frame: "cabinet" as const,
+    colours: {},
+    widths_mm: [600, 800],
+    depths_mm: [1000, 1200],
+    model_url: "/k.glb",
+    far_url: null,
+    parts: {
+      "post:segment": { stretch: "", ref_mm: null, hinge: false },
+      "channel:0u:left:rear": {
+        stretch: "",
+        ref_mm: null,
+        hinge: false,
+        at: [-0.258, 0.165, -0.9308] as [number, number, number],
+        out: [1, 0] as [number, number],
+      },
+      "channel:0u:right:rear": {
+        stretch: "",
+        ref_mm: null,
+        hinge: false,
+        at: [0.258, 0.165, -0.9308] as [number, number, number],
+        out: [-1, 0] as [number, number],
+      },
+    },
+  }
+  const look = { ...LEGACY_LOOK, kit }
+  const pdu = (over = {}) =>
+    dev(1, 0, { position: null, mount: "side_left", face: "rear", ...over })
+
+  it("seats a strip on the channel on its side, kept off the side and rear", () => {
+    const left = kitChannelSeat(look, pdu(), 0.8, 1.2)!
+    // Danbyte's left rail is −x, as without a kit.
+    expect(left.name).toBe("channel:0u:right:rear")
+    expect(left.x).toBeCloseTo(-0.4 + 0.042, 6)
+    expect(left.z).toBeCloseTo(0.6 - 0.0692, 6)
+    expect(left.out[0]).toBeCloseTo(1, 6)
+    const right = kitChannelSeat(look, pdu({ mount: "side_right" }), 0.8, 1.2)!
+    expect(right.name).toBe("channel:0u:left:rear")
+    expect(right.x).toBeCloseTo(0.4 - 0.042, 6)
+    expect(right.out[0]).toBeCloseTo(-1, 6)
+  })
+
+  it("falls back where the kit has no channel there, or no kit", () => {
+    expect(kitChannelSeat(look, pdu({ face: "front" }), 0.8, 1.2)).toBeNull()
+    expect(kitChannelSeat(LEGACY_LOOK, pdu(), 0.8, 1.2)).toBeNull()
+    expect(kitChannelSeat(look, pdu({ face: "" }), 0.8, 1.2)).not.toBeNull()
+    const old = {
+      ...look,
+      kit: { ...kit, parts: { "post:segment": kit.parts["post:segment"] } },
+    }
+    expect(kitChannelSeat(old, pdu(), 0.8, 1.2)).toBeNull()
+  })
+
+  it("puts the strip's box on the channel, running inward", () => {
+    const b = sideStripBoxM(
+      rack({ look, outer_width_mm: 800, outer_depth_mm: 1200 }),
+      pdu(),
+      0.8,
+      1.2
+    )
+    expect(b.seat).not.toBeNull()
+    expect(b.x).toBeCloseTo(-0.358 + STRIP_W_M / 2, 6)
+    expect(b.z).toBeCloseTo(b.seat!.z, 6)
+    const plain = sideStripBoxM(rack(), pdu(), 0.8, 1.2)
+    expect(plain.seat).toBeNull()
+  })
+})
+
+describe("effectiveMount - 0U gear with no side recorded", () => {
+  it("hangs left and right in turn by name, upright in its rack", () => {
+    const b = dev(1, 0, { id: "b", name: "PDU-B", position: null, mount: "" })
+    const a = dev(1, 0, { id: "a", name: "PDU-A", position: null, mount: "" })
+    const set = dev(1, 0, {
+      id: "s",
+      name: "PDU-0",
+      position: null,
+      mount: "side_right",
+    })
+    const r = rack({ devices: [b, a, set] })
+    expect(effectiveMount(r, a)).toBe("side_left")
+    expect(effectiveMount(r, b)).toBe("side_right")
+    expect(effectiveMount(r, set)).toBe("side_right")
+    expect(effectiveMount(r, dev(3, 1))).toBe("")
+    const box = sideStripBoxM(r, a, 0.6, 1.0)
+    expect(box.x).toBeLessThan(0)
+    expect(box.y).toBeCloseTo(RACK_BASE_M)
+  })
+})
+
+describe("deviceBoxM - reversed gear", () => {
+  it("turns a reversed device round on its own rail", () => {
+    const mount = {
+      ears: true,
+      position: "reversed" as const,
+      offset_mm: 0,
+      shift_mm: 0,
+      rails: "none" as const,
+      reversed: true,
+      ear_mm: 2,
+    }
+    const plainBox = deviceBoxM(rack(), dev(10, 1, { face: "front" }), 0.6, 1)
+    const box = deviceBoxM(
+      rack(),
+      dev(10, 1, { face: "front", rack_mount: mount }),
+      0.6,
+      1
+    )
+    expect(plainBox.mountedRear).toBe(false)
+    expect(box.mountedRear).toBe(true)
+    // Still on the front rail, its rear face where the faceplate was.
+    expect(box.dz).toBeCloseTo(plainBox.dz, 6)
   })
 })
 

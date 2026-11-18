@@ -6,6 +6,8 @@ import {
   indexKit,
   mirroredGeometry,
   partName,
+  seeThrough,
+  unitNumber,
   wantedParts,
 } from "./rack-kit"
 import { LEGACY_LOOK } from "./rack-kit-math"
@@ -355,5 +357,279 @@ describe("kits in the 1000 mm convention", () => {
       expect(Math.abs(hx - leaf.hingeX)).toBeGreaterThan(0.3)
     }
     built.dispose()
+  })
+})
+
+/** A post segment as a pack delivers it (KHR_mesh_quantization): unsigned
+ * short positions, normalised byte normals, dequantized by its node. */
+function quantizedSegment() {
+  const g = new THREE.Group()
+  g.userData = { gltfName: "post:segment" }
+  g.position.set(0.2326, 0.13, -0.1)
+  const box = new THREE.BoxGeometry(0.035, 0.04445, 0.04).toNonIndexed()
+  box.translate(0.0175, 0.022225, -0.02)
+  const q = 1 / 65535
+  const pos = box.getAttribute("position")
+  const qpos = new Uint16Array(pos.count * 3)
+  for (let i = 0; i < pos.count; i++) {
+    qpos[i * 3] = Math.round((pos.getX(i) + 0.1) / q / 10)
+    qpos[i * 3 + 1] = Math.round((pos.getY(i) + 0.1) / q / 10)
+    qpos[i * 3 + 2] = Math.round((pos.getZ(i) + 0.1) / q / 10)
+  }
+  const nrm = box.getAttribute("normal")
+  const qn = new Int8Array(nrm.count * 3)
+  for (let i = 0; i < nrm.count * 3; i++)
+    qn[i] = Math.round((nrm.array as Float32Array)[i] * 127)
+  const geo = new THREE.BufferGeometry()
+  geo.setAttribute("position", new THREE.BufferAttribute(qpos, 3))
+  geo.setAttribute("normal", new THREE.BufferAttribute(qn, 3, true))
+  const mat = new THREE.MeshStandardMaterial({ name: "RACK_Rail_Zinc" })
+  mat.aoMap = new THREE.Texture()
+  const mesh = new THREE.Mesh(geo, mat)
+  mesh.scale.setScalar(q * 10)
+  mesh.position.set(-0.1, -0.1, -0.1)
+  g.add(mesh)
+  return g
+}
+
+/** The v1.15 cabinet: split door and side panel, a 0U channel with its
+ * bracket, a U strip and a quantized post segment. */
+function splitKit() {
+  const s = new THREE.Group()
+  s.add(quantizedSegment())
+  const label = part(
+    "label:u",
+    [0.0055, 0.0405, 0.0004],
+    [0.241, 0.1525, -0.0998]
+  )
+  ;(label.children[0] as THREE.Mesh).material = new THREE.MeshStandardMaterial({
+    name: "RACK_Label_White",
+    color: "#ffffff",
+  })
+  s.add(label)
+  s.add(part1000("top:vented", "xy", [0, 0.01, 0], [-0.3, 2.015, 0]))
+  s.add(part1000("side:panel", "yz", [0.002, 0, 0], [0.299, 0.1, 0]))
+  s.add(part1000("side:panel:edge", "y", [0.015, 0.03, 0], [0.2925, 0.115, 0]))
+  s.add(part1000("side:panel:infill", "yz", [0.002, 0, 0], [0.299, 0.13, 0]))
+  s.add(part1000("base:plinth", "xy", [0, 0.1, 0], [-0.3, 0.05, 0]))
+  for (const kind of ["glass", "perforated"]) {
+    s.add(part1000(`door:${kind}`, "xz", [0, 0, 0.022], [-0.3, 0.1, 0]))
+    const stile = part1000(
+      `door:${kind}:stile`,
+      "z",
+      [0.03, 0, 0.022],
+      [-0.285, 0.1, 0]
+    )
+    const hinge = new THREE.Object3D()
+    hinge.userData.gltfName = "hinge"
+    stile.add(hinge)
+    s.add(stile)
+    s.add(
+      part1000(`door:${kind}:rail`, "x", [0, 0.03, 0.022], [-0.27, 0.115, 0])
+    )
+    const infill = part1000(
+      `door:${kind}:infill`,
+      "xz",
+      [0, 0, 0.002],
+      [-0.27, 0.13, 0]
+    )
+    if (kind === "glass")
+      (infill.children[0] as THREE.Mesh).material =
+        new THREE.MeshStandardMaterial({
+          name: "RACK_Glass_Smoked",
+          transparent: true,
+          opacity: 0.35,
+          depthWrite: false,
+        })
+    s.add(infill)
+  }
+  s.add(part("door:handle", [0.02, 0.12, 0.03], [0.26, 1.1, 0.015]))
+  const channel = new THREE.Group()
+  channel.userData = { gltfName: "channel:0u:left:rear" }
+  channel.position.set(-0.258, 0.165, -0.9308)
+  channel.rotation.y = Math.PI / 2
+  const bracket = part1000("pdu:bracket", "z", [0.05, 0, 0.003], [0, 0, 0])
+  channel.add(bracket)
+  s.add(channel)
+  s.updateMatrixWorld(true)
+  return s
+}
+
+describe("rack kit v2 parts", () => {
+  const index = indexKit(splitKit(), 1)
+  const look: SceneLook = {
+    ...LOOK,
+    front_door: "split-perforated",
+    rear_door: "glass",
+  }
+  const glassLook: SceneLook = { ...look, front_door: "glass" }
+  const boxes = (
+    draws: { geometry: THREE.BufferGeometry; matrix: THREE.Matrix4 }[]
+  ) =>
+    draws.map((d) => {
+      if (!d.geometry.boundingBox) d.geometry.computeBoundingBox()
+      return d.geometry.boundingBox!.clone().applyMatrix4(d.matrix)
+    })
+
+  it("mirrors quantized posts in place, not metres away", () => {
+    const built = buildKit(index, "r", look, 42, 0.6, 2.02, 1, "#000", "solid")
+    expect(built.instanced.length).toBe(2)
+    for (const g of built.instanced) {
+      const mesh = new THREE.InstancedMesh(
+        g.geometry,
+        g.material,
+        g.matrices.length
+      )
+      g.matrices.forEach((m, i) => mesh.setMatrixAt(i, m))
+      mesh.computeBoundingBox()
+      mesh.computeBoundingSphere()
+      // Each draw holds two of the four posts, on both sides of the rack.
+      expect(mesh.boundingBox!.min.x).toBeGreaterThan(-0.31)
+      expect(mesh.boundingBox!.max.x).toBeLessThan(0.31)
+      expect(mesh.boundingBox!.min.x).toBeLessThan(-0.2)
+      expect(mesh.boundingBox!.max.x).toBeGreaterThan(0.2)
+      expect(mesh.boundingSphere!.radius).toBeLessThan(1.5)
+      expect(g.matrices).toHaveLength(2 * 42)
+      // The baked AO is left off the repeated segment.
+      expect((g.material as THREE.MeshStandardMaterial).aoMap).toBeNull()
+    }
+    const mirrored = built.instanced.find(
+      (g) => g.geometry !== index.parts[0].meshes[0].geometry
+    )!
+    const n = mirrored.geometry.getAttribute("normal")
+    for (let i = 0; i < n.count; i++)
+      expect(Math.hypot(n.getX(i), n.getY(i), n.getZ(i))).toBeCloseTo(1, 2)
+    built.dispose()
+  })
+
+  it("builds split leaves from stiles, rails and infill at their real size", () => {
+    const built = buildKit(
+      index,
+      "r",
+      glassLook,
+      42,
+      0.8,
+      2.02,
+      1.2,
+      "#000",
+      "solid"
+    )
+    for (const leaf of built.doors) {
+      const b = boxes(leaf.draws)
+      // Two stiles and two rails, 30 mm each, at any leaf width.
+      const stiles = b.filter((x) => Math.abs(x.max.x - x.min.x - 0.03) < 1e-3)
+      const rails = b.filter((x) => Math.abs(x.max.y - x.min.y - 0.03) < 1e-3)
+      expect(stiles).toHaveLength(2)
+      expect(rails).toHaveLength(2)
+      expect(rails[0].max.x - rails[0].min.x).toBeCloseTo(0.8 - 0.06, 3)
+      const glass = leaf.draws.filter((d) => d.renderOrder > 0)
+      expect(glass).toHaveLength(1)
+      expect(seeThrough(glass[0].material)).toBe(true)
+    }
+    const split = buildKit(
+      index,
+      "r",
+      look,
+      42,
+      0.8,
+      2.02,
+      1.2,
+      "#000",
+      "solid"
+    )
+    const halves = split.doors.filter((d) => d.side === "front")
+    expect(halves).toHaveLength(2)
+    for (const leaf of halves) {
+      // Half the width, the stiles still 30 mm.
+      const b = boxes(leaf.draws)
+      const stiles = b.filter((x) => Math.abs(x.max.x - x.min.x - 0.03) < 1e-3)
+      expect(stiles).toHaveLength(2)
+      const xs = stiles
+        .map((x) => (x.min.x + x.max.x) / 2)
+        .sort((p, q) => p - q)
+      expect(xs[1] - xs[0]).toBeCloseTo(0.4 - 0.03, 3)
+    }
+    built.dispose()
+    split.dispose()
+  })
+
+  it("draws a split side panel: its edge at the bottom and the top, both sides", () => {
+    const have = new Set(index.parts.map((p) => p.name))
+    const want = wantedParts(look, have, "solid")
+    expect(want.has("side:panel:edge")).toBe(true)
+    expect(want.has("side:panel")).toBe(false)
+    const built = buildKit(index, "r", look, 42, 0.6, 2.02, 1, "#000", "solid")
+    const edges = boxes(built.plain).filter(
+      (b) =>
+        Math.abs(b.max.y - b.min.y - 0.03) < 1e-3 && b.max.z - b.min.z > 0.9
+    )
+    expect(edges).toHaveLength(4)
+    expect(Math.min(...edges.map((b) => b.min.y))).toBeCloseTo(0.1, 3)
+    expect(Math.max(...edges.map((b) => b.max.y))).toBeCloseTo(2.015, 3)
+    built.dispose()
+  })
+
+  it("puts a wall cabinet on its base panel", () => {
+    const have = new Set(["base:panel", "base:plinth", "wall:bracket"])
+    const want = wantedParts({ ...look, frame: "wall-cabinet" }, have, "solid")
+    expect(want.has("base:panel")).toBe(true)
+    expect(want.has("base:plinth")).toBe(false)
+  })
+
+  it("draws a pdu:bracket behind each seated device, as long as it", () => {
+    const bracket = index.parts.find((p) => p.name === "pdu:bracket")!
+    expect(bracket.channel).toBe("channel:0u:left:rear")
+    const none = buildKit(index, "r", look, 42, 0.8, 2.02, 1.2, "#000", "solid")
+    const seated = buildKit(
+      index,
+      "r",
+      look,
+      42,
+      0.8,
+      2.02,
+      1.2,
+      "#000",
+      "solid",
+      [{ name: "channel:0u:left:rear", y: 0.22, h: 1.7 }]
+    )
+    expect(seated.plain.length).toBe(none.plain.length + 1)
+    const b = boxes(seated.plain.slice(-1))[0]
+    expect(b.min.y).toBeCloseTo(0.22, 3)
+    expect(b.max.y).toBeCloseTo(1.92, 3)
+    // Kept 42 mm in from its side and as far from the rear as modelled.
+    expect(b.max.x).toBeCloseTo(0.4 - 0.042 + 0.0015, 2)
+    expect(b.max.z).toBeGreaterThan(0.5)
+    none.dispose()
+    seated.dispose()
+  })
+
+  it("puts a U strip on every post, facing its aisle", () => {
+    const built = buildKit(index, "r", look, 42, 0.6, 2.02, 1, "#000", "solid")
+    expect(built.labels).toHaveLength(4)
+    expect(built.labels.filter((l) => l.facing === "front")).toHaveLength(2)
+    const xs = built.labels.map((l) => l.x)
+    expect(Math.min(...xs)).toBeCloseTo(-Math.max(...xs), 6)
+    expect(built.labels[0].color).toBe("#ffffff")
+    const two = buildKit(
+      index,
+      "r",
+      { ...look, frame: "2-post" },
+      42,
+      0.6,
+      2.02,
+      1,
+      "#000",
+      "solid"
+    )
+    expect(two.labels).toHaveLength(2)
+    built.dispose()
+    two.dispose()
+  })
+
+  it("numbers units as the rack ruler does", () => {
+    expect(unitNumber(0, 42, { start: 1, desc: false })).toBe(1)
+    expect(unitNumber(41, 42, { start: 1, desc: false })).toBe(42)
+    expect(unitNumber(0, 42, { start: 1, desc: true })).toBe(42)
+    expect(unitNumber(41, 42, { start: 1, desc: true })).toBe(1)
   })
 })
