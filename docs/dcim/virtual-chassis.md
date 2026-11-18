@@ -184,7 +184,8 @@ than the head's bend where the run leaves room; ends right above each
 other bend tighter at the bottom.
 
 **Show, ghost or hide.** **Stacks** sits next to **Pluggables** in the 3D
-room's View menu and on the rack's 3D toolbar:
+room's View menu, on the rack's 3D toolbar and, with **Stack** on, on a
+member's 3D card:
 
 | Choice | What draws |
 |---|---|
@@ -192,8 +193,41 @@ room's View menu and on the rack's 3D toolbar:
 | **Ghost** | The same at a quarter opacity, so the port markers read through them. |
 | **Hide** | No stack cables. The covers come back on the ports of a derived ring; a recorded cable's ports keep theirs hidden, as any cabled port does. |
 
-The choice is kept in this browser and shared by the rack's 3D view and the
-room.
+The choice is kept in this browser and shared by the rack's 3D view, the
+room and the device page.
+
+### On the device page {#on-the-device-page}
+
+A member's [3D view](devices.md#3d-model) (the Panel card's **3D**) draws
+the device alone. **Stack**, next to **Pluggables** on its toolbar, draws
+the whole stack instead. The choice is kept in this browser, for every
+member's card:
+
+- **Every member you may view**, each with its own model (a member
+  without one is left out), its lights, plugs and stack heads, and the
+  stack cables between them as the room draws them. **Stacks** shows,
+  ghosts or hides the cables.
+- **Where they stand.** Members in the same rack as this device keep their
+  real U positions, gaps included. When this device is in no rack, the rack
+  holding the most members is used. Every other member - in another rack,
+  or none - is stacked below them in member order, the lowest number on
+  top, **1U** apart. Fronts line up.
+- **This device** is outlined in the selection colour and stays the
+  viewer's own: its port markers, bays, panel and right-click menus work as
+  they do alone, and **Ports** outlines its ports. The other members show
+  no port markers.
+- **Hover** a member for its card: its name, `Member 2` (`Member 1 ·
+  master` on the master) and the master; over one of this device's ports,
+  only the port's card shows. **Click** another member to select it; its
+  panel has **Open device**. A click on this device's body, or on empty
+  space, clears the selection.
+- **Front**, **Rear**, **Top**, **3D** and **Fit** frame the whole stack.
+  When the members' models together pass the room's triangle budget
+  ([3D room](../features/floor-plans.md#the-3d-room-view)), the other
+  members draw their far copies.
+
+With one visible member, or none other with a model, the card shows the
+device alone.
 
 **Scope.** Only members the reader may view are drawn or listed, and no
 cable is drawn to a member they may not view. A recorded cable needs view

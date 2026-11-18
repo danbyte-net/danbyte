@@ -1832,6 +1832,7 @@ function DeviceFrontPanel({
               deviceId,
               deviceName: device.name,
               manufacturerId: dt?.manufacturer_id,
+              stackId: device.virtual_chassis?.id ?? null,
             }}
             note={model.source === "type" ? "From type" : "Own model"}
           />

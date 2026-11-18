@@ -1,12 +1,7 @@
 import { useEffect, useMemo, useState } from "react"
-import { Canvas, useThree } from "@react-three/fiber"
-import {
-  ContactShadows,
-  Html,
-  OrbitControls,
-  OrthographicCamera,
-  PerspectiveCamera,
-} from "@react-three/drei"
+import { Canvas } from "@react-three/fiber"
+import { Html, OrbitControls } from "@react-three/drei"
+import { Link } from "@tanstack/react-router"
 import * as THREE from "three"
 
 import { Loading } from "@/components/loading"
@@ -25,8 +20,9 @@ import {
 } from "@/components/model-viewer-menus"
 import type { BayMenuAt, PortMenuAt } from "@/components/model-viewer-menus"
 import type { FacePort, Model3DEffective } from "@/lib/api"
-import { faceCamera, faceZoom } from "@/lib/face-camera"
+import type { DeviceLeds } from "@/lib/led-state"
 import { plannedParts } from "@/lib/model-assembly"
+import { memberText } from "@/lib/stacks"
 import { useDeviceLeds } from "@/lib/use-device-leds"
 import { pluggedNames, portTransceivers } from "@/lib/port-plugs"
 import { effectivePluggables, usePluggablesMode } from "@/lib/pluggables-pref"
@@ -50,9 +46,16 @@ import type { MappedPortPick } from "./device-model-port-markers"
 import { BayHits } from "./bay-hits"
 import { PortPickPrecedence } from "./port-pick"
 import { PlugOverlayScope } from "./plug-overlay"
-import { Studio, StudioLights } from "./model-preview"
-import { STUDIO_LIGHTS } from "./studio"
-import { AO_INTENSITY, ViewerAo, aoRadiusFor, viewerLook } from "./viewer-look"
+import { Studio } from "./model-preview"
+import { StackModels } from "./stack-viewer"
+import type { StackMemberPick } from "./stack-viewer"
+import {
+  ViewerStage,
+  contactShadowFor,
+  isFaceView,
+  presetCamera,
+} from "./viewer-stage"
+import type { ViewPreset } from "./viewer-stage"
 import { modelTargetM } from "./world"
 
 /**
@@ -91,11 +94,8 @@ import { modelTargetM } from "./world"
  * every frame; the face views have none, like a drawing.
  */
 
-export type ViewPreset = "front" | "rear" | "top" | "iso"
-
-/** The orthographic presets: a face, straight on. */
-export const isFaceView = (p: ViewPreset): p is "front" | "rear" | "top" =>
-  p !== "iso"
+export { contactShadowFor, isFaceView, presetCamera }
+export type { ViewPreset }
 
 export interface ModelViewerProps {
   model: Pick<Model3DEffective, "url" | "fit" | "up" | "front"> &
@@ -119,6 +119,9 @@ export interface ModelViewerProps {
    * quiet default, where only hovered, selected, cabled and held ports
    * show (lib/port-marker-look). */
   outlineAll?: boolean
+  /** A stack member: draw every member the reader may view, stacked, with
+   * the stack cables (stack-viewer). */
+  stackView?: boolean
   /** The camera preset; `n` replays the same one. */
   view?: { preset: ViewPreset; n: number }
   /** A click on a port goes here instead of selecting it (a small preview
@@ -130,99 +133,22 @@ export interface ModelViewerProps {
   className?: string
 }
 
-/** Where the perspective camera stands for the three-quarter view, around a
- * model of upright size `size` standing on the origin, front on −Z. */
-export function presetCamera(size: V3): { position: V3; target: V3 } {
-  const cy = size[1] / 2
-  const radius = Math.max(Math.hypot(size[0], size[1], size[2]) / 2, 1e-3)
-  const d = radius * 2.6
-  return {
-    position: [d * 0.45, cy + d * 0.35, -d * 0.85],
-    target: [0, cy, 0],
-  }
-}
+/** A selection in the viewer: a mapped port, a module bay, or another
+ * member of the device's stack. */
+type Selection =
+  | { kind: "port"; port: FacePort }
+  | { kind: "bay"; bay: string }
+  | { kind: "member"; member: StackMemberPick }
 
-/** The three-quarter view's contact shadow for a model of upright size
- * `size` standing on the origin: a square reaching past the footprint,
- * catching what stands within `far` of the floor, a hair below it. `blur`
- * is drei's, in 1/256ths of the square: the soft edge stays about 4% of
- * the footprint at any model size. */
-export function contactShadowFor(size: V3): {
-  scale: number
-  far: number
-  y: number
-  blur: number
-} {
-  const foot = Math.max(size[0], size[2], 1e-3)
-  const scale = foot * 1.6
-  return {
-    scale,
-    far: Math.max(size[1], 0.05) * 0.8,
-    y: -foot * 1e-3,
-    blur: ((foot * 0.04) / scale) * 256,
-  }
-}
-
-type OrbitLike = { target: THREE.Vector3; update: () => void }
-
-/** The camera for the preset - orthographic for a face, perspective for
- * 3D - framed on the model. Re-frames on a new preset, a replay, or a
- * resize (fullscreen). */
-function Rig({
-  size,
-  view,
-}: {
-  size: V3
-  view: { preset: ViewPreset; n: number }
-}) {
-  const camera = useThree((s) => s.camera)
-  const controls = useThree((s) => s.controls) as unknown as OrbitLike | null
-  const invalidate = useThree((s) => s.invalidate)
-  const width = useThree((s) => s.size.width)
-  const height = useThree((s) => s.size.height)
-  useEffect(() => {
-    let position: V3
-    let target: V3
-    const radius = Math.max(Math.hypot(...size) / 2, 1e-3)
-    if (isFaceView(view.preset) && camera instanceof THREE.OrthographicCamera) {
-      const fc = faceCamera(size, view.preset, width / Math.max(height, 1))
-      position = fc.position
-      target = fc.target
-      if (view.preset === "top") {
-        // A hair toward the front: the orbit keeps +Y up, and this way the
-        // model's back is up on screen.
-        position = [position[0], position[1], position[2] - radius * 1e-3]
-      }
-      camera.zoom = faceZoom(fc, width, height)
-      camera.near = fc.near
-      camera.far = fc.far
-    } else {
-      ;({ position, target } = presetCamera(size))
-      camera.near = radius / 100
-      camera.far = radius * 100
-    }
-    camera.position.set(...position)
-    camera.updateProjectionMatrix()
-    if (controls) {
-      controls.target.set(...target)
-      controls.update()
-    } else {
-      camera.lookAt(...target)
-    }
-    invalidate()
-  }, [camera, controls, invalidate, size, view.preset, view.n, width, height])
-  return null
-}
-
-/** A selection in the viewer: a mapped port or a module bay. */
-type Selection = { kind: "port"; port: FacePort } | { kind: "bay"; bay: string }
-
-interface Pickers {
+export interface Pickers {
   selection: Selection | null
   onSelectPort: (pick: MappedPortPick) => void
   onPortMenu?: (pick: MappedPortPick, at: PointerMenuAt) => void
   onSelectBay?: (bay: string) => void
   onBayMenu?: (bay: string, at: PointerMenuAt) => void
+  onSelectMember?: (member: StackMemberPick) => void
+  /** Clears the selection, as a click on empty space does. */
+  onClearSelection?: () => void
 }
 
 function Fitted({
@@ -252,25 +178,6 @@ function Fitted({
     [entry.box, fitMode, up, front, w, h, dp]
   )
   const size = useMemo(() => fit.size as V3, [fit])
-  const shadow = useMemo(() => contactShadowFor(size), [size])
-  // The key's shadow and the AO, fitted to the model's upright box.
-  const keyShadow = useMemo(
-    () => ({
-      center: [0, size[1] / 2, 0] as V3,
-      radius: Math.max(Math.hypot(...size) / 2, 1e-3),
-    }),
-    [size]
-  )
-  const clip = useMemo(
-    () =>
-      new THREE.Box3(
-        new THREE.Vector3(-size[0] / 2, 0, -size[2] / 2),
-        new THREE.Vector3(size[0] / 2, size[1], size[2] / 2)
-      ),
-    [size]
-  )
-  const gl = useThree((s) => s.gl)
-  const look = useMemo(() => viewerLook(gl), [gl])
   // A new parts set re-draws the shadow (its key).
   const partsKey = parts.map((p) => `${p.bay}:${p.position}`).join(",")
   // A device's status LEDs, polled; a type's model shows them dark.
@@ -279,6 +186,58 @@ function Fitted({
     preset: "front",
     n: 0,
   }
+  // A model with its own baked occlusion needs less of the screen's.
+  const baked =
+    hasBakedAo(entry.scene) || parts.some((p) => hasBakedAo(p.entry.scene))
+  return (
+    <ViewerStage
+      size={size}
+      baked={baked}
+      view={view}
+      shadowKey={`${props.model.url}|${partsKey}`}
+    >
+      <PlugOverlayScope>
+        <FittedContent
+          entry={entry}
+          fit={fit}
+          parts={parts}
+          props={props}
+          pickers={pickers}
+          leds={props.deviceId ? (leds[props.deviceId] ?? null) : undefined}
+        />
+      </PlugOverlayScope>
+    </ViewerStage>
+  )
+}
+
+/**
+ * One fitted model with what rides on it: the device's plugs and bays,
+ * its port markers (a type's: its mapping). Mounted in a PlugOverlayScope;
+ * the stack view draws the current member with it too.
+ */
+export function FittedContent({
+  entry,
+  fit,
+  parts,
+  props,
+  pickers,
+  leds,
+  deviceId,
+  onPortHover,
+}: {
+  entry: ModelEntry
+  fit: ReturnType<typeof fittedModel>
+  parts: readonly ReadyPart[]
+  props: ModelViewerProps
+  pickers: Pickers
+  /** The device's lights and plugs (undefined: a type's model). */
+  leds: DeviceLeds | null | undefined
+  /** Publishes its stack cables' ends under this id (stack-viewer). */
+  deviceId?: string
+  /** The hovered port (by name), or null, on a change. */
+  onPortHover?: (port: string | null) => void
+}) {
+  const size = fit.size
   const bays = props.model.bays?.length ? props.model.bays : null
   const { selection } = pickers
   // The parts in the ports: the viewer's choice, ghosted while Ports is on.
@@ -287,94 +246,79 @@ function Fitted({
     !!props.outlineAll
   )
   const pickBays = !!props.deviceId && !!bays && !!pickers.onSelectBay
-  // A model with its own baked occlusion needs less of the screen's.
-  const baked =
-    hasBakedAo(entry.scene) || parts.some((p) => hasBakedAo(p.entry.scene))
   return (
     <>
-      <StudioLights shadow={keyShadow} />
-      {look === "full" && (
-        <ViewerAo
-          radius={aoRadiusFor(size)}
-          intensity={baked ? AO_INTENSITY.withBaked : AO_INTENSITY.screen}
-          clip={clip}
-        />
-      )}
-      <PlugOverlayScope>
-        <PlacedModel
-          entry={entry}
-          fit={fit}
-          parts={parts}
-          bays={bays}
-          emptyMode={props.model.empty_mode}
-          leds={props.deviceId ? (leds[props.deviceId] ?? null) : undefined}
-          showPlugs
-          pluggables={pluggables}
-          overlay={
-            pickBays
-              ? (root, drawn) => (
-                  <BayHits
-                    root={root}
-                    drawn={drawn}
-                    selected={selection?.kind === "bay" ? selection.bay : null}
-                    onSelect={pickers.onSelectBay}
-                    onMenu={pickers.onBayMenu}
-                  />
-                )
-              : props.overlay
-          }
-        />
-        {props.markers !== false &&
-          (props.deviceId ? (
-            <ModelPortMarkers
-              deviceId={props.deviceId}
-              size={size}
-              plugged={
-                pluggables === "hide"
-                  ? undefined
-                  : pluggedNames(leds[props.deviceId])
-              }
-              transceivers={portTransceivers(leds[props.deviceId])}
-              selectedPort={
-                selection?.kind === "port" ? selection.port.marker : null
-              }
-              outlineAll={props.outlineAll}
-              onSelect={pickers.onSelectPort}
-              onMenu={pickers.onPortMenu}
-            />
-          ) : props.templatePorts?.ports.length ? (
-            <TemplatePortMarkers
-              ports={props.templatePorts.ports}
-              size={size}
-              outlineAll={props.outlineAll}
-            />
-          ) : null)}
-      </PlugOverlayScope>
-      {!isFaceView(view.preset) && (
-        // One frame's depth pass per model and parts set (the key), not
-        // one on every frame the demand loop draws.
-        <ContactShadows
-          key={`${props.model.url}|${partsKey}`}
-          position={[0, shadow.y, 0]}
-          scale={shadow.scale}
-          far={shadow.far}
-          opacity={STUDIO_LIGHTS.shadow.opacity}
-          blur={shadow.blur}
-          resolution={512}
-          frames={1}
-        />
-      )}
-      {isFaceView(view.preset) ? (
-        <OrthographicCamera makeDefault />
-      ) : (
-        <PerspectiveCamera makeDefault fov={35} />
-      )}
-      <Rig size={size} view={view} />
+      <PlacedModel
+        entry={entry}
+        fit={fit}
+        parts={parts}
+        bays={bays}
+        emptyMode={props.model.empty_mode}
+        leds={leds}
+        showPlugs
+        pluggables={pluggables}
+        deviceId={deviceId}
+        overlay={
+          pickBays
+            ? (root, drawn) => (
+                <BayHits
+                  root={root}
+                  drawn={drawn}
+                  selected={selection?.kind === "bay" ? selection.bay : null}
+                  onSelect={pickers.onSelectBay}
+                  onMenu={pickers.onBayMenu}
+                />
+              )
+            : props.overlay
+        }
+      />
+      {props.markers !== false &&
+        (props.deviceId ? (
+          <ModelPortMarkers
+            deviceId={props.deviceId}
+            size={size}
+            plugged={pluggables === "hide" ? undefined : pluggedNames(leds)}
+            transceivers={portTransceivers(leds)}
+            selectedPort={
+              selection?.kind === "port" ? selection.port.marker : null
+            }
+            outlineAll={props.outlineAll}
+            onSelect={pickers.onSelectPort}
+            onMenu={pickers.onPortMenu}
+            onHoverChange={onPortHover}
+          />
+        ) : props.templatePorts?.ports.length ? (
+          <TemplatePortMarkers
+            ports={props.templatePorts.ports}
+            size={size}
+            outlineAll={props.outlineAll}
+          />
+        ) : null)}
     </>
   )
 }
 
 function Model({
+  props,
+  pickers,
+}: {
+  props: ModelViewerProps
+  pickers: Pickers
+}) {
+  const single = <SingleModel props={props} pickers={pickers} />
+  if (props.stackView && props.deviceId)
+    return (
+      <StackModels
+        deviceId={props.deviceId}
+        props={props}
+        pickers={pickers}
+        fallback={single}
+      />
+    )
+  return single
+}
+
+function SingleModel({
   props,
   pickers,
 }: {
@@ -392,21 +336,29 @@ function Model({
   )
   const partEntries = useDeviceModels(planned.map((p) => p.url))
   const parts = readyParts(planned, partEntries)
-  if (!entry || entry.status === "loading")
-    return (
-      <Html center>
-        <Loading />
-      </Html>
-    )
-  if (entry.status === "error" || !entry.box)
-    return (
-      <Html center>
-        <span className="text-xs whitespace-nowrap text-muted-foreground">
-          The model could not be loaded.
-        </span>
-      </Html>
-    )
+  if (!entry || entry.status === "loading") return <ViewerLoading />
+  if (entry.status === "error" || !entry.box) return <ViewerFailed />
   return <Fitted entry={entry} parts={parts} props={props} pickers={pickers} />
+}
+
+/** The canvas while the model loads. */
+export function ViewerLoading() {
+  return (
+    <Html center>
+      <Loading />
+    </Html>
+  )
+}
+
+/** The canvas when the model could not be loaded. */
+export function ViewerFailed() {
+  return (
+    <Html center>
+      <span className="text-xs whitespace-nowrap text-muted-foreground">
+        The model could not be loaded.
+      </span>
+    </Html>
+  )
 }
 
 /** The selected port or bay, over the canvas's corner. */
@@ -421,6 +373,34 @@ function SelectionPanel({
 }) {
   const openPort = useOpenPort(deviceId)
   const bays = useDeviceBays(selection.kind === "bay" ? deviceId : null)
+  if (selection.kind === "member") {
+    const m = selection.member
+    return (
+      <PanelShell
+        label="Stack member"
+        title={<span className="font-mono">{m.name}</span>}
+        titleText={m.name}
+        onClose={onClose}
+        footer={
+          <Button size="sm" variant="outline" asChild>
+            <Link to="/devices/$id" params={{ id: m.device }}>
+              Open device
+            </Link>
+          </Button>
+        }
+      >
+        <PanelRow label="Stack">
+          <span className="font-mono">{m.stack.name}</span>
+        </PanelRow>
+        <PanelRow label="Member">{memberText(m.stack)}</PanelRow>
+        {!m.stack.master && m.stack.master_name && (
+          <PanelRow label="Master">
+            <span className="font-mono">{m.stack.master_name}</span>
+          </PanelRow>
+        )}
+      </PanelShell>
+    )
+  }
   if (selection.kind === "port") {
     const p = selection.port
     const far = p.peer
@@ -492,8 +472,11 @@ export default function ModelViewer(props: ModelViewerProps) {
   const portPermsIface = usePortPerms("interface")
   const bayPerms = useBayPerms()
   const bays = useDeviceBays(props.model.bays?.length ? deviceId : null)
-  // A new device or model: nothing of the old one stays selected.
-  useEffect(() => setSelection(null), [deviceId, props.model.url])
+  // A new device, model or view: nothing of the old one stays selected.
+  useEffect(
+    () => setSelection(null),
+    [deviceId, props.model.url, props.stackView]
+  )
 
   const pickers: Pickers = {
     selection,
@@ -512,6 +495,8 @@ export default function ModelViewer(props: ModelViewerProps) {
     onSelectBay: props.onPort
       ? undefined
       : (bay) => setSelection({ kind: "bay", bay }),
+    onSelectMember: (member) => setSelection({ kind: "member", member }),
+    onClearSelection: () => setSelection(null),
     onBayMenu: (bay, at) => {
       const row = bays.data?.results.find((b) => b.name === bay) ?? null
       if (bayMenuItems(row, bayPerms).length === 0) return

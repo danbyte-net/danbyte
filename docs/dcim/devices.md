@@ -354,6 +354,10 @@ perspective mid-drag would jump); pick **3D** for depth. **Fit** re-frames
 the current view, **Ports** outlines every
 [mapped port](device-catalog.md#model-ports) - for mapping and checking -
 and **Fullscreen** fills the screen. The viewer is lit as the 3D room is.
+On a [stack member](virtual-chassis.md#on-the-device-page), **Stack**
+draws every member you may view with the stack cables between them, and
+**Stacks** shows, ghosts or hides those cables; both are kept in this
+browser.
 
 The ports are quiet by default: the model's own cages and jacks and its
 port LEDs show them, so a free port draws nothing until you point at it.

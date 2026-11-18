@@ -13,6 +13,8 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { TooltipProvider } from "@/components/ui/tooltip"
 
+import { STACK_VIEW_KEY } from "@/lib/stack-view"
+
 import { ModelViewerCard } from "./model-viewer-card"
 
 // The Overview's "3D model" card: the toolbar drives the viewer (a WebGL
@@ -24,6 +26,7 @@ vi.mock("@/components/floorplan3d/model-viewer", () => ({
     deviceId?: string | null
     markers?: boolean
     outlineAll?: boolean
+    stackView?: boolean
     view?: { preset: string }
   }) => (
     <div
@@ -32,6 +35,7 @@ vi.mock("@/components/floorplan3d/model-viewer", () => ({
       data-device={p.deviceId ?? ""}
       data-markers={String(p.markers)}
       data-outline={String(!!p.outlineAll)}
+      data-stack={String(!!p.stackView)}
       data-view={p.view?.preset}
     />
   ),
@@ -106,6 +110,28 @@ describe("ModelViewerCard", () => {
     fireEvent.click(ports)
     expect(viewer.dataset.outline).toBe("false")
     expect(screen.getByRole("button", { name: "Fullscreen" })).toBeTruthy()
+  })
+
+  it("offers Stack on a stack member and remembers it", async () => {
+    mount(<ModelViewerCard source={{ model: MODEL, deviceId: "d1" }} />)
+    await screen.findByTestId("model-viewer")
+    expect(screen.queryByRole("button", { name: "Stack" })).toBeNull()
+    cleanup()
+    mount(
+      <ModelViewerCard
+        source={{ model: MODEL, deviceId: "d1", stackId: "vc1" }}
+      />
+    )
+    const viewer = await screen.findByTestId("model-viewer")
+    expect(viewer.dataset.stack).toBe("false")
+    expect(screen.queryByRole("button", { name: /Stacks/ })).toBeNull()
+    fireEvent.click(screen.getByRole("button", { name: "Stack" }))
+    expect(viewer.dataset.stack).toBe("true")
+    expect(window.localStorage.getItem(STACK_VIEW_KEY)).toBe("1")
+    // The stack cables' Show / Ghost / Hide, while the stack shows.
+    expect(screen.getByRole("button", { name: /Stacks/ })).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "Stack" }))
+    expect(viewer.dataset.stack).toBe("false")
   })
 
   it("offers no Ports toggle for a type with nothing mapped", async () => {

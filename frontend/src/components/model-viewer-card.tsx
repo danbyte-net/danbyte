@@ -25,6 +25,14 @@ import {
   setPluggablesMode,
   usePluggablesMode,
 } from "@/lib/pluggables-pref"
+import { setStackViewOn, useStackViewOn } from "@/lib/stack-view"
+import {
+  STACKS_LABEL,
+  STACKS_MODES,
+  readStacksMode,
+  setStacksMode,
+  useStacksMode,
+} from "@/lib/stacks-pref"
 import { cn } from "@/lib/utils"
 import type {
   ModelViewerProps,
@@ -48,6 +56,9 @@ export interface ViewerSource {
   manufacturerId?: string | null
   /** A type: its mapping, drawn neutral. */
   templatePorts?: ModelPortsDoc | null
+  /** A stack member's stack: the toolbar offers Stack, the whole stack
+   * with its stack cables (stack-viewer). */
+  stackId?: string | null
   /** Drawn beside the model, in its frame (model-viewer). */
   overlay?: ModelViewerProps["overlay"]
 }
@@ -65,7 +76,9 @@ const PRESETS: { value: ViewPreset; label: string }[] = [
  * Ports to outline every port (else only hovered, selected, cabled and
  * held ones show), Pluggables to show, ghost or hide the transceivers,
  * cords and plugs in a device's ports (the viewer's choice, shared with
- * the room; Ports ghosts them while it's on), fullscreen - for the
+ * the room; Ports ghosts them while it's on), on a stack member Stack to
+ * draw the whole stack (and Stacks to show, ghost or hide its cables, the
+ * room's choice), fullscreen - for the
  * Overview's "3D model" card and the device Panel's 3D view. `note` sits
  * at the toolbar's end.
  */
@@ -88,6 +101,8 @@ export function ModelViewerFrame({
   })
   const [outlineAll, setOutlineAll] = useState(false)
   const pluggables = usePluggablesMode()
+  const stacksMode = useStacksMode()
+  const stackOn = useStackViewOn() && !!source.deviceId && !!source.stackId
   // The frame while it is fullscreen: menus mount inside it.
   const [fullEl, setFullEl] = useState<HTMLElement | null>(null)
   const full = fullEl !== null
@@ -134,31 +149,29 @@ export function ModelViewerFrame({
         )}
         {tools}
         {source.deviceId && (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <BarMenuTrigger
-                className={cn(pluggables === "show" && "text-muted-foreground")}
-              >
-                Pluggables
-              </BarMenuTrigger>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              align="start"
-              className="min-w-32"
-              container={fullEl ?? undefined}
-            >
-              <DropdownMenuRadioGroup
-                value={pluggables}
-                onValueChange={(v) => setPluggablesMode(readPluggablesMode(v))}
-              >
-                {PLUGGABLES_MODES.map((m) => (
-                  <DropdownMenuRadioItem key={m} value={m}>
-                    {PLUGGABLES_LABEL[m]}
-                  </DropdownMenuRadioItem>
-                ))}
-              </DropdownMenuRadioGroup>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <ModeMenu
+            label="Pluggables"
+            value={pluggables}
+            modes={PLUGGABLES_MODES}
+            labels={PLUGGABLES_LABEL}
+            container={fullEl}
+            onChange={(v) => setPluggablesMode(readPluggablesMode(v))}
+          />
+        )}
+        {source.deviceId && source.stackId && (
+          <BarToggle pressed={stackOn} onClick={() => setStackViewOn(!stackOn)}>
+            Stack
+          </BarToggle>
+        )}
+        {stackOn && (
+          <ModeMenu
+            label="Stacks"
+            value={stacksMode}
+            modes={STACKS_MODES}
+            labels={STACKS_LABEL}
+            container={fullEl}
+            onChange={(v) => setStacksMode(readStacksMode(v))}
+          />
         )}
         <span className="ml-auto flex items-center gap-2">
           {note && (
@@ -181,11 +194,55 @@ export function ModelViewerFrame({
         <LazyModelViewer
           {...source}
           outlineAll={outlineAll}
+          stackView={stackOn}
           view={view}
           className={full ? "min-h-0 flex-1" : className}
         />
       </Suspense>
     </div>
+  )
+}
+
+/** A Show / Ghost / Hide choice on the toolbar, muted at its default. */
+function ModeMenu<TMode extends string>({
+  label,
+  value,
+  modes,
+  labels,
+  container,
+  onChange,
+}: {
+  label: string
+  value: TMode
+  modes: readonly TMode[]
+  labels: Record<TMode, string>
+  /** The fullscreen frame: the menu mounts inside it. */
+  container: HTMLElement | null
+  onChange: (v: string) => void
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <BarMenuTrigger
+          className={cn(value === modes[0] && "text-muted-foreground")}
+        >
+          {label}
+        </BarMenuTrigger>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="start"
+        className="min-w-32"
+        container={container ?? undefined}
+      >
+        <DropdownMenuRadioGroup value={value} onValueChange={onChange}>
+          {modes.map((m) => (
+            <DropdownMenuRadioItem key={m} value={m}>
+              {labels[m]}
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }
 

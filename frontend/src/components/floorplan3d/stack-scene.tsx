@@ -285,13 +285,25 @@ function StackTube({
   )
 }
 
-/** A stack member's hover card: the stack, its member number, the master. */
-export function StackCard({ stack, at }: { stack: DeviceStack; at: Vec3 }) {
+/** A stack member's hover card: the stack (or `memberName`, the
+ * member's own name, in the device page's stack view), its member number,
+ * the master. */
+export function StackCard({
+  stack,
+  at,
+  memberName,
+}: {
+  stack: DeviceStack
+  at: Vec3
+  memberName?: string
+}) {
   return (
     <Html position={at} zIndexRange={[20, 0]} style={{ pointerEvents: "none" }}>
       <KeepInView>
         <div className="-translate-y-full rounded-md border border-border bg-popover/95 px-2 py-1.5 text-[11px] whitespace-nowrap text-popover-foreground shadow-md">
-          <div className="font-mono font-semibold">{stack.name}</div>
+          <div className="font-mono font-semibold">
+            {memberName ?? stack.name}
+          </div>
           <div className="text-muted-foreground">{memberText(stack)}</div>
           {!stack.master && stack.master_name && (
             <div className="text-muted-foreground">

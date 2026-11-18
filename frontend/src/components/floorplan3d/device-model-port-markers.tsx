@@ -116,6 +116,7 @@ export function ModelPortMarkers({
   outlineAll = false,
   plugged,
   transceivers,
+  onHoverChange,
 }: {
   deviceId: string
   /** The fitted model's upright size (m). */
@@ -134,6 +135,8 @@ export function ModelPortMarkers({
   /** Rim every port (mapping, inspection), not only the ones that carry
    * something. */
   outlineAll?: boolean
+  /** The hovered port (by name), or null, on a change. */
+  onHoverChange?: (port: string | null) => void
 }) {
   const facePorts = useQuery({
     queryKey: ["device-face-ports", deviceId],
@@ -216,6 +219,12 @@ export function ModelPortMarkers({
     if (!plugOverlay) return
     return () => plugOverlay.setSolid([])
   }, [plugOverlay])
+  const hoverChange = useRef(onHoverChange)
+  hoverChange.current = onHoverChange
+  useEffect(() => {
+    hoverChange.current?.(hovered)
+  }, [hovered])
+  useEffect(() => () => hoverChange.current?.(null), [])
   return (
     <MarkerMesh
       placed={placed}
