@@ -478,7 +478,9 @@ class PayloadTests(_Base):
                                      interface=self.te1, part_id="SFP-10G-SR=",
                                      serial_number="S1")
         self._cable(self.te1, type="smf-os2", color="#00FF00")
-        p = self._by_port()["Te1/0/1"]
+        p = dict(self._by_port()["Te1/0/1"])
+        # Which end of its cable the port is (a head's END_BAND colour).
+        self.assertIn(p.pop("end"), ("a", "b"))
         self.assertEqual(p, {
             "port": "Te1/0/1", "bay": None, "name": "Te1/0/1", "port_type": "10gbase-x-sfpp",
             "cabled": True, "color": "#00ff00", "cable_type": "smf-os2",

@@ -230,6 +230,8 @@ SITE_PATH_EXEMPT: dict[str, str] = {
     "wirelesslan": "tenant-wide; its VLAN is a reference",
     "prefixlistrule": "child of a tenant-wide prefix list; prefix is a reference",
     "virtnetwork": "tenant-wide integration record; its VLAN is a reference",
+    # Scoped by its viewset through its terminations (api.cable_scope).
+    "cable": "scoped through its ends; auto_chassis names the stack that made it",
     # Integration configuration naming a site as a target, managed tenant-wide.
     "virtplacementrule": "integration config; the site is where it places VMs",
     "zabbixadoptionrule": "integration config; the site is where it adopts hosts",
