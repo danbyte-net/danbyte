@@ -199,10 +199,11 @@ from .io_views import (
     io_import_view,
     io_types_view,
 )
-from .lifecycle_api import lifecycle_overview
+from .lifecycle_list import LifecycleViewSet
 from .list_fields import list_fields_view
 from .mac_bulk import mac_bulk_remove_view, mac_object_bulk_delete_view
 from .mac_views import MacListViewSet, mac_detail_view
+from .port_utilization_list import PortUtilizationViewSet
 from .oui_views import OuiRangeViewSet, oui_import, oui_import_run, oui_status
 from .led_state_api import device_leds_view
 from .panel_layouts_api import PanelLayoutViewSet
@@ -687,7 +688,13 @@ urlpatterns = [
     path("inventory/ansible/", ansible_inventory, name="inventory-ansible"),
     path("sbom/", sbom, name="sbom"),
     # The Lifecycle page (#436): end dates per device and VM, soonest first.
-    path("lifecycle/", lifecycle_overview, name="lifecycle-overview"),
+    path("lifecycle/", LifecycleViewSet.as_view({"get": "list"}), name="lifecycle-overview"),
+    path("lifecycle/facets/", LifecycleViewSet.as_view({"get": "table_facets"}),
+         name="lifecycle-facets"),
+    path("lifecycle/table-ids/", LifecycleViewSet.as_view({"get": "table_ids"}),
+         name="lifecycle-table-ids"),
+    path("lifecycle/summary/", LifecycleViewSet.as_view({"get": "summary"}),
+         name="lifecycle-summary"),
     path("lifecycle/versions/", software_versions_summary, name="lifecycle-versions"),
     path("virtual-machines/<uuid:pk>/render/", vm_render_view, name="vm-render"),
     # Generic round-trip export/import (any IO-capable object type).
@@ -739,6 +746,12 @@ urlpatterns = [
     path("oui/status/", oui_status, name="oui-status"),
     path("oui/import/", oui_import, name="oui-import"),
     path("oui/import/<uuid:run_id>/", oui_import_run, name="oui-import-run"),
+    path("port-utilization/", PortUtilizationViewSet.as_view({"get": "list"}),
+         name="port-utilization"),
+    path("port-utilization/facets/", PortUtilizationViewSet.as_view({"get": "table_facets"}),
+         name="port-utilization-facets"),
+    path("port-utilization/table-ids/", PortUtilizationViewSet.as_view({"get": "table_ids"}),
+         name="port-utilization-table-ids"),
     path("macs/", MacListViewSet.as_view({"get": "list"}), name="macs"),
     path("macs/facets/", MacListViewSet.as_view({"get": "table_facets"}), name="macs-facets"),
     path("macs/table-ids/", MacListViewSet.as_view({"get": "table_ids"}), name="macs-table-ids"),

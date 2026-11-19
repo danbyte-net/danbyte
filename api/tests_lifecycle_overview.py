@@ -94,9 +94,15 @@ class _Base(APITestCase):
         return c
 
     def get(self, **params):
+        """The list, every page (#535), with the window chips' summary."""
+        params.setdefault("page_size", 1000)
         r = self.client.get(URL, params)
         self.assertEqual(r.status_code, 200, r.content)
-        return r.json()
+        body = r.json()
+        summary = self.client.get(f"{URL}summary/",
+                                  {k: v for k, v in params.items() if k in ("source", "site")})
+        self.assertEqual(summary.status_code, 200, summary.content)
+        return {**body, **summary.json()}
 
     def rows(self, **params):
         return {(r["object"]["name"], r["source"]): r for r in self.get(**params)["results"]}
@@ -396,10 +402,10 @@ class QueryCountTests(_Base):
         self.contract(f"C{start}", devices, start=d(-20), end=d(30))
 
     def _count(self):
-        self.client.get(URL)
+        self.client.get(URL, {"page_size": 1000})
         with CaptureQueriesContext(connection) as ctx:
-            body = self.get()
-        return len(ctx.captured_queries), body
+            r = self.client.get(URL, {"page_size": 1000})
+        return len(ctx.captured_queries), r.json()
 
     def test_one_device_costs_what_two_hundred_cost(self):
         self._fleet(1, 0)

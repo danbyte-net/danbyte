@@ -22,6 +22,7 @@ _UPLINK_FIELDS = ("is_uplink", "never_uplink", "lag_id", "type")
 def _remember_loaded(model, fields: tuple[str, ...]) -> None:
     """Keep ``fields``' values as loaded on every instance of ``model`` read
     from the database - what a later save compares against."""
+    _TRACKED[model] = fields
     base = model.from_db.__func__
 
     def from_db(cls, db, field_names, values):
@@ -37,8 +38,16 @@ def _loaded(instance) -> dict:
     return getattr(instance, "_summary_loaded", None) or {}
 
 
-def _reloaded(instance, fields) -> None:
-    instance._summary_loaded = {f: getattr(instance, f, None) for f in fields}
+#: Each tracked model's fields, kept as loaded (:func:`_remember_loaded`).
+_TRACKED: dict = {}
+
+
+def _resnapshot(sender, instance, raw=False, **kwargs):
+    """After every receiver here has compared: the saved values are the
+    loaded ones for the instance's next save. Connected last."""
+    fields = _TRACKED.get(sender)
+    if fields:
+        instance._summary_loaded = {f: getattr(instance, f, None) for f in fields}
 
 
 def _cached(instance, name):
@@ -104,8 +113,6 @@ def _mac_saved(sender, instance, created, update_fields=None, raw=False, **kwarg
         f in before and before[f] != getattr(instance, f) for f in _UPLINK_FIELDS
     ):
         _touch_learned_on_device(tenant_id or mac_tenant(instance), instance.device_id)
-    _reloaded(instance, _MAC_TRACKED + _UPLINK_FIELDS if isinstance(instance, Interface)
-              else fields)
 
 
 def _mac_saving(sender, instance, raw=False, update_fields=None, **kwargs):
@@ -196,13 +203,134 @@ def _bulk_updated(sender, rows=(), updates=None, per_row=None, **kwargs):
                 _touch_learned_on_device(mac_tenant(next(iter(rows))), dev)
 
 
+# ─── Port utilization (#535) ─────────────────────────────────────────────────
+
+#: What a port's save can change about its device's counts.
+_PORT_TRACKED = {
+    "interface": ("device_id", "type", "virtual", "status_id", "mark_connected"),
+    "frontport": ("device_id", "mark_connected"),
+}
+
+
+def _port_saved(sender, instance, created, raw=False, update_fields=None, **kwargs):
+    from . import port_stats
+
+    if raw:
+        return
+    tracked = _PORT_TRACKED[sender._meta.model_name]
+    before = _loaded(instance)
+    if not created:
+        if update_fields is not None and not {f.removesuffix("_id") for f in tracked} \
+                & {f.removesuffix("_id") for f in update_fields}:
+            return
+        if all(f in before and before[f] == getattr(instance, f) for f in tracked):
+            return
+    devices = {instance.device_id, before.get("device_id")}
+    port_stats.touch(mac_tenant(instance) if sender._meta.model_name == "interface"
+                     else _device_tenant(instance.device_id), devices)
+
+
+def _port_deleted(sender, instance, **kwargs):
+    from . import port_stats
+
+    port_stats.touch(_device_tenant(instance.device_id), [instance.device_id])
+
+
+def _point_devices(instance) -> set:
+    """The devices of the interface or front port a cable end or a
+    reservation names."""
+    from .models import FrontPort, Interface
+
+    out = set()
+    if getattr(instance, "interface_id", None):
+        out |= set(Interface.objects.filter(pk=instance.interface_id)
+                   .values_list("device_id", flat=True))
+    if getattr(instance, "front_port_id", None):
+        out |= set(FrontPort.objects.filter(pk=instance.front_port_id)
+                   .values_list("device_id", flat=True))
+    return out
+
+
+def _point_changed(sender, instance, raw=False, **kwargs):
+    from . import port_stats
+    from .models import Device
+
+    if raw:
+        return
+    devices = _point_devices(instance)
+    for tid, did in Device.objects.filter(pk__in=devices).values_list("tenant_id", "pk"):
+        port_stats.touch(tid, [did])
+
+
+def _cable_devices_qs(cable_ids):
+    from django.db.models import F
+    from django.db.models.functions import Coalesce
+
+    from .models import CableTermination
+
+    return (CableTermination.objects.filter(cable_id__in=cable_ids)
+            .annotate(_d=Coalesce(F("interface__device_id"), F("front_port__device_id")))
+            .exclude(_d=None))
+
+
+def _touch_cable_devices(cable_ids) -> None:
+    from . import port_stats
+
+    ends = _cable_devices_qs(cable_ids)
+    for tid in set(ends.values_list("cable__tenant_id", flat=True)):
+        port_stats.touch_query(tid, ends.filter(cable__tenant_id=tid).values_list("_d", flat=True))
+
+
+def _cable_saved(sender, instance, created, raw=False, **kwargs):
+    if raw or created:
+        return
+    before = _loaded(instance)
+    if "status_id" in before and before["status_id"] == instance.status_id:
+        return
+    _touch_cable_devices([instance.pk])
+
+
+def _status_saved(sender, instance, created, raw=False, **kwargs):
+    """An interface status now counts as capacity, or stops: every device
+    with an interface in it."""
+    from . import port_stats
+    from .models import Interface
+
+    before = _loaded(instance)
+    if raw or created or before.get("excludes_capacity") == instance.excludes_capacity:
+        return
+    port_stats.touch_query(instance.tenant_id, Interface.objects.filter(
+        status=instance, device__tenant_id=instance.tenant_id).values_list("device_id", flat=True))
+
+
+def _bulk_ports(sender, rows=(), updates=None, per_row=None, **kwargs):
+    from . import port_stats
+    from .models import Cable, FrontPort, Interface
+
+    keys = set(updates or {}) | {k for v in (per_row or {}).values() for k in v}
+    keys = {k.removesuffix("_id") for k in keys}
+    if sender in (Interface, FrontPort):
+        tracked = {f.removesuffix("_id") for f in _PORT_TRACKED[sender._meta.model_name]}
+        if keys & tracked:
+            devices = {r.device_id for r in rows} | {
+                (updates or {}).get("device_id"), (updates or {}).get("device")}
+            devices = {getattr(d, "pk", d) for d in devices if d}
+            from .models import Device
+
+            for tid, did in Device.objects.filter(pk__in=devices).values_list("tenant_id", "pk"):
+                port_stats.touch(tid, [did])
+    elif sender is Cable and "status" in keys:
+        _touch_cable_devices([r.pk for r in rows])
+
+
 def connect() -> None:
     from audit.bulk import bulk_updated
     from monitoring.models import MonitoringSettings
 
     from .models import Device, Interface, IPAddress, MACAddress, OuiPrefix, VMInterface
 
-    _remember_loaded(Interface, ("mac_address", *_UPLINK_FIELDS))
+    _remember_loaded(Interface, ("mac_address", *_UPLINK_FIELDS,
+                                 *_PORT_TRACKED["interface"]))
     _remember_loaded(VMInterface, ("mac_address",))
     _remember_loaded(IPAddress, ("mac_address",))
     _remember_loaded(MACAddress, _MAC_TRACKED)
@@ -218,3 +346,26 @@ def connect() -> None:
     post_save.connect(_mac_settings_saved, sender=MonitoringSettings,
                       dispatch_uid="summary.mac_settings")
     bulk_updated.connect(_bulk_updated, dispatch_uid="summary.bulk_updated")
+    bulk_updated.connect(_bulk_ports, dispatch_uid="summary.bulk_ports")
+
+    from .models import Cable, CableTermination, FrontPort, PortReservation, Status
+
+    _remember_loaded(FrontPort, _PORT_TRACKED["frontport"])
+    _remember_loaded(Cable, ("status_id",))
+    _remember_loaded(Status, ("excludes_capacity",))
+    for model in (Interface, FrontPort):
+        label = model._meta.label_lower
+        post_save.connect(_port_saved, sender=model, dispatch_uid=f"summary.port_saved.{label}")
+        post_delete.connect(_port_deleted, sender=model,
+                            dispatch_uid=f"summary.port_deleted.{label}")
+    for model in (CableTermination, PortReservation):
+        label = model._meta.label_lower
+        post_save.connect(_point_changed, sender=model,
+                          dispatch_uid=f"summary.point_saved.{label}")
+        post_delete.connect(_point_changed, sender=model,
+                            dispatch_uid=f"summary.point_deleted.{label}")
+    post_save.connect(_cable_saved, sender=Cable, dispatch_uid="summary.cable_saved")
+    post_save.connect(_status_saved, sender=Status, dispatch_uid="summary.status_saved")
+    for model in _TRACKED:
+        post_save.connect(_resnapshot, sender=model,
+                          dispatch_uid=f"summary.resnapshot.{model._meta.label_lower}")

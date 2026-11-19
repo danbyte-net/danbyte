@@ -156,9 +156,15 @@ def device_port_counts(devices, *, count_virtual: bool) -> dict:
 def used_pct(row: dict) -> int | None:
     """Connected plus reserved, as a whole percentage of the counted total;
     ``None`` when nothing is counted."""
-    if not row.get("total"):
+    total = row.get("total")
+    if not total:
         return None
-    return round((row["connected"] + row["reserved"]) / row["total"] * 100)
+    # Rounded half to even in whole numbers - the stored list's SQL does the
+    # same (api.port_stats.annotate), so the two never differ by a float.
+    q, r = divmod((row["connected"] + row["reserved"]) * 100, total)
+    if 2 * r > total or (2 * r == total and q % 2):
+        q += 1
+    return q
 
 
 def utilization_payload(devices, *, count_virtual: bool) -> dict:

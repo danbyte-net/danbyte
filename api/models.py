@@ -1586,7 +1586,16 @@ def materialize_device_components(device) -> dict[str, int]:
             if svc.monitored:
                 sync_service_checks(svc)
 
+    _ports_changed(device)
     return created
+
+
+def _ports_changed(device, *more_ids) -> None:
+    """Components were stamped out in bulk (no save signals): the device's
+    stored port counts follow (#535)."""
+    from .port_stats import touch
+
+    touch(device.tenant_id, [device.pk, *more_ids])
 
 
 #: Marker/slot kind → the device relation it references, for the sync-from-type
@@ -1761,6 +1770,8 @@ def stamp_marker_components(device) -> dict[str, int]:
         if made:
             model.objects.bulk_create(made)
             created[rel] = len(made)
+    if created:
+        _ports_changed(device)
     return created
 
 
@@ -2213,6 +2224,7 @@ def install_module_report(module, *, adopt=False) -> dict:
                 for t, n in _module_template_names(module, k).items() if n not in have]
         k.model.objects.bulk_create(made)
         created[k.key] = len(made)
+    _ports_changed(module.device)
     return {"created": created, "adopted": sorted(adopted)}
 
 
@@ -2441,6 +2453,7 @@ def reinstall_module(module, before=None, *, confirm_remove=False, adopt=False) 
         for c, t in p["adopted"]:
             _adopt(module, kind, c, t)
         kind.model.objects.bulk_create([kind.build(module, t, n) for t, n in p["created"]])
+    _ports_changed(module.device, before.get("device_id"))
     return report
 
 
@@ -12147,3 +12160,67 @@ class MacSummary(models.Model):
 
     def __str__(self) -> str:
         return self.key
+
+
+
+class DevicePortStat(models.Model):
+    """A device's port counts by kind and state (#535) - what
+    ``api.port_utilization.port_kinds`` counts, stored so the Port
+    utilization list sorts and pages on them. Connected includes marked, as
+    there. The headline (with or without virtual interfaces, by the
+    setting) is summed at read. No row: the device has no counted port."""
+
+    device = models.OneToOneField(
+        "Device", on_delete=models.CASCADE, primary_key=True, related_name="port_stat"
+    )
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name="+")
+    if_total = models.PositiveIntegerField(default=0)
+    if_connected = models.PositiveIntegerField(default=0)
+    if_reserved = models.PositiveIntegerField(default=0)
+    if_marked = models.PositiveIntegerField(default=0)
+    virt_total = models.PositiveIntegerField(default=0)
+    virt_connected = models.PositiveIntegerField(default=0)
+    virt_reserved = models.PositiveIntegerField(default=0)
+    virt_marked = models.PositiveIntegerField(default=0)
+    fp_total = models.PositiveIntegerField(default=0)
+    fp_connected = models.PositiveIntegerField(default=0)
+    fp_reserved = models.PositiveIntegerField(default=0)
+    fp_marked = models.PositiveIntegerField(default=0)
+    refreshed_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [models.Index(fields=["tenant"], name="device_port_stat_tenant")]
+
+    def __str__(self) -> str:
+        return f"Ports of {self.device_id}"
+
+
+
+class LifecycleEntry(models.Model):
+    """One row of the Lifecycle page (#436, #535): a device's hardware, OS
+    or support coverage, a VM's OS, or an installed application. A database
+    view (``api_lifecycle_entry``, migration 0298) naming only which rows
+    exist - every name, date and mapping is joined at read through these
+    keys (``api.lifecycle_api``), so the page is never stale and needs no
+    upkeep. The view reads ``id``, ``tenant_id``, ``device_type_id`` and
+    ``platform_id`` of devices, VMs and installs and their parent keys: a
+    migration that alters one of those columns drops the view first and
+    creates it again after (``api.lifecycle_view``)."""
+
+    id = models.CharField(max_length=64, primary_key=True)
+    tenant = models.ForeignKey(Tenant, on_delete=models.DO_NOTHING, related_name="+")
+    kind = models.CharField(max_length=16)
+    source = models.CharField(max_length=16)
+    device = models.ForeignKey("Device", on_delete=models.DO_NOTHING, null=True,
+                               related_name="+")
+    virtual_machine = models.ForeignKey("VirtualMachine", on_delete=models.DO_NOTHING,
+                                        null=True, related_name="+")
+    install = models.ForeignKey("InstalledSoftware", on_delete=models.DO_NOTHING, null=True,
+                                related_name="+")
+
+    class Meta:
+        managed = False
+        db_table = "api_lifecycle_entry"
+
+    def __str__(self) -> str:
+        return self.id
