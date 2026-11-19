@@ -331,7 +331,8 @@ class SummaryFollowsWritesTests(_Base):
 
     def _assert_true(self):
         self._get("/api/macs/")  # works the marks off
-        self.assertEqual(ListSummaryDirty.objects.filter(tenant=self.tenant).count(), 0)
+        self.assertEqual(ListSummaryDirty.objects.filter(
+            tenant=self.tenant, kind=mac_summary.KIND).count(), 0)
         self.assertEqual(mac_summary.check(self.tenant), 0)
 
     def _row(self, mac):
