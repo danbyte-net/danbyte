@@ -21,8 +21,10 @@ DOOR_CHOICES = [("none", "None"), ("perforated", "Perforated"), ("glass", "Glass
                 ("split-solid", "Split solid")]
 HINGE_CHOICES = [("left", "Left"), ("right", "Right")]
 TOP_CHOICES = [("vented", "Vented"), ("solid", "Solid"), ("fans", "Fans"),
-               ("brush", "Brush")]
-BASE_CHOICES = [("plinth", "Plinth"), ("casters", "Casters"), ("feet", "Feet")]
+               ("brush", "Brush"), ("none", "None")]
+#: ``plate`` is a 2-post frame's floor plate; ``none`` stands on the frame alone.
+BASE_CHOICES = [("plinth", "Plinth"), ("casters", "Casters"), ("feet", "Feet"),
+                ("plate", "Base plate"), ("none", "None")]
 
 #: The named colours, as the drawn rack paints them.
 COLOURS = {"black": "#1b1c1e", "grey": "#c9ccce", "white": "#f2f2f0"}

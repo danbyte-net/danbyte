@@ -9,8 +9,8 @@ export type RackFrame = "2-post" | "4-post" | "cabinet" | "wall-cabinet"
 export type RackDoor =
   "none" | "perforated" | "glass" | "solid" | "split-perforated" | "split-solid"
 export type RackHinge = "left" | "right"
-export type RackTop = "vented" | "solid" | "fans" | "brush"
-export type RackBase = "plinth" | "casters" | "feet"
+export type RackTop = "vented" | "solid" | "fans" | "brush" | "none"
+export type RackBase = "plinth" | "casters" | "feet" | "plate" | "none"
 
 export interface RackKitMini {
   id: string
@@ -97,11 +97,14 @@ export const TOP_OPTIONS: { value: RackTop; label: string }[] = [
   { value: "solid", label: "Solid" },
   { value: "fans", label: "Fans" },
   { value: "brush", label: "Brush" },
+  { value: "none", label: "None" },
 ]
 export const BASE_OPTIONS: { value: RackBase; label: string }[] = [
   { value: "plinth", label: "Plinth" },
   { value: "casters", label: "Casters" },
   { value: "feet", label: "Feet" },
+  { value: "plate", label: "Base plate" },
+  { value: "none", label: "None" },
 ]
 
 /** The named colours, as the drawn rack paints them (api.rack_look.COLOURS). */
