@@ -2336,6 +2336,8 @@ export interface DeviceWritePayload {
   mount_span_u?: number | null
   /** A row of the rack's pathways (`/api/rack-pathways/pin/` makes one). */
   mount_pathway_id?: string | null
+  /** The same by the 0U channel's key; an inherited one is pinned. "" clears. */
+  mount_pathway_key?: string
   ear_position?: "front" | "mid" | "rear" | "reversed" | ""
   /** A rail sets its cabinet; a rail without an offset takes the first gap
    * from the left the device fits in. */
@@ -3243,6 +3245,8 @@ export interface ResolvedPathway extends RackPathwayFields {
   device: { id: string; name: string } | null
   /** A 0U channel: the side-mounted devices in it. */
   devices?: { id: string; name: string }[]
+  /** A rack's: the cables with a recorded way through it. */
+  cables?: number
 }
 
 export interface ResolvedPathways {
@@ -5113,10 +5117,111 @@ export interface Cable {
   pve_vnet?: string
   a_terminations: Termination[]
   b_terminations: Termination[]
+  /** Its ways through racks, in short (`/api/cable-ways/`). */
+  ways?: CableWaySummary[]
   tags: Tag[]
   custom_fields: Record<string, unknown>
   created_at: string
   updated_at: string
+}
+
+export interface CableWaySummary {
+  id: string
+  rack: { id: string; name: string }
+  end: CableWayEnd
+  state: CableWayState
+  source: "auto" | "manual"
+  length_mm: number | null
+  hops: number
+}
+
+export type CableWayEnd = "A" | "B" | "AB"
+export type CableWayState = "proposed" | "recorded" | "dismissed"
+export type CableWayExit = "port" | "top" | "bottom" | "side" | ""
+
+/** One hop of a way: a pathway of the rack, and for a vertical one or a
+ * 0U channel the units it enters and leaves at. */
+export interface CableWayHop {
+  /** The pathway's row (null in a proposal for one not pinned yet). */
+  pathway: string | null
+  key: string
+  kind: RackPathwayKind
+  label: string
+  enter_u: number | null
+  leave_u: number | null
+  /** A stored hop whose pathway is gone, or hidden now. */
+  missing?: boolean
+  hidden?: boolean
+}
+
+/** A worked-out way (the engine's proposal or one of its alternatives). */
+export interface CableWayProposal {
+  hops: CableWayHop[]
+  exit: CableWayExit
+  points: [number, number, number][]
+  length_mm: number
+  reasons: string[]
+  alternatives?: CableWayProposal[]
+}
+
+/** A stored way (`/api/cable-ways/`). */
+export interface CableWay {
+  id: string
+  cable_id: string
+  rack: { id: string; name: string }
+  end: CableWayEnd
+  state: CableWayState
+  source: "auto" | "manual"
+  exit: CableWayExit
+  hops: CableWayHop[]
+  points: [number, number, number][]
+  length_mm: number | null
+  reasons: string[]
+  /** Out of date: a hop no longer resolves, or the cable's ends moved. */
+  stale: boolean | null
+  updated_at: string
+}
+
+/** A cable's length from its ways and its room route. */
+export interface CableLengthEstimate {
+  length_mm: number | null
+  ways: {
+    rack: { id: string; name: string }
+    end: CableWayEnd
+    length_mm: number
+  }[]
+  /** The floor plan whose stored route it adds. */
+  route: string | null
+  run_mm?: number
+  drop_a_mm?: number
+  drop_b_mm?: number
+  way_a_mm?: number
+  way_b_mm?: number
+  extra_mm?: number
+  slack_mm?: number
+}
+
+/** `GET /api/cable-ways/summary/?cable=` - every rack the cable is in. */
+export interface CableWaysDoc {
+  cable_id: string
+  mode: "propose" | "record"
+  racks: {
+    rack: { id: string; name: string }
+    end: CableWayEnd
+    ports: string[]
+    /** Where its stored floor-plan route meets the rack. */
+    route: {
+      exit: "top" | "bottom"
+      elevation_mm: number
+      /** The tray it meets there, by name. */
+      tray: string | null
+    } | null
+    proposal: CableWayProposal | null
+    way: CableWay | null
+  }[]
+  /** Stored ways of racks the cable has no end in now. */
+  orphans: CableWay[]
+  length: CableLengthEstimate | null
 }
 
 /** Tenant fibre-strand colour palette (GET/POST /api/fiber-settings/). */
@@ -11568,6 +11673,9 @@ export interface TenantSettings {
   cable_service_loop_mm: number
   cable_length_step_mm: number
   cable_standalone_height_mm: number
+  /** A cable's way through a rack: proposed until accepted, or recorded
+   * straight away (api.cable_ways). */
+  cable_ways_mode: "propose" | "record"
   /** The PDF report cover's look (api/report_cover.py): its full-page
    * background and the wave background's horizon, wave and crest colours
    * (a plain background is the horizon colour). The image itself goes

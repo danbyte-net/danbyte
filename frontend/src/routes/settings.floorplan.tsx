@@ -18,7 +18,7 @@ import { SegmentedTabs } from "@/components/segmented-tabs"
 import { TileBadge } from "@/components/floorplan/tile-badge"
 import { QueryError } from "@/components/query-error"
 import { Loading } from "@/components/loading"
-import { FormText } from "@/components/forms"
+import { FormSelect, FormText } from "@/components/forms"
 import {
   FieldListEditor,
   FieldScopeHeading,
@@ -445,6 +445,8 @@ function FloorplanSettingsPage() {
       <PanelLayoutsCard />
 
       <CableLengthsCard />
+
+      <CableWaysCard />
     </div>
   )
 }
@@ -554,6 +556,61 @@ function CableLengthsCard() {
           "Where the ports of a device on its own tile, or in a cabinet, sit above the floor. A racked device's come from its rack unit.",
           20000
         )}
+      </div>
+    </SettingsCard>
+  )
+}
+
+type CableWaysMode = TenantSettings["cable_ways_mode"]
+
+/** Whether a cable's way through a rack waits to be accepted or is recorded
+ * straight away - this tenant's (core.effective_settings.cable_ways_mode). */
+function CableWaysCard() {
+  const qc = useQueryClient()
+  const q = useQuery({
+    queryKey: ["tenant-settings"],
+    queryFn: () => api<TenantSettings>("/api/tenant-settings/"),
+  })
+  const [mode, setMode] = useState<CableWaysMode | null>(null)
+  useEffect(() => {
+    if (q.data) setMode(q.data.cable_ways_mode)
+  }, [q.data])
+  const save = useMutation({
+    mutationFn: (patch: Partial<TenantSettings>) =>
+      api<TenantSettings>("/api/tenant-settings/", {
+        method: "PUT",
+        body: JSON.stringify(patch),
+      }),
+    onSuccess: (data) => {
+      qc.setQueryData(["tenant-settings"], data)
+      qc.invalidateQueries({ queryKey: ["cable-ways"] })
+      toast.success("Cable ways saved")
+    },
+    onError: (e) => apiErrorToast(e),
+  })
+  if (q.isError) return <QueryError error={q.error} />
+  if (!q.data || !mode) return <Loading />
+  return (
+    <SettingsCard
+      title="Cable ways"
+      description="A cable's way through the pathways of its racks."
+      layout="plain"
+      onSave={() => save.mutate({ cable_ways_mode: mode })}
+      dirty={mode !== q.data.cable_ways_mode}
+      saving={save.isPending}
+      saveLabel="Save cable ways"
+    >
+      <div className="sm:max-w-xs">
+        <FormSelect
+          label="Cable ways"
+          info="Propose: a worked-out way shows on the cable until someone accepts it, and counts only then. Record automatically: it is recorded when the cable's ends are set, and replaced when they change. A way someone set by hand is never replaced."
+          value={mode}
+          onChange={(v) => setMode(v === "record" ? "record" : "propose")}
+          options={[
+            { value: "propose", label: "Propose" },
+            { value: "record", label: "Record automatically" },
+          ]}
+        />
       </div>
     </SettingsCard>
   )

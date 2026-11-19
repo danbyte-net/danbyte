@@ -30,6 +30,7 @@ export type RackPathwayColumnId =
   | "size"
   | "fill"
   | "devices"
+  | "cables"
   | "model"
 
 const SOURCE_VARIANT = {
@@ -158,6 +159,20 @@ export function buildRackPathwayColumns(
               </Link>
             ))}
           </span>
+        )
+      },
+    },
+    cables: {
+      id: "cables",
+      accessorFn: (p) => p.cables ?? 0,
+      header: ({ column }) => <SortHeader column={column} label="Cables" />,
+      cell: ({ row }) => {
+        const p = row.original
+        if (!p.cables || !p.id) return dash
+        return (
+          <Link to="/cables" search={{ pathway: p.id }} className="link num">
+            {p.cables}
+          </Link>
         )
       },
     },

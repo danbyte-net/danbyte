@@ -1,12 +1,13 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { TableActions } from "@/components/table-actions"
 import type { ColumnDef } from "@tanstack/react-table"
-import { Waypoints } from "lucide-react"
+import { Waypoints, X } from "lucide-react"
 import { useCallback, useMemo, useState } from "react"
 
 import type { Cable } from "@/lib/api"
 import { useServerList } from "@/lib/server-list"
 import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
 import { DataTable } from "@/components/data-table"
 import { buildCableColumns } from "@/components/columns/cable-columns"
 import { wireFacetColumns } from "@/components/table-filters"
@@ -19,7 +20,14 @@ import { RowActions } from "@/components/row-actions"
 import { useMe } from "@/lib/use-me"
 import { useUrlSearch } from "@/lib/url-filters"
 
-export const Route = createFileRoute("/cables/")({ component: CablesPage })
+export const Route = createFileRoute("/cables/")({
+  component: CablesPage,
+  // ?pathway= narrows to the cables with a recorded way through one rack
+  // pathway - the rack's Pathways tab links here.
+  validateSearch: (s: Record<string, unknown>): { pathway?: string } => ({
+    pathway: typeof s.pathway === "string" ? s.pathway : undefined,
+  }),
+})
 
 /** The rail's facets, counted and filtered by the server (api/list_specs.py). */
 const CABLE_FACETS = ["type", "status", "tags"]
@@ -28,6 +36,7 @@ const OMIT = ["strands", "labelled"] as const
 
 function CablesPage() {
   const [q, setQ] = useUrlSearch()
+  const { pathway } = Route.useSearch()
   const [deleting, setDeleting] = useState<Cable | null>(null)
   const [tracing, setTracing] = useState<CableTraceTarget | null>(null)
 
@@ -43,6 +52,7 @@ function CablesPage() {
     queryKey: "cables",
     columns: facetColumns,
     facets: CABLE_FACETS,
+    params: { pathway },
     savedViews: "cable",
   })
   const { query, rows, selectedValues, toggleValue } = list
@@ -126,6 +136,19 @@ function CablesPage() {
       }
       actions={
         <>
+          {pathway && (
+            <Badge variant="secondary">
+              One pathway
+              <Link
+                to="/cables"
+                search={{}}
+                aria-label="Show every cable"
+                className="text-muted-foreground hover:text-foreground"
+              >
+                <X className="h-3 w-3" />
+              </Link>
+            </Badge>
+          )}
           <TableActions ioType="cable" />
         </>
       }

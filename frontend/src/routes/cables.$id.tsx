@@ -16,6 +16,7 @@ import { QueryError } from "@/components/query-error"
 import { CableDeleteDialog } from "@/components/cable-delete-dialog"
 import { PrintLabelMenuItem } from "@/components/print-label-button"
 import { CableRoutingCard } from "@/components/cable-routing-card"
+import { CableWayCard } from "@/components/cable-way-card"
 import { CableTracePath, traceUrl } from "@/components/cable-trace-path"
 import { TraceSection } from "@/components/topology/trace-section"
 import { EditButton, DeleteButton } from "@/components/action-ribbon"
@@ -316,6 +317,7 @@ function CableOverview({ cable: c }: { cable: Cable }) {
         />
       </div>
       <CableRoutingCard cableId={c.id} />
+      <CableWayCard cableId={c.id} />
       {c.is_fiber && modelling !== "off" && <CableFibers cable={c} />}
     </div>
   )

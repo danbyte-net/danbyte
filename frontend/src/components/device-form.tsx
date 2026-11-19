@@ -30,7 +30,9 @@ import {
   type Status,
   type TagOption,
 } from "@/lib/api"
+import type { ResolvedPathways } from "@/lib/api"
 import { apiAll } from "@/lib/api-all"
+import { channelKeyOf, channelOptions } from "@/lib/cable-ways"
 import {
   Field,
   FormCombobox,
@@ -244,6 +246,9 @@ export function DeviceForm({
   const [mountSpan, setMountSpan] = useState(
     device?.mount_span_u != null ? String(device.mount_span_u) : ""
   )
+  // The rack's 0U channel it sits in, by key (api.rack_pathways); null
+  // until picked - the saved one stands.
+  const [channelKey, setChannelKey] = useState<string | null>(null)
   // A cabinet's DIN rail instead of a rack (#277): picking either clears
   // the other. The tabs only choose which one the section shows.
   const [mountIn, setMountIn] = useState<"rack" | "cabinet">(
@@ -558,6 +563,31 @@ export function DeviceForm({
     if (side !== "") setSide("")
   }, [mount, position, side])
 
+  // The 0U channels of the rack on the strip's rail and face. A channel no
+  // longer offered (another rail, face or rack) goes on the next save.
+  const sideMounted = !!rackId && isZeroU && mount !== ""
+  const rackPathways = useQuery({
+    queryKey: ["rack-pathways", rackId],
+    queryFn: () =>
+      api<ResolvedPathways>(`/api/rack-pathways/resolved/?rack=${rackId}`),
+    enabled: sideMounted && canDo("rackpathway", "view"),
+  })
+  const channelOpts = channelOptions(
+    rackPathways.data?.items ?? [],
+    mount,
+    face
+  )
+  const savedChannel =
+    device?.rack?.id === rackId
+      ? channelKeyOf(rackPathways.data?.items ?? [], device.mount_pathway)
+      : ""
+  const wantChannel = channelKey ?? savedChannel
+  const pickedChannel = channelOpts.some((o) => o.value === wantChannel)
+    ? wantChannel
+    : ""
+  const channelChanged =
+    sideMounted && !!rackPathways.data && pickedChannel !== savedChannel
+
   // One option per possible *lowest* unit, in the rack's visual order (top
   // first). Units where the device would collide render disabled with the
   // blocking device as hint - the backend's overlap rules, which the
@@ -653,6 +683,7 @@ export function DeviceForm({
           rackId && mount !== "" && mountSpan.trim() !== ""
             ? Number(mountSpan)
             : null,
+        ...(channelChanged ? { mount_pathway_key: pickedChannel } : {}),
         // A position the new type doesn't offer goes back to its default.
         ear_position: (earOffered as string[]).includes(earPosition)
           ? (earPosition as EarPosition)
@@ -1293,6 +1324,19 @@ export function DeviceForm({
                           ]}
                           error={fieldErrors.face}
                         />
+                        {channelOpts.length > 0 && (
+                          <FormSelect
+                            label="0U channel"
+                            value={pickedChannel || null}
+                            onChange={(v) => setChannelKey(v ?? "")}
+                            noneLabel="None"
+                            options={channelOpts}
+                            error={
+                              fieldErrors.mount_pathway_key ||
+                              fieldErrors.mount_pathway_id
+                            }
+                          />
+                        )}
                         <div className="grid gap-3 @md:grid-cols-2">
                           <FormText
                             label="Offset from base (mm)"

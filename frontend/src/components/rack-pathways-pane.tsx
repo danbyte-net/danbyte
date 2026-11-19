@@ -132,6 +132,7 @@ export function RackPathwaysPane(owner: Owner) {
                 "size",
                 "fill",
                 "devices",
+                "cables",
                 "model",
               ]
             : [

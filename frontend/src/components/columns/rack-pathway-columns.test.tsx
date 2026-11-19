@@ -14,11 +14,22 @@ vi.mock("@tanstack/react-router", () => ({
     children,
     to,
     params,
+    search,
   }: {
     children: ReactNode
     to: string
     params?: { id?: string }
-  }) => <a href={to.replace("$id", params?.id ?? "")}>{children}</a>,
+    search?: Record<string, string>
+  }) => (
+    <a
+      href={
+        to.replace("$id", params?.id ?? "") +
+        (search ? `?${new URLSearchParams(search)}` : "")
+      }
+    >
+      {children}
+    </a>
+  ),
 }))
 
 function pathway(patch: Partial<ResolvedPathway> = {}): ResolvedPathway {
@@ -112,5 +123,17 @@ describe("rack pathway columns", () => {
     expect(
       cell("where", pathway({ kind: "entry", surface: "bottom" })).textContent
     ).toBe("Floor")
+  })
+
+  it("counts a pathway's cables, linking to them", () => {
+    const el = cell("cables", pathway({ id: "pw1", cables: 3 }))
+    expect(el.textContent).toBe("3")
+    expect(el.querySelector("a")?.getAttribute("href")).toBe(
+      "/cables?pathway=pw1"
+    )
+    expect(cell("cables", pathway({ id: "pw1", cables: 0 })).textContent).toBe(
+      "-"
+    )
+    expect(cell("cables", pathway({ cables: 2 })).textContent).toBe("-")
   })
 })

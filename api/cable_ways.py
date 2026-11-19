@@ -204,7 +204,7 @@ def rack_ends(cable) -> dict:
 
 
 def exit_prefs(cable, ctxs: dict) -> dict:
-    """``{rack_id: (exit, tray elevation mm)}`` from the cable's stored
+    """``{rack_id: (exit, tray elevation mm, tray id)}`` from the cable's stored
     floor-plan routes: where its first or last tray is, above or below half
     the rack's height."""
     from .models import FloorPlanCablePath, FloorPlanTile
@@ -234,8 +234,19 @@ def exit_prefs(cable, ctxs: dict) -> dict:
                 if elev is None:
                     continue
                 top = ctxs[rack_id].geo.top_z
-                out[rack_id] = ("top" if float(elev) >= top / 2 else "bottom", float(elev))
+                out[rack_id] = ("top" if float(elev) >= top / 2 else "bottom", float(elev),
+                                trays[idx].get("id") if trays else None)
     return out
+
+
+def _is_uuid(v) -> bool:
+    import uuid
+
+    try:
+        uuid.UUID(str(v))
+    except (TypeError, ValueError):
+        return False
+    return bool(v)
 
 
 def propose_for(ctx: RackCtx, pref: str = "") -> dict | None:
@@ -300,15 +311,23 @@ def cable_doc(cable, *, ctxs=None) -> dict:
     ctxs = rack_ends(cable) if ctxs is None else ctxs
     prefs = exit_prefs(cable, ctxs)
     stored = {w.rack_id: w for w in CableWay.objects.filter(cable=cable).select_related("rack")}
+    from .models import FloorPlanTray
+
+    tray_ids = [p[2] for p in prefs.values() if _is_uuid(p[2])]
+    trays = {str(k): v for k, v in FloorPlanTray.objects.filter(
+        pk__in=tray_ids, floor_plan__tenant_id=cable.tenant_id).values_list("pk", "name")} \
+        if tray_ids else {}
     racks = []
     for rack_id, ctx in sorted(ctxs.items(), key=lambda kv: (kv[1].end, kv[1].rack.name)):
-        pref = prefs.get(rack_id, ("", None))
+        pref = prefs.get(rack_id, ("", None, None))
         prop = propose_for(ctx, pref[0])
         w = stored.get(rack_id)
         racks.append({
             "rack": {"id": str(rack_id), "name": ctx.rack.name}, "end": ctx.end,
             "ports": [e.port for e in ctx.engine_ends()],
-            "route": {"exit": pref[0], "elevation_mm": pref[1]} if pref[0] else None,
+            "route": {"exit": pref[0], "elevation_mm": pref[1],
+                      "tray": trays.get(str(pref[2])) if pref[2] else None}
+            if pref[0] else None,
             "proposal": prop, "way": way_doc(w, ctx) if w else None,
         })
     others = [way_doc(w, None, gone=True) for rid, w in stored.items() if rid not in ctxs]
