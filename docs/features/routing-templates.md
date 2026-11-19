@@ -161,6 +161,9 @@ router isis {{ inst.process }}
   net {{ inst.net }}
   is-type level-{{ inst.level }}
   metric-style {{ inst.metric_style }}
+{% if inst.overload_on_startup %}
+  set-overload-bit on-startup {{ inst.overload_on_startup }}
+{% endif %}
 {% if inst.keychain %}
   authentication-check
   authentication key-chain {{ inst.keychain }} level-{{ inst.level }}
@@ -409,6 +412,9 @@ router isis {{ inst.process }}
 {% endif %}
 {% if inst.lsp_mtu %}
  lsp-mtu {{ inst.lsp_mtu }}
+{% endif %}
+{% if inst.overload_on_startup %}
+ set-overload-bit on-startup {{ inst.overload_on_startup }}
 {% endif %}
 {% if inst.log_adjacency_changes %}
  log-adjacency-changes

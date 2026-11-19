@@ -1671,7 +1671,7 @@ class ISISInstanceSerializer(_RedistributingInstanceSerializer):
         fields = ["id", "numid", *_OWNER_FIELDS, "vrf", "vrf_id",
                   "process", "net", "router_id", "level", "metric_style", "bfd",
                   "bfd_profile", "bfd_profile_id", "authentication", "keychain", "keychain_id",
-                  "lsp_gen_interval", "spf_interval", "lsp_mtu",
+                  "lsp_gen_interval", "spf_interval", "lsp_mtu", "overload_on_startup",
                   "spf_init_delay", "spf_short_delay", "spf_long_delay",
                   "spf_holddown", "spf_time_to_learn", "log_adjacency_changes",
                   "default_originate_ipv4", "default_originate_ipv6",

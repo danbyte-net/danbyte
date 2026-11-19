@@ -1930,6 +1930,11 @@ class ISISInstance(_DeviceInstance):
     lsp_gen_interval = models.PositiveSmallIntegerField(null=True, blank=True)
     spf_interval = models.PositiveSmallIntegerField(null=True, blank=True)
     lsp_mtu = models.PositiveIntegerField(null=True, blank=True)
+    #: ``set-overload-bit on-startup <seconds>``: advertise overload for this
+    #: long after a restart, so traffic waits for BGP to converge. Null = off.
+    overload_on_startup = models.PositiveIntegerField(
+        null=True, blank=True, validators=[MinValueValidator(1), MaxValueValidator(86400)],
+    )
     #: ``spf-delay-ietf init-delay A short-delay B long-delay C holddown D
     #: time-to-learn E`` - five values that only make sense together; the
     #: render context folds them into one object.

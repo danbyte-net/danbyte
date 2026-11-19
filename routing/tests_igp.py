@@ -435,6 +435,106 @@ class FabricKnobTests(_Base):
         self.assertEqual([p["name"] for p in ctx["used_bfd_profiles"]], ["fabric"])
 
 
+class OverloadOnStartupTests(_Base):
+    """``set-overload-bit on-startup N`` is a field, not an ``extra`` key."""
+
+    NET = "49.0001.0000.0000.0011.00"
+
+    def test_the_api_takes_seconds_and_refuses_nonsense(self):
+        res = self._post("/api/routing/isis-instances/", {
+            "device_id": str(self.leaf.id), "process": "CORE", "net": self.NET,
+            "overload_on_startup": 300,
+        })
+        self.assertEqual(res.status_code, 201, res.content)
+        self.assertEqual(res.json()["overload_on_startup"], 300)
+        for bad in (0, 86401, -5):
+            r = self.client.patch(
+                f"/api/routing/isis-instances/{res.json()['id']}/",
+                {"overload_on_startup": bad}, format="json",
+            )
+            self.assertEqual(r.status_code, 400, (bad, r.content))
+            self.assertIn("overload_on_startup", r.json())
+        r = self.client.patch(
+            f"/api/routing/isis-instances/{res.json()['id']}/",
+            {"overload_on_startup": None}, format="json",
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertIsNone(r.json()["overload_on_startup"])
+
+    def test_the_context_and_old_extra_readers_get_it(self):
+        ISISInstance.objects.create(
+            tenant=self.tenant, device=self.leaf, process="CORE", net=self.NET,
+            overload_on_startup=300, extra={"mt": "ipv6"},
+        )
+        i = routing_context(self.leaf)["isis"][0]
+        self.assertEqual(i["overload_on_startup"], 300)
+        # A template written against extra prints the same line.
+        self.assertEqual(i["extra"], {"mt": "ipv6", "overload_on_startup": 300})
+
+    def test_off_renders_nothing(self):
+        ISISInstance.objects.create(
+            tenant=self.tenant, device=self.leaf, process="CORE", net=self.NET,
+        )
+        i = routing_context(self.leaf)["isis"][0]
+        self.assertIsNone(i["overload_on_startup"])
+        self.assertEqual(i["extra"], {})
+
+    def test_the_documented_templates_print_it(self):
+        from jinja2 import Environment
+
+        from .tests_render import FabricTemplateTests
+
+        ISISInstance.objects.create(
+            tenant=self.tenant, device=self.leaf, process="CORE", net=self.NET,
+            overload_on_startup=300,
+        )
+        ctx = routing_context(self.leaf)
+        env = Environment(trim_blocks=True, lstrip_blocks=True)
+        templates = FabricTemplateTests.templates()
+        for kind, indent in (("frr", " "), ("nxos", "  ")):
+            block = templates[kind]
+            start = block.index("{% for inst in routing.isis %}")
+            end = block.index("{% for inst in routing.ospf %}", start)
+            out = env.from_string(block[start:end]).render(routing=ctx)
+            self.assertIn(f"\n{indent}set-overload-bit on-startup 300\n", out, kind)
+
+    def test_the_migration_moves_extra_into_the_field(self):
+        import importlib
+
+        from django.apps import apps as django_apps
+
+        moved = ISISInstance.objects.create(
+            tenant=self.tenant, device=self.leaf, process="A", net=self.NET,
+            extra={"overload_on_startup": 300, "mt": "ipv6"},
+        )
+        text = ISISInstance.objects.create(
+            tenant=self.tenant, device=self.leaf, process="B", net=self.NET,
+            extra={"overload_on_startup": "120"},
+        )
+        junk = ISISInstance.objects.create(
+            tenant=self.tenant, device=self.leaf, process="C", net=self.NET,
+            extra={"overload_on_startup": True},
+        )
+        kept = ISISInstance.objects.create(
+            tenant=self.tenant, device=self.leaf, process="D", net=self.NET,
+            overload_on_startup=60, extra={"overload_on_startup": 300},
+        )
+        mod = importlib.import_module("routing.migrations.0022_isis_overload_on_startup")
+        mod.carry_from_extra(django_apps, None)
+        mod.carry_from_extra(django_apps, None)  # idempotent
+        for row in (moved, text, junk, kept):
+            row.refresh_from_db()
+        self.assertEqual((moved.overload_on_startup, moved.extra), (300, {"mt": "ipv6"}))
+        self.assertEqual((text.overload_on_startup, text.extra), (120, {}))
+        self.assertEqual(
+            (junk.overload_on_startup, junk.extra), (None, {"overload_on_startup": True})
+        )
+        # A value set on the field wins; the differing key stays for a human.
+        self.assertEqual(
+            (kept.overload_on_startup, kept.extra), (60, {"overload_on_startup": 300})
+        )
+
+
 class RoutingSearchTests(_Base):
     """``?search=`` on a routing list matches the device name like any other
     list - the viewsets' own search field list no longer shares its name with

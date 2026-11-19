@@ -469,6 +469,11 @@ export function ISISSection({ owner }: { owner: RoutingOwner }) {
               <span className="text-xs text-muted-foreground">
                 metric {inst.metric_style}
               </span>
+              {inst.overload_on_startup != null && (
+                <span className="font-mono text-xs text-muted-foreground">
+                  overload on-startup {inst.overload_on_startup}s
+                </span>
+              )}
               {inst.authentication !== "none" && (
                 <span className="text-xs text-muted-foreground">
                   {inst.authentication} · {inst.keychain?.name}

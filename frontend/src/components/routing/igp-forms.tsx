@@ -802,6 +802,7 @@ export function ISISInstanceForm({
   const [lspGen, setLspGen] = useState(numText(item?.lsp_gen_interval))
   const [spfInterval, setSpfInterval] = useState(numText(item?.spf_interval))
   const [lspMtu, setLspMtu] = useState(numText(item?.lsp_mtu))
+  const [overload, setOverload] = useState(numText(item?.overload_on_startup))
   const [spfInit, setSpfInit] = useState(numText(item?.spf_init_delay))
   const [spfShort, setSpfShort] = useState(numText(item?.spf_short_delay))
   const [spfLong, setSpfLong] = useState(numText(item?.spf_long_delay))
@@ -858,6 +859,7 @@ export function ISISInstanceForm({
           lsp_gen_interval: numOrNull(lspGen),
           spf_interval: numOrNull(spfInterval),
           lsp_mtu: numOrNull(lspMtu),
+          overload_on_startup: numOrNull(overload),
           spf_init_delay: numOrNull(spfInit),
           spf_short_delay: numOrNull(spfShort),
           spf_long_delay: numOrNull(spfLong),
@@ -981,7 +983,7 @@ export function ISISInstanceForm({
         />
       </FormSection>
       <FormSection title="Timers & LSP" card>
-        <div className="grid gap-3 @md:grid-cols-3">
+        <div className="grid gap-3 @md:grid-cols-4">
           <FormText
             label="LSP gen interval"
             type="number"
@@ -1005,6 +1007,15 @@ export function ISISInstanceForm({
             onChange={setLspMtu}
             placeholder="platform default"
             error={fieldErrors.lsp_mtu}
+          />
+          <FormText
+            label="Overload on startup"
+            type="number"
+            value={overload}
+            onChange={setOverload}
+            placeholder="off"
+            info="set-overload-bit on-startup, in seconds after a restart. Blank leaves it off."
+            error={fieldErrors.overload_on_startup}
           />
         </div>
         <div className="grid gap-3 @md:grid-cols-5">

@@ -487,12 +487,22 @@ instance card of the device's Routing tab (`net …`, `router-id …`, `level
 …`) and in its edit dialog.
 
 **Timers & LSP** on the same dialog: `lsp-gen-interval`, `spf-interval`,
-`lsp-mtu`, the five `spf-delay-ietf` values (all or none), log adjacency
-changes, and **default-information originate** per family (off, when a
-default exists, always). Redistribution rows on IS-IS carry a **family**
-and a **level**; a blank level means the instance's own. Knobs Danbyte
-still does not name - overload bit, multi-topology - go in the instance's
-`extra` and reach the template as `inst.extra.<key>`. The template gets the
+`lsp-mtu`, **Overload on startup**, the five `spf-delay-ietf` values (all
+or none), log adjacency changes, and **default-information originate** per
+family (off, when a default exists, always). Redistribution rows on IS-IS
+carry a **family** and a **level**; a blank level means the instance's own.
+
+**Overload on startup** is the overload bit a router sets for that many
+seconds (1-86400) after it restarts, so transit traffic waits until BGP has
+converged; blank leaves it off. Templates get `inst.overload_on_startup` and
+print it per platform: `set-overload-bit on-startup 300` on FRR, NX-OS,
+IOS-XR and EOS, `overload timeout 300` under Junos `protocols isis`. Before
+the field existed some templates read it from `extra`; upgrading moves a
+whole-seconds `extra.overload_on_startup` into the field and drops the key,
+and `inst.extra.overload_on_startup` keeps rendering the field's value, so
+those templates print the same line. Knobs Danbyte still does not name -
+multi-topology, say - go in the instance's `extra` and reach the template as
+`inst.extra.<key>`. The template gets the
 level as FRR spells it (`inst.level_frr` is `level-2-only`), so it keeps no
 mapping of its own.
 

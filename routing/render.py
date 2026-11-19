@@ -633,6 +633,8 @@ def isis_dict(inst: ISISInstance, policies: set[str]) -> dict:
         "lsp_gen_interval": inst.lsp_gen_interval,
         "spf_interval": inst.spf_interval,
         "lsp_mtu": inst.lsp_mtu,
+        # Seconds, or None when off: `set-overload-bit on-startup N`.
+        "overload_on_startup": inst.overload_on_startup,
         # One object or None: the five values only mean anything together.
         "spf_delay_ietf": {
             "init_delay": inst.spf_init_delay,
@@ -657,8 +659,18 @@ def isis_dict(inst: ISISInstance, policies: set[str]) -> dict:
         ),
         "interfaces": sorted(ifaces, key=lambda i: natural_key(i["interface"])),
         "description": inst.description or "",
-        "extra": inst.extra or {},
+        "extra": _isis_extra(inst),
     }
+
+
+def _isis_extra(inst: ISISInstance) -> dict:
+    """``extra`` as stored, plus ``overload_on_startup`` from the field when
+    ``extra`` does not carry it - the key templates read before the field
+    existed, so moving the value out of ``extra`` changes no rendered line."""
+    extra = dict(inst.extra or {})
+    if inst.overload_on_startup is not None:
+        extra.setdefault("overload_on_startup", inst.overload_on_startup)
+    return extra
 
 
 def es_dict(seg: EthernetSegment) -> dict:

@@ -8517,6 +8517,8 @@ export interface ISISInstance extends IGPInstanceBase {
   lsp_gen_interval: number | null
   spf_interval: number | null
   lsp_mtu: number | null
+  /** set-overload-bit on-startup, seconds; null = off. */
+  overload_on_startup: number | null
   /** spf-delay-ietf: all five or none. */
   spf_init_delay: number | null
   spf_short_delay: number | null
