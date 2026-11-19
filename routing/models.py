@@ -1368,10 +1368,14 @@ class BGPSession(_PeerKnobs, NumIdMixin, TimestampedModel, CustomFieldsMixin, Ta
                         {"local_address": "That address is not on this "
                                           + ("VM." if inst.virtual_machine_id else "device.")}
                     )
-                if la.vrf_id != inst.vrf_id:
+                if not local_address_in_table(la, inst):
+                    table = inst.vrf.name if inst.vrf_id else "the global table"
                     raise ValidationError(
                         {"local_address": "That address sits in another table than "
-                                          "the instance."}
+                                          f"the instance. Pick an address in {table}, or "
+                                          "one on an interface of this "
+                                          + ("VM" if inst.virtual_machine_id else "device")
+                                          + f" that routes in {table}."}
                     )
         mode = self.remote_asn_mode or (self.peer_group.remote_asn_mode if self.peer_group_id else "asn")
         if mode == "asn":
@@ -1412,9 +1416,9 @@ class BGPSession(_PeerKnobs, NumIdMixin, TimestampedModel, CustomFieldsMixin, Ta
         )
         local = self.local_asn or (group.local_asn if group is not None else None)
         out["local_asn"] = local.asn if local is not None else self.instance.asn.asn
+        port = _address_port(self.local_address) if self.local_address_id else None
         out["update_source"] = (
-            self.local_address.assigned_interface.name
-            if self.local_address_id and self.local_address.assigned_interface_id
+            port.name if port is not None
             else (group.update_source if group is not None else "")
         )
         # iBGP or eBGP is a fact of the two AS numbers, not a setting: the
@@ -2110,6 +2114,38 @@ class EIGRPInterface(_IGPInterface):
         self.summary_addresses = [normalize_network(n, "summary_addresses") for n in nets]
 
 
+def _address_port(ip):
+    """The interface (device or VM) an address is configured on, or None."""
+    if ip.assigned_interface_id:
+        return ip.assigned_interface
+    if ip.assigned_vm_interface_id:
+        return ip.assigned_vm_interface
+    return None
+
+
+def local_address_in_table(ip, inst) -> bool:
+    """Whether ``ip`` can source a session of ``inst``: it routes in the
+    instance's table.
+
+    The address's own VRF (its prefix's) answers that as a rule, and an
+    address from another table is usually a mistake. A VRF-lite handoff is
+    the exception: the transfer net is filed under the customer VRF, but on
+    the far router the same /31 is configured on an interface in the global
+    table. So an address on an interface of the instance's own box counts as
+    in the table that interface routes in (its VRF, or global without one).
+    Null is the global table on both sides.
+    """
+    if ip.vrf_id == inst.vrf_id:
+        return True
+    port = _address_port(ip)
+    if port is None or not inst.owns_interface(
+        interface=port if ip.assigned_interface_id else None,
+        vm_interface=port if not ip.assigned_interface_id else None,
+    ):
+        return False
+    return port.vrf_id == inst.vrf_id
+
+
 def link_remote_address(session: BGPSession) -> None:
     """Point ``remote_address_obj`` at the IPAM row for the far address, when
     Danbyte has one in the instance's table - so the peer's page can show
@@ -2126,6 +2162,18 @@ def link_remote_address(session: BGPSession) -> None:
             .select_related("assigned_device")
             .first()
         )
+        if match is None and session.local_address_id:
+            # A VRF-lite handoff: the far end sits in the transfer net this
+            # side sources from, filed under another table.
+            match = (
+                IPAddress.objects.filter(
+                    tenant_id=session.tenant_id, ip_address=session.remote_address,
+                    prefix_id=session.local_address.prefix_id,
+                )
+                .exclude(pk=session.local_address_id)
+                .select_related("assigned_device")
+                .first()
+            )
     changed = []
     if session.remote_address_obj_id != (match.id if match else None):
         session.remote_address_obj = match

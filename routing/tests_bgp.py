@@ -430,3 +430,132 @@ class RenderTests(_Base):
         self.assertIn(" neighbor 10.0.0.1 remote-as 65000", out)
         self.assertIn(" neighbor 10.0.0.1 update-source lo0", out)
         self.assertIn(" neighbor 10.0.0.1 bfd", out)
+
+
+class VrfLiteHandoffTests(_Base):
+    """A CE <-> SD-WAN handoff: the /31 is filed under the customer VRF (the
+    CE's side), while on the SD-WAN router the same net sits on an interface
+    in the global table. The SD-WAN session sources from it."""
+
+    def setUp(self):
+        super().setUp()
+        dt = self.leaf.device_type
+        self.ce = Device.objects.create(
+            tenant=self.tenant, name="ce1", device_type=dt, site=self.leaf.site
+        )
+        self.wan0 = Interface.objects.create(device=self.leaf, name="wan0")
+        self.ge0 = Interface.objects.create(device=self.ce, name="ge0", vrf=self.vrf)
+        net = Prefix.objects.create(tenant=self.tenant, cidr="192.0.2.0/31", vrf=self.vrf)
+        self.sdwan_ip = IPAddress.objects.create(
+            tenant=self.tenant, ip_address="192.0.2.0", prefix=net,
+            assigned_device=self.leaf, assigned_interface=self.wan0,
+        )
+        self.ce_ip = IPAddress.objects.create(
+            tenant=self.tenant, ip_address="192.0.2.1", prefix=net,
+            assigned_device=self.ce, assigned_interface=self.ge0,
+        )
+        self.assertEqual(self.sdwan_ip.vrf_id, self.vrf.id)
+        self.inst = self._instance()  # global table
+
+    def session(self, ip, **extra):
+        return self._post("/api/routing/bgp-sessions/", {
+            "instance_id": str(self.inst.id), "remote_address": "192.0.2.1",
+            "remote_asn": 65010, "local_address_id": str(ip.id), **extra,
+        })
+
+    def test_the_handoff_sources_from_its_global_interface(self):
+        r = self.session(self.sdwan_ip)
+        self.assertEqual(r.status_code, 201, r.content)
+        s = BGPSession.objects.get(pk=r.json()["id"])
+        # The far end is found in the transfer net, though not in this table.
+        self.assertEqual(s.remote_address_obj_id, self.ce_ip.id)
+        self.assertEqual(s.peer_device_id, self.ce.id)
+        session = routing_context(self.leaf)["bgp"][0]["sessions"][0]
+        self.assertEqual(session["update_source"], "wan0")
+        self.assertEqual(session["local_address"]["interface"], "wan0")
+        # And a PATCH of an existing session is accepted the same way.
+        r = self.client.patch(
+            f"/api/routing/bgp-sessions/{s.id}/",
+            {"local_address_id": str(self.sdwan_ip.id), "ebgp_multihop": 2}, format="json",
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+
+    def test_the_ce_side_keeps_the_old_rule(self):
+        ce_inst = BGPInstance.objects.create(
+            tenant=self.tenant, device=self.ce, vrf=self.vrf, asn=self.as65001,
+        )
+        r = self._post("/api/routing/bgp-sessions/", {
+            "instance_id": str(ce_inst.id), "remote_address": "192.0.2.0",
+            "remote_asn": 65001, "local_address_id": str(self.ce_ip.id),
+        })
+        self.assertEqual(r.status_code, 201, r.content)
+
+    def test_an_address_on_another_device_is_refused(self):
+        r = self.session(self.ce_ip)
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("not on this device", str(r.json()["local_address"]))
+
+    def test_an_interface_in_another_vrf_is_refused(self):
+        other = VRF.objects.create(tenant=self.tenant, name="OTHER")
+        wan1 = Interface.objects.create(device=self.leaf, name="wan1", vrf=other)
+        net = Prefix.objects.create(tenant=self.tenant, cidr="198.51.100.0/31", vrf=self.vrf)
+        ip = IPAddress.objects.create(
+            tenant=self.tenant, ip_address="198.51.100.0", prefix=net,
+            assigned_device=self.leaf, assigned_interface=wan1,
+        )
+        r = self.session(ip)
+        self.assertEqual(r.status_code, 400)
+        msg = str(r.json()["local_address"])
+        self.assertIn("another table", msg)
+        self.assertIn("routes in the global table", msg)
+
+    def test_an_address_on_no_interface_follows_its_prefix(self):
+        net = Prefix.objects.create(tenant=self.tenant, cidr="198.51.100.8/31", vrf=self.vrf)
+        ip = IPAddress.objects.create(
+            tenant=self.tenant, ip_address="198.51.100.8", prefix=net,
+            assigned_device=self.leaf,
+        )
+        r = self.session(ip)
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("another table", str(r.json()["local_address"]))
+        # In the instance's table it is fine, interface or not; and no
+        # interface means no update-source.
+        ip_global = IPAddress.objects.create(
+            tenant=self.tenant, ip_address="10.0.0.20", prefix=self.ip_leaf.prefix,
+            assigned_device=self.leaf,
+        )
+        r = self._post("/api/routing/bgp-sessions/", {
+            "instance_id": str(self.inst.id), "remote_address": "10.0.0.21",
+            "remote_asn": 65010, "local_address_id": str(ip_global.id),
+        })
+        self.assertEqual(r.status_code, 201, r.content)
+        s = BGPSession.objects.get(pk=r.json()["id"])
+        self.assertEqual(s.effective()["update_source"], "")
+
+    def test_a_vrf_instance_takes_an_interface_in_that_vrf(self):
+        # The mirror image: a global prefix configured on a VRF interface.
+        lan = Interface.objects.create(device=self.leaf, name="lan0", vrf=self.vrf)
+        ip = IPAddress.objects.create(
+            tenant=self.tenant, ip_address="10.0.0.30", prefix=self.ip_leaf.prefix,
+            assigned_device=self.leaf, assigned_interface=lan,
+        )
+        vrf_inst = self._instance(vrf=self.vrf)
+        r = self._post("/api/routing/bgp-sessions/", {
+            "instance_id": str(vrf_inst.id), "remote_address": "10.0.0.31",
+            "remote_asn": 65010, "local_address_id": str(ip.id),
+        })
+        self.assertEqual(r.status_code, 201, r.content)
+
+    def test_create_peer_lands_in_the_ce_vrf(self):
+        ce_inst = BGPInstance.objects.create(
+            tenant=self.tenant, device=self.ce, vrf=self.vrf,
+            asn=ASN.objects.create(tenant=self.tenant, asn=65010),
+        )
+        r = self.session(self.sdwan_ip)
+        self.assertEqual(r.status_code, 201, r.content)
+        r = self.client.post(f"/api/routing/bgp-sessions/{r.json()['id']}/create-peer/")
+        self.assertEqual(r.status_code, 201, r.content)
+        mirror = BGPSession.objects.get(pk=r.json()["id"])
+        self.assertEqual(mirror.instance_id, ce_inst.id)
+        self.assertEqual(mirror.local_address_id, self.ce_ip.id)
+        self.assertEqual(mirror.effective()["update_source"], "ge0")

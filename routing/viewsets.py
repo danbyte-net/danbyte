@@ -817,9 +817,6 @@ class BGPSessionViewSet(BulkEditMixin, CloneableMixin, TenantScopedViewSet):
             raise ValidationError({"peer_device_id": "Set the peer device first."})
         if not s.local_address_id:
             raise ValidationError({"local_address_id": "Set this side's local address first."})
-        far_inst = BGPInstance.objects.filter(device_id=s.peer_device_id, vrf_id=s.instance.vrf_id).first()
-        if far_inst is None:
-            raise ValidationError({"peer_device_id": "The peer device has no BGP instance in this table."})
         far_ip = s.remote_address_obj
         if far_ip is None and s.remote_address:
             far_ip = IPAddress.objects.filter(
@@ -828,6 +825,22 @@ class BGPSessionViewSet(BulkEditMixin, CloneableMixin, TenantScopedViewSet):
             ).first()
         if far_ip is None:
             raise ValidationError({"remote_address": "The far address is not on the peer device in IPAM."})
+        # The far instance is in this table as a rule. Across a VRF-lite
+        # handoff it is in the table the far address's interface routes in
+        # (global without a VRF) - the one the mirror's local address passes.
+        tables = [s.instance.vrf_id]
+        if far_ip.assigned_interface_id and far_ip.assigned_interface.device_id == s.peer_device_id:
+            tables.append(far_ip.assigned_interface.vrf_id)
+        tables.append(far_ip.vrf_id)
+        far_inst = None
+        for vrf_id in dict.fromkeys(tables):
+            far_inst = BGPInstance.objects.filter(
+                device_id=s.peer_device_id, vrf_id=vrf_id
+            ).first()
+            if far_inst is not None:
+                break
+        if far_inst is None:
+            raise ValidationError({"peer_device_id": "The peer device has no BGP instance in this table."})
         eff = s.effective()
         with transaction.atomic():
             mirror = BGPSession(

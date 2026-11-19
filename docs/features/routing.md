@@ -390,6 +390,30 @@ peering - `neighbor swp1 interface remote-as external`), its local address
 When the far address is in IPAM, the row is linked and the peer device is
 filled in.
 
+The local address must be on the session's device (or VM) and route in the
+instance's table: the address's VRF - its prefix's - is the instance's, or
+global for a global instance. Anything else is refused with *That address
+sits in another table than the instance*, because an address from another
+VRF is usually a slip of the picker.
+
+#### VRF-lite handoffs
+
+A CE hands a customer VRF to a router that carries it in its global table -
+an SD-WAN edge, say. The transfer /31 is filed once, under the customer VRF
+where the CE has it; on the SD-WAN router the other half of the same /31 sits
+on an interface with no VRF. For that router's global session the address
+counts as global: **an address on an interface of the session's own device
+is in the table that interface routes in** (its VRF, or global without one),
+whatever VRF its prefix is filed under. So the session takes it, its
+interface becomes the `update-source` (which FRR needs for the multihop BFD
+that GTSM brings with it), and the far address is linked to the CE through
+the same /31. **Create the far end** puts the mirror in the CE's instance in
+the customer VRF - the table its interface routes in.
+
+The exception is narrow: an address on another device, on an interface of
+this device in a third VRF, or on no interface at all still follows the old
+rule.
+
 Whether a session is **iBGP or eBGP** is never typed in: the same AS on both
 ends is internal, anything else external (an unnumbered *internal* /
 *external* remote AS says so directly). It shows as a badge on the session,
@@ -454,7 +478,8 @@ that sets nothing, and switches off one that carries a policy, so a
 per-family policy is never lost by editing the list.
 
 **Create the far end** on a session's page writes the mirror session on the
-peer device - its instance in the same table, addresses swapped, the
+peer device - its instance in the same table (across a VRF-lite handoff,
+the table the far address's interface routes in), addresses swapped, the
 effective settings copied - and links the two, so an iBGP pair is two
 clicks. It needs the peer device, this side's local address and a far
 address IPAM has on that device.
