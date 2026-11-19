@@ -809,6 +809,15 @@ class TableListMixin:
         raw = self._params().get("include") or ""
         return [v for v in (s.strip() for s in raw.split(",")) if v][:100]
 
+    def initial(self, request, *args, **kwargs):
+        super().initial(request, *args, **kwargs)
+        # The table always sends ``view=table`` (and ``include``). A list
+        # that answers one shape reads neither, and the unknown-parameter
+        # check (core.query_params) then refused the table's own request.
+        # ``include`` still only counts with ``view=table``.
+        if self.is_table_view():
+            self.table_include()
+
     def get_serializer_context(self):
         ctx = super().get_serializer_context()
         if self.is_table_view():

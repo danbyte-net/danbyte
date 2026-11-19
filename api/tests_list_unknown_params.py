@@ -257,3 +257,24 @@ class HintTests(SimpleTestCase):
         self.assertEqual(hint_for("serach", pool), "search")
         self.assertEqual(hint_for("virtual_machin", pool), "virtual_machine")
         self.assertIsNone(hint_for("colour", pool))
+
+
+class TableListsTakeTheTablesRequestTests(_Base):
+    """Every list built on TableListMixin answers the request its page
+    sends - ``view=table`` with paging - whether or not it has a slim row.
+    A list with its own ``list()`` once refused ``view`` and its page never
+    left Loading."""
+
+    def test_every_table_list_accepts_view_table(self):
+        from api.list_table import TableListMixin
+
+        routes = [(url, cls) for url, cls in _list_routes()
+                  if issubclass(cls, TableListMixin)]
+        urls = {url for url, _cls in routes}
+        self.assertTrue({"/api/devices/", "/api/macs/", "/api/port-utilization/",
+                         "/api/lifecycle/"} <= urls, sorted(urls))
+        for url, _cls in routes:
+            with self.subTest(url=url):
+                r = self.client.get(f"{url}?view=table&page=1&page_size=5")
+                self.assertNotEqual(r.status_code, 400, r.content[:200])
+
