@@ -13,7 +13,10 @@ until a few such pages held every worker (#452). Pages above
 
 Every page is cut from a total order: a list sorted by a column that can
 repeat (a VLAN ID, a timestamp) gets the primary key as its last term, so
-walking the pages returns each row exactly once (#529).
+walking the pages returns each row exactly once (#529). And a page reads
+its ids first, then those rows in full (#532, :func:`api.list_table.
+page_by_ids`): a deep page or a sort on a joined column costs about what
+page 1 does.
 """
 from django.conf import settings
 from django.db.models import F, QuerySet
@@ -63,11 +66,33 @@ def stable_order(queryset):
     return queryset.order_by(*terms, "pk")
 
 
+def _pages_by_ids(queryset) -> bool:
+    """Can ``queryset`` be paged by its ids first? Not a DISTINCT (its ORDER
+    BY must be in its SELECT), a union, a ``values()`` list or a grouped
+    aggregate: those are paged in one query as before."""
+    if not isinstance(queryset, QuerySet):
+        return False
+    q = queryset.query
+    return not (
+        q.distinct or q.combinator or queryset._fields is not None or q.is_sliced
+        or q.group_by is not None or q.extra or q.extra_order_by
+    )
+
+
 class StablePagination(PageNumberPagination):
-    """Pages cut from a total order (#529)."""
+    """Pages cut from a total order (#529), by ids first (#532)."""
 
     def paginate_queryset(self, queryset, request, view=None):
-        return super().paginate_queryset(stable_order(queryset), request, view)
+        queryset = stable_order(queryset)
+        if not _pages_by_ids(queryset):
+            return super().paginate_queryset(queryset, request, view)
+        from .list_table import page_by_ids
+
+        parent = super()
+        rows = page_by_ids(queryset, lambda ids: parent.paginate_queryset(ids, request, view))
+        if rows is not None:
+            self.page.object_list = rows
+        return rows
 
 
 class StandardResultsSetPagination(StablePagination):

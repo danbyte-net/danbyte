@@ -106,6 +106,9 @@ Every list endpoint pages its answer:
   instant) are ordered by their `id` as well, so walking the pages returns
   every row exactly once. Before 0.21 a walk of the VLAN list could repeat
   some VLANs and skip others.
+- **Any page costs about the same.** Every list reads a page's ids first,
+  with only its filters and its sort, then those rows in full; the last page
+  of 400,000 addresses takes about as long as the first.
 
 ```bash
 # Every interface, 1,000 at a time

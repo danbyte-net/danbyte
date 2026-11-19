@@ -49,7 +49,10 @@ class _Base(APITestCase):
         s["current_tenant_id"] = str(self.tenant.id)
         s.save()
 
-    def _list_sql(self, url: str, table: str) -> tuple[list, str]:
+    def _list_sql(self, url: str, table: str, *, rows: bool = False) -> tuple[list, str]:
+        """The page's SQL: the ids query (filters and sort, with LIMIT), or
+        with ``rows`` the query reading those rows in full - a list pages by
+        id first (#532), so per-row subqueries sit in the second."""
         self.client.get(url)
         with CaptureQueriesContext(connection) as ctx:
             r = self.client.get(url)
@@ -57,7 +60,7 @@ class _Base(APITestCase):
         sql = next(
             q["sql"] for q in ctx.captured_queries
             if q["sql"].startswith("SELECT") and f'FROM "{table}"' in q["sql"]
-            and "LIMIT" in q["sql"]
+            and (f'"{table}"."id" IN (' in q["sql"] if rows else "LIMIT" in q["sql"])
         )
         return r.json()["results"], sql
 
@@ -141,6 +144,6 @@ class PrefixInetIndexTests(_Base):
         Aggregate.objects.create(tenant=self.tenant, prefix="10.0.0.0/8", rir=rir)
         for c in ("10.1.0.0/16", "10.1.2.0/24", "10.2.0.0/24"):
             Prefix.objects.create(tenant=self.tenant, cidr=c)
-        rows, sql = self._list_sql("/api/aggregates/?page_size=5", "api_aggregate")
+        rows, sql = self._list_sql("/api/aggregates/?page_size=5", "api_aggregate", rows=True)
         self.assertEqual(len(rows), 1)
         self.assertIn("prefix_cidr_inet_gist", self._plan_inet(sql))
