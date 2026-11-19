@@ -25,6 +25,8 @@ export function PrefixPicker({ label = "Prefix", ...rest }: PrefixPickerProps) {
       noun: "prefix",
       // No compact ?picker=1 shape exists for prefixes - the standard list
       // first page is fine for the combobox; the modal covers the long tail.
+      // Long lists: one page on open, searched on the server (#534).
+      serverSearch: true,
       pickerEndpoint: "/api/prefixes/",
       pickerQueryKey: ["prefixes-picker"],
       optionLabel: (p) => (p.vrf ? `${p.cidr} · ${p.vrf.name}` : p.cidr),

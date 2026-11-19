@@ -22,6 +22,8 @@ export function VMPicker({
   const spec = useMemo<ObjectPickerSpec<VirtualMachine>>(
     () => ({
       noun: "virtual machine",
+      // Long lists: one page on open, searched on the server (#534).
+      serverSearch: true,
       pickerEndpoint: "/api/virtual-machines/?picker=1",
       pickerQueryKey: ["vms-picker"],
       detailEndpoint: (id) => `/api/virtual-machines/${id}/`,

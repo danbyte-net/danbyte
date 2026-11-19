@@ -169,7 +169,10 @@ beforeEach(() => {
         din_rail: { id: "r1", label: "R1", profile: "ts35" },
         din_offset_mm: 300,
       })
-    if (path === "/api/devices/?picker=1&site=s1&din_profile=ts35")
+    if (
+      path.replace(/[?&]page=1&page_size=\d+$/, "") ===
+      "/api/devices/?picker=1&site=s1&din_profile=ts35"
+    )
       return page([{ id: "d9", name: "plc-9" }])
     return page([])
   })

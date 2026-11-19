@@ -28,6 +28,9 @@ import { Field } from "@/components/forms/field"
 import { FormSelect, type SelectOption } from "@/components/forms/select"
 
 const PAGE_SIZE = 250
+/** Options a server-searched combobox shows per search (#534); the
+ * advanced search pages through the rest. */
+export const COMBO_PAGE = 50
 
 /** One dropdown in the advanced-search modal, mapped to a list query param. */
 export interface PickerFilter {
@@ -65,6 +68,10 @@ export interface ObjectPickerSpec<
   pickerEndpoint: string
   /** Shared react-query key for the compact list. */
   pickerQueryKey: readonly unknown[]
+  /** The list can be as long as a tenant's devices or addresses (#534): the
+   * combobox then loads one page when it opens and searches the server
+   * (`?search=`) as you type, instead of walking the whole list on mount. */
+  serverSearch?: boolean
   /** Option → combobox label (default: o.name). */
   optionLabel?: (o: O) => string
   /** Option → extra combobox state (ghosting: disabled + trailing hint). */
@@ -167,20 +174,48 @@ export function ObjectPicker<
   const [advancedOpen, setAdvancedOpen] = useState(false)
   // Only a list that applies a custom field's scope is sent the field.
   const scopeField = spec.customFieldScope ? customFieldId : undefined
+  const server = !!spec.serverSearch
+  // A server-searched list loads when its combobox opens, for what is typed.
+  const [comboOpen, setComboOpen] = useState(false)
+  const [typed, setTyped] = useState("")
+  const [search, setSearch] = useState("")
+  useEffect(() => {
+    if (!server) return
+    const t = setTimeout(() => setSearch(typed.trim()), 250)
+    return () => clearTimeout(t)
+  }, [typed, server])
+  const sep = spec.pickerEndpoint.includes("?") ? "&" : "?"
+  const searched = (extra: string) =>
+    `${withCustomField(spec.pickerEndpoint, scopeField)}${sep}${extra}${
+      search ? `&search=${encodeURIComponent(search)}` : ""
+    }&page_size=${COMBO_PAGE}`
 
   const compact = useQuery({
-    queryKey: [...spec.pickerQueryKey, scopeField ?? ""],
-    queryFn: () => apiAll<O>(withCustomField(spec.pickerEndpoint, scopeField)),
+    queryKey: server
+      ? [...spec.pickerQueryKey, scopeField ?? "", "search", search]
+      : [...spec.pickerQueryKey, scopeField ?? ""],
+    queryFn: () =>
+      server
+        ? api<Paginated<O>>(searched("page=1"))
+        : apiAll<O>(withCustomField(spec.pickerEndpoint, scopeField)),
+    enabled: !server || comboOpen,
+    placeholderData: server ? keepPreviousData : undefined,
     staleTime: 10 * 60_000,
   })
   // Context-relevant subset (e.g. devices with the floor tile's role) - its
   // ids float to the top of the combobox.
-  const sep = spec.pickerEndpoint.includes("?") ? "&" : "?"
   const preferred = useQuery({
-    queryKey: [...spec.pickerQueryKey, "prefer", preferQuery ?? ""],
+    queryKey: [
+      ...spec.pickerQueryKey,
+      "prefer",
+      preferQuery ?? "",
+      ...(server ? [search] : []),
+    ],
     queryFn: () =>
-      apiAll<{ id: string }>(`${spec.pickerEndpoint}${sep}${preferQuery}`),
-    enabled: !!preferQuery,
+      server
+        ? api<Paginated<{ id: string }>>(searched(preferQuery ?? ""))
+        : apiAll<{ id: string }>(`${spec.pickerEndpoint}${sep}${preferQuery}`),
+    enabled: !!preferQuery && (!server || comboOpen),
     staleTime: 10 * 60_000,
   })
   const preferredIds = useMemo(
@@ -251,6 +286,11 @@ export function ObjectPicker<
               emptyText={emptyText ?? `No ${spec.noun}s.`}
               max={pickLimit}
               disabled={disabled}
+              {...(server && {
+                onOpenChange: setComboOpen,
+                onSearchChange: setTyped,
+                loading: compact.isFetching,
+              })}
             />
           ) : (
             <Combobox
@@ -268,6 +308,11 @@ export function ObjectPicker<
               searchPlaceholder={searchPlaceholder ?? `Search ${spec.noun}s…`}
               emptyText={emptyText ?? `No ${spec.noun}s.`}
               disabled={disabled}
+              {...(server && {
+                onOpenChange: setComboOpen,
+                onSearchChange: setTyped,
+                loading: compact.isFetching,
+              })}
             />
           )}
         </div>

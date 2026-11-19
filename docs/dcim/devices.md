@@ -128,7 +128,11 @@ picker**.
 
 - **Type to search.** The picker is a searchable box; start typing a name and
   it narrows as you go. This is all you need when you know roughly what the
-  device is called.
+  device is called. The list loads when you open it and shows the first 50
+  matches; what you type is searched on the server (name, serial, asset tag,
+  description), so every device of the tenant can be found, however many
+  there are. The VLAN, prefix, IP address, IP range, rack and virtual-machine
+  pickers work the same way.
 - **Advanced search.** When a name isn't enough - you're staring at hundreds of
   devices and want "the access switches in Amsterdam that are active" - click
   the **sliders** button beside the box. A dialog opens where you can filter by

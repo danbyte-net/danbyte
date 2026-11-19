@@ -62,6 +62,13 @@ export interface ComboboxProps {
   className?: string
   /** Name for a trigger with no Field label - a filter rail's picker. */
   "aria-label"?: string
+  /** The list opened or closed - a server-searched list loads on open. */
+  onOpenChange?: (open: boolean) => void
+  /** Searched on the server (#534): the typed text goes here, and `options`
+   * are shown as they come, not filtered again. */
+  onSearchChange?: (search: string) => void
+  /** Options on their way: the empty row says so. */
+  loading?: boolean
 }
 
 // Searchable single-select (shadcn Combobox pattern: Button + Popover +
@@ -78,8 +85,20 @@ export function Combobox({
   disabled,
   className,
   "aria-label": ariaLabel,
+  onOpenChange,
+  onSearchChange,
+  loading,
 }: ComboboxProps) {
-  const [open, setOpen] = useState(false)
+  const [open, setOpenState] = useState(false)
+  const [search, setSearch] = useState("")
+  const setOpen = (next: boolean) => {
+    setOpenState(next)
+    if (!next && onSearchChange) {
+      setSearch("")
+      onSearchChange("")
+    }
+    onOpenChange?.(next)
+  }
   const selected = options.find((o) => o.value === value)
   // Inside a Field the trigger takes the label's id and name (#428).
   const fieldProps = useFieldControlProps(
@@ -162,10 +181,22 @@ export function Combobox({
         // 931..." is useless when three types share that prefix).
         className="w-auto max-w-[min(38rem,calc(100vw-2rem))] min-w-(--radix-popover-trigger-width) p-0"
       >
-        <Command>
-          <CommandInput placeholder={searchPlaceholder} className="h-9" />
+        <Command shouldFilter={!onSearchChange}>
+          {onSearchChange ? (
+            <CommandInput
+              placeholder={searchPlaceholder}
+              value={search}
+              onValueChange={(v) => {
+                setSearch(v)
+                onSearchChange(v)
+              }}
+              className="h-9"
+            />
+          ) : (
+            <CommandInput placeholder={searchPlaceholder} className="h-9" />
+          )}
           <CommandList>
-            <CommandEmpty>{emptyText}</CommandEmpty>
+            <CommandEmpty>{loading ? "Loading…" : emptyText}</CommandEmpty>
             {noneLabel && (
               <CommandGroup>
                 <CommandItem

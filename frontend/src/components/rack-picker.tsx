@@ -17,6 +17,8 @@ export function RackPicker({ label = "Rack", ...rest }: RackPickerProps) {
   const spec = useMemo<ObjectPickerSpec<Rack>>(
     () => ({
       noun: "rack",
+      // Long lists: one page on open, searched on the server (#534).
+      serverSearch: true,
       pickerEndpoint: "/api/racks/?picker=1",
       pickerQueryKey: ["racks-picker"],
       detailEndpoint: (id) => `/api/racks/${id}/`,

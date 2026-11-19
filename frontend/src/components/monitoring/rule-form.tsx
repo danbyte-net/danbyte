@@ -7,16 +7,15 @@ import {
   type AlertRule,
   type AlertSeverity,
   type CheckStatus,
-  type Prefix,
   type TagOption,
 } from "@/lib/api"
 import { apiAll } from "@/lib/api-all"
+import { PrefixPicker } from "@/components/prefix-picker"
 import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
   Field,
   FormCheckbox,
-  FormCombobox,
   FormFooter,
   FormSection,
   FormSelect,
@@ -81,11 +80,6 @@ export function RuleForm({
     queryKey: ["tags-picker"],
     queryFn: () => apiAll<TagOption>("/api/tags/"),
     staleTime: 10 * 60_000,
-  })
-  const prefixesQ = useQuery({
-    queryKey: ["prefixes-picker"],
-    queryFn: () => apiAll<Prefix>("/api/prefixes/"),
-    staleTime: 5 * 60_000,
   })
 
   // Edit: map the rule's stored tag slugs → ids for the picker, once tags load.
@@ -220,18 +214,12 @@ export function RuleForm({
           onChange={setTagIds}
         />
 
-        <FormCombobox
+        <PrefixPicker
           label="Within prefix"
           value={prefixId}
           onChange={setPrefixId}
           noneLabel="Any prefix"
           placeholder="Any prefix"
-          searchPlaceholder="Search prefixes…"
-          emptyText="No prefixes."
-          options={(prefixesQ.data?.results ?? []).map((p) => ({
-            value: p.id,
-            label: p.cidr,
-          }))}
         />
       </FormSection>
 

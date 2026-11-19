@@ -253,7 +253,10 @@ beforeEach(() => {
     }
     if (path === "/api/device-types/?picker=1") return page([PLC, SRV])
     if (path === "/api/sites/") return page([{ id: "s1", name: "Plant" }])
-    if (path === "/api/racks/?picker=1") return page([RACK])
+    if (
+      path.replace(/[?&]page=1&page_size=\d+$/, "") === "/api/racks/?picker=1"
+    )
+      return page([RACK])
     if (path === "/api/racks/rk1/") return Promise.resolve(RACK_DETAIL)
     if (path === "/api/devices/?rack=rk1") return page(rackDevices)
     if (path.startsWith("/api/cabinets/?picker=1"))

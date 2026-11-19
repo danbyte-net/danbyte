@@ -26,6 +26,8 @@ export function IpRangePicker({
       noun: "range",
       // No compact ?picker=1 shape exists for ranges - the first page of
       // the standard list feeds the combobox; the modal covers the rest.
+      // Long lists: one page on open, searched on the server (#534).
+      serverSearch: true,
       pickerEndpoint: "/api/ip-ranges/",
       pickerQueryKey: ["ip-ranges-picker"],
       optionLabel: rangeLabel,

@@ -22,6 +22,8 @@ export function IpPicker({ label = "IP address", ...rest }: IpPickerProps) {
       noun: "IP",
       // No compact ?picker=1 shape exists for IPs - first page of the
       // standard list feeds the combobox; the modal covers the rest.
+      // Long lists: one page on open, searched on the server (#534).
+      serverSearch: true,
       pickerEndpoint: "/api/ips/",
       pickerQueryKey: ["ips-picker"],
       optionLabel: (ip) =>

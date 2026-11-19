@@ -9,10 +9,10 @@ import {
   type SiteOption,
   type StatusOption,
   type TagOption,
-  type VLANOption,
   type VRFOption,
 } from "@/lib/api"
 import { apiAll } from "@/lib/api-all"
+import { VlanPicker } from "@/components/vlan-picker"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Combobox } from "@/components/ui/combobox"
@@ -29,6 +29,8 @@ export const Route = createFileRoute("/prefixes/bulk-edit")({
 
 const KEEP = "__keep__"
 const NONE = "__none__"
+/** VLAN: set to the one picked below (no change until one is). */
+const SET = "__set__"
 
 function BulkEditPrefixesPage() {
   const { ids: idsCsv } = Route.useSearch()
@@ -40,6 +42,7 @@ function BulkEditPrefixesPage() {
   const [vrfId, setVrfId] = useState<string>(KEEP)
   const [siteId, setSiteId] = useState<string>(KEEP)
   const [vlanId, setVlanId] = useState<string>(KEEP)
+  const [vlanPick, setVlanPick] = useState<string | null>(null)
   const [autoGateway, setAutoGateway] = useState<string>(KEEP)
   const [addTags, setAddTags] = useState<number[]>([])
   const [removeTags, setRemoveTags] = useState<number[]>([])
@@ -59,11 +62,6 @@ function BulkEditPrefixesPage() {
     queryFn: () => apiAll<SiteOption>("/api/sites/"),
     staleTime: 10 * 60_000,
   })
-  const vlans = useQuery({
-    queryKey: ["vlans-picker"],
-    queryFn: () => apiAll<VLANOption>("/api/vlans/"),
-    staleTime: 10 * 60_000,
-  })
   const tags = useQuery({
     queryKey: ["tags-picker"],
     queryFn: () => apiAll<TagOption>("/api/tags/"),
@@ -79,7 +77,8 @@ function BulkEditPrefixesPage() {
         fields.status_id = statusId === NONE ? null : statusId
       if (vrfId !== KEEP) fields.vrf_id = vrfId === NONE ? null : vrfId
       if (siteId !== KEEP) fields.site_id = siteId === NONE ? null : siteId
-      if (vlanId !== KEEP) fields.vlan_id = vlanId === NONE ? null : vlanId
+      if (vlanId !== KEEP && vlanId !== SET)
+        fields.vlan_id = vlanId === NONE ? null : vlanId
       if (autoGateway !== KEEP) fields.auto_gateway = autoGateway === "on"
       if (addTags.length) fields.add_tag_ids = addTags
       if (removeTags.length) fields.remove_tag_ids = removeTags
@@ -192,20 +191,30 @@ function BulkEditPrefixesPage() {
 
         <Field label="VLAN">
           <Combobox
-            value={vlanId}
-            onChange={(v) => setVlanId(v ?? KEEP)}
+            value={vlanId === KEEP || vlanId === NONE ? vlanId : SET}
+            onChange={(v) =>
+              setVlanId(v === SET ? (vlanPick ?? SET) : (v ?? KEEP))
+            }
             options={[
               { value: KEEP, label: "(keep)" },
               { value: NONE, label: "No VLAN" },
-              ...(vlans.data?.results ?? []).map((v) => ({
-                value: v.id,
-                label: `${v.vlan_id} · ${v.name}`,
-              })),
+              { value: SET, label: "Set VLAN" },
             ]}
-            searchPlaceholder="Search VLANs…"
+            searchPlaceholder="Search…"
             emptyText="No matches."
           />
         </Field>
+        {vlanId !== KEEP && vlanId !== NONE && (
+          // The tenant's VLANs, searched on the server (#534).
+          <VlanPicker
+            label="Set to"
+            value={vlanPick}
+            onChange={(v) => {
+              setVlanPick(v)
+              setVlanId(v ?? SET)
+            }}
+          />
+        )}
 
         <Field label="Automatic gateway">
           <Combobox

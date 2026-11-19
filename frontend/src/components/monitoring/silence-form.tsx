@@ -2,20 +2,14 @@ import { useEffect, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 
-import {
-  api,
-  type CheckStatus,
-  type Paginated,
-  type Prefix,
-  type Silence,
-  type TagOption,
-} from "@/lib/api"
+import { api, type CheckStatus, type Silence, type TagOption } from "@/lib/api"
 import { apiAll } from "@/lib/api-all"
+import { PrefixPicker } from "@/components/prefix-picker"
+import { IpPicker } from "@/components/ip-picker"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
   Field,
-  FormCombobox,
   FormFooter,
   FormSection,
   FormTags,
@@ -74,19 +68,6 @@ export function SilenceForm({
     queryKey: ["tags-picker"],
     queryFn: () => apiAll<TagOption>("/api/tags/"),
     staleTime: 10 * 60_000,
-  })
-  const prefixesQ = useQuery({
-    queryKey: ["prefixes-picker"],
-    queryFn: () => apiAll<Prefix>("/api/prefixes/"),
-    staleTime: 5 * 60_000,
-  })
-  const ipsQ = useQuery({
-    queryKey: ["ips-picker"],
-    queryFn: () =>
-      api<Paginated<{ id: string; ip_address: string }>>(
-        "/api/ips/?page_size=500"
-      ),
-    staleTime: 5 * 60_000,
   })
 
   useEffect(() => {
@@ -220,31 +201,19 @@ export function SilenceForm({
         />
 
         <div className="grid gap-3 @md:grid-cols-2">
-          <FormCombobox
+          <PrefixPicker
             label="Within prefix"
             value={prefixId}
             onChange={setPrefixId}
             noneLabel="Any prefix"
             placeholder="Any prefix"
-            searchPlaceholder="Search prefixes…"
-            emptyText="No prefixes."
-            options={(prefixesQ.data?.results ?? []).map((p) => ({
-              value: p.id,
-              label: p.cidr,
-            }))}
           />
-          <FormCombobox
+          <IpPicker
             label="Single IP"
             value={ipId}
             onChange={setIpId}
             noneLabel="Any IP"
             placeholder="Any IP"
-            searchPlaceholder="Search IPs…"
-            emptyText="No IPs."
-            options={(ipsQ.data?.results ?? []).map((ip) => ({
-              value: ip.id,
-              label: ip.ip_address,
-            }))}
           />
         </div>
       </FormSection>

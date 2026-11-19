@@ -16,6 +16,8 @@ export function VlanPicker({ label = "VLAN", ...rest }: VlanPickerProps) {
   const spec = useMemo<ObjectPickerSpec<VLAN, VLANOption>>(
     () => ({
       noun: "VLAN",
+      // Long lists: one page on open, searched on the server (#534).
+      serverSearch: true,
       pickerEndpoint: "/api/vlans/?picker=1",
       pickerQueryKey: ["vlans-picker"],
       optionLabel: (v) => `${v.vlan_id} · ${v.name}`,

@@ -106,6 +106,8 @@ export function DevicePicker({
       // picker shape under its own cache key (no collision with the plain
       // list every other form shares). A site narrows either, under a key of
       // its own that still starts with "devices-picker".
+      // Long lists: one page on open, searched on the server (#534).
+      serverSearch: true,
       pickerEndpoint:
         (ghostAssignedVc
           ? "/api/devices/?picker=1&with_vc=1"

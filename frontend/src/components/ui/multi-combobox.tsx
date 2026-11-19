@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { useMemo, useRef, useState } from "react"
 import { Check, ChevronsUpDown } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -37,6 +37,13 @@ export interface MultiComboboxProps {
   max?: number
   disabled?: boolean
   className?: string
+  /** The list opened or closed - a server-searched list loads on open. */
+  onOpenChange?: (open: boolean) => void
+  /** Searched on the server (#534): the typed text goes here and `options`
+   * are shown as they come. Ticks made under an earlier search stay. */
+  onSearchChange?: (search: string) => void
+  /** Options on their way: the empty row says so. */
+  loading?: boolean
 }
 
 /** The Combobox's shape - one full-width trigger, a searchable list - for
@@ -53,17 +60,28 @@ export function MultiCombobox({
   max,
   disabled,
   className,
+  onOpenChange,
+  onSearchChange,
+  loading,
 }: MultiComboboxProps) {
   const [open, setOpen] = useState(false)
-  const [query, setQuery] = useState("")
+  const [query, setQueryState] = useState("")
   const [picked, setPicked] = useState<Set<string>>(() => new Set())
+  // Every option seen since the list opened: a server search replaces
+  // `options`, and a row ticked under the last search must still be added.
+  const seen = useRef(new Map<string, MultiComboboxOption>())
+  for (const o of options) seen.current.set(o.value, o)
+  const setQuery = (v: string) => {
+    setQueryState(v)
+    onSearchChange?.(v)
+  }
 
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase()
-    return q
+    return q && !onSearchChange
       ? options.filter((o) => o.label.toLowerCase().includes(q))
       : options
-  }, [options, query])
+  }, [options, query, onSearchChange])
   const allShown = shown.length > 0 && shown.every((o) => picked.has(o.value))
   const full = max !== undefined && picked.size >= max
   const fieldProps = useFieldControlProps({}, { withOwnText: true })
@@ -93,10 +111,16 @@ export function MultiCombobox({
     if (!next) {
       setPicked(new Set())
       setQuery("")
+      seen.current = new Map()
     }
+    onOpenChange?.(next)
   }
   function add() {
-    onAdd(options.filter((o) => picked.has(o.value)))
+    onAdd(
+      [...picked]
+        .map((v) => seen.current.get(v))
+        .filter((o): o is MultiComboboxOption => !!o)
+    )
     close(false)
   }
 
@@ -151,7 +175,7 @@ export function MultiCombobox({
             </div>
           )}
           <CommandList className="max-h-72">
-            <CommandEmpty>{emptyText}</CommandEmpty>
+            <CommandEmpty>{loading ? "Loading…" : emptyText}</CommandEmpty>
             <CommandGroup>
               {shown.map((o) => {
                 const on = picked.has(o.value)

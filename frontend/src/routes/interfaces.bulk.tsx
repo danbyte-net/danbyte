@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useMemo, useState } from "react"
 import { toast } from "sonner"
 
-import { api, type TagOption, type VLANOption } from "@/lib/api"
+import { api, type TagOption } from "@/lib/api"
 import { apiAll } from "@/lib/api-all"
 import { invalidatePortCounts } from "@/lib/port-utilization"
 import { EditPageShell } from "@/components/edit-page-shell"
@@ -12,10 +12,10 @@ import {
   FormCheckbox,
   FormText,
   useFieldErrors,
-  FormCombobox,
 } from "@/components/forms"
 import { Button } from "@/components/ui/button"
 import { DevicePicker } from "@/components/device-picker"
+import { VlanPicker } from "@/components/vlan-picker"
 import { TagMultiSelect } from "@/components/cells/tag-multi-select"
 
 export const Route = createFileRoute("/interfaces/bulk")({
@@ -60,11 +60,6 @@ function BulkInterfacesPage() {
 
   const names = useMemo(() => expandPattern(pattern), [pattern])
 
-  const vlans = useQuery({
-    queryKey: ["vlans-picker"],
-    queryFn: () => apiAll<VLANOption>("/api/vlans/"),
-    staleTime: 10 * 60_000,
-  })
   const tags = useQuery({
     queryKey: ["tags-picker"],
     queryFn: () => apiAll<TagOption>("/api/tags/"),
@@ -165,18 +160,7 @@ function BulkInterfacesPage() {
             placeholder="1500"
           />
         </div>
-        <FormCombobox
-          label="VLAN"
-          value={vlanId}
-          onChange={setVlanId}
-          noneLabel="No VLAN"
-          options={(vlans.data?.results ?? []).map((v) => ({
-            value: v.id,
-            label: `${v.vlan_id} · ${v.name}`,
-          }))}
-          searchPlaceholder="Search VLANs…"
-          emptyText="No VLANs."
-        />
+        <VlanPicker value={vlanId} onChange={setVlanId} noneLabel="No VLAN" />
         <FormCheckbox label="Enabled" checked={enabled} onChange={setEnabled} />
         <Field label="Tags">
           <TagMultiSelect

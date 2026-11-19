@@ -118,7 +118,10 @@ beforeEach(() => {
         din_offset_mm: 0,
       })
     // Assign on R2 offers only devices that mount on its TS 15 profile.
-    if (path === "/api/devices/?picker=1&site=s1&din_profile=ts15")
+    if (
+      path.replace(/[?&]page=1&page_size=\d+$/, "") ===
+      "/api/devices/?picker=1&site=s1&din_profile=ts15"
+    )
       return page([{ id: "d9", name: "plc-9" }])
     return page([])
   })
@@ -196,7 +199,8 @@ describe("CabinetRailActions", () => {
     apiMock.mockImplementation((path, init) =>
       init?.method === "PATCH"
         ? Promise.reject(err)
-        : path === "/api/devices/?picker=1&site=s1&din_profile=ts15"
+        : path.replace(/[?&]page=1&page_size=\d+$/, "") ===
+            "/api/devices/?picker=1&site=s1&din_profile=ts15"
           ? page([{ id: "d9", name: "plc-9" }])
           : page([])
     )
