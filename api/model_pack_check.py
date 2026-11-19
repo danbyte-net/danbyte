@@ -415,10 +415,11 @@ class _Checker:
             errs = set(kit_errors(scan_notes))
             for n in scan_notes:
                 self.add("error" if n in errs else "warning", rel, n, row)
-            from .rack_pathways import scan_pathways
+            from .rack_pathways import mark_installed, scan_pathways
 
             seg = parts.get("post:segment") or {}
-            _, path_notes = scan_pathways(doc, seg.get("fit"), *_ref_size(fields))
+            got, path_notes = scan_pathways(doc, seg.get("fit"), *_ref_size(fields))
+            mark_installed(got, fields.get("installed"), path_notes)
             for n in path_notes:
                 self.add("warning", rel, n, row)
 

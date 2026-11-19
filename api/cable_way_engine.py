@@ -19,9 +19,12 @@ carries short reason codes (``REASONS``) saying why.
 
 Geometry is the rack's own, in millimetres: ``x`` right of the rack's
 centre seen from the front, ``y`` behind its front, ``z`` above the floor
-(a unit's centre at plinth + (u - first + ½) × pitch, the floor plan's
-``pathfinding`` constants). Cables run square, so a way's length is the
-sum of its points' x, y and z steps.
+(a unit's centre at unit 1's bottom + (u - first + ½) × pitch, as the 3D
+room draws it). Each pathway's real place is its ``geo``
+(``rack_pathways.Room``: from the kit's parts scaled to the rack, else the
+frame's nominal one); a pathway without one falls back to a nominal place
+from the frame. Cables run square, so a way's length is the sum of its
+points' x, y and z steps.
 """
 from __future__ import annotations
 
@@ -70,12 +73,20 @@ REASONS = {
 
 @dataclass
 class Geo:
-    """A rack's frame: its first unit, units, width and depth (mm)."""
+    """A rack's frame: its first unit, units, width and depth (mm), unit 1's
+    bottom and the frame over the top unit (``base_mm``, ``cap_mm``), its
+    rail planes behind the front (None: the nominal ones) and whether its
+    units count down from the top."""
 
     start: int = 1
     units: int = 42
     width_mm: float = DEFAULT_W_MM
     depth_mm: float = DEFAULT_D_MM
+    base_mm: float = RACK_PLINTH_MM
+    cap_mm: float = 0.0
+    rail_front_mm: float | None = None
+    rail_rear_mm: float | None = None
+    desc: bool = False
 
     @property
     def top_unit(self) -> int:
@@ -83,11 +94,13 @@ class Geo:
 
     @property
     def top_z(self) -> float:
-        return RACK_PLINTH_MM + self.units * U_PITCH_MM
+        return self.base_mm + self.units * U_PITCH_MM + self.cap_mm
 
     def z(self, u: float) -> float:
         """The height of unit ``u``'s centre (``u`` may be fractional)."""
-        return RACK_PLINTH_MM + (u - self.start + 0.5) * U_PITCH_MM
+        i = u - self.start
+        slot = (self.units - 1 - i) if self.desc else i
+        return self.base_mm + (slot + 0.5) * U_PITCH_MM
 
 
 @dataclass
@@ -130,13 +143,19 @@ def _sign(side: str) -> float:
 
 
 class _Place:
-    """Where pathways and ports sit in the rack (mm)."""
+    """Where pathways and ports sit in the rack (mm): a pathway's ``geo``
+    when it has one, else a nominal place from the frame."""
 
     def __init__(self, geo: Geo):
         self.geo = geo
 
     def face_y(self, face: str) -> float:
-        return FACE_INSET_MM if face != "rear" else self.geo.depth_mm - FACE_INSET_MM
+        g = self.geo
+        if face != "rear":
+            return g.rail_front_mm - 20 if g.rail_front_mm is not None else FACE_INSET_MM
+        if g.rail_rear_mm is not None:
+            return min(g.depth_mm, g.rail_rear_mm + 20)
+        return g.depth_mm - FACE_INSET_MM
 
     def port(self, e: End) -> tuple[float, float, float]:
         x = e.x_mm
@@ -145,19 +164,37 @@ class _Place:
         return (x, self.face_y(e.face), self.geo.z(e.u))
 
     def vertical_x(self, it) -> float:
+        geo = it.get("geo")
+        if geo:
+            return float(geo["cx"])
         w = float(it.get("inner_w_mm") or 50)
         return _sign(it["side"]) * (self.geo.width_mm / 2 - w / 2 - 10)
 
     def vertical_y(self, it, face: str) -> float:
-        # A full-depth manager is met at the face the cable is on.
-        return self.face_y(face if it.get("face") in ("full", "", None) else it["face"])
+        geo = it.get("geo")
+        full = it.get("face") in ("full", "", None)
+        if geo:
+            if not full:
+                return float(geo["cy"])
+            # A full-depth manager is met near the face the cable is on.
+            wall = float(geo.get("wall") or 0)
+            reach = min(60.0, (geo["y1"] - geo["y0"]) / 2 - wall)
+            return float(geo["y0"] + wall + reach if face != "rear"
+                         else geo["y1"] - wall - reach)
+        return self.face_y(face if full else it["face"])
 
     def channel_xy(self, it) -> tuple[float, float]:
+        geo = it.get("geo")
+        if geo:
+            return float(geo["x"]), float(geo["y"])
         x = _sign(it["side"]) * (self.geo.width_mm / 2 - 30)
         y = it.get("depth_mm")
         return x, float(y) if y is not None else self.face_y(it.get("face") or "rear")
 
     def hm_y(self, it, face: str) -> float:
+        geo = it.get("geo")
+        if geo:
+            return float(geo["cy"])
         f = it.get("face") if it.get("face") in ("front", "rear") else face
         return FACE_INSET_MM / 2 if f != "rear" else self.geo.depth_mm - FACE_INSET_MM / 2
 
@@ -165,6 +202,9 @@ class _Place:
         return self.geo.z(((it["u_from"] or 0) + (it["u_to"] or it["u_from"] or 0)) / 2)
 
     def entry(self, it) -> tuple[float, float, float]:
+        geo = it.get("geo")
+        if geo and "z" in geo:
+            return (float(geo["x"]), float(geo["y"]), float(geo["z"]))
         x = float(it.get("x_mm") or 0)
         y = float(it.get("y_mm") if it.get("y_mm") is not None else self.geo.depth_mm / 2)
         surface = it.get("surface")
@@ -498,5 +538,6 @@ def measure(items: list[dict], geo: Geo, ends: list[End], hops: list[dict],
 
 
 def _unit_of(geo: Geo, z: float) -> int:
-    u = round((z - RACK_PLINTH_MM) / U_PITCH_MM - 0.5 + geo.start)
+    slot = round((z - geo.base_mm) / U_PITCH_MM - 0.5)
+    u = (geo.start + geo.units - 1 - slot) if geo.desc else geo.start + slot
     return max(geo.start, min(geo.top_unit, u))

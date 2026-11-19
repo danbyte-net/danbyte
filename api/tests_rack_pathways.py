@@ -189,13 +189,14 @@ class KitScanTests(SimpleTestCase):
         self.assertIn("path:vertical:left:rear: no path empty; its inner size is unknown.", notes)
         self.assertIn("entry:top:hole: danbyte_w / danbyte_h missing.", notes)
 
-    def test_cabinet_installs_rear_and_offers_the_rest(self):
+    def test_cabinet_installs_front_and_rear_and_offers_the_rest(self):
         got, _ = scan(cabinet())
         kit = NS(pathways=got, widths_mm=[600, 800], depths_mm=[1000, 1200])
         items = by_key(rp.finish(rp.base_items(frame("cabinet", kit=kit)), frame("cabinet")))
-        self.assertFalse(items["path:vertical:left:rear"]["hidden"])
-        for key in ("path:vertical:left:front", "path:vertical:left:full"):
-            self.assertTrue(items[key]["hidden"] and items[key]["addon"], key)
+        for key in ("path:vertical:left:rear", "path:vertical:right:front"):
+            self.assertFalse(items[key]["hidden"], key)
+        self.assertTrue(items["path:vertical:left:full"]["hidden"]
+                        and items["path:vertical:left:full"]["addon"])
         self.assertEqual(items["path:vertical:left:rear"]["source"], "kit")
         # Vented roof: its entries; casters would drop the plinth's entry.
         self.assertIn("entry:top:front-left", items)
@@ -237,6 +238,7 @@ class FrameDefaultTests(SimpleTestCase):
 
     def test_defaults(self):
         self.assertEqual(self.keys("cabinet"), {
+            "path:vertical:left:front", "path:vertical:right:front",
             "path:vertical:left:rear", "path:vertical:right:rear", "entry:top:roof",
             "entry:bottom:floor", "channel:0u:left:rear", "channel:0u:right:rear"})
         self.assertEqual(self.keys("wall-cabinet"), {"entry:top:roof", "entry:bottom:floor"})
@@ -291,6 +293,8 @@ class InheritanceTests(_PathBase):
     def test_type_rows_then_rack_rows(self):
         # The type hides a default and adds one of its own.
         self.post({"rack_type_id": str(self.rt.pk), "key": "entry:bottom:floor", "hidden": True})
+        self.post({"rack_type_id": str(self.rt.pk), "key": "path:vertical:left:front",
+                   "hidden": True})
         own = self.post({"rack_type_id": str(self.rt.pk), "kind": "vertical", "side": "left",
                          "face": "front", "subkind": "finger", "inner_w_mm": 100,
                          "inner_d_mm": 120})
@@ -325,15 +329,19 @@ class InheritanceTests(_PathBase):
         self.rt.kit = kit
         self.rt.save()
         items = self.items(rack=self.rack.pk)
-        self.assertTrue(items["path:vertical:left:front"]["addon"])
+        self.assertTrue(items["path:vertical:left:full"]["addon"])
+        self.assertFalse(items["path:vertical:left:front"]["hidden"])
         self.assertEqual(items["path:vertical:left:rear"]["source"], "kit")
-        self.post({"rack_id": str(self.rack.pk), "key": "path:vertical:left:front",
+        # The full-depth add-on meets both installed ones: hide them first.
+        for key in ("path:vertical:left:front", "path:vertical:left:rear"):
+            self.post({"rack_id": str(self.rack.pk), "key": key, "hidden": True})
+        self.post({"rack_id": str(self.rack.pk), "key": "path:vertical:left:full",
                    "hidden": False})
-        self.assertFalse(self.items(rack=self.rack.pk)["path:vertical:left:front"]["hidden"])
+        self.assertFalse(self.items(rack=self.rack.pk)["path:vertical:left:full"]["hidden"])
         # The kit loses that part: the rack's row stays, marked.
-        kit.pathways = [p for p in kit.pathways if p["key"] != "path:vertical:left:front"]
+        kit.pathways = [p for p in kit.pathways if p["key"] != "path:vertical:left:full"]
         kit.save()
-        it = self.items(rack=self.rack.pk)["path:vertical:left:front"]
+        it = self.items(rack=self.rack.pk)["path:vertical:left:full"]
         self.assertTrue(it["orphan"])
         self.assertEqual(it["source"], "kit")
 
@@ -341,6 +349,8 @@ class InheritanceTests(_PathBase):
         acc = AccessoryType.objects.create(
             tenant=self.tenant, vendor="Generic", name="CM-VERT-2POST", kind="cable-manager",
             pathway={"kind": "finger", "inner_w_mm": 150, "inner_d_mm": 115})
+        self.post({"rack_id": str(self.rack.pk), "key": "path:vertical:right:front",
+                   "hidden": True})
         row = self.post({"rack_id": str(self.rack.pk), "kind": "vertical", "side": "right",
                          "face": "front", "accessory_type_id": str(acc.pk)})
         it = self.items(rack=self.rack.pk)[f"manual:{row['id']}"]
@@ -390,7 +400,7 @@ class CheckTests(_PathBase):
         e = self.errors({"rack_id": rack, "kind": "entry", "subkind": "finger",
                          "surface": "top"})
         self.assertIn("subkind", e)
-        e = self.errors({"rack_id": rack, "key": "path:vertical:left:front"})
+        e = self.errors({"rack_id": rack, "key": "path:vertical:left:full"})
         self.assertEqual(e["key"], "Not a pathway this rack inherits.")
         e = self.errors({"rack_id": rack, "key": "entry:top:roof", "kind": "vertical"})
         self.assertEqual(e["kind"], "An inherited pathway keeps its kind.")
@@ -402,10 +412,12 @@ class CheckTests(_PathBase):
     def test_overlaps(self):
         rack = str(self.rack.pk)
         e = self.errors({"rack_id": rack, "kind": "vertical", "side": "left", "face": "full"})
-        self.assertEqual(e["u_from"], "Overlaps Left rear (U1-U42). Hide one or move it.")
-        # Hidden, the default no longer blocks it; another side never did.
+        self.assertEqual(e["u_from"], "Overlaps Left front (U1-U42). Hide one or move it.")
+        # Hidden, the defaults no longer block it; another side never did.
+        self.post({"rack_id": rack, "key": "path:vertical:left:front", "hidden": True})
         self.post({"rack_id": rack, "key": "path:vertical:left:rear", "hidden": True})
         self.post({"rack_id": rack, "kind": "vertical", "side": "left", "face": "full"})
+        self.post({"rack_id": rack, "key": "path:vertical:right:front", "hidden": True})
         self.post({"rack_id": rack, "kind": "vertical", "side": "right", "face": "front",
                    "u_from": 1, "u_to": 20})
         e = self.errors({"rack_id": rack, "key": "path:vertical:left:rear", "hidden": False})

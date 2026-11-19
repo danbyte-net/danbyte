@@ -61,7 +61,9 @@ def items(kind="cabinet", extra=(), hide=()):
     return rp.finish(out, fr)
 
 
-GEO = eng.Geo(start=1, units=42, width_mm=600, depth_mm=1000)
+GEO = eng.Geo(start=1, units=42, width_mm=600, depth_mm=1000, cap_mm=rp.CAP_MM)
+#: The cabinet's default front managers, hidden where a test brings its own.
+FRONTS = ("path:vertical:left:front", "path:vertical:right:front")
 FRONT_LEFT = {"kind": "vertical", "side": "left", "face": "front", "inner_w_mm": 50}
 FRONT_RIGHT = {"kind": "vertical", "side": "right", "face": "front", "inner_w_mm": 50}
 FULL_LEFT = {"kind": "vertical", "side": "left", "face": "full", "inner_w_mm": 50}
@@ -77,20 +79,23 @@ def keys(doc):
 
 class EngineTests(SimpleTestCase):
     def test_same_rack_front_to_front(self):
-        its = items(extra=[FRONT_LEFT, FRONT_RIGHT])
+        its = items(extra=[FRONT_LEFT, FRONT_RIGHT], hide=FRONTS)
         doc = eng.propose(its, GEO, [end("A", 40), end("B", 30)])
         self.assertEqual(keys(doc), ["manual:0"])
         self.assertEqual((doc["hops"][0]["enter_u"], doc["hops"][0]["leave_u"]), (40, 30))
         self.assertEqual(doc["exit"], "port")
         self.assertIn("same-rack", doc["reasons"])
-        # Across to the manager, ten units down, back across.
-        across = 600 / 2 - 25 - 10 - eng.FACEPLATE_MM / 4
-        self.assertEqual(doc["length_mm"], round(2 * across + 10 * U_PITCH_MM))
+        # Across to the manager and into it, ten units down, back out and
+        # across: the manager where the rack lays it out (its ``geo``).
+        geo = next(i for i in its if i["key"] == "manual:0")["geo"]
+        across = abs(geo["cx"]) - eng.FACEPLATE_MM / 4
+        into = abs(geo["cy"] - eng.FACE_INSET_MM)
+        self.assertEqual(doc["length_mm"], round(2 * (across + into) + 10 * U_PITCH_MM))
         self.assertEqual(keys(doc["alternatives"][0]), ["manual:1"])
         self.assertIn("other-side", doc["alternatives"][0]["reasons"])
 
     def test_front_to_rear_prefers_a_full_depth_manager(self):
-        its = items(extra=[FRONT_LEFT, FULL_LEFT])
+        its = items(extra=[FRONT_LEFT, FULL_LEFT], hide=FRONTS)
         doc = eng.propose(its, GEO, [end("A", 40), end("B", 30, face="rear")])
         self.assertEqual(keys(doc), ["manual:1"])
         self.assertIn("full-depth", doc["reasons"])
@@ -98,7 +103,7 @@ class EngineTests(SimpleTestCase):
         self.assertIn("crosses-depth", alt["reasons"])
 
     def test_the_ports_side(self):
-        its = items(extra=[FRONT_LEFT, FRONT_RIGHT])
+        its = items(extra=[FRONT_LEFT, FRONT_RIGHT], hide=FRONTS)
         doc = eng.propose(its, GEO, [end("A", 20, side="right")])
         self.assertEqual(keys(doc)[0], "manual:1")
         self.assertIn("side-right", doc["reasons"])
@@ -158,7 +163,7 @@ class EngineTests(SimpleTestCase):
             self.assertNotIn("path:vertical:left:rear", keys(alt))
 
     def test_an_unknown_side_is_ambiguous_and_still_deterministic(self):
-        its = items(extra=[FRONT_LEFT, FRONT_RIGHT])
+        its = items(extra=[FRONT_LEFT, FRONT_RIGHT], hide=FRONTS)
         a = eng.propose(its, GEO, [end("A", 20, side="")])
         b = eng.propose(its, GEO, [end("A", 20, side="")])
         self.assertEqual(a, b)
@@ -168,7 +173,7 @@ class EngineTests(SimpleTestCase):
 
     def test_a_horizontal_manager_next_to_the_port(self):
         hm = {"kind": "horizontal", "face": "front", "u_from": 21, "u_to": 21}
-        its = items(extra=[FRONT_LEFT, hm])
+        its = items(extra=[FRONT_LEFT, hm], hide=FRONTS)
         doc = eng.propose(its, GEO, [end("A", 20)])
         self.assertEqual(keys(doc)[:2], ["manual:1", "manual:0"])
         self.assertIn("horizontal-manager", doc["reasons"])
@@ -195,7 +200,7 @@ class EngineTests(SimpleTestCase):
         with self.assertRaisesMessage(ValueError, "does not reach U50"):
             eng.measure(its, GEO, e, [{"key": "path:vertical:left:rear", "enter_u": 50}], "top")
         with self.assertRaisesMessage(ValueError, "not a pathway"):
-            eng.measure(its, GEO, e, [{"key": "path:vertical:left:front"}], "top")
+            eng.measure(its, GEO, e, [{"key": "path:vertical:left:full"}], "top")
 
 
 # ── the database ────────────────────────────────────────────────────────────
@@ -328,7 +333,7 @@ class ManualWayTests(_WayBase):
         bad = [
             [{"key": "path:vertical:right:rear"}],
             [{"key": "entry:top:roof"}, {"key": "path:vertical:left:rear"}],
-            [{"key": "path:vertical:left:front"}],
+            [{"key": "path:vertical:left:full"}],
             [{"key": "path:vertical:left:rear", "enter_u": 40, "leave_u": 42},
              {"key": "channel:0u:left:rear", "enter_u": 30}],
             [],
@@ -542,3 +547,242 @@ class ChannelPickerTests(_WayBase):
         prop = self.summary(c)["racks"][0]["proposal"]
         self.assertEqual([h["key"] for h in prop["hops"]], ["channel:0u:left:rear"])
         self.assertIn("pdu-channel", prop["reasons"])
+
+
+# ── phase 3: places, moves, other writers, the scene ───────────────────────
+
+class PlaceTests(SimpleTestCase):
+    """Each pathway's place in the rack (``geo``, api.rack_pathways.Room),
+    from the kit's parts scaled to the rack, else the frame's nominal one;
+    the engine runs its ways through them."""
+
+    def kit_items(self, width=600, depth=1000, units=42):
+        from .tests_rack_pathways import cabinet, scan
+
+        got, _ = scan(cabinet())
+        kit = NS_KIT(pathways=got)
+        fr = rp.Frame(frame="cabinet", kit=kit, top="vented", base="plinth", side_panels=True,
+                      start=1, units=units, width_mm=width, depth_mm=depth)
+        return {i["key"]: i for i in rp.finish(rp.base_items(fr), fr)}
+
+    def test_a_kits_managers_where_its_parts_are(self):
+        its = self.kit_items()
+        front = its["path:vertical:left:front"]["geo"]
+        rear = its["path:vertical:left:rear"]["geo"]
+        # Beside the gear (the 19" opening is ±225 mm), inside the side panel:
+        # the centre of its inside is its ``path`` empty.
+        self.assertTrue(-300 < front["cx"] < -225, front)
+        self.assertAlmostEqual(front["cx"], -271, delta=0.5)
+        # The front one near the front, as deep as its inside and walls; the
+        # rear one at the rear.
+        self.assertAlmostEqual(front["y1"] - front["y0"], 88 + 2 * front["wall"], delta=1)
+        self.assertGreater(rear["y0"], front["y1"] + 500)
+        self.assertEqual(front["cy"], (front["y0"] + front["y1"]) / 2)
+        # Up the rack's units.
+        self.assertEqual((front["z0"], front["z1"]), (100.0, round(100 + 42 * U_PITCH_MM, 1)))
+
+    def test_scaled_to_a_wider_deeper_rack(self):
+        small = self.kit_items()
+        big = self.kit_items(width=800, depth=1200)
+        a, b = small["path:vertical:right:front"]["geo"], big["path:vertical:right:front"]["geo"]
+        # As far in from the side panel; the front one as far from the front.
+        self.assertAlmostEqual(300 - a["cx"], 400 - b["cx"], delta=0.2)
+        self.assertEqual(a["y0"], b["y0"])
+        ra, rb = small["path:vertical:right:rear"]["geo"], big["path:vertical:right:rear"]["geo"]
+        self.assertEqual(rb["y1"] - ra["y1"], 200)
+        full = big["path:vertical:right:full"]["geo"]
+        self.assertGreater(full["y1"] - full["y0"], 888)
+
+    def test_defaults_have_places_too(self):
+        its = {i["key"]: i for i in items()}
+        g = its["path:vertical:right:front"]["geo"]
+        self.assertTrue(225 < g["x0"] < g["x1"] <= 300)
+        roof = its["entry:top:roof"]["geo"]
+        self.assertEqual(roof["z"], round(rp.BASE_MM + 42 * U_PITCH_MM + rp.CAP_MM, 1))
+        two = {i["key"]: i for i in items("2-post")}
+        # A 2-post's finger managers stand outside the frame.
+        self.assertGreaterEqual(two["path:vertical:right:full"]["geo"]["x0"], 300)
+        self.assertEqual(two["path:vertical:left:full"]["geo"]["open"], "front")
+
+    def test_the_engine_runs_through_the_places(self):
+        its = list(self.kit_items().values())
+        geo = eng.Geo(start=1, units=42, width_mm=600, depth_mm=1000, cap_mm=30)
+        doc = eng.propose(its, geo, [end("A", 20, face="front", side="left")],
+                          exit_pref="top")
+        self.assertEqual(keys(doc)[0], "path:vertical:left:front")
+        g = next(i for i in its if i["key"] == "path:vertical:left:front")["geo"]
+        # Into the manager at the port's unit, at its inner centre.
+        self.assertIn([round(g["cx"]), round(g["cy"]), round(geo.z(20))], doc["points"])
+
+    def test_numbered_from_the_top(self):
+        geo = eng.Geo(start=1, units=42, desc=True)
+        self.assertGreater(geo.z(1), geo.z(42))
+        self.assertEqual(eng._unit_of(geo, geo.z(5)), 5)
+
+
+class NS_KIT:
+    """A kit as base_items reads it, without a model file."""
+
+    def __init__(self, pathways):
+        self.pathways = pathways
+        self.widths_mm, self.depths_mm, self.parts, self.model_3d = [600, 800], [1000], {}, None
+
+
+class InstalledTests(SimpleTestCase):
+    def test_a_kit_says_which_managers_it_installs(self):
+        from .rack_kits import read_kit
+        from .tests_rack_pathways import cabinet, scan
+
+        fields, notes = read_kit("rack-kits/G/K/kit.yaml", {
+            "name": "K", "frame": "cabinet", "model3d": {"file": "models/G/K.kit.glb"},
+            "pathways": {"installed": ["path:vertical:left:full", "bogus"]}})
+        self.assertEqual(fields["installed"], ["path:vertical:left:full"])
+        self.assertTrue(any("bogus" in n for n in notes))
+        got, _ = scan(cabinet())
+        notes = []
+        rp.mark_installed(got, fields["installed"], notes)
+        kit = NS_KIT(pathways=got)
+        fr = rp.Frame(frame="cabinet", kit=kit, top="vented", base="plinth", side_panels=True,
+                      start=1, units=42, width_mm=600, depth_mm=1000)
+        shown = {i["key"] for i in rp.base_items(fr) if i["kind"] == "vertical"
+                 and not i["hidden"]}
+        self.assertEqual(shown, {"path:vertical:left:full"})
+        # Not said: the cabinet's rule, front and rear.
+        got, _ = scan(cabinet())
+        kit.pathways = got
+        shown = {i["key"] for i in rp.base_items(fr) if i["kind"] == "vertical"
+                 and not i["hidden"]}
+        self.assertEqual(shown, {f"path:vertical:{s}:{f}" for s in ("left", "right")
+                                 for f in ("front", "rear")})
+        self.assertIsNone(read_kit("rack-kits/G/K/kit.yaml", {
+            "name": "K", "frame": "cabinet",
+            "model3d": {"file": "models/G/K.kit.glb"}})[0]["installed"])
+
+
+class MoveTests(_WayBase):
+    """A device moving refreshes its cables' ways."""
+
+    def move(self, dev, **kw):
+        with self.captureOnCommitCallbacks(execute=True):
+            for k, v in kw.items():
+                setattr(dev, k, v)
+            dev.save()
+
+    def test_record_mode_records_again(self):
+        self.record_mode()
+        with self.captureOnCommitCallbacks(execute=True):
+            c = self.cable(self.sw, self.far)
+        w = CableWay.objects.get(cable=c, rack=self.rack)
+        before = w.hops[0]["enter_u"]
+        self.move(self.sw, position=10)
+        w.refresh_from_db()
+        self.assertEqual((w.state, w.source), ("recorded", "auto"))
+        self.assertNotEqual(w.hops[0]["enter_u"], before)
+        self.assertEqual(w.hops[0]["enter_u"], 10)
+
+    def test_propose_mode_flags_an_accepted_way(self):
+        c = self.cable(self.sw, self.far)
+        self.post("/api/cable-ways/accept/", {"cable_id": str(c.pk), "rack_id": str(self.rack.pk)})
+        self.move(self.sw, position=10)
+        w = CableWay.objects.get(cable=c, rack=self.rack)
+        # Out of date: back to proposed, waiting to be accepted again.
+        self.assertEqual((w.state, w.source), ("proposed", "auto"))
+        self.assertEqual(w.hops[0]["enter_u"], 10)
+
+    def test_a_manual_way_is_kept_and_shows_stale(self):
+        c = self.cable(self.sw, self.far)
+        way = self.post("/api/cable-ways/", {"cable_id": str(c.pk), "rack_id": str(self.rack.pk),
+                                             "hops": [{"key": "path:vertical:left:rear",
+                                                       "enter_u": 40, "leave_u": 42},
+                                                      {"key": "entry:top:roof"}]})
+        self.assertFalse(way["stale"])
+        self.move(self.sw, position=12)
+        w = CableWay.objects.get(pk=way["id"])
+        self.assertEqual((w.source, w.hops[0]["enter_u"]), ("manual", 40))
+        rack = next(r for r in self.summary(c)["racks"] if r["rack"]["id"] == str(self.rack.pk))
+        self.assertTrue(rack["way"]["stale"])
+
+    def test_a_save_that_moves_nothing_refreshes_nothing(self):
+        self.record_mode()
+        with self.captureOnCommitCallbacks(execute=True):
+            c = self.cable(self.sw, self.far)
+        stamp = CableWay.objects.get(cable=c, rack=self.rack).updated_at
+        self.move(self.sw, name="sw-renamed")
+        self.assertEqual(CableWay.objects.get(cable=c, rack=self.rack).updated_at, stamp)
+
+
+class OtherWriterTests(SimpleTestCase):
+    def test_a_rolled_back_cable_is_refreshed_with_the_next_commit(self):
+        from . import cable_ways as cw
+
+        cw._queue().clear()
+        cw._queue().add("gone")
+        seen = []
+        real = cw._run_refresh
+        cw._run_refresh = seen.append
+        try:
+            cw._flush()
+        finally:
+            cw._run_refresh = real
+        self.assertEqual(seen, ["gone"])
+        self.assertEqual(cw._queue(), set())
+
+
+class SceneTests(_WayBase):
+    def test_the_rack_scene_carries_pathways_and_ways(self):
+        self.record_mode()
+        with self.captureOnCommitCallbacks(execute=True):
+            c = self.cable(self.sw, self.far)
+        r = self.client.get(f"/api/racks/{self.rack.pk}/scene/")
+        self.assertEqual(r.status_code, 200, r.content)
+        doc = r.json()
+        keys_ = {p["key"] for p in doc["pathways"]}
+        self.assertIn("path:vertical:left:front", keys_)
+        self.assertTrue(all(p["geo"] for p in doc["pathways"]))
+        (way,) = doc["ways"]
+        self.assertEqual((way["cable_id"], way["end"], way["state"]), (str(c.pk), "A", "recorded"))
+        self.assertEqual(way["ends"], [{"end": "A", "device": str(self.sw.pk), "port": "eth-l",
+                                        "kind": "interface"}])
+        self.assertTrue(way["hops"])
+
+    def test_only_the_cables_the_reader_may_view(self):
+        self.record_mode()
+        with self.captureOnCommitCallbacks(execute=True):
+            self.cable(self.sw, self.far)
+        user = User.objects.create_user("v", password="x")
+        UserProfile.objects.create(user=user).tenants.add(self.tenant)
+        g = ObjectPermission.objects.create(name="r", object_types=["rack", "device"],
+                                            actions=["view"])
+        g.users.add(user)
+        g.tenants.add(self.tenant)
+        self.client.force_login(user)
+        s = self.client.session
+        s["current_tenant_id"] = str(self.tenant.pk)
+        s.save()
+        r = self.client.get(f"/api/racks/{self.rack.pk}/scene/")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["ways"], [])
+        self.assertTrue(r.json()["pathways"])
+
+
+from .tests_stack_links import _Base as _StackBase  # noqa: E402
+
+
+class StackAutoCableTests(_StackBase):
+    def test_a_stacks_auto_cables_are_recorded_too(self):
+        from .models import VirtualChassis
+
+        TenantSettings.objects.update_or_create(tenant=self.tenant,
+                                                defaults={"cable_ways_mode": "record"})
+        rack = Rack.objects.create(tenant=self.tenant, name="SR", site=self.site)
+        for i, m in enumerate(self.members):
+            Device.objects.filter(pk=m.pk).update(rack=rack, position=10 + i, face="front")
+        with self.captureOnCommitCallbacks(execute=True):
+            vc = VirtualChassis.objects.get(pk=self.vc.pk)
+            vc.auto_connect_stack = True
+            vc.save()
+        cables = list(Cable.objects.filter(auto_chassis=self.vc))
+        self.assertTrue(cables)
+        for c in cables:
+            self.assertTrue(CableWay.objects.filter(cable=c, rack=rack, state="recorded",
+                                                    source="auto").exists(), c)

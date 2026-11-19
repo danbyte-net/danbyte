@@ -154,7 +154,30 @@ def read_kit(path: str, data) -> tuple[dict | None, list[str]]:
     return {"vendor": vendor[:100], "name": name, "frame": frame,
             "widths_mm": _mm_list(data.get("widths_mm"), "widths_mm", notes),
             "depths_mm": _mm_list(data.get("depths_mm"), "depths_mm", notes),
-            "colours": colours, "file": rel, "far": far}, notes
+            "colours": colours, "file": rel, "far": far,
+            "installed": _installed(data.get("pathways"), notes)}, notes
+
+
+def _installed(raw, notes: list[str]) -> list[str] | None:
+    """``pathways: {installed: [...]}``: the vertical pathways the kit's racks
+    have from the start (the rest are add-ons a rack turns on); None when the
+    kit does not say, and the frame's rule applies (api.rack_pathways)."""
+    from .rack_pathways import VERTICAL
+
+    if raw is None:
+        return None
+    got = raw.get("installed") if isinstance(raw, dict) else None
+    if not isinstance(got, list):
+        notes.append("pathways.installed: not a list of pathway names - ignored.")
+        return None
+    out = []
+    for k in got[:16]:
+        k = str(k).strip()
+        if not VERTICAL.match(k):
+            notes.append(f"pathways.installed: {k!r} is not path:vertical:<side>:<face>.")
+        elif k not in out:
+            out.append(k)
+    return out
 
 
 def scan_parts(doc: dict) -> tuple[dict, list[str]]:
@@ -332,12 +355,13 @@ def apply_kit(tenant, path: str, data, files, *, dry_run: bool = False,
     if kit_errors(scan_notes):
         return "error", name, "", [*notes, *scan_notes]
     notes += [f"model: {n}" for n in scan_notes]
-    from .rack_pathways import kit_summary, scan_pathways
+    from .rack_pathways import kit_summary, mark_installed, scan_pathways
 
     seg = parts.get("post:segment") or {}
     pathways, path_notes = scan_pathways(
         blobs["file"][1], seg.get("fit"), (fields["widths_mm"] or [600])[0],
         (fields["depths_mm"] or [1000])[0])
+    mark_installed(pathways, fields["installed"], path_notes)
     notes += [f"model: {n}" for n in path_notes]
     notes.append(kit_summary(pathways))
     tri = triangles(blobs["file"][1])

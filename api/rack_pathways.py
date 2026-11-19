@@ -26,6 +26,7 @@ field errors of a row about to be saved.
 """
 from __future__ import annotations
 
+import math
 import re
 
 KIND_CHOICES = [("vertical", "Vertical"), ("horizontal", "Horizontal"),
@@ -61,10 +62,17 @@ VALUE_FIELDS = ("kind", "subkind", "side", "face", "surface", "u_from", "u_to", 
 VERTICAL = re.compile(r"^path:vertical:(left|right):(front|rear|full)$")
 ENTRY = re.compile(r"^entry:(top|bottom|side):([a-z0-9][a-z0-9-]*)$")
 CHANNEL = re.compile(r"^channel:0u:(left|right):(front|rear)$")
-#: Which of a side's vertical pathways a kit installs: the first it has in
-#: this order (spec §14: a cabinet's rear corner channels, a 2-post's
-#: full-depth managers); the others are add-ons, hidden until shown.
+#: Which of a side's vertical pathways a kit installs when its ``kit.yaml``
+#: does not say (``pathways: {installed: [...]}``): the faces its frame
+#: installs (a cabinet: its front managers and its rear corner channels),
+#: else the first it has in ``INSTALLED_FACE`` (a 2-post's full-depth
+#: managers). The others are add-ons, hidden until shown.
 INSTALLED_FACE = ("rear", "full", "front")
+INSTALLED_BY_FRAME = {"cabinet": ("front", "rear")}
+#: The sides a manager's cables enter from (spec §14 v1.16 ``danbyte_open``).
+OPEN_CHOICES = ("front", "rear", "inner", "outer", "ends")
+#: A manager's wall when the kit does not show one (mm).
+WALL_MM = 2.0
 
 
 # ── reading a kit ───────────────────────────────────────────────────────────
@@ -112,6 +120,7 @@ def scan_pathways(doc: dict, fit: dict | None, ref_w_mm: float, ref_d_mm: float)
                 parent.setdefault(c, i)
     u1 = (fit or {}).get("u1_mm")
     ref_u = (fit or {}).get("ref_u")
+    front = _front_plane(doc, world)
     out: list[dict] = []
     notes: list[str] = []
     seen: set[tuple[str, str]] = set()
@@ -139,6 +148,9 @@ def scan_pathways(doc: dict, fit: dict | None, ref_w_mm: float, ref_d_mm: float)
                     "inner_d_mm": _mm(ex.get("danbyte_inner_d"))}
             if path is not None and (item["inner_w_mm"] is None or item["inner_d_mm"] is None):
                 notes.append(f"{name}: danbyte_inner_w / danbyte_inner_d missing.")
+            geo = _vertical_geo(doc, world, i, path, ex, item, front)
+            if geo is not None:
+                item["geo"] = geo
             out.append(item)
             continue
         m = ENTRY.match(name)
@@ -177,6 +189,63 @@ def scan_pathways(doc: dict, fit: dict | None, ref_w_mm: float, ref_d_mm: float)
             out.append(item)
     out.sort(key=lambda p: (KINDS.index(p["kind"]), p["key"], p.get("on", "")))
     return out, notes
+
+
+def _front_plane(doc: dict, world: dict) -> float:
+    """The kit's front plane (glTF z, m): the glTF z = 0 plane of §14, or a
+    frame part standing ahead of it (a 2-post's base plate) - as
+    api.rack_kits.kit_fit measures the rail's inset from."""
+    from .model_anchors import subtree_box
+    from .rack_kits import PARTS, part_name
+
+    nodes = doc.get("nodes") if isinstance(doc.get("nodes"), list) else []
+    front = 0.0
+    for i in world:
+        name = part_name(str(nodes[i].get("name") or ""))
+        if name not in PARTS or name.startswith(("door:", "label:", "pdu:")):
+            continue
+        box = subtree_box(doc, i, world)
+        if box is not None:
+            front = max(front, box[1][2])
+    return front
+
+
+def _vertical_geo(doc, world, i, path, ex, item, front) -> dict | None:
+    """Where a vertical manager is in the kit's reference rack (mm): its
+    mesh across (``x0``..``x1``, right of the centre seen from the front),
+    the centre of its inner cross-section across (``cx``, its ``path``
+    empty), its depth from the front (``d0``..``d1``), its wall, and how
+    cables enter it (``open``, ``pitch_mm``: spec §14 v1.16). A manager
+    stretched in depth is a 1000 mm mesh from its front edge: its real
+    depth is its inner depth and walls."""
+    from .model_anchors import subtree_box
+
+    nodes = doc.get("nodes") or []
+    box = subtree_box(doc, i, world)
+    if box is None:
+        return None
+    (x0, _y0, z0), (x1, _y1, z1) = box
+    extras = nodes[i].get("extras") if isinstance(nodes[i].get("extras"), dict) else {}
+    stretch = str(extras.get("danbyte_stretch") or "").lower()
+    w_mesh = (x1 - x0) * 1000
+    inner_w, inner_d = item["inner_w_mm"], item["inner_d_mm"]
+    wall = max(0.0, (w_mesh - inner_w) / 2) if inner_w else WALL_MM
+    wall = min(wall, 25.0)
+    if "y" in stretch:
+        d0 = (front - world[i][2][3]) * 1000
+        d1 = d0 + (inner_d + 2 * wall if inner_d else 90.0)
+    else:
+        d0, d1 = (front - z1) * 1000, (front - z0) * 1000
+    cx = world[path][0][3] * 1000 if path is not None else (x0 + x1) * 500
+    geo = {"x0": round(x0 * 1000, 1), "x1": round(x1 * 1000, 1), "cx": round(cx, 1),
+           "d0": round(d0, 1), "d1": round(d1, 1), "wall": round(wall, 1)}
+    opened = str(ex.get("danbyte_open") or "").strip().lower()
+    if opened in OPEN_CHOICES:
+        geo["open"] = opened
+    pitch = _num(ex.get("danbyte_pitch_mm"))
+    if pitch is not None and 5 <= pitch <= 500:
+        geo["pitch_mm"] = round(pitch, 2)
+    return geo
 
 
 def _entry_place(nodes, world, i, p, ref_w, ref_d) -> tuple[float, float]:
@@ -236,11 +305,15 @@ def manager_pathway(doc: dict) -> dict | None:
 # ── what a frame has without a kit ──────────────────────────────────────────
 
 #: A rack with no kit (or a kit without pathway data) gets these from its
-#: frame (the plan §1): a cabinet its rear corner channels, a roof and a
-#: floor entry and rear 0U channels; a wall cabinet a roof and a floor
+#: frame (the plan §1): a cabinet its front vertical managers and rear
+#: corner channels, a roof and a floor entry and rear 0U channels; a wall cabinet a roof and a floor
 #: entry; a 2-post a vertical finger manager each side; an open 4-post none.
 FRAME_DEFAULTS: dict[str, list[dict]] = {
     "cabinet": [
+        {"key": "path:vertical:left:front", "kind": "vertical", "side": "left",
+         "face": "front", "subkind": "channel", "inner_w_mm": 50, "inner_d_mm": 90},
+        {"key": "path:vertical:right:front", "kind": "vertical", "side": "right",
+         "face": "front", "subkind": "channel", "inner_w_mm": 50, "inner_d_mm": 90},
         {"key": "path:vertical:left:rear", "kind": "vertical", "side": "left", "face": "rear",
          "subkind": "channel", "inner_w_mm": 50, "inner_d_mm": 90},
         {"key": "path:vertical:right:rear", "kind": "vertical", "side": "right",
@@ -276,21 +349,23 @@ def _blank_item(**kw) -> dict:
             "depth_mm": None, "x_mm": None, "y_mm": None, "inner_w_mm": None,
             "inner_d_mm": None, "fill_limit_pct": None, "accessory_type": None,
             "device": None, "name": "", "description": "", "hidden": False, "addon": False,
-            "orphan": False, "overridden": []}
+            "orphan": False, "overridden": [], "geo": None}
     item.update(kw)
     return item
 
 
 class Frame:
     """What the pathways of one rack (or rack type) are laid out in: its
-    frame, kit, roof and base, units and outer size."""
+    frame, kit, roof and base, units and outer size, its rail (19, 21 or 23
+    inch) and its Look's rail depth."""
 
     def __init__(self, *, frame, kit, top, base, side_panels, start, units,
-                 width_mm, depth_mm):
+                 width_mm, depth_mm, rail_width=19, rail_depth_mm=None, desc=False):
         self.frame, self.kit, self.top, self.base = frame, kit, top, base
         self.side_panels = side_panels
         self.start, self.units = start, units
         self.width_mm, self.depth_mm = width_mm, depth_mm
+        self.rail_width, self.rail_depth_mm, self.desc = rail_width, rail_depth_mm, desc
 
     @property
     def top_unit(self) -> int:
@@ -306,17 +381,90 @@ class Frame:
         depth = rack.outer_depth_mm or (rt.outer_depth_mm if rt else None)
         return cls(frame=look["frame"], kit=look["kit"], top=look["top"], base=look["base"],
                    side_panels=look["side_panels"], start=rack.starting_unit,
-                   units=rack.u_height, width_mm=width, depth_mm=depth)
+                   units=rack.u_height, width_mm=width, depth_mm=depth,
+                   rail_width=rack.width or 19, rail_depth_mm=look.get("rail_depth_mm"),
+                   desc=bool(rack.desc_units))
 
     @classmethod
     def of_type(cls, rt) -> Frame:
         return cls(frame=rt.frame, kit=rt.kit if rt.kit_id else None, top=rt.top,
                    base=rt.base, side_panels=rt.side_panels, start=rt.starting_unit,
-                   units=rt.u_height, width_mm=rt.outer_width_mm, depth_mm=rt.outer_depth_mm)
+                   units=rt.u_height, width_mm=rt.outer_width_mm, depth_mm=rt.outer_depth_mm,
+                   rail_width=getattr(rt, "width", 19) or 19,
+                   rail_depth_mm=getattr(rt, "rail_depth_mm", None),
+                   desc=bool(getattr(rt, "desc_units", False)))
 
 
 def _ref(values, fallback: int) -> int:
     return int(values[0]) if values else fallback
+
+
+def _installed(raw: list[dict], frame: str) -> dict[str, set[str]]:
+    """``{side: faces}`` of the vertical pathways a kit installs: the ones its
+    ``kit.yaml`` names (``installed`` on each, api.rack_kits.read_kit), else
+    the frame's rule (``INSTALLED_BY_FRAME``, ``INSTALLED_FACE``)."""
+    verticals = [p for p in raw if p["kind"] == "vertical"]
+    if any("installed" in p for p in verticals):
+        out: dict[str, set[str]] = {"left": set(), "right": set()}
+        for p in verticals:
+            if p.get("installed"):
+                out.setdefault(p["side"], set()).add(p["face"])
+        return out
+    out = {}
+    for side in ("left", "right"):
+        faces = {p["face"] for p in verticals if p["side"] == side}
+        want = set(INSTALLED_BY_FRAME.get(frame, ())) & faces
+        if not want:
+            first = next((f for f in INSTALLED_FACE if f in faces), "")
+            want = {first} if first else set()
+        out[side] = want
+    return out
+
+
+def mark_installed(pathways: list[dict], keys, notes: list[str]) -> None:
+    """Mark the kit's vertical pathways its ``kit.yaml`` installs
+    (``pathways: {installed: [...]}``); None: the kit does not say, and the
+    frame's rule applies (``_installed``)."""
+    if keys is None:
+        return
+    keys = set(keys)
+    have = {p["key"] for p in pathways if p["kind"] == "vertical"}
+    for k in sorted(keys - have):
+        notes.append(f"pathways.installed: {k} is not a vertical pathway of the model.")
+    for p in pathways:
+        if p["kind"] == "vertical":
+            p["installed"] = p["key"] in keys
+
+
+def _kit_geo(kit) -> dict[str, dict]:
+    """``{key: geo}`` of a kit's vertical pathways read from its model, for a
+    kit imported before Danbyte stored where they are (cached per kit and
+    version; {} without a readable model)."""
+    from django.core.cache import cache
+
+    field = getattr(kit, "model_3d", None)
+    pk = getattr(kit, "pk", None)
+    if not field or pk is None:
+        return {}
+    stamp = getattr(kit, "updated_at", None)
+    key = f"rack-kit-geo:{pk}:{stamp.timestamp() if stamp else ''}"
+    hit = cache.get(key)
+    if hit is not None:
+        return hit
+    out: dict[str, dict] = {}
+    try:
+        from .model_3d import validate_glb
+
+        with field.open("rb") as fh:
+            doc = validate_glb(fh.read())
+        parts = getattr(kit, "parts", None) or {}
+        fit = (parts.get("post:segment") or {}).get("fit")
+        got, _ = scan_pathways(doc, fit, _ref(kit.widths_mm, 600), _ref(kit.depths_mm, 1000))
+        out = {p["key"]: p["geo"] for p in got if p.get("geo")}
+    except Exception:  # noqa: BLE001 - a missing or unreadable file: nominal places
+        out = {}
+    cache.set(key, out, 24 * 3600)
+    return out
 
 
 def base_items(fr: Frame) -> list[dict]:
@@ -337,11 +485,11 @@ def base_items(fr: Frame) -> list[dict]:
     on_parts = {f"top:{fr.top}", f"base:{fr.base}"}
     if fr.side_panels:
         on_parts |= {"side:panel", "side:panel:infill", "side:panel:edge"}
-    installed: dict[str, str] = {}
-    if source == "kit":
-        for side in ("left", "right"):
-            faces = {p["face"] for p in raw if p["kind"] == "vertical" and p["side"] == side}
-            installed[side] = next((f for f in INSTALLED_FACE if f in faces), "")
+    installed = _installed(raw, fr.frame) if source == "kit" else {}
+    lazy = None
+    if source == "kit" and any(p["kind"] == "vertical" and "geo" not in p for p in raw):
+        lazy = _kit_geo(kit)
+    channels = (getattr(kit, "parts", None) or {}) if source == "kit" else {}
     out: list[dict] = []
     keys: set[str] = set()
     for p in raw:
@@ -354,14 +502,18 @@ def base_items(fr: Frame) -> list[dict]:
                            subkind=p.get("subkind") or "", side=p.get("side") or "",
                            face=p.get("face") or "", surface=p.get("surface") or "",
                            inner_w_mm=p.get("inner_w_mm"), inner_d_mm=p.get("inner_d_mm"))
+        ref = {"w": ref_w, "d": ref_d}
         if p["kind"] == "vertical":
             item["u_from"], item["u_to"] = fr.start, fr.top_unit
             if (p["face"] == "full" and fr.frame != "2-post"
                     and item["inner_d_mm"] is not None):
                 # A full-depth manager runs front to back: it grows with the rack.
                 item["inner_d_mm"] = max(1, min(SIZE_MAX, item["inner_d_mm"] + depth - ref_d))
-            if source == "kit" and p["face"] != installed.get(p["side"]):
+            if source == "kit" and p["face"] not in installed.get(p["side"], set()):
                 item["hidden"] = item["addon"] = True
+            geo = p.get("geo") or (lazy or {}).get(p["key"])
+            if geo:
+                ref["geo"] = geo
         elif p["kind"] == "entry":
             item["x_mm"] = round((p.get("fx", 0.5) - 0.5) * width)
             item["y_mm"] = round(p.get("fd", 0.5) * depth)
@@ -378,8 +530,224 @@ def base_items(fr: Frame) -> list[dict]:
             if d is not None and p["face"] == "rear":
                 d = max(0, d + depth - ref_d)
             item["depth_mm"] = d
+            at = (channels.get(p["key"]) or {}).get("at")
+            if isinstance(at, list) and len(at) == 3:
+                ref["at"] = at
+        item["_ref"] = ref
         out.append(item)
     return out
+
+
+# ── where a pathway is, in the rack (mm) ───────────────────────────────────
+
+#: A rack unit and the height of unit 1 without a kit (api.pathfinding's).
+U_MM = 44.45
+BASE_MM = 100.0
+#: The frame over the top unit without a kit (the room's RACK_CAP_M).
+CAP_MM = 30.0
+#: The 19-inch, 21-inch and 23-inch rail openings (mm), as the room draws.
+OPENING_MM = {10: 222.0, 19: 450.0, 21: 500.0, 23: 551.0}
+#: Without a kit the room's rails stand this share of the depth in from
+#: the front and the rear (world RAIL_INSET_FRAC, 0.45 from the centre).
+RAIL_FRAC = 0.05
+
+
+def kit_fit(fr: Frame) -> dict | None:
+    kit = fr.kit
+    parts = getattr(kit, "parts", None) if kit is not None else None
+    if not isinstance(parts, dict) or not getattr(kit, "model_3d", None):
+        return None
+    fit = (parts.get("post:segment") or {}).get("fit")
+    return fit if isinstance(fit, dict) else None
+
+
+class Room:
+    """A frame's measurements in the rack's own millimetres - ``x`` right of
+    the centre seen from the front, ``y`` behind the front, ``z`` above the
+    floor - as the 3D room draws the rack (world rackBaseM, rackRailPlanesM,
+    rackFootprintM): unit 1's bottom, the frame over the top unit, the rail
+    planes and the opening."""
+
+    def __init__(self, fr: Frame):
+        self.fr = fr
+        fit = kit_fit(fr)
+        self.fit = fit
+        self.width = float(fr.width_mm or OPENING_MM.get(fr.rail_width, 450.0) + 150)
+        self.depth = float(fr.depth_mm or 1000)
+        self.base = float(fit["u1_mm"]) if fit else BASE_MM
+        self.cap = float(fit["cap_mm"]) if fit else CAP_MM
+        self.opening = OPENING_MM.get(fr.rail_width, 450.0)
+        if fit:
+            front = min(float(fit["rail_inset_mm"]), self.depth / 2)
+            if fr.frame == "2-post":
+                rear = front
+            elif fr.rail_depth_mm:
+                rear = min(self.depth, front + float(fr.rail_depth_mm))
+            else:
+                rear = self.depth - front
+        elif fr.frame == "2-post":
+            front = rear = self.depth / 2
+        else:
+            front = self.depth * RAIL_FRAC
+            rear = (min(self.depth, front + float(fr.rail_depth_mm)) if fr.rail_depth_mm
+                    else self.depth * (1 - RAIL_FRAC))
+        self.rail_front, self.rail_rear = front, rear
+
+    @property
+    def top(self) -> float:
+        """The roof's top (the rack's height)."""
+        return self.base + self.fr.units * U_MM + self.cap
+
+    def slot(self, u: float) -> float:
+        """Unit ``u``'s place from the bottom (0 the lowest), as drawn."""
+        i = u - self.fr.start
+        return (self.fr.units - 1 - i) if self.fr.desc else i
+
+    def z_mid(self, u: float) -> float:
+        return self.base + (self.slot(u) + 0.5) * U_MM
+
+    def z_span(self, lo, hi) -> tuple[float, float]:
+        a = self.base + self.slot(lo) * U_MM
+        b = self.base + self.slot(hi) * U_MM
+        return min(a, b), max(a, b) + U_MM
+
+
+def _sign(side: str) -> float:
+    return -1.0 if side == "left" else 1.0
+
+
+def _r(v: float) -> float:
+    return round(v, 1)
+
+
+def _vertical_place(it: dict, room: Room, ref: dict) -> dict:
+    fr = room.fr
+    sign = _sign(it["side"])
+    w_in = float(it["inner_w_mm"] or 50)
+    d_in = float(it["inner_d_mm"] or 90)
+    geo = ref.get("geo")
+    open_frame = fr.frame not in ENCLOSED
+    if geo:
+        ref_w, ref_d = float(ref["w"]), float(ref["d"])
+        wall = float(geo.get("wall", WALL_MM))
+        shift = (room.opening - 450.0) / 2
+
+        def across(v: float) -> float:
+            if open_frame:
+                return v + math_copysign(shift, v)
+            # Enclosed: as far in from the nearer side as in the kit.
+            return math_copysign(room.width / 2 - (ref_w / 2 - abs(v)), v)
+
+        xs = sorted((across(geo["x0"]), across(geo["x1"])))
+        cx = across(geo["cx"])
+        # Depths in the kit are from its front; its rail stands ``inset``
+        # behind it. Without a fit, the rack's front is the kit's.
+        inset = float(room.fit["rail_inset_mm"]) if room.fit else room.rail_front
+        d0, d1 = float(geo["d0"]), float(geo["d1"])
+        if it["face"] == "rear":
+            y0, y1 = room.depth - (ref_d - d0), room.depth - (ref_d - d1)
+        else:
+            # From the front rail, as the kit stands it from its own.
+            y0 = room.rail_front + (d0 - inset)
+            y1 = room.rail_front + (d1 - inset)
+            if it["face"] == "full" and fr.frame != "2-post":
+                # Grown with the rack (its inner depth, ``base_items``).
+                y1 = y0 + d_in + 2 * wall
+        if y1 - y0 < 2 * wall + 1:
+            y1 = y0 + d_in + 2 * wall
+        x0, x1 = xs
+    else:
+        wall = WALL_MM
+        outer = w_in + 2 * wall
+        if fr.frame == "2-post":
+            # Outside the posts, as a 2-post's finger managers stand.
+            cx = sign * (room.width / 2 + outer / 2)
+            y0 = room.rail_front - d_in / 2 - wall
+        else:
+            if open_frame:
+                cx = sign * (room.opening / 2 + 40 + outer / 2)
+            else:
+                # Between the rail opening and the side panel.
+                cx = sign * (room.opening / 2 + (room.width - room.opening) / 4)
+            if it["face"] == "rear":
+                y0 = room.depth - 30 - d_in - 2 * wall
+            else:
+                y0 = 30.0
+        y1 = y0 + d_in + 2 * wall
+        if it["face"] == "full" and fr.frame != "2-post":
+            y1 = max(y1, room.depth - 30)
+        x0, x1 = cx - outer / 2, cx + outer / 2
+    z0, z1 = room.z_span(it["u_from"], it["u_to"])
+    out = {"x0": _r(x0), "x1": _r(x1), "y0": _r(y0), "y1": _r(y1), "z0": _r(z0),
+           "z1": _r(z1), "cx": _r(cx), "cy": _r((y0 + y1) / 2), "wall": _r(wall),
+           "open": (geo or {}).get("open") or _default_open(it, fr),
+           "pitch_mm": (geo or {}).get("pitch_mm")}
+    if out["pitch_mm"] is None and it["subkind"] in ("finger", "d-ring"):
+        out["pitch_mm"] = U_MM
+    return out
+
+
+def math_copysign(a: float, b: float) -> float:
+    return math.copysign(a, b if b != 0 else 1.0)
+
+
+def _default_open(it: dict, fr: Frame) -> str:
+    """Where cables enter a manager whose kit does not say: a finger manager
+    or D-ring from the gear's face (the rack's front, a 2-post's both), a
+    corner channel from the gear (its inner side)."""
+    if it["subkind"] in ("finger", "d-ring", "lacing"):
+        return "front" if it["face"] != "rear" else "rear"
+    return "inner"
+
+
+def _place(it: dict, room: Room, ref: dict | None) -> dict | None:
+    """The pathway's place in the rack (mm, ``Room``'s axes): a manager's
+    box and the centre of its inner cross-section, an entry's opening, a
+    0U channel's line."""
+    ref = ref or {"w": room.width, "d": room.depth}
+    kind = it["kind"]
+    if kind == "vertical" and it["side"] and it["u_from"] is not None:
+        return _vertical_place(it, room, ref)
+    if kind == "horizontal" and it["u_from"] is not None:
+        d_in = float(it["inner_d_mm"] or 80)
+        if it["face"] == "rear":
+            y0, y1 = room.rail_rear, room.rail_rear + d_in
+        else:
+            y0, y1 = room.rail_front - d_in, room.rail_front
+        z0, z1 = room.z_span(it["u_from"], it["u_to"] or it["u_from"])
+        half = room.opening / 2
+        return {"x0": -half, "x1": half, "y0": _r(y0), "y1": _r(y1), "z0": _r(z0),
+                "z1": _r(z1), "cx": 0.0, "cy": _r((y0 + y1) / 2), "wall": WALL_MM,
+                "open": "front" if it["face"] != "rear" else "rear", "pitch_mm": None}
+    if kind == "entry":
+        x = float(it["x_mm"] if it["x_mm"] is not None else 0)
+        y = float(it["y_mm"] if it["y_mm"] is not None else room.depth / 2)
+        surface = it["surface"] or "top"
+        if surface == "bottom":
+            z = 0.0
+        elif surface == "side":
+            x, z = _sign(it["side"] or "left") * room.width / 2, room.top / 2
+        else:
+            z = room.top
+        return {"x": _r(x), "y": _r(y), "z": _r(z), "w": float(it["inner_w_mm"] or 200),
+                "d": float(it["inner_d_mm"] or 80)}
+    if kind == "channel" and it["side"] and it["u_from"] is not None:
+        at = ref.get("at")
+        if at:
+            ref_w, ref_d = float(ref["w"]), float(ref["d"])
+            v = at[0] * 1000
+            x = math_copysign(room.width / 2 - (ref_w / 2 - abs(v)), v)
+            d = -at[2] * 1000
+            y = d if d <= ref_d / 2 else room.depth - (ref_d - d)
+        else:
+            x = _sign(it["side"]) * (room.width / 2 - 30)
+            if it["depth_mm"] is not None:
+                y = room.rail_front + float(it["depth_mm"])
+            else:
+                y = room.depth - 60 if it["face"] != "front" else 60.0
+        z0, z1 = room.z_span(it["u_from"], it["u_to"])
+        return {"x": _r(x), "y": _r(min(max(y, 0.0), room.depth)), "z0": _r(z0), "z1": _r(z1)}
+    return None
 
 
 def _source_of_key(key: str) -> str:
@@ -456,7 +824,9 @@ def _accessory_sizes(item: dict) -> None:
 
 def finish(items: list[dict], fr: Frame) -> list[dict]:
     """Effective values: a horizontal manager's units from its device, a
-    vertical one's sizes from its accessory, the fill limit, the label."""
+    vertical one's sizes from its accessory, the fill limit, the label and
+    its place in the rack (``geo``, ``Room``'s millimetres)."""
+    room = Room(fr)
     for it in items:
         dev = it.get("device")
         if it["kind"] == "horizontal" and dev is not None and dev.position is not None:
@@ -472,6 +842,7 @@ def finish(items: list[dict], fr: Frame) -> list[dict]:
         _accessory_sizes(it)
         it["fill_limit_pct"] = it["fill_limit_pct"] or DEFAULT_FILL_PCT
         it["label"] = label(it)
+        it["geo"] = _place(it, room, it.pop("_ref", None))
     items.sort(key=lambda i: (KINDS.index(i["kind"]) if i["kind"] in KINDS else 9,
                               i["side"], i["surface"], i["face"], i["u_from"] or 0, i["label"]))
     return items

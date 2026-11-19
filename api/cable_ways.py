@@ -52,10 +52,14 @@ def _kind(term) -> str:
 
 
 def geo_of(rack) -> eng.Geo:
-    fr = rp.Frame.of_rack(rack)
-    return eng.Geo(start=fr.start or 1, units=fr.units or 42,
-                   width_mm=float(fr.width_mm or eng.DEFAULT_W_MM),
-                   depth_mm=float(fr.depth_mm or eng.DEFAULT_D_MM))
+    """The engine's frame of ``rack``, measured as the 3D room draws it
+    (``rack_pathways.Room``)."""
+    room = rp.Room(rp.Frame.of_rack(rack))
+    fr = room.fr
+    return eng.Geo(start=fr.start or 1, units=fr.units or 42, width_mm=room.width,
+                   depth_mm=room.depth, base_mm=room.base, cap_mm=room.cap,
+                   rail_front_mm=room.rail_front, rail_rear_mm=room.rail_rear,
+                   desc=fr.desc)
 
 
 def _marker(device, kind: str, name: str):
@@ -283,6 +287,21 @@ def _key_item(h) -> dict:
     return item
 
 
+#: How far a way's port may be from where its port is now before the way
+#: is out of date (mm): a unit's height, across the faceplate, the depth.
+MOVED_MM = (60.0, 200.0, 20.0)
+
+
+def moved(way, ctx: RackCtx) -> bool:
+    """Whether the port the way starts at is no longer where the way says:
+    its device moved (another unit, face or side) since it was recorded."""
+    pts = way.points or []
+    if not pts or way.state == "dismissed":
+        return False
+    p = eng._Place(ctx.geo).port(ctx.engine_ends()[0])
+    return any(abs(float(a) - b) > lim for a, b, lim in zip(pts[0], p, MOVED_MM, strict=False))
+
+
 def way_doc(way, ctx: RackCtx | None, *, gone: bool = False) -> dict:
     """A stored way as the API gives it. ``stale``: a hop no longer
     resolves, or the cable's ends in the rack changed (``gone``: it has
@@ -292,7 +311,7 @@ def way_doc(way, ctx: RackCtx | None, *, gone: bool = False) -> dict:
         stale = True
     elif ctx is None:
         stale = None
-    elif ctx.end != way.end:
+    elif ctx.end != way.end or moved(way, ctx):
         stale = True
     return {"id": str(way.pk), "cable_id": str(way.cable_id),
             "rack": {"id": str(way.rack_id), "name": way.rack.name}, "end": way.end,
@@ -446,21 +465,31 @@ def chain_text(doc, port: str = "") -> str:
 _pending = threading.local()
 
 
-def schedule(cable_id) -> None:
-    """Refresh the cable's automatic ways once the transaction commits
-    (once per cable, however many terminations changed)."""
+def _queue() -> set:
     ids = getattr(_pending, "ids", None)
     if ids is None:
         ids = _pending.ids = set()
-    if cable_id in ids:
+    return ids
+
+
+def schedule(cable_id) -> None:
+    """Refresh the cable's automatic ways once the transaction commits
+    (once per cable, however many terminations changed). Every writer of
+    cable ends gets here - the API, a switch stack's auto cables, imports,
+    a device moving - through the signals below; a rolled-back block's
+    cables are refreshed with the next commit's (a refresh re-reads)."""
+    if cable_id is None:
         return
-    ids.add(cable_id)
+    _queue().add(cable_id)
+    transaction.on_commit(_flush)
 
-    def run():
-        ids.discard(cable_id)
+
+def _flush() -> None:
+    ids = _queue()
+    todo = sorted(ids, key=str)
+    ids.clear()
+    for cable_id in todo:
         _run_refresh(cable_id)
-
-    transaction.on_commit(run)
 
 
 def _run_refresh(cable_id) -> None:
@@ -482,15 +511,54 @@ def _term_changed(sender, instance, **kwargs):
     schedule(instance.cable_id)
 
 
-def connect_signals() -> None:
-    from django.db.models.signals import post_delete, post_save
+#: A device's fields that move its ports in the rack: a change refreshes
+#: the ways of its cables (Propose: back to proposed when the proposal
+#: moved; Record: recorded again; a manual way is kept and shows stale).
+PLACE_FIELDS = ("rack_id", "position", "face", "rack_side", "mount", "mount_pathway_id",
+                "mount_offset_mm")
+
+
+def _device_place(sender, instance, **kwargs):
+    if instance.pk is None or kwargs.get("raw"):
+        instance._way_place = None
+        return
+    from .models import Device
+
+    instance._way_place = Device.objects.filter(pk=instance.pk).values_list(
+        *PLACE_FIELDS).first()
+
+
+def _device_moved(sender, instance, created=False, **kwargs):
+    old = getattr(instance, "_way_place", None)
+    instance._way_place = None
+    if created or old is None or kwargs.get("raw"):
+        return
+    if tuple(getattr(instance, f) for f in PLACE_FIELDS) == tuple(old):
+        return
+    from django.db.models import Q
 
     from .models import CableTermination
+
+    q = Q()
+    for f in CableTermination.POINT_FIELDS:
+        if f in ("power_feed", "circuit_termination"):
+            continue
+        q |= Q(**{f"{f}__device_id": instance.pk})
+    for cable_id in set(CableTermination.objects.filter(q).values_list("cable_id", flat=True)):
+        schedule(cable_id)
+
+
+def connect_signals() -> None:
+    from django.db.models.signals import post_delete, post_save, pre_save
+
+    from .models import CableTermination, Device
 
     post_save.connect(_term_changed, sender=CableTermination,
                       dispatch_uid="cable_ways_term_saved")
     post_delete.connect(_term_changed, sender=CableTermination,
                         dispatch_uid="cable_ways_term_deleted")
+    pre_save.connect(_device_place, sender=Device, dispatch_uid="cable_ways_device_place")
+    post_save.connect(_device_moved, sender=Device, dispatch_uid="cable_ways_device_moved")
 
 
 # ── lengths ────────────────────────────────────────────────────────────────

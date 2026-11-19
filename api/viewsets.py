@@ -8949,6 +8949,7 @@ class RackViewSet(ImageAttachmentMixin, TenantScopedViewSet):
         return Response(scene_geo.rack_geo(
             loaded, scene_geo.image_url(request), scene_geo.power_feed_types([loaded]),
             types, scene_geo.look_context(request.user, tenant),
+            scene_geo.ways_geo([loaded], request.user, tenant),
         ))
 
     @extend_schema(responses={200: OpenApiTypes.BINARY})
@@ -14581,9 +14582,11 @@ class FloorPlanViewSet(TenantScopedViewSet):
         rack_types = scene_geo.prepare_rack_models(racks.values(), user, tenant)
 
         look_ctx = scene_geo.look_context(user, tenant)
+        # The cable ways through the racks, of the cables the reader may view.
+        ways = scene_geo.ways_geo(racks.values(), user, tenant)
 
         def rack_geo(r):
-            return scene_geo.rack_geo(r, img, feed_types, rack_types, look_ctx)
+            return scene_geo.rack_geo(r, img, feed_types, rack_types, look_ctx, ways)
 
         def cabinet_geo(c):
             return scene_geo.cabinet_geo(c, cabinet_counts.get(c.id, 0))

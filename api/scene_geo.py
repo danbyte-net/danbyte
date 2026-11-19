@@ -23,9 +23,16 @@ def load_racks(racks, devices=None) -> dict:
     """``{rack id: rack}`` for the ``racks`` queryset, with everything
     ``rack_geo`` reads prefetched. ``devices`` (a Device queryset) narrows
     each rack's devices - to the ones a caller may view; None keeps all."""
+    from .models import RackPathway
+
     lookups: list = list(RACK_DEVICE_LOOKUPS)
     if devices is not None:
         lookups.insert(0, Prefetch("devices", queryset=devices))
+    # The pathways ``pathways_geo`` resolves, the rack's and its type's.
+    rows = RackPathway.objects.select_related("accessory_type", "device__device_type").order_by(
+        "created_at", "id")
+    lookups += [Prefetch("pathways", queryset=rows),
+                Prefetch("rack_type__pathways", queryset=rows)]
     # The Look reads the rack's type and both kits (api.rack_look).
     racks = racks.select_related("rack_type__kit", "kit")
     return {r.id: r for r in racks.prefetch_related(*lookups)}
@@ -222,10 +229,82 @@ def _outer(r, field: str):
     return getattr(rt, field, None) if rt is not None else None
 
 
-def rack_geo(r, img, feed_types, viewable_types=None, look_ctx=None) -> dict:
+#: A resolved pathway's fields the 3D views read (api.rack_pathways).
+PATHWAY_FIELDS = ("key", "source", "kind", "subkind", "side", "face", "surface", "u_from",
+                  "u_to", "inner_w_mm", "inner_d_mm", "fill_limit_pct", "label", "addon", "geo")
+
+
+def pathways_geo(r) -> list[dict]:
+    """The rack's shown pathways as the 3D views draw them: each manager,
+    entry and 0U channel with its place in the rack (``geo``, mm:
+    api.rack_pathways.Room) - the ones a cable way names by ``key``."""
+    from .rack_pathways import resolve_rack
+
+    type_rows = list(r.rack_type.pathways.all()) if r.rack_type_id else None
+    out = []
+    for it in resolve_rack(r, rows=list(r.pathways.all()), type_rows=type_rows):
+        if it["hidden"] or it["orphan"] or it["geo"] is None:
+            continue
+        doc = {f: it.get(f) for f in PATHWAY_FIELDS}
+        doc["id"] = it["id"]
+        out.append(doc)
+    return out
+
+
+def ways_geo(racks, user, tenant) -> dict:
+    """``{rack id: [way]}``: the stored cable ways (recorded and proposed;
+    dismissed ones draw nothing) of the cables ``user`` may view, with what
+    the 3D views draw them by - the cable's colour, type, label and outer
+    diameter, and its ends in that rack (device, port name and kind)."""
+    from .cable_scope import viewable_cable_ids
+    from .models import CableTermination, CableWay
+
+    rack_ids = [r.pk for r in racks]
+    if not rack_ids:
+        return {}
+    rows = list(CableWay.objects.filter(rack_id__in=rack_ids).exclude(state="dismissed")
+                .select_related("cable").order_by("rack_id", "cable_id"))
+    shown = viewable_cable_ids(user, tenant, {w.cable_id for w in rows})
+    rows = [w for w in rows if w.cable_id in shown]
+    if not rows:
+        return {}
+    fields = [f for f in CableTermination.POINT_FIELDS
+              if f not in ("power_feed", "circuit_termination")]
+    terms: dict = {}
+    values = ["cable_id", "end"]
+    for f in fields:
+        values += [f"{f}__device_id", f"{f}__name"]
+    for t in CableTermination.objects.filter(cable_id__in=shown).values(*values).order_by(
+            "cable_id", "end", "created_at", "pk"):
+        for f in fields:
+            dev = t[f"{f}__device_id"]
+            if dev is not None:
+                terms.setdefault(t["cable_id"], []).append(
+                    {"end": t["end"], "device": str(dev), "port": t[f"{f}__name"] or "",
+                     "kind": f})
+                break
+    out: dict = {}
+    for w in rows:
+        c = w.cable
+        ends = [e for e in terms.get(w.cable_id, []) if e["end"] in w.end]
+        out.setdefault(w.rack_id, []).append({
+            "id": str(w.pk), "cable_id": str(c.pk), "label": c.label or "",
+            "color": c.color or "", "type": c.type or "",
+            "outer_diameter_mm": getattr(c, "outer_diameter_mm", None),
+            "end": w.end, "state": w.state, "source": w.source, "exit": w.exit,
+            "hops": [{"key": h.get("key"), "kind": h.get("kind"), "enter_u": h.get("enter_u"),
+                      "leave_u": h.get("leave_u")} for h in w.hops or []],
+            "length_mm": w.length_mm, "ends": ends,
+        })
+    return out
+
+
+def rack_geo(r, img, feed_types, viewable_types=None, look_ctx=None, ways=None) -> dict:
     """One rack and the devices it holds, as the 3D views draw it. With
     ``viewable_types`` each positioned or side-mounted device carries its 3D model; its
-    ``look`` the kit URLs and blanks of ``look_ctx`` (``look_context``)."""
+    ``look`` the kit URLs and blanks of ``look_ctx`` (``look_context``). Its
+    shown pathways with their places (``pathways_geo``) and, given
+    ``ways`` (``ways_geo``), the cable ways through it."""
     return {
         "id": str(r.id),
         "name": r.name,
@@ -243,6 +322,8 @@ def rack_geo(r, img, feed_types, viewable_types=None, look_ctx=None) -> dict:
             # PDU has no U position but very much exists in the room.
             if d.position is not None or d.mount
         ],
+        "pathways": pathways_geo(r),
+        "ways": (ways or {}).get(r.pk, []),
     }
 
 
