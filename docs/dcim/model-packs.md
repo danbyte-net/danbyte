@@ -895,9 +895,10 @@ The kit's model holds every part as a named object, modelled in place for a
 | Part | How the 3D view uses it |
 |---|---|
 | `post:segment` | Exactly 1U of a rail post. Repeated for every unit at each post - front and rear, left and right (mirrored), two mid-depth posts on a 2-post frame - its rail face on the rack's rail plane. Every segment of a rack draws in one instanced draw call. Required. |
-| `post:top`, `post:bottom`, `beam:width`, `beam:depth`, `corner:top`, `corner:bottom` | The frame. |
-| `top:vented`, `top:solid`, `top:fans`, `top:brush` | The roof the Look's Top names (else solid, else vented). |
-| `base:plinth`, `base:casters`, `base:feet`, `base:plate`, `base:panel` | The base the Look names; `base:plate` for a 2-post frame, `base:panel` (the bottom) for a wall cabinet. |
+| `post:top`, `post:bottom` | Each post's end pieces: the bottom one under unit 1, the top one over the top unit, beside the post as modelled. |
+| `beam:width`, `beam:depth`, `corner:top`, `corner:bottom` | The frame. One of each is modelled: corners go to the four corners top and bottom, a width beam front and rear, a depth beam left and right, and the beams again at the bottom corners. A 2-post frame's tie beam is single. |
+| `top:vented`, `top:solid`, `top:fans`, `top:brush` | The roof the Look's Top names (else solid, else vented); none for Top *None*. |
+| `base:plinth`, `base:casters`, `base:feet`, `base:plate`, `base:panel` | The base the Look names - casters and feet at the four corners - or, when the kit hasn't got it, one it has; none for Base *None*. `base:plate` for a 2-post frame, `base:panel` (the bottom) for a wall cabinet whatever its Base. |
 | `side:panel` | Side panels, in solid mode, when the Look has them. One modelled is mirrored for the other side. |
 | `side:panel:edge`, `side:panel:infill` | A split side panel (v1.15), drawn in place of `side:panel` when the kit has both: the edge at the bottom and mirrored to the top, the infill stretched between, so the edge keeps its size at any height. |
 | `door:perforated`, `door:glass`, `door:solid` | The leaf the door type names; a split door is two half-width leaves. The rear door is the front one turned round. |
@@ -912,6 +913,21 @@ Danbyte also knows the pathway names - `path:*`, `entry:*` and `brush:*`
 (the spec's vertical managers, cable entries and brush strips) - and reads
 no warning for them, but doesn't draw them yet; any other name with a `:`
 is noted on import.
+
+**How a kit fits a rack.** The import reads the kit's reference rack from
+its `post:segment` (stored as its *fit*): unit 1's height above the floor,
+the front rail's distance behind the front (the glTF z = 0 plane, or a
+frame part ahead of it such as a 2-post's base plate), the frame above the
+top unit and the post's size. A rack built from the kit stands its gear on
+those: unit 1 at the kit's height, the front rail at its inset, the rear
+rail `rail_depth_mm` behind it, and the rack as tall as its units plus the
+kit's frame. The posts stay beside the rail opening (moved out for a 21"
+or 23" rail) whatever the outer width; a cabinet's or wall cabinet's frame,
+panels, roof and base fill its outer box. An open frame is as wide as its
+kit and as deep as its rails: a 4-post's rear members are its front ones
+turned round onto the rear rail, a 2-post keeps the kit's depth round its
+one rail. A kit imported before 0.21 has no fit and stands on Danbyte's
+own 100 mm base until it is imported again.
 
 Every part is fitted to the rack: one that isn't stretched keeps its size
 and moves with the nearer edge of the cabinet (a corner, a caster); a part
@@ -933,7 +949,10 @@ for the other. A kit's baked ambient occlusion is left off: its parts are
 repeated per unit or moved from where they were baked, so a bake would show
 as patches and seams. The import records each `channel:0u:` empty's place
 and facing; a kit imported before 0.21 seats no 0U devices until it is
-imported again.
+imported again. Without a channel, a 0U device on an open frame is bolted to
+the outer side of a post (the rear one on a 4-post, unless its face is
+front), and in a cabinet stands between its front and rear posts. A door
+gets a second `door:hinge`, mirrored up its leaf.
 
 The far box (`model3d.far`) is fitted to the rack's outer box and drawn at
 middle distance; far off the room draws its plain box, as for every rack.
@@ -973,7 +992,11 @@ look:
 
 A rack type file is a [library rack type](racks.md#rack-types) with
 `outer_width_mm` / `outer_depth_mm` (millimetres, beside the library's
-`outer_width` / `outer_unit`), `rail_depth_mm` and the `look:` block.
+`outer_width` / `outer_unit`), `rail_depth_mm` and the `look:` block. A
+type that names a kit but no `frame` takes the kit's frame; `top: none`,
+`base: none` and `base: plate` are read, and `rail_depth_mm: 0` (a 2-post's
+missing rear rail) is the same as leaving it out. A re-import updates the
+Look of a type it matches by name.
 `pack.yaml` lists them under `types: rack-type: [<model>, …]`.
 
 ### Rack accessories {#rack-accessories}

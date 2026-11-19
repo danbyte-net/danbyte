@@ -15,8 +15,9 @@ familiar front/rear diagram showing what's mounted in each rack unit.
 3. Optionally assign a **site**, a **rack role**, and tags.
 4. Optionally record the cabinet's **outer width / depth (mm)** - the physical
    footprint including the frame. These drive the 3D room view and scaled
-   drawings; left blank, plausible defaults are used (depth 1000 mm, width
-   derived from the rail width plus a 150 mm frame).
+   drawings; left blank, the 3D view takes the rack type's, else plausible
+   defaults (depth 1000 mm, width derived from the rail width plus a 150 mm
+   frame).
 
 Picking a [**rack type**](#rack-types) fills the height, width, outer
 dimensions, weight budget, power budget and cooling from the cabinet model in
@@ -94,8 +95,8 @@ The **Look** card on the rack type and rack forms says what the
 | Front door, Rear door | None, Perforated, Glass, Solid, Split perforated, Split solid | Perforated / Split perforated |
 | Hinge | Left, Right (as you face the door) | Left |
 | Side panels | yes / no | yes |
-| Top | Vented, Solid, Fans, Brush | Vented |
-| Base | Plinth, Casters, Feet | Plinth |
+| Top | Vented, Solid, Fans, Brush, None | Vented |
+| Base | Plinth, Casters, Feet, Base plate, None | Plinth |
 | Colour | Black, Grey, White or a custom hex colour | Black |
 | Kit | a [rack kit](model-packs.md#rack-kits) from a model pack | none: Danbyte's own drawing |
 | Blanking fill | yes / no | no |
@@ -704,7 +705,8 @@ PDU inlet, its power feed) is one you can view.
 
 `GET /api/racks/{id}/scene/` returns the rack alone for a 3D view. It is the
 same object a [floor plan's](../features/floor-plans.md#the-3d-room-view) 3D
-scene carries for a rack tile: size, numbering and outer dimensions, plus the
+scene carries for a rack tile: size, numbering and outer dimensions (its
+type's when the rack has none), plus the
 positioned and side-mounted devices with their photos, port markers, power
 component names and the feed type of each PDU. The devices are limited to the
 ones you can view.
