@@ -301,7 +301,7 @@ export function ModelPackInstallDialog({
               label="Update from pack"
               checked={overwrite}
               onChange={setOverwrite}
-              info="The pack replaces what the dry run kept. Documents added or edited here stay."
+              info="The pack's values replace what the dry run kept. Templates a pack never added, and documents added or edited here, stay."
             />
           </div>
         )}

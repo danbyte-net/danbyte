@@ -12,13 +12,18 @@ import said, by template name and field. On the next import, per field:
 * the type has no snapshot (never imported with one) - everything is the
   type's own: only missing templates and empty fields are filled in, the
   rest is reported. ``overwrite`` (*Update from pack*, ``--overwrite``)
-  lets the YAML win everywhere.
+  lets the YAML's values win everywhere.
 
 A template the YAML no longer has is removed only when the snapshot holds
 it, it is unchanged since and nothing depends on it (a front port on a rear
 port, an outlet on a power port, a hand-placed marker, an installed module's
 port); otherwise it is kept and reported. A template the snapshot holds
 that is gone from the type was removed here, and is not added back.
+``overwrite`` also removes a changed one, but only one a pack once added:
+a name some earlier import recorded (``pack_names``, every name a snapshot
+ever held). A template no import recorded - made by hand, or by the device
+library import before packs - is never removed; on a type with no snapshot
+nothing is.
 
 Bay module lists merge three ways: what the pack added since the snapshot
 joins the bay's list, what it dropped leaves it, and part numbers added
@@ -210,6 +215,9 @@ class Report:
         return {"added": self.added, "updated": self.updated, "removed": self.removed,
                 "kept": self.kept}
 
+    def has(self, op: str) -> bool:
+        return any(k[0] == op for k in self._groups)
+
     @property
     def changed(self) -> bool:
         return bool(self.added or self.updated or self.removed)
@@ -237,6 +245,7 @@ class Report:
                 "extra": f"kept {n} {nouns} not in the pack",
                 "used": f"kept {n} {nouns} the pack dropped, still in use",
                 "dropped": f"kept {n} {nouns} the pack dropped, changed here",
+            "own": f"kept {n} {nouns} not from a pack",
             }[op]
             out.append(f"{head}{', ' + detail if detail else ''}: {listed}")
         return out
@@ -298,11 +307,28 @@ def _merge_list(cur: list, snap, pack: list, overwrite: bool) -> list:
     return out
 
 
+def pack_names(state) -> dict[str, set[str]]:
+    """Every template name a pack import recorded on the type, by kind: the
+    names earlier imports kept in ``pack_names`` plus the last snapshot's."""
+    out: dict[str, set[str]] = {}
+    if not isinstance(state, dict):
+        return out
+    for src in (state.get("pack_names"), state.get("templates")):
+        if not isinstance(src, dict):
+            continue
+        for key, names in src.items():
+            if isinstance(names, (dict, list)):
+                out.setdefault(key, set()).update(str(n) for n in names)
+    return out
+
+
 def sync_templates(owner, data: dict, state, *, module: bool, overwrite: bool,
-                   report: Report) -> tuple[dict, list[str]]:
+                   report: Report, ever: dict[str, set[str]] | None = None
+                   ) -> tuple[dict, list[str]]:
     """Bring ``owner``'s templates in line with the YAML ``data``. Returns
     the new snapshot ``{kind key: {name: values}}`` and notes for rows the
-    YAML gets wrong."""
+    YAML gets wrong. ``ever`` (:func:`pack_names`) is updated in place:
+    the new snapshot's names join it, removed ones leave it."""
     from .anchor_names import NameMatcher
     from .devicetype_import import positionize
 
@@ -353,6 +379,7 @@ def sync_templates(owner, data: dict, state, *, module: bool, overwrite: bool,
         found = re.findall(r"\{position(?::\d+)?\}", new)
         return new if found and found[0] in tokens else raw
 
+    ever = ever if ever is not None else {}
     removals: list[tuple[Kind, object, dict | None]] = []
     for kind in kinds:
         rows = data.get(kind.key)
@@ -445,11 +472,14 @@ def sync_templates(owner, data: dict, state, *, module: bool, overwrite: bool,
         known = {*kind.fields, *kind.refs, *kind.lists, "description"}
         untouched = snap is not None and all(
             _current(t, kind, a) == v for a, v in snap.items() if a in known)
-        if overwrite or untouched:
+        from_pack = snap is not None or t.name in ever.get(kind.key, ())
+        if untouched or (overwrite and from_pack):
             candidates.append((kind, t))
             leaving.add(t.pk)
         elif snap is not None:
             report.add("dropped", kind.noun, t.name)
+        elif overwrite:
+            report.add("own", kind.noun, t.name)
         else:
             report.add("extra", kind.noun, t.name)
     # Dependents before what they sit on: a front port kept in use keeps its
@@ -463,6 +493,9 @@ def sync_templates(owner, data: dict, state, *, module: bool, overwrite: bool,
         if t.pk in leaving:
             t.delete()
             report.add("removed", kind.noun, t.name)
+            ever.get(kind.key, set()).discard(t.name)
+    for key, rows in snapshot.items():
+        ever.setdefault(key, set()).update(rows)
     return snapshot, notes
 
 
@@ -821,14 +854,18 @@ def update_type(obj, data: dict, *, kind: str, pack: dict, overwrite: bool = Fal
     state = obj.pack_state if isinstance(obj.pack_state, dict) else None
     report = Report()
     notes: list[str] = []
+    ever = pack_names(state)
     templates, bad = sync_templates(obj, data, (state or {}).get("templates") if state
                                     else None, module=module, overwrite=overwrite,
-                                    report=report)
+                                    report=report, ever=ever)
     notes += bad
     built = devices_notes(obj, module=module, report=report)
     meta = meta_block(data) or {}
     changed: list[str] = []
     record = {"pack": pack, "templates": templates}
+    names = {k: sorted(v) for k, v in ever.items() if v}
+    if names:
+        record["pack_names"] = names
     if meta:
         record["meta"] = meta
     prev = state or {}
@@ -859,6 +896,9 @@ def update_type(obj, data: dict, *, kind: str, pack: dict, overwrite: bool = Fal
     if state is None and report.kept and not overwrite:
         out.append("no earlier pack record: differences kept - Update from pack "
                    "(--overwrite) applies them.")
+    if state is None and overwrite and report.has("own"):
+        out.append("no earlier pack record: nothing removed - templates not from a "
+                   "pack stay.")
     return UpdateResult(out, report.counts())
 
 

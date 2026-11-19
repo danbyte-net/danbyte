@@ -1257,7 +1257,8 @@ interfaces are:
   rear port, an outlet on a power port, a faceplate slot or port marker
   placed by hand, a module port of an installed module. Otherwise it is
   kept, and the report says why (*changed here*, *still in use*, *not in the
-  pack*).
+  pack*). The record keeps every template name an import listed, so a
+  template the pack dropped versions ago still counts as the pack's.
 - A bay's [suggested modules](#suggested-modules) merge: part numbers the
   pack added since the last import join the bay's list, ones it dropped
   leave it, ones added here stay.
@@ -1269,9 +1270,15 @@ are reported as *kept*, and nothing is removed. The record is written then,
 so the next import compares against it.
 
 **Update from pack** (`--overwrite`) lets the YAML win: every *kept* value
-takes the pack's, templates the YAML doesn't have are removed unless
-something depends on them, and removed ones come back. Documents added or
-edited here are still left alone.
+takes the pack's, and removed ones come back. A template the YAML doesn't
+have is removed only when **a pack once added it** - some earlier import
+recorded its name on the type - and nothing depends on it, even if it was
+changed here. A template no import ever recorded (made by hand, or by the
+device library import before packs) is kept and reported (*kept 16
+interfaces not from a pack: GigabitEthernet1/1/1, …*). On a type with no
+record at all, Update from pack updates values and adds what is missing,
+removes nothing, and says so (*no earlier pack record: nothing removed*).
+Documents added or edited here are still left alone.
 
 The import never changes a device. The report counts the devices of a type
 whose components no longer match its templates (*devices: 3 of 5 out of

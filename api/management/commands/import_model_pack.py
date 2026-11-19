@@ -47,7 +47,8 @@ class Command(BaseCommand):
                                  "markers uploaded by hand.")
         parser.add_argument("--overwrite", action="store_true",
                             help="Update from pack: let the YAML replace templates, bay "
-                                 "module lists and lifecycle dates changed here.")
+                                 "module lists and lifecycle dates changed here, and "
+                                 "remove templates an import added that it dropped.")
         parser.add_argument("--only", default="",
                             help="A bundle: the pack ids to import, comma-separated "
                                  "(default: all).")

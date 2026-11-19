@@ -226,6 +226,52 @@ class TemplateUpdateTests(_Base):
         self.assertTrue(dt.rear_port_templates.filter(name="R1").exists())
         self.assertTrue(dt.front_port_templates.filter(name="F9").exists())
 
+    def test_update_from_pack_keeps_hand_made_templates(self):
+        self.run_pack({"C9300-48P": real("C9300-48P")})
+        dt = self.dt("C9300-48P")
+        for n in ("GigabitEthernet1/1/1", "GigabitEthernet1/1/2"):
+            InterfaceTemplate.objects.create(device_type=dt, name=n, type="1000base-x-sfp")
+        row = self.row(self.run_pack({"C9300-48P": real("C9300-48P")}, version="2.0.0",
+                                     overwrite=True), "C9300-48P")
+        self.assertIn("kept 2 interfaces not from a pack: GigabitEthernet1/1/1, "
+                      "GigabitEthernet1/1/2", row.notes)
+        self.assertIn("GigabitEthernet1/1/1", self.ifaces(dt))
+        self.assertEqual(row.changes["removed"], 0)
+
+    def test_update_from_pack_removes_what_a_pack_once_added(self):
+        doc = real("C9300-48P")
+        doc["console-ports"].append({"name": "aux", "type": "rj-45"})
+        self.run_pack({"C9300-48P": doc})
+        dt = self.dt("C9300-48P")
+        # Changed here: a plain re-import keeps it, and its name stays on record.
+        dt.console_port_templates.filter(name="aux").update(type="usb-c")
+        new = real("C9300-48P")
+        row = self.row(self.run_pack({"C9300-48P": new}, version="2.0.0"), "C9300-48P")
+        self.assertIn("kept 1 console port the pack dropped, changed here: aux", row.notes)
+        self.assertIn("aux", dt.console_port_templates.values_list("name", flat=True))
+        # Two imports later, Update from pack still knows a pack added it.
+        self.run_pack({"C9300-48P": new}, version="3.0.0")
+        row = self.row(self.run_pack({"C9300-48P": new}, version="4.0.0", overwrite=True),
+                       "C9300-48P")
+        self.assertIn("removed 1 console port: aux", row.notes)
+        self.assertFalse(dt.console_port_templates.filter(name="aux").exists())
+        dt.refresh_from_db()
+        self.assertNotIn("aux", dt.pack_state["pack_names"].get("console-ports", []))
+
+    def test_update_from_pack_still_keeps_what_is_in_use(self):
+        doc = real("C9300-48P")
+        doc["rear-ports"] = [{"name": "R1", "type": "lc"}]
+        self.run_pack({"C9300-48P": doc})
+        dt = self.dt("C9300-48P")
+        FrontPortTemplate.objects.create(device_type=dt, name="F9", type="lc",
+                                         rear_port_template=dt.rear_port_templates.get(
+                                             name="R1"))
+        row = self.row(self.run_pack({"C9300-48P": real("C9300-48P")}, version="2.0.0",
+                                     overwrite=True), "C9300-48P")
+        self.assertIn("kept 1 rear port the pack dropped, still in use: R1", row.notes)
+        self.assertIn("kept 1 front port not from a pack: F9", row.notes)
+        self.assertTrue(dt.rear_port_templates.filter(name="R1").exists())
+
     def test_a_template_removed_here_is_not_added_back(self):
         self.run_pack({"C9300-48P": real("C9300-48P")})
         dt = self.dt("C9300-48P")
@@ -383,15 +429,20 @@ class NoRecordTests(_Base):
                          ["StackPower{position}/A"])
         self.assertIn("updated 1 interface, PoE mode none → pse: Gi{position}/0/1", row.notes)
 
-    def test_update_from_pack_lets_the_yaml_win(self):
+    def test_update_from_pack_takes_values_and_removes_nothing(self):
         result = self.run_pack({"C9300-48P": real("C9300-48P"), "C9200-24T": real("C9200-24T")},
                                overwrite=True)
         self.assertEqual(self.ifaces(self.dt("C9300-48P"))["StackPort1/1"],
                          "cisco-stackwise-480")
         row = self.row(result, "C9200-24T")
-        self.assertIn("removed 2 interfaces: StackPort1/1, StackPort1/2", row.notes)
-        self.assertNotIn("StackPort1/1", self.ifaces(self.dt("C9200-24T")))
-        self.assertEqual(row.changes["kept"], 0)
+        # No pack ever added them: the library import's StackPorts stay.
+        self.assertIn("kept 2 interfaces not from a pack: StackPort1/1, StackPort1/2",
+                      row.notes)
+        self.assertIn("no earlier pack record: nothing removed - templates not from a "
+                      "pack stay.", row.notes)
+        self.assertIn("StackPort1/1", self.ifaces(self.dt("C9200-24T")))
+        self.assertEqual(row.changes["removed"], 0)
+        self.assertIn("added 2 module bays: StackPort1/1, StackPort1/2", row.notes)
 
 
 class ModuleTypeTests(_Base):
