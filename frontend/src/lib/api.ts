@@ -7,6 +7,7 @@
 import type { RackMountBlock, RackMountInfo } from "./rack-mount"
 import type {
   LookPayload,
+  RackFrame,
   RackLookFields,
   RackLookOverrides,
   ResolvedRackLook,
@@ -2277,6 +2278,8 @@ export interface Device {
   mount_offset_mm: number | null
   /** Vertical extent of the strip in U; null draws ~¾ of the rack. */
   mount_span_u: number | null
+  /** The rack's 0U channel (a rack pathway row) it sits in, or null. */
+  mount_pathway?: string | null
   /** Which of its type's ear positions it is fitted at; "" the default. */
   ear_position?: "front" | "mid" | "rear" | "reversed" | ""
   /** How it sits on the rails (api.rack_mount), read-only. */
@@ -2331,6 +2334,8 @@ export interface DeviceWritePayload {
   mount?: "side_left" | "side_right" | ""
   mount_offset_mm?: number | null
   mount_span_u?: number | null
+  /** A row of the rack's pathways (`/api/rack-pathways/pin/` makes one). */
+  mount_pathway_id?: string | null
   ear_position?: "front" | "mid" | "rear" | "reversed" | ""
   /** A rail sets its cabinet; a rail without an offset takes the first gap
    * from the left the device fits in. */
@@ -3169,6 +3174,83 @@ export interface RackTypeAccessory {
   order: number
   created_at: string
   updated_at: string
+}
+
+export type RackPathwayKind = "vertical" | "horizontal" | "entry" | "channel"
+export type RackPathwaySubkind =
+  | "finger"
+  | "d-ring"
+  | "channel"
+  | "lacing"
+  | "brush"
+  | "open"
+  | "gland"
+  | "sealed"
+export type RackPathwaySource = "kit" | "default" | "type" | "manual"
+
+/** The fields a pathway row sets (`/api/rack-pathways/`); on an overlay
+ * (`key` set) a blank or null one inherits. */
+export interface RackPathwayFields {
+  kind: RackPathwayKind | ""
+  subkind: RackPathwaySubkind | ""
+  side: "left" | "right" | ""
+  face: "front" | "rear" | "full" | ""
+  surface: "top" | "bottom" | "side" | ""
+  u_from: number | null
+  u_to: number | null
+  offset_mm: number | null
+  depth_mm: number | null
+  x_mm: number | null
+  y_mm: number | null
+  inner_w_mm: number | null
+  inner_d_mm: number | null
+  fill_limit_pct: number | null
+  name: string
+  description: string
+}
+
+/** A rack's or rack type's row: an overlay of an inherited pathway or one
+ * of its own. */
+export interface RackPathwayRow extends RackPathwayFields {
+  id: string
+  rack_id: string | null
+  rack_type_id: string | null
+  key: string
+  accessory_type_id: string | null
+  device_id: string | null
+  hidden: boolean | null
+  created_at: string
+  updated_at: string
+}
+
+/** One merged pathway (`/api/rack-pathways/resolved/`). */
+export interface ResolvedPathway extends RackPathwayFields {
+  key: string
+  /** This level's row, when there is one. */
+  id: string | null
+  source: RackPathwaySource
+  kind: RackPathwayKind
+  label: string
+  hidden: boolean
+  /** A kit's optional pathway, hidden until shown. */
+  addon: boolean
+  /** A row for a pathway its rack no longer inherits. */
+  orphan: boolean
+  /** The fields this level's or the type's rows changed. */
+  overridden: string[]
+  fill_limit_pct: number
+  accessory_type: { id: string; name: string } | null
+  device: { id: string; name: string } | null
+  /** A 0U channel: the side-mounted devices in it. */
+  devices?: { id: string; name: string }[]
+}
+
+export interface ResolvedPathways {
+  frame: RackFrame
+  kit: { id: string; name: string } | null
+  units: [number, number]
+  fill_limit_pct: number
+  items: ResolvedPathway[]
 }
 
 export interface RackTypeAccessoryWritePayload {
@@ -4783,6 +4865,14 @@ export interface AccessoryType {
   wavelength_nm: number | null
   reach_m: number | null
   cable: AccessoryCable | null
+  /** A rack part's height; null for a 0U (vertical) cable manager. */
+  u_height?: number | null
+  /** A cable manager's inner channel, from its model. */
+  pathway?: {
+    kind: string
+    inner_w_mm: number | null
+    inner_d_mm: number | null
+  } | null
   model_url: string | null
   pack_import: {
     pack: { name: string; version: string }

@@ -40,6 +40,7 @@ import {
 import { QueryError } from "@/components/query-error"
 import { RackDeleteDialog } from "@/components/rack-delete-dialog"
 import { RackElevation } from "@/components/rack-elevation"
+import { RackPathwaysPane } from "@/components/rack-pathways-pane"
 import type { RackDisplayMode, RackShow } from "@/components/rack-elevation"
 import { StatusBadge } from "@/components/status-badge"
 import { KvCard, dash, mono, type KvRow } from "@/components/kv-card"
@@ -85,6 +86,7 @@ function RackDetailBody({ rack: r }: { rack: Rack }) {
     | "power"
     | "cooling"
     | "documents"
+    | "pathways"
     | "journal"
     | "history"
   >("overview")
@@ -135,6 +137,7 @@ function RackDetailBody({ rack: r }: { rack: Rack }) {
         { value: "power", label: "Power feeds" },
         { value: "cooling", label: "Cooling feeds" },
         { value: "documents", label: "Documents", count: r.document_count },
+        { value: "pathways", label: "Pathways" },
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },
       ]}
@@ -174,6 +177,9 @@ function RackDetailBody({ rack: r }: { rack: Rack }) {
       </DetailTab>
       <DetailTab value="documents">
         <ObjectDocuments objectType="api.rack" objectId={r.id} />
+      </DetailTab>
+      <DetailTab value="pathways">
+        <RackPathwaysPane rackId={r.id} />
       </DetailTab>
       <DetailTab value="journal">
         <JournalPanel objectType="api.rack" objectId={r.id} />

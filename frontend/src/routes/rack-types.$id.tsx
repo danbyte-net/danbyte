@@ -48,6 +48,7 @@ import { JournalPanel } from "@/components/audit/journal-panel"
 import { DataTable } from "@/components/data-table"
 import { buildRackColumns } from "@/components/columns/rack-columns"
 import { QueryError } from "@/components/query-error"
+import { RackPathwaysPane } from "@/components/rack-pathways-pane"
 import { RackTypeDeleteDialog } from "@/routes/rack-types.index"
 import { useMe } from "@/lib/use-me"
 import { apiErrorToast } from "@/lib/api-toast"
@@ -87,9 +88,9 @@ function RackTypeDetail() {
 }
 
 function Body({ rackType: rt }: { rackType: RackType }) {
-  const [tab, setTab] = useUrlTab<"overview" | "racks" | "journal" | "history">(
-    "overview"
-  )
+  const [tab, setTab] = useUrlTab<
+    "overview" | "racks" | "pathways" | "journal" | "history"
+  >("overview")
   const { canDo } = useMe()
   const nav = useNavigate()
   const [deleting, setDeleting] = useState<RackType | null>(null)
@@ -177,6 +178,7 @@ function Body({ rackType: rt }: { rackType: RackType }) {
       tabs={[
         { value: "overview", label: "Overview", count: rt.accessories.length },
         { value: "racks", label: "Racks", count: rt.rack_count },
+        { value: "pathways", label: "Pathways" },
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },
       ]}
@@ -194,6 +196,9 @@ function Body({ rackType: rt }: { rackType: RackType }) {
       </DetailTab>
       <DetailTab value="racks">
         <RacksOfTypePane rackTypeId={rt.id} />
+      </DetailTab>
+      <DetailTab value="pathways">
+        <RackPathwaysPane rackTypeId={rt.id} />
       </DetailTab>
       <DetailTab value="journal">
         <JournalPanel objectType="api.racktype" objectId={rt.id} />
