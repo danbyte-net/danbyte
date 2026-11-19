@@ -291,13 +291,21 @@ The estate-wide view lives at **DCIM → Connections → Port utilization**:
 every device with counted ports, fullest first, with the same
 connected/reserved/free split, its site and rack, site/rack/role/type
 facets, search and export - so the patch panel about to run out is the
-first row you see (`GET /api/devices/port-utilization/`). It lists only the
-devices you can view. `?site=<id>` or `?rack=<id>` opens it with that facet
+first row you see. It pages, sorts, filters and counts on the server
+(`GET /api/port-utilization/`, #535) from each device's stored port counts
+(see [Stored list summaries](../architecture/data-model.md#stored-list-summaries)),
+so it opens as fast at 50,000 devices as at 50: every column sorts, the
+facets count every matching device, Download and *Select all* take every
+match, saved views and the URL keep the page, sort and filters. The counts
+follow every port, cable, reservation and status write; after the upgrade
+that adds them they are built in the background, and the page says
+**Building** until that finishes. It lists only the devices you can view. `?site=<id>` or `?rack=<id>` opens it with that facet
 ticked. A device with nothing counted - a router with only loopbacks - has
 no fill level, so it is not listed. The **Devices list** carries the same
 number as a **Ports** bar column (like the prefix utilization bar), read for
 the rows on screen only (`?ids=<id>,<id>,…`, up to 100 per request; a longer
-page reads the whole roll-up), and
+page reads the whole roll-up - `GET /api/devices/port-utilization/`, still
+answered live and unpaged for scripts), and
 **port utilization rules** on the Alerts → Rules tab can notify when a
 device's fill crosses a threshold - see
 [Monitoring](../features/monitoring.md#alert-rules).

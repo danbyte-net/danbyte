@@ -192,6 +192,12 @@ The facets per list:
   `synced_from`, `site`, `role`, `platform`, `eol`, `software_version`,
   `software_target`, `tags`.
 
+- **Port utilization** (`/api/port-utilization/`): `site`, `rack` (ids),
+  `role`, `type` (names); sorts `name`, `site`, `rack`, `role`, `type`,
+  `utilization` (the default, fullest first), `used`, `reserved`, `free`.
+  The rows are the roll-up's (`/api/devices/port-utilization/`, unchanged).
+- **Lifecycle** (`/api/lifecycle/`): see
+  [Lifecycle overview](../features/lifecycle-overview.md#api).
 - **MAC list**: `vendor` (by name), `location` (the learned site by name,
   `__nosite__`, `__none__`), `interfaces`, `ips`, `description` (each `yes` /
   `no`: carried by an interface, an IP, a MAC object), `tags`.

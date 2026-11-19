@@ -146,6 +146,7 @@ summary tables the lists read with ordinary SQL (`api/list_summaries.py`):
 | Table | One row per | Holds | Read by |
 |---|---|---|---|
 | `MacSummary` | MAC value a tenant records (key: the MAC trimmed and lower case) | `interfaces`, `vm_interfaces`, `ips`, `mac_objects` (how many rows of each source carry it), `vendor_override` (the first MAC object's), `oui_vendor` / `oui_source`, `learned_device` / `learned_interface` / `learned_port` (where the network learned it), `hex` | the MAC list (`/api/macs/`) |
+| `DevicePortStat` | device with a counted port | the ports by kind (physical and virtual interfaces, front ports) and state (`*_total`, `*_connected`, `*_reserved`, `*_marked`) - the headline and the percentage are summed at read, by the *Count virtual interfaces* setting | the Port utilization list (`/api/port-utilization/`) |
 | `ListSummaryDirty` | summary row to rebuild | `tenant`, `kind`, `key` | the background job, the lists |
 | `ListSummaryState` | tenant and kind | `built_at`, `cursor` (an unfinished build's place) | the lists, `list_summaries` |
 
@@ -165,6 +166,14 @@ The rules every summary keeps:
   row they count; anyone else's filters and counts read the rows they may view.
 - **Derived, so not audited.** Summaries are never edited and never
   change-logged; the writes behind them are.
+
+The Lifecycle page needs no stored table: `LifecycleEntry` is a database
+view (`api_lifecycle_entry`, `api/lifecycle_view.py`) with one row per
+device hardware, device OS, device coverage, VM OS and installed application,
+each value picked in its source's own branch. PostgreSQL refuses to alter a
+column a view reads, so a migration that changes one drops the view first and
+creates it after; `core.tests_migration_safety` fails a migration that does
+not.
 
 ## Conventional VRF = NULL
 

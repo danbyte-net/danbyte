@@ -22,6 +22,8 @@ import { Route as Devices } from "./devices.index"
 import { Route as Interfaces } from "./interfaces.index"
 import { Route as Cables } from "./cables.index"
 import { Route as Vms } from "./virtual-machines.index"
+import { Route as PortUtil } from "./port-utilization"
+import { Route as Lifecycle } from "./lifecycle"
 import { mountRoute, stubDom } from "./-bulk-list-test-utils"
 
 // The Devices, Interfaces, Cables and Virtual machines lists page on the
@@ -213,6 +215,60 @@ const CASES: ListCase[] = [
     facet: { id: "cluster", value: "C1", label: "C1" },
     sort: { header: "Name", id: "name" },
     first: "vm-1",
+  },
+  {
+    // #535: the stored port counts, paged.
+    name: "port utilization",
+    path: "/port-utilization",
+    endpoint: "/api/port-utilization/",
+    component: (
+      PortUtil as unknown as { options: { component: RouteComponent } }
+    ).options.component,
+    row: (i) => ({
+      id: `id-${i}`,
+      name: `pp-${i}`,
+      site: { id: "s1", name: "Alpha" },
+      rack: null,
+      role: null,
+      device_type: "PP24",
+      total: 24,
+      connected: 12,
+      reserved: 2,
+      free: 10,
+      marked: 0,
+      pct: 58,
+    }),
+    facet: { id: "type", value: "PP24", label: "PP24" },
+    sort: { header: "Free", id: "free" },
+    first: "pp-1",
+  },
+  {
+    // #535: the lifecycle view, paged.
+    name: "lifecycle",
+    path: "/lifecycle",
+    endpoint: "/api/lifecycle/",
+    component: (
+      Lifecycle as unknown as { options: { component: RouteComponent } }
+    ).options.component,
+    row: (i) => ({
+      id: `hardware:id-${i}`,
+      object: { id: `id-${i}`, name: `lc-${i}`, kind: "device" },
+      source: "hardware",
+      item: { type: "devicetype", id: "dt", name: "C9300" },
+      status: "supported",
+      start: null,
+      end: "2027-06-01",
+      days_left: 300,
+      window: "y1",
+      site: null,
+      role: null,
+      tenant: { id: "t", name: "Acme" },
+      manufacturer: null,
+      tags: [],
+    }),
+    facet: { id: "source", value: "hardware", label: "Hardware" },
+    sort: { header: "Object", id: "object" },
+    first: "lc-1",
   },
 ]
 

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import type React from "react"
 import { keepPreviousData, useQuery } from "@tanstack/react-query"
 import type { ColumnDef, SortingState } from "@tanstack/react-table"
 
@@ -56,6 +57,8 @@ export interface ServerListOpts<T> {
    * filter in the URL waits for the pinned view and opens with it (#523).
    * Returns `savedViews` for `ListPageShell`. */
   savedViews?: string
+  /** Controls the rail shows under its facets (a page's own toggle). */
+  railExtras?: React.ReactNode
 }
 
 const str = (v: unknown) => decodeText(v)
@@ -113,6 +116,7 @@ export function useServerList<T extends { id: string }>(
     extra: opts.extraFacets,
     params: opts.facetParams,
     counts: counts?.facets,
+    railExtras: opts.railExtras,
   })
 
   // Search, the rail and the fixed params: what the rows answer to.

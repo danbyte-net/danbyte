@@ -9,6 +9,7 @@ import type {
   LifecycleRow,
   LifecycleWindow,
 } from "@/lib/api"
+import { useServerList } from "@/lib/server-list"
 import { cn } from "@/lib/utils"
 import { useListSearch, useSearchWriter, useUrlSearch } from "@/lib/url-filters"
 import { useUrlFlag } from "@/lib/use-url-state"
@@ -19,7 +20,7 @@ import { EmptyState } from "@/components/empty-state"
 import { ListPageShell } from "@/components/list-page-shell"
 import { LifecycleVersions } from "@/components/lifecycle-versions"
 import { SegmentedTabs } from "@/components/segmented-tabs"
-import { useUrlTableFilters } from "@/components/table-filters"
+import { wireFacetColumns } from "@/components/table-filters"
 import {
   WINDOW_LABELS,
   WINDOW_ORDER,
@@ -30,8 +31,8 @@ import {
 
 // The Lifecycle page (#436): every device and VM against the end dates that
 // matter to it - hardware, OS, support coverage - one row per object per
-// source, soonest first. Laid out like Port utilization: the rows come in one
-// request and the rail narrows them. Deep links set the facets:
+// source, soonest first. Laid out like Port utilization: paged, sorted and
+// counted on the server (#535). Deep links set the facets:
 // /lifecycle?source=coverage&window=90. The Versions view (#451) counts
 // devices and VMs per platform and running version: /lifecycle?view=versions.
 
@@ -40,6 +41,12 @@ export const Route = createFileRoute("/lifecycle")({
 })
 
 type Row = LifecycleRow & { id: string }
+
+/** `/api/lifecycle/summary/`: the window chips' counts and the windows. */
+type LifecycleSummary = Pick<
+  LifecycleOverview,
+  "counts" | "windows" | "eol_enabled"
+>
 
 type LifecycleView = "objects" | "versions"
 
@@ -68,52 +75,43 @@ function LifecyclePage() {
   )
 }
 
+/** The rail's facets, counted by the server (`/api/lifecycle/facets/`). */
+const FACETS = [
+  "kind",
+  "source",
+  "application",
+  "status",
+  "window",
+  "site",
+  "role",
+  "manufacturer",
+  "tags",
+]
+
 function LifecycleObjects({ viewSwitch }: { viewSwitch: ReactNode }) {
   const [search, setSearch] = useUrlSearch()
   // Rows with no date are counted, and listed only on request.
   const [undated, setUndated] = useUrlFlag("undated", false)
   const write = useSearchWriter()
-  const q = useQuery({
-    queryKey: ["lifecycle", undated],
-    queryFn: () =>
-      api<LifecycleOverview>(
-        undated ? "/api/lifecycle/?undated=1" : "/api/lifecycle/"
-      ),
+  // The chips count every row you may see, not the rail's (#535: one
+  // grouped query, not the whole list).
+  const summary = useQuery({
+    queryKey: ["lifecycle", "summary"],
+    queryFn: () => api<LifecycleSummary>("/api/lifecycle/summary/"),
     staleTime: 60_000,
   })
-  const rows = useMemo<Row[]>(
-    () =>
-      (q.data?.results ?? []).map((r) => ({
-        ...r,
-        id: `${r.object.kind}:${r.object.id}:${r.source}`,
-      })),
-    [q.data]
-  )
-  const searched = useMemo(() => {
-    const s = search.trim().toLowerCase()
-    if (!s) return rows
-    return rows.filter(
-      (r) =>
-        r.object.name.toLowerCase().includes(s) ||
-        (r.item?.name ?? "").toLowerCase().includes(s)
-    )
-  }, [rows, search])
-
-  const windows = q.data?.windows
-  const columns = useMemo(
+  const windows = summary.data?.windows
+  const facetColumns = useMemo(
     () => buildLifecycleColumns<Row>({ selection: true, windows }),
     [windows]
   )
-  const {
-    rail,
-    filteredRows,
-    snapshot,
-    restore,
-    activeCount,
-    columns: wiredColumns,
-    toggleValue,
-    selectedValues,
-  } = useUrlTableFilters(columns, searched, {
+  const list = useServerList<Row>({
+    endpoint: "/api/lifecycle/",
+    queryKey: "lifecycle",
+    columns: facetColumns,
+    facets: FACETS,
+    params: { undated: undated ? "1" : undefined },
+    savedViews: "lifecycle",
     railExtras: (
       <label className="-mx-1.5 flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-xs hover:bg-muted/50">
         <Checkbox checked={undated} onCheckedChange={(v) => setUndated(!!v)} />
@@ -121,6 +119,19 @@ function LifecycleObjects({ viewSwitch }: { viewSwitch: ReactNode }) {
       </label>
     ),
   })
+  const { selectedValues, toggleValue } = list
+  const columns = useMemo(
+    () => wireFacetColumns(facetColumns, selectedValues, toggleValue),
+    [facetColumns, selectedValues, toggleValue]
+  )
+  const counts = summary.data?.counts
+  // Nothing to list at all - not a filter that matches nothing.
+  const nothing =
+    !!counts &&
+    !list.search &&
+    Object.entries(counts).every(
+      ([w, n]) => n === 0 || (w === "none" && !undated)
+    )
 
   const picked = selectedValues("window")
   const pickWindow = (w: LifecycleWindow) => {
@@ -132,14 +143,9 @@ function LifecycleObjects({ viewSwitch }: { viewSwitch: ReactNode }) {
   return (
     <ListPageShell
       title="Lifecycle"
-      count={q.data ? filteredRows.length : undefined}
-      rail={rail}
-      savedViews={{
-        // Its own page key, like Port utilization's (#107): a Devices view
-        // evaluated against these rows would blank the table.
-        objectType: "lifecycle",
-        filters: { snapshot, restore, activeCount },
-      }}
+      count={list.query.data ? list.total : undefined}
+      rail={list.rail}
+      savedViews={list.savedViews}
       search={{
         value: search,
         onChange: setSearch,
@@ -147,17 +153,13 @@ function LifecycleObjects({ viewSwitch }: { viewSwitch: ReactNode }) {
       }}
       actions={viewSwitch}
       summary={
-        q.data && (
-          <WindowChips
-            counts={q.data.counts}
-            picked={picked}
-            onPick={pickWindow}
-          />
+        counts && (
+          <WindowChips counts={counts} picked={picked} onPick={pickWindow} />
         )
       }
-      query={q}
+      query={list.query}
     >
-      {rows.length === 0 ? (
+      {nothing ? (
         <EmptyState title="No end dates yet.">
           Enter lifecycle dates on{" "}
           <Link to="/device-types" className="link">
@@ -175,8 +177,9 @@ function LifecycleObjects({ viewSwitch }: { viewSwitch: ReactNode }) {
         </EmptyState>
       ) : (
         <DataTable
-          data={filteredRows}
-          columns={wiredColumns}
+          data={list.rows}
+          columns={columns}
+          {...list.tableProps}
           flexColumn="object"
           tableId="lifecycle"
           exportName="lifecycle"
@@ -194,7 +197,7 @@ function WindowChips({
   picked,
   onPick,
 }: {
-  counts: LifecycleOverview["counts"]
+  counts: LifecycleSummary["counts"]
   picked: Set<string>
   onPick: (w: LifecycleWindow) => void
 }) {

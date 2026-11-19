@@ -169,18 +169,53 @@ beforeAll(async () => {
   const lazy = Route.options.component as { preload?: () => Promise<void> }
   await lazy.preload?.()
 })
+const PARAM: Record<string, string> = {
+  past: "past",
+  d90: "90",
+  d180: "180",
+  y1: "365",
+  later: "later",
+  none: "none",
+}
+
+/** The server (#535): a page of the rows the rail's facets leave, the
+ * facets, and the window chips' summary. */
+function answer(path: string): unknown {
+  const url = new URL(path, "http://x")
+  const p = url.pathname
+  if (p.startsWith("/api/lifecycle/versions/")) return VERSIONS
+  if (p === "/api/me/prefs/")
+    return { values: { page_size: 25 }, defaults: {}, user_set: [] }
+  if (p === "/api/lifecycle/summary/")
+    return {
+      counts: body.counts,
+      windows: body.windows,
+      eol_enabled: body.eol_enabled,
+    }
+  if (p === "/api/lifecycle/facets/")
+    return { facets: {}, sortable: ["object", "lifetime"] }
+  if (p === "/api/lifecycle/") {
+    const q = url.searchParams
+    const src = q.get("f_source")?.split(",")
+    const win = q.get("f_window")?.split(",")
+    const rows = body.results
+      .map((r) => ({ ...r, id: `${r.source}:${r.object.id}` }))
+      .filter((r) => !src || src.includes(r.source))
+      .filter((r) => !win || win.includes(PARAM[r.window]))
+    return { count: rows.length, next: null, previous: null, results: rows }
+  }
+  return {}
+}
+
+const pageCalls = () =>
+  apiMock.mock.calls
+    .map(([p]) => p)
+    .filter((p) => p.startsWith("/api/lifecycle/?"))
+
 beforeEach(() => {
   body = BODY
   apiMock.mockReset()
-  apiMock.mockImplementation((path) =>
-    Promise.resolve(
-      path.startsWith("/api/lifecycle/versions/")
-        ? VERSIONS
-        : path.startsWith("/api/lifecycle/")
-          ? body
-          : {}
-    )
-  )
+  apiMock.mockImplementation((path) => Promise.resolve(answer(path)))
 })
 afterEach(cleanup)
 
@@ -217,7 +252,8 @@ describe("the Lifecycle page", () => {
     expect(screen.getByRole("button", { name: "Past 1" })).toBeTruthy()
     expect(screen.getByRole("button", { name: "≤ 90 d 2" })).toBeTruthy()
     expect(screen.getByRole("button", { name: "No date 7" })).toBeTruthy()
-    expect(apiMock).toHaveBeenCalledWith("/api/lifecycle/")
+    expect(apiMock).toHaveBeenCalledWith("/api/lifecycle/summary/")
+    expect(pageCalls().at(-1)).toContain("page=1")
   })
 
   it("lands filtered from a deep link", async () => {
@@ -248,7 +284,7 @@ describe("the Lifecycle page", () => {
     await screen.findByText("sw-gone")
     fireEvent.click(screen.getByRole("button", { name: "No date 7" }))
     await waitFor(() =>
-      expect(apiMock).toHaveBeenCalledWith("/api/lifecycle/?undated=1")
+      expect(pageCalls().some((p) => p.includes("undated=1"))).toBe(true)
     )
     const search = router.state.location.search as Record<string, unknown>
     expect(search.window).toBe("none")
@@ -282,7 +318,12 @@ describe("the Lifecycle page", () => {
   })
 
   it("points at where the dates come from when there are none", async () => {
-    body = { ...BODY, results: [], counts: { ...BODY.counts, past: 0 } }
+    // Undated rows only: they are counted, not listed.
+    body = {
+      ...BODY,
+      results: [],
+      counts: { past: 0, d90: 0, d180: 0, y1: 0, later: 0, none: 7 },
+    }
     mount("/lifecycle")
     await screen.findByText("No end dates yet.")
     expect(

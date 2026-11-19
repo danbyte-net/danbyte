@@ -102,6 +102,11 @@ object and the item.
 - **Saved views** - the page keeps its own views, separate from the Devices
   list's.
 
+The list pages, sorts, filters and counts its facets on the server (#535): one
+page at a time, every column sortable, the facets over every matching row,
+Download and *Select all* over every match - at 50,000 devices the page used
+to load every row (31 MB) before it showed one.
+
 With no dated rows at all, the page says where the dates come from: device
 types, platforms and **Settings → General → End-of-life data**.
 
@@ -142,13 +147,19 @@ The overview shows what you may view and nothing else:
 ## API
 
 `GET /api/lifecycle/` - any signed-in user with an active tenant; the rows
-follow the grants above.
+follow the grants above. Since 0.21 it pages like every other list (#535):
+100 rows by default, `page_size` up to the cap, `next` to the rest, with the
+list parameters of [the API reference](../reference/api.md#sorting-and-facets-on-the-big-lists)
+(`ordering`, `search`, `f_<facet>`, `expr`, `facets/`, `table-ids/`). The
+window counts moved to `GET /api/lifecycle/summary/`.
 
 | Parameter | |
 |---|---|
 | `source` | Comma-separated: `hardware`, `os`, `coverage`, `software`. Default: all. |
 | `site` | A site id: only that site's devices and VMs. |
 | `undated` | `1` also lists the rows with no date. |
+| `ordering` | `object`, `kind`, `source`, `item`, `application`, `status`, `lifetime` / `end` / `days_left`, `window`, `site`, `tenant`, `role`, `manufacturer`; `-` for descending. Default: window, then days left, name and source. |
+| `f_<facet>` | `kind`, `source`, `application`, `status`, `window` (`past`, `90`, `180`, `365`, `later`, `none`), `site`, `role`, `manufacturer`, `tags`. |
 
 ```json
 {
@@ -167,9 +178,20 @@ follow the grants above.
       "role": {"id": "…", "name": "Core", "color": "#2563eb"},
       "tenant": {"id": "…", "name": "Acme"},
       "manufacturer": {"id": "…", "name": "Cisco"},
-      "tags": []
+      "tags": [],
+      "id": "os:…"
     }
   ],
+  "count": 3120,
+  "next": "…/api/lifecycle/?page=2",
+  "previous": null
+}
+```
+
+`GET /api/lifecycle/summary/` (takes `source` and `site`):
+
+```json
+{
   "counts": {"past": 3, "d90": 7, "d180": 4, "y1": 12, "later": 210, "none": 41},
   "windows": {"eol_warning_days": 180, "coverage_warning_days": 90},
   "eol_enabled": true
@@ -183,12 +205,15 @@ follow the grants above.
 - `days_left` is negative once the end has passed; `end` and `days_left` are
   `null` without a date. `window` is `past`, `d90`, `d180`, `y1`, `later` or
   `none`.
+- `id` is the row's own: its source and its object (or install).
 - `counts` covers every row the request reaches, the undated ones included,
   whether or not they are listed.
 - Rows come sorted by window, then days left.
 
-The rows are read in a fixed number of queries however large the estate is,
-and worked out when they are read, so a window moves with the calendar.
+The rows come from a database view over the devices, VMs and installs, so
+they are never stale; the dates, window and status are worked out in SQL when
+they are read, so a window moves with the calendar. A page costs a fixed
+number of queries however large the estate is.
 
 `GET /api/lifecycle/versions/` - the Versions view.
 
