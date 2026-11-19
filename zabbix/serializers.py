@@ -141,6 +141,16 @@ class ZabbixConnectionSerializer(TenantScopedModelSerializer):
             )
         return value
 
+    def validate_server_timezone(self, value):
+        from core.timezones import resolve_timezone
+
+        zone = resolve_timezone(value or "")
+        if zone is None:
+            raise serializers.ValidationError(
+                f"'{value}' is not an IANA time zone, such as Europe/Copenhagen."
+            )
+        return zone
+
     def validate_prune_after_days(self, value):
         if value > 365:
             raise serializers.ValidationError(
@@ -162,7 +172,21 @@ class ZabbixConnectionSerializer(TenantScopedModelSerializer):
         # from a form that never showed the secret must not wipe it.
         token = validated_data.pop("token", None)
         before = (instance.adopt_site_id, instance.adopt_role_id, instance.adopt_device_type_id)
+        zone_before = instance.server_timezone
         obj = super().update(instance, validated_data)
+        if obj.server_timezone != zone_before and obj.enabled and obj.sync_maintenance:
+            # Every repeating period's start time moves with it.
+            from django.db import transaction
+
+            from .maintenance import enqueue_maintenance_sync
+
+            def _go(cid=obj.pk):
+                try:
+                    enqueue_maintenance_sync(cid)
+                except Exception:  # noqa: BLE001 - the timer pass picks it up
+                    pass
+
+            transaction.on_commit(_go)
         if token:
             obj.credentials = {"token": token}
             obj.save(update_fields=["credentials"])
@@ -184,7 +208,8 @@ class ZabbixConnectionSerializer(TenantScopedModelSerializer):
             "prune_hosts", "prune_after_days",
             "auto_sync", "sync_interval_minutes", "last_sync_at",
             "last_sync_summary", "send_snmp_credentials",
-            "sync_maintenance", "last_maintenance_sync_at", "write_acknowledgements",
+            "sync_maintenance", "last_maintenance_sync_at", "server_timezone",
+            "write_acknowledgements",
             "adopt_hosts", "adopt_site", "adopt_role", "adopt_device_type",
             "adopt_names", "read_inventory",
             "read_host_status", "status_interval_minutes", "last_status_sync_at",

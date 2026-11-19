@@ -7702,6 +7702,9 @@ export interface ZabbixConnection {
   /** Mirror maintenance and outage windows as Zabbix maintenance periods. */
   sync_maintenance: boolean
   last_maintenance_sync_at: string | null
+  /** The Zabbix server's IANA zone, for repeating periods' start times.
+   * Blank: each event's own zone. */
+  server_timezone: string
   /** Acknowledging an alert acknowledges the Zabbix problems behind it. */
   write_acknowledgements: boolean
   /** Record what Zabbix's inventory says, so a disagreement shows in the

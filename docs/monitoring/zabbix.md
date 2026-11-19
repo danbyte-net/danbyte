@@ -455,8 +455,29 @@ wants it. And Danbyte removes only periods it created - never one it found.
 A [repeating window](../features/maintenance.md#repeating-windows) is one
 period with a daily or weekly time period at its start time, active over the
 window's validity, so Zabbix repeats it itself and Danbyte writes it once.
-Zabbix applies the time of day in the Zabbix server's time zone: give the
-event that zone. A one-off window stays a one-time period.
+Zabbix applies the time of day in the Zabbix server's time zone, which
+Danbyte can't read. Set the connection's **Server time zone** (under *Sync
+maintenance windows*) to that zone, and each pass converts every repeating
+event's start time from the event's zone to it - and a weekly period's days
+too, when the conversion crosses midnight (a Monday 00:30 in
+`Europe/Copenhagen` is a Sunday 23:30 on a `UTC` server). Left blank, each
+event's own zone is taken to be the server's, as before: give the event that
+zone. The API field is `server_timezone` (an IANA name; blank for the
+event's zone; a legacy name such as `Europe/Kiev` is stored as its current
+one, an unknown one is refused).
+
+A Zabbix period is one fixed time of day in the server's zone. Where the
+event's zone and the server's change their clocks on different dates, or one
+of them doesn't change at all, the same Danbyte start falls at a different
+server time for part of the year. Danbyte converts at the offset of the
+event's next occurrence, on every pass: the stored period then no longer
+matches, and the pass sends the update. So the first pass after a clock
+change moves the period; an occurrence that starts between the change and
+that pass runs off by the difference. The connection's interval bounds how long that
+is, and **Sync** moves it at once.
+
+A one-off window stays a one-time period: it is absolute times and needs no
+conversion.
 
 A period's name is the event's name plus the first eight characters of its id
 (`Splice · 3f2a9c1e`), and Zabbix keeps names unique. That name is how a pass

@@ -125,7 +125,8 @@ the same occurrence generator:
 - **Zabbix** - one maintenance period with a daily (`timeperiod_type` 2) or
   weekly (3, `dayofweek` bits) time period, active from **Valid from** to
   **Until**. Zabbix reads the start time in the Zabbix server's own time
-  zone, so give the event that zone. See
+  zone: set the connection's **Server time zone** and Danbyte converts it,
+  or leave that blank and give the event that zone. See
   [Zabbix maintenance windows](../monitoring/zabbix.md#maintenance-windows).
 - **PRTG** - each occurrence pauses the devices, as a one-off window does.
 

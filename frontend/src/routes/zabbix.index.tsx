@@ -380,6 +380,10 @@ function ConnectionCard({
       ),
     },
     {
+      label: "Server time zone",
+      value: conn.server_timezone || "Same as each event",
+    },
+    {
       label: "Last window sync",
       value: conn.last_maintenance_sync_at ? (
         <TimeCell iso={conn.last_maintenance_sync_at} />

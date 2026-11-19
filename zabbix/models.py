@@ -135,6 +135,12 @@ class ZabbixConnection(TimestampedModel):
     #: want Danbyte's calendar to be the one that quiets it.
     sync_maintenance = models.BooleanField(default=False)
     last_maintenance_sync_at = models.DateTimeField(null=True, blank=True)
+    #: The Zabbix server's own IANA zone, which it reads a daily or weekly
+    #: period's start time in. Blank: each event's zone is taken to be it.
+    #: Set: a repeating event's start is converted to it on every pass
+    #: (zabbix.maintenance.recurring_timeperiods).
+    server_timezone = models.CharField(max_length=64, blank=True, default="",
+                                       db_default="")
     #: Acknowledging a Danbyte alert acknowledges the Zabbix problems behind
     #: it, with the operator's name and note. Off by default like every write.
     write_acknowledgements = models.BooleanField(default=False)

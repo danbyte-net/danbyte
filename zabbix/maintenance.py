@@ -53,24 +53,68 @@ def period_name(event) -> str:
 OPEN_END = datetime(2038, 1, 1, tzinfo=UTC)
 
 
-def recurring_timeperiods(event) -> list:
+def _server_start(rule, zone, now) -> tuple[int, int]:
+    """``(start_time seconds, day shift)`` of a rule's start in the server's
+    ``zone``, read off the next occurrence from ``now``.
+
+    A Zabbix period is a fixed wall-clock time in the server's zone, while the
+    event's start is fixed in its own. Where the two zones change clocks on
+    different dates (or one has none), the converted time is right for the
+    occurrences around ``now`` and off by the difference for the rest of that
+    stretch; each pass converts again, so a pass after a clock change writes
+    the new time.
+    """
+    from datetime import timedelta as td
+
+    ref = max(now, rule.valid_from)
+    starts = [s for s, _e in rule._raw(ref, ref + td(days=8)) if s >= ref]
+    if not starts:
+        starts = [s for s, _e in rule._raw(ref - td(days=8), ref + td(days=1))] or [
+            rule._start_on(ref.astimezone(rule.zone).date())]
+        start = starts[-1]
+    else:
+        start = starts[0]
+    here = start.astimezone(rule.zone)
+    there = start.astimezone(zone)
+    shift = (there.date() - here.date()).days
+    return there.hour * 3600 + there.minute * 60, shift
+
+
+def recurring_timeperiods(event, *, server_zone: str = "", now=None) -> list:
     """The Zabbix ``timeperiods`` for a repeating event: one daily (type 2)
     or weekly (type 3, ``dayofweek`` bits) period at the start time, in
-    seconds. Empty for a one-off window. Zabbix reads ``start_time`` in its
-    own server's time zone - the event's zone has to be that one."""
+    seconds. Empty for a one-off window.
+
+    Zabbix reads ``start_time`` in its own server's time zone. Without
+    ``server_zone`` (the connection's *Server time zone* left blank) the
+    event's zone is taken to be that one. With it, the start is converted to
+    the server's zone at the offset of the next occurrence from ``now``, and
+    a weekly period's days move with it when the conversion crosses midnight.
+    """
+    from zoneinfo import ZoneInfo
+
     from monitoring.recurrence import DAILY, weekday_mask
 
     rule = event.rule
     if rule is None:
         return []
+    start_time = rule.start_time.hour * 3600 + rule.start_time.minute * 60
+    shift = 0
+    try:
+        zone = ZoneInfo(server_zone) if server_zone else None
+    except (ValueError, KeyError, OSError):
+        zone = None  # validated on write; a zone the host lost reads as blank
+    if zone is not None:
+        if zone.key != getattr(rule.zone, "key", None):
+            start_time, shift = _server_start(rule, zone, now or timezone.now())
     period = {
         "timeperiod_type": 2 if rule.freq == DAILY else 3,
         "every": 1,
-        "start_time": rule.start_time.hour * 3600 + rule.start_time.minute * 60,
+        "start_time": start_time,
         "period": int(rule.duration.total_seconds()),
     }
     if rule.freq != DAILY:
-        period["dayofweek"] = weekday_mask(rule.weekdays)
+        period["dayofweek"] = weekday_mask((int(d) + shift) % 7 for d in rule.weekdays)
     return [period]
 
 
@@ -178,7 +222,9 @@ def reconcile(conn, *, client=None, dry_run=False, report=None) -> dict:
         # A one-off window is its silence; a repeating one is a single period
         # over its whole validity, repeating on Zabbix's side, while its
         # silence moves from occurrence to occurrence.
-        periods = recurring_timeperiods(event)
+        periods = recurring_timeperiods(
+            event, server_zone=conn.server_timezone, now=now
+        )
         if periods:
             since, till = event.starts_at, event.ends_at or OPEN_END
         else:

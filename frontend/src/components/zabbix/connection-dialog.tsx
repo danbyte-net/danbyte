@@ -33,6 +33,7 @@ import { CheckStatusBadge } from "@/components/monitoring/status-badge"
 import { DeviceTypePicker } from "@/components/device-type-picker"
 import { IdMultiSelect } from "@/components/cells/id-multi-select"
 import { useSaveObject } from "@/lib/save-object"
+import { useTimezoneOptions } from "@/lib/use-timezones"
 
 /** Create or edit the Zabbix connection (#162). */
 export function ZabbixConnectionDialog({
@@ -115,6 +116,10 @@ function ConnectionForm({
   const [syncMaint, setSyncMaint] = useState(
     connection?.sync_maintenance ?? false
   )
+  const [serverZone, setServerZone] = useState(
+    connection?.server_timezone ?? ""
+  )
+  const timezoneOptions = useTimezoneOptions()
   const [writeAcks, setWriteAcks] = useState(
     connection?.write_acknowledgements ?? false
   )
@@ -226,6 +231,7 @@ function ConnectionForm({
           prune_hosts: prune,
           prune_after_days: Number(pruneAfter) || 0,
           sync_maintenance: syncMaint,
+          server_timezone: serverZone,
           write_acknowledgements: writeAcks,
           read_inventory: readInventory,
           read_host_status: readStatus,
@@ -385,6 +391,20 @@ function ConnectionForm({
               checked={syncMaint}
               onChange={setSyncMaint}
             />
+            {syncMaint && (
+              <FormCombobox
+                label="Server time zone"
+                info="Zabbix reads a repeating period's start time in its server's time zone. Set it when that differs from the events' zones: each sync converts the start, and the days when it crosses midnight. Where the two zones change clocks on different dates, the sync after a change moves the period. Blank takes each event's own zone."
+                value={serverZone || null}
+                onChange={(v) => setServerZone(v ?? "")}
+                options={timezoneOptions}
+                noneLabel="Same as each event"
+                placeholder="Same as each event"
+                searchPlaceholder="Search zones…"
+                emptyText="No matching zone."
+                error={fieldErrors.server_timezone}
+              />
+            )}
             <FormCheckbox
               label="Write acknowledgements"
               info="Acknowledging a Danbyte alert that Zabbix raised acknowledges the Zabbix problems behind it, with the operator's name and note. Clearing it clears it there."

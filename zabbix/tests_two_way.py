@@ -806,3 +806,123 @@ class RecurringTests(_Base):
         maintenance.reconcile(self.conn, client=c)
         self.assertEqual(c.create_maintenance.call_args.args[0]["active_till"],
                          int(maintenance.OPEN_END.timestamp()))
+
+
+class ServerZoneTests(_Base):
+    """A connection's Server time zone: the repeating period's start time and
+    days in the zone Zabbix reads them in."""
+
+    recurring = RecurringTests.recurring
+
+    def periods(self, ev, zone, now):
+        return maintenance.recurring_timeperiods(ev, server_zone=zone, now=now)
+
+    def at(self, ev, **kw):
+        from datetime import time as dtime
+
+        for k, v in kw.items():
+            setattr(ev, k, dtime(*v) if k == "recurrence_start_time" else v)
+        ev.save()
+        return ev
+
+    def test_the_same_zone_changes_nothing(self):
+        ev = self.recurring(self.device(hostid="5"), freq="weekly", weekdays=[0, 6])
+        blank = maintenance.recurring_timeperiods(ev)
+        self.assertEqual(self.periods(ev, "Europe/Copenhagen", T0), blank)
+        self.conn.server_timezone = "Europe/Copenhagen"
+        self.conn.save()
+        c = self.fake()
+        maintenance.reconcile(self.conn, client=c)
+        self.assertEqual(c.create_maintenance.call_args.args[0]["timeperiods"], blank)
+
+    def test_a_copenhagen_event_on_a_utc_server(self):
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+
+        cph = ZoneInfo("Europe/Copenhagen")
+        ev = self.recurring(self.device(hostid="5"))
+        self.at(ev, starts_at=datetime(2027, 1, 4, tzinfo=cph),
+                ends_at=datetime(2027, 12, 31, tzinfo=cph))
+        # Winter, UTC+1: 21:55 is 20:55 on the server. Summer, UTC+2: 19:55.
+        winter = self.periods(ev, "UTC", datetime(2027, 1, 10, tzinfo=cph))[0]
+        summer = self.periods(ev, "UTC", datetime(2027, 7, 10, tzinfo=cph))[0]
+        self.assertEqual(winter["start_time"], 20 * 3600 + 55 * 60)
+        self.assertEqual(summer["start_time"], 19 * 3600 + 55 * 60)
+        self.assertEqual(winter["period"], 545 * 60)
+
+    def test_a_start_after_midnight_moves_to_the_previous_day(self):
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+
+        cph = ZoneInfo("Europe/Copenhagen")
+        ev = self.recurring(self.device(hostid="5"), freq="weekly", weekdays=[0, 2])
+        self.at(ev, recurrence_start_time=(0, 30),
+                starts_at=datetime(2027, 1, 4, tzinfo=cph),
+                ends_at=datetime(2027, 12, 31, tzinfo=cph))
+        tp = self.periods(ev, "UTC", datetime(2027, 1, 10, tzinfo=cph))[0]
+        # Monday and Wednesday 00:30 in Copenhagen: Sunday and Tuesday 23:30 UTC.
+        self.assertEqual(tp["start_time"], 23 * 3600 + 30 * 60)
+        self.assertEqual(tp["dayofweek"], 64 | 2)
+        # And forward: Sunday 23:30 in New York is Monday 04:30 UTC.
+        self.at(ev, recurrence_start_time=(23, 30), recurrence_weekdays=[6],
+                timezone="America/New_York")
+        tp = self.periods(ev, "UTC", datetime(2027, 1, 10, tzinfo=cph))[0]
+        self.assertEqual((tp["start_time"], tp["dayofweek"]), (4 * 3600 + 30 * 60, 1))
+
+    def test_a_clock_change_sends_an_update_on_the_next_pass(self):
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+
+        cph = ZoneInfo("Europe/Copenhagen")
+        ev = self.recurring(self.device(hostid="5"))
+        self.at(ev, starts_at=datetime(2027, 3, 1, tzinfo=cph),
+                ends_at=datetime(2027, 4, 30, tzinfo=cph))
+        self.conn.server_timezone = "UTC"
+        self.conn.save()
+        before = datetime(2027, 3, 20, 12, tzinfo=cph)
+        with mock.patch("zabbix.maintenance.timezone.now", return_value=before):
+            maintenance.reconcile(self.conn, client=self.fake())
+        row = ZabbixMaintenance.objects.get(event=ev)
+        self.assertEqual(row.timeperiods[0]["start_time"], 20 * 3600 + 55 * 60)
+        # The same week: nothing to send.
+        c = self.fake(existing=["77"])
+        with mock.patch("zabbix.maintenance.timezone.now", return_value=before):
+            self.assertEqual(maintenance.reconcile(self.conn, client=c)["updated"], 0)
+        # Copenhagen went to summer time on 28 March: the period moves an hour.
+        after = datetime(2027, 3, 29, 12, tzinfo=cph)
+        c = self.fake(existing=["77"])
+        with mock.patch("zabbix.maintenance.timezone.now", return_value=after):
+            self.assertEqual(maintenance.reconcile(self.conn, client=c)["updated"], 1)
+        tp = c.update_maintenance.call_args.args[1]["timeperiods"][0]
+        self.assertEqual(tp["start_time"], 19 * 3600 + 55 * 60)
+
+    def test_a_one_off_window_is_unaffected(self):
+        self.conn.server_timezone = "America/New_York"
+        self.conn.save()
+        ev = self.event(self.device(hostid="5"))
+        c = self.fake()
+        maintenance.reconcile(self.conn, client=c)
+        tp = c.create_maintenance.call_args.args[0]["timeperiods"]
+        self.assertEqual(tp[0]["timeperiod_type"], 0)
+        self.assertEqual(tp[0]["start_date"], int(ev.silence.starts_at.timestamp()))
+
+    def test_the_api_validates_the_zone(self):
+        from django.contrib.auth import get_user_model
+
+        user = get_user_model().objects.create_superuser("root", "r@x.io", "pw")
+        self.client.force_login(user)
+        url = f"/api/zabbix/connections/{self.conn.id}/"
+        r = self.client.patch(url, {"server_timezone": "Mars/Olympus"},
+                              content_type="application/json")
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertIn("server_timezone", r.json())
+        r = self.client.patch(url, {"server_timezone": "Europe/Kiev"},
+                              content_type="application/json")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["server_timezone"], "Europe/Kyiv")
+        r = self.client.patch(url, {"server_timezone": ""},
+                              content_type="application/json")
+        self.assertEqual(r.json()["server_timezone"], "")
+        r = self.client.get("/api/zabbix/connections/?page_size=1000")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertIn("server_timezone", r.json()["results"][0])
