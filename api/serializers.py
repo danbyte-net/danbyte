@@ -6029,6 +6029,14 @@ class ModuleTypeSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin,
         v = getattr(obj, "module_count_annotated", None)
         return v if v is not None else _visible_count(self, obj, "modules")
 
+    document_count = serializers.SerializerMethodField()
+
+    @detail_only(0)
+    def get_document_count(self, obj) -> int:
+        return Document.objects.filter(
+            object_type="api.moduletype", object_id=obj.id
+        ).count()
+
     # The 3D model's download URLs (never stored paths), set through the
     # ``model/`` and ``model-far/`` actions, and its scan (api.model_anchors).
     model_3d = serializers.SerializerMethodField()
@@ -6060,9 +6068,9 @@ class ModuleTypeSerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin,
                   "model_3d_far", "model_3d_scan",
                   "custom_fields",
                   "tags", "tag_ids", "interface_template_count",
-                  "module_count", "created_at", "updated_at"]
+                  "module_count", "document_count", "created_at", "updated_at"]
         read_only_fields = ["id", "model_3d", "model_3d_far", "model_3d_scan",
-                            "created_at", "updated_at"]
+                            "document_count", "created_at", "updated_at"]
 
 
 class ModuleInterfaceTemplateSerializer(serializers.ModelSerializer):

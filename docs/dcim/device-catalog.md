@@ -1247,6 +1247,12 @@ slot names resolves to the bay position, so the cages light up with the real
 interfaces' state). Editing a module type's faceplate refreshes every device
 that has one of its modules installed.
 
+A module type has a **Documents** tab too, after Faceplate: data sheets,
+install guides and links attached to the model, as on a device type (see
+[Documents](../features/documents.md)). A [model pack](model-packs.md#meta)
+adds its `meta.links` there. RBAC: view on the module type to see them,
+plus the document grant to add or change them.
+
 Module-type YAMLs from the devicetype-library import through the same
 **Import from library** dialog - they're auto-detected (no `u_height`), so
 you can paste `module-types/...` links right next to device types. The Module

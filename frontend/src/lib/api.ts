@@ -4568,6 +4568,8 @@ export interface ModuleType {
   tags: Tag[]
   interface_template_count: number
   module_count: number
+  /** Detail only (0 in lists). */
+  document_count?: number
   created_at: string
   updated_at: string
 }

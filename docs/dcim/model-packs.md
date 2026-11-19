@@ -1179,8 +1179,8 @@ A pack can also be imported with a management command, from a folder or a
 - Each YAML is matched to an existing type by **manufacturer and part
   number** (by name when it has no part number). A type that isn't there is
   created from the YAML, with its templates. A matched device or module
-  type's templates, bay module lists, lifecycle dates and links follow the
-  YAML, keeping what was changed in Danbyte: see
+  type's templates, bay module lists, lifecycle dates (device types) and
+  links follow the YAML, keeping what was changed in Danbyte: see
   [What a re-import changes](#what-a-re-import-changes).
 - The matched or created type gets the pack's model and far model,
   replacing what it had, with the scan's report per type. A hand-made port
@@ -1322,13 +1322,16 @@ rule for changes made here as the templates:
 |---|---|---|---|---|
 | `lifecycle` dates | the [lifecycle](../features/lifecycle.md) fields | kept in the record | kept in the record | kept in the record |
 | `lifecycle.source` | the vendor notice URL | kept in the record | kept in the record | kept in the record |
-| `links` | link documents on the **Documents** tab | kept in the record | kept in the record | kept in the record |
+| `links` | link documents on the **Documents** tab | link documents on the **Documents** tab | kept in the record | kept in the record |
 | `summary` | the description, while it is empty | the description, while it is empty | the description, while it is empty | kept in the record |
 | `category`, `family`, `roles`, `sources` | kept in the record | kept in the record | kept in the record | kept in the record |
 
-Only device types have lifecycle fields and a Documents tab; the other kinds
-keep the whole block in their record (an accessory type's and rack kit's in
-`pack_import`), so nothing is lost and a later Danbyte can use it.
+Only device types have lifecycle fields; device and module types have a
+Documents tab. The other kinds keep the whole block in their record (an
+accessory type's and rack kit's in `pack_import`), so nothing is lost and a
+later Danbyte can use it: a module type's lifecycle dates stay in its
+record. A module type imported before module types took documents holds its
+links only there; its next import creates the documents.
 
 - **Dates.** A key the pack leaves out leaves the field alone: Danbyte
   never guesses. A month-only date is stored as the first of the month for

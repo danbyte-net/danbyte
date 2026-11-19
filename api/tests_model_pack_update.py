@@ -471,6 +471,76 @@ class ModuleTypeTests(_Base):
         self.assertEqual(mt.power_port_templates.get().maximum_draw, 715)
 
 
+class ModuleTypeLinkTests(_Base):
+    LINKS = [{"kind": "datasheet", "title": "NM-8X data sheet",
+              "url": "https://www.cisco.com/nm-8x-ds.html"},
+             {"kind": "install-guide", "url": "https://www.cisco.com/nm-8x-ig.html"}]
+
+    def doc(self, links=None):
+        d = copy.deepcopy(ModuleTypeTests.PSU)
+        d["meta"] = {"summary": "A PSU.", "links": copy.deepcopy(links or self.LINKS)}
+        return d
+
+    def docs(self, mt):
+        return Document.objects.filter(object_type="api.moduletype", object_id=mt.pk)
+
+    def test_links_become_documents_on_a_module_type(self):
+        row = self.row(self.run_pack({}, modules={"PWR-X": self.doc()}), "PWR-X")
+        mt = ModuleType.objects.get(tenant=self.tenant, part_number="PWR-X")
+        self.assertEqual(sorted(self.docs(mt).values_list("category__name", "name")), [
+            ("Datasheet", "NM-8X data sheet"), ("Install guide", "Installation guide")])
+        self.assertFalse(self.docs(mt).exclude(tenant=self.tenant).exists())
+        self.assertIn("https://www.cisco.com/nm-8x-ds.html", mt.pack_state["links"])
+        self.assertFalse(any("module types have no documents" in n for n in row.notes))
+        # Again: nothing changes.
+        before = ChangeLogEntry.objects.filter(object_type="api.document").count()
+        row = self.row(self.run_pack({}, modules={"PWR-X": self.doc()}), "PWR-X")
+        self.assertEqual(row.changes, {"added": 0, "updated": 0, "removed": 0, "kept": 0},
+                         row.notes)
+        self.assertEqual(self.docs(mt).count(), 2)
+        self.assertEqual(ChangeLogEntry.objects.filter(object_type="api.document").count(),
+                         before)
+
+    def test_a_users_document_is_left_alone(self):
+        self.run_pack({}, modules={"PWR-X": self.doc()})
+        mt = ModuleType.objects.get(tenant=self.tenant, part_number="PWR-X")
+        mine = Document.objects.create(tenant=self.tenant, object_type="api.moduletype",
+                                       object_id=mt.pk, name="Our notes",
+                                       url="https://wiki.example.com/pwr")
+        ds = self.docs(mt).get(category__name="Datasheet")
+        ds.description = "Checked by us."
+        ds.save()
+        row = self.row(self.run_pack({}, modules={"PWR-X": self.doc(
+            [{"kind": "other", "url": "https://wiki.example.com/pwr"}])}, version="2.0.0"),
+            "PWR-X")
+        mine.refresh_from_db()
+        self.assertEqual(mine.name, "Our notes")
+        self.assertTrue(self.docs(mt).filter(pk=ds.pk).exists())
+        self.assertIn("kept 1 document the pack dropped, changed here: NM-8X data sheet",
+                      row.notes)
+        self.assertIn("removed 1 document: Installation guide", row.notes)
+        self.assertEqual(self.docs(mt).count(), 2)
+
+    def test_links_kept_only_in_the_record_are_created_now(self):
+        self.run_pack({}, modules={"PWR-X": self.doc()})
+        mt = ModuleType.objects.get(tenant=self.tenant, part_number="PWR-X")
+        # As an import before module types took documents left it.
+        self.docs(mt).delete()
+        state = dict(mt.pack_state)
+        state.pop("links")
+        ModuleType.objects.filter(pk=mt.pk).update(pack_state=state)
+        row = self.row(self.run_pack({}, modules={"PWR-X": self.doc()}), "PWR-X")
+        self.assertIn("added 2 documents: Installation guide, NM-8X data sheet", row.notes)
+        self.assertEqual(self.docs(mt).count(), 2)
+
+    def test_lifecycle_stays_in_the_record(self):
+        d = self.doc()
+        d["meta"]["lifecycle"] = {"end_of_sale": "2026-04"}
+        row = self.row(self.run_pack({}, modules={"PWR-X": d}), "PWR-X")
+        self.assertIn("meta.lifecycle: module types have no lifecycle fields - kept with "
+                      "the import record.", row.notes)
+
+
 class MetaTests(_Base):
     def test_lifecycle_lands_on_the_device_type(self):
         row = self.row(self.run_pack({"C9500-40X": real("C9500-40X")}), "C9500-40X")

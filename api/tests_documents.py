@@ -18,7 +18,8 @@ from auth_api.models import ObjectPermission, UserProfile
 from core.models import Organization, Tenant
 
 from .models import (
-    Device, DeviceRole, DeviceType, Document, DocumentCategory, Manufacturer, Site,
+    Device, DeviceRole, DeviceType, Document, DocumentCategory, Manufacturer, ModuleType,
+    Site,
 )
 
 User = get_user_model()
@@ -232,6 +233,71 @@ class DeviceTypeDocumentTests(_Base):
         self.assertEqual(
             [d["name"] for d in r.json()["results"]], ["MX hardware manual"]
         )
+
+
+class ModuleTypeDocumentTests(_Base):
+    """A module type carries documents like a device type: the same gate,
+    tenant clamp and count on its detail."""
+
+    def setUp(self):
+        super().setUp()
+        self.mt = ModuleType.objects.create(tenant=self.tenant, name="NM-8X",
+                                            part_number="NM-8X")
+
+    def _attach(self, mt=None):
+        with patch("core.ssrf.assert_public_url", return_value=None):
+            return self.client.post("/api/documents/", {
+                "object_type": "api.moduletype", "object_id": str((mt or self.mt).id),
+                "name": "NM-8X data sheet", "url": "https://ex.example/nm8x",
+            }, content_type="application/json")
+
+    def test_attach_list_and_count(self):
+        r = self._attach()
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(r.json()["object_type"], "api.moduletype")
+        # The slug form normalises to the label.
+        with patch("core.ssrf.assert_public_url", return_value=None):
+            r = self.client.post("/api/documents/", {
+                "object_type": "moduletype", "object_id": str(self.mt.id),
+                "name": "Guide", "url": "https://ex.example/guide",
+            }, content_type="application/json")
+        self.assertEqual(r.json()["object_type"], "api.moduletype")
+        u = self._member("mtviewer", [(["moduletype", "document"], ["view"])])
+        self._login(u)
+        r = self.client.get(
+            # As the Documents tab asks (apiAll).
+            f"/api/documents/?object_type=api.moduletype&object_id={self.mt.id}"
+            "&page_size=1000"
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["count"], 2)
+        r = self.client.get(f"/api/module-types/{self.mt.id}/")
+        self.assertEqual(r.json()["document_count"], 2)
+        r = self.client.get("/api/module-types/?search=&page_size=1000")
+        self.assertEqual(r.status_code, 200, r.content)
+
+    def test_no_view_on_module_types_no_documents(self):
+        self.assertEqual(self._attach().status_code, 201)
+        u = self._member("docsonly", [(["document"], ["view", "add"])])
+        self._login(u)
+        r = self.client.get(
+            f"/api/documents/?object_type=api.moduletype&object_id={self.mt.id}")
+        self.assertEqual(r.json()["count"], 0)
+        self.assertEqual(self._attach().status_code, 403)
+
+    def test_another_tenants_module_type_is_out_of_reach(self):
+        org2 = Organization.objects.create(name="Other", slug="other")
+        t2 = Tenant.objects.create(org=org2, name="Other", slug="other")
+        theirs = ModuleType.objects.create(tenant=t2, name="NM-8X", part_number="NM-8X")
+        Document.objects.create(tenant=t2, object_type="api.moduletype",
+                                object_id=theirs.id, name="theirs",
+                                url="https://ex.example/t")
+        u = self._member("member", [(["moduletype", "document"], ["view", "add"])])
+        self._login(u)
+        r = self.client.get(
+            f"/api/documents/?object_type=api.moduletype&object_id={theirs.id}")
+        self.assertEqual(r.json()["count"], 0)
+        self.assertEqual(self._attach(theirs).status_code, 403)
 
 
 class DocumentCategoryTests(_Base):

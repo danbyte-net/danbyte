@@ -30,8 +30,9 @@ joins the bay's list, what it dropped leaves it, and part numbers added
 here stay.
 
 ``meta:`` (the export spec §8): ``lifecycle`` fills a device type's
-lifecycle fields with the same rule, ``links`` become link Documents on a
-device type (the ones it made are tracked in the snapshot by URL),
+lifecycle fields with the same rule (a module type has none: kept in the
+snapshot), ``links`` become link Documents on a device or module type (the
+ones it made are tracked in the snapshot by URL),
 ``summary`` becomes an empty description, and the whole block is kept in
 the snapshot. Devices are never changed: the report counts the devices that
 are out of step, which the type's Sync devices brings in line.
@@ -744,7 +745,7 @@ def _category(tenant, kind: str, made: list[str]):
 
 def apply_links(dt, meta: dict, prev: dict, *, overwrite: bool, report: Report,
                 notes: list[str]) -> dict:
-    """``meta.links`` as link Documents on a device type, one per URL.
+    """``meta.links`` as link Documents on a device or module type, one per URL.
     Returns the new snapshot ``{url: {id, name, category}}``. A document a
     user added (the same URL) or edited is never touched."""
     from audit.api import _object_site_id
@@ -874,10 +875,9 @@ def update_type(obj, data: dict, *, kind: str, pack: dict, overwrite: bool = Fal
     if summary is not None:
         record["description"] = summary
     if module:
-        for key, what in (("lifecycle", "lifecycle fields"), ("links", "documents")):
-            if meta.get(key):
-                notes.append(f"meta.{key}: module types have no {what} - kept with the "
-                             "import record.")
+        if meta.get("lifecycle"):
+            notes.append("meta.lifecycle: module types have no lifecycle fields - kept "
+                         "with the import record.")
     else:
         prev_life = prev.get("lifecycle") if isinstance(prev.get("lifecycle"), dict) else {}
         life, fields = apply_lifecycle(obj, meta, prev_life, overwrite=overwrite,
@@ -885,11 +885,14 @@ def update_type(obj, data: dict, *, kind: str, pack: dict, overwrite: bool = Fal
         changed += fields
         if life:
             record["lifecycle"] = life
-        prev_links = prev.get("links") if isinstance(prev.get("links"), dict) else {}
-        links = apply_links(obj, meta, prev_links, overwrite=overwrite, report=report,
-                            notes=notes)
-        if links:
-            record["links"] = links
+    # Device and module types alike. A module type imported before it took
+    # documents has its links only in ``meta``: no ``links`` record, so they
+    # are created now.
+    prev_links = prev.get("links") if isinstance(prev.get("links"), dict) else {}
+    links = apply_links(obj, meta, prev_links, overwrite=overwrite, report=report,
+                        notes=notes)
+    if links:
+        record["links"] = links
     obj.pack_state = record
     obj.save(update_fields=[*changed, "pack_state", "updated_at"])
     out = report.notes() + notes + built

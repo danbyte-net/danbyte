@@ -45,6 +45,7 @@ import { EditButton, DeleteButton } from "@/components/action-ribbon"
 import { DetailHero, DetailShell, DetailTab } from "@/components/detail-shell"
 import { ChangeLogPanel } from "@/components/audit/change-log-panel"
 import { JournalPanel } from "@/components/audit/journal-panel"
+import { ObjectDocuments } from "@/components/object-documents"
 import { DeviceTypeFaceplatePane } from "@/components/device-type-faceplate-pane"
 import { QueryError } from "@/components/query-error"
 import { ModuleTypeDeleteDialog } from "@/routes/module-types.index"
@@ -78,7 +79,7 @@ function ModuleTypeDetail() {
 
 function Body({ moduleType: m }: { moduleType: ModuleType }) {
   const [tab, setTab] = useUrlTab<
-    "overview" | "faceplate" | "journal" | "history"
+    "overview" | "faceplate" | "documents" | "journal" | "history"
   >("overview")
   const { canDo } = useMe()
   const nav = useNavigate()
@@ -131,6 +132,7 @@ function Body({ moduleType: m }: { moduleType: ModuleType }) {
           count: m.interface_template_count,
         },
         { value: "faceplate", label: "Faceplate" },
+        { value: "documents", label: "Documents", count: m.document_count },
         { value: "journal", label: "Journal" },
         { value: "history", label: "Change log" },
       ]}
@@ -189,6 +191,9 @@ function Body({ moduleType: m }: { moduleType: ModuleType }) {
           }}
           moduleMode
         />
+      </DetailTab>
+      <DetailTab value="documents">
+        <ObjectDocuments objectType="api.moduletype" objectId={m.id} />
       </DetailTab>
       <DetailTab value="journal">
         <JournalPanel objectType="api.moduletype" objectId={m.id} />
