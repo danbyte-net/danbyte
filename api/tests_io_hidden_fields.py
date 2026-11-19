@@ -178,6 +178,9 @@ class SerializerHidingIsDeclaredTests(APITestCase):
         # A live view reads its source's grid, scale and background, the
         # same for everyone.
         "FloorPlanSerializer",
+        # Answers the way with its hops resolved against the rack's
+        # pathways, the same for everyone who may read the cable.
+        "CableWaySerializer",
     }
 
     def test_every_override_is_accounted_for(self):

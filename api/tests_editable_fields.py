@@ -231,6 +231,7 @@ class BulkAgreementTests(_Base):
             "lag_mode": "802.3ad",
             "lag_hash_policy": "layer3+4",
             "lag_miimon": 100,
+            "stack_port": True,
             "macsec_enabled": True,
             "macsec_cipher": "gcm-aes-256",
             "macsec_keychain_id": None,

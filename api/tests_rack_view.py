@@ -286,6 +286,26 @@ class _PinnedScene(_SceneFixture):
         }
 
 
+def _without_ways(test, rack: dict) -> dict:
+    """``rack`` less the pathways and cable ways the 3D view draws (added
+    since the pin), after checking them: a rack without a kit carries its
+    frame's default pathways, each with its place, and no stored ways."""
+    rack = dict(rack)
+    pathways, ways = rack.pop("pathways"), rack.pop("ways")
+    test.assertEqual(ways, [])
+    test.assertEqual(
+        sorted(p["key"] for p in pathways if p["kind"] == "vertical"),
+        ["path:vertical:left:front", "path:vertical:left:rear",
+         "path:vertical:right:front", "path:vertical:right:rear"])
+    for p in pathways:
+        test.assertEqual(p["source"], "default")
+        test.assertTrue(p["geo"], p["key"])
+        if p["kind"] == "vertical":
+            test.assertLess(p["geo"]["x0"], p["geo"]["x1"])
+            test.assertLess(p["geo"]["z0"], p["geo"]["z1"])
+    return rack
+
+
 class FloorPlanSceneParityTests(_PinnedScene):
     """The floor-plan scene, pinned key for key as it was before its rack,
     device, feed and cabinet geometry moved to api.scene_geo (#248)."""
@@ -300,6 +320,7 @@ class FloorPlanSceneParityTests(_PinnedScene):
         }
         body = self.client.get(f"/api/floor-plans/{self.plan.id}/scene/").json()
         self.assertTrue(body.pop("as_of"))
+        body["tiles"][0]["rack"] = _without_ways(self, body["tiles"][0]["rack"])
         self.assertEqual(body, {
             "plan": {
                 "id": str(self.plan.id), "name": "Hall A", "grid_width": 24,
@@ -361,7 +382,7 @@ class RackSceneTests(_ViewerMixin, _PinnedScene):
         self.assertEqual(resp.status_code, 200, resp.content)
         plan = self.client.get(f"/api/floor-plans/{self.plan.id}/scene/").json()
         self.assertEqual(resp.json(), plan["tiles"][0]["rack"])
-        self.assertEqual(resp.json(), self.expected_rack())
+        self.assertEqual(_without_ways(self, resp.json()), self.expected_rack())
 
     def test_only_the_devices_the_caller_may_view(self):
         self._viewer((["rack"], None), (["device"], {"name__startswith": "pdu-"}))
