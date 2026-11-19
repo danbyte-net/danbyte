@@ -43,6 +43,10 @@ class ApiConfig(AppConfig):
         from . import cable_routing
 
         cable_routing.connect_signals()
+        # A cable's automatic ways through racks follow its ends.
+        from . import cable_ways
+
+        cable_ways.connect_signals()
         # A stack's auto-connect cables follow its members (api.stack_cables).
         from . import stack_cables
 

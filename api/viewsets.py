@@ -6,6 +6,7 @@ the old Django UI used) so a user can never see another tenant's data.
 from __future__ import annotations
 
 import re
+import uuid
 
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
@@ -6147,6 +6148,7 @@ class CableViewSet(TableListMixin, TenantScopedViewSet):
             "terminations__power_feed__power_panel",
             # Same for a circuit end: it names its circuit, not a device.
             "terminations__circuit_termination__circuit",
+            "ways__rack",
             TAGS,
         ).order_by("-created_at")
     )
@@ -6188,6 +6190,16 @@ class CableViewSet(TableListMixin, TenantScopedViewSet):
             feed_id = self.request.query_params.get("power_feed")
             if feed_id:
                 qs = qs.filter(terminations__power_feed_id=feed_id)
+            # The cables with a recorded way through one rack pathway - the
+            # rack's Pathways tab links here (api.cable_ways).
+            pathway = self.request.query_params.get("pathway")
+            if pathway:
+                try:
+                    pathway = str(uuid.UUID(pathway))
+                except ValueError as exc:
+                    raise ValidationError({"pathway": "Not an id."}) from exc
+                qs = qs.filter(ways__state="recorded",
+                               ways__hops__contains=[{"pathway": pathway}])
             vnet = self.request.query_params.get("pve_vnet")
             if vnet is not None and vnet != "":
                 qs = qs.filter(pve_vnet=vnet.strip())

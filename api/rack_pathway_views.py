@@ -168,6 +168,7 @@ class RackPathwayViewSet(TenantScopedViewSet):
                 if rack.rack_type_id else None)
             fr = rp.Frame.of_rack(rack)
             devices = self._devices(rack, items, tenant)
+            cables = self._cables(rack, tenant)
         else:
             qs = rbac.restrict_queryset(RackType.objects.filter(tenant=tenant), request.user,
                                         tenant, "racktype", "view")
@@ -177,11 +178,14 @@ class RackPathwayViewSet(TenantScopedViewSet):
             items = rp.resolve_type(rt, rows=rp.rows_of(rows.filter(rack_type=rt)))
             fr = rp.Frame.of_type(rt)
             devices = {}
+            cables = None
         docs = []
         for it in items:
             d = item_doc(it)
             if it["kind"] == "channel":
                 d["devices"] = devices.get(it["id"], [])
+            if cables is not None:
+                d["cables"] = cables.get(it["id"], 0) if it["id"] else 0
             docs.append(d)
         return Response({
             "frame": fr.frame, "kit": _ref(fr.kit), "units": [fr.start, fr.top_unit],
@@ -203,6 +207,24 @@ class RackPathwayViewSet(TenantScopedViewSet):
         for d in qs.order_by("name").only("id", "name", "mount_pathway_id"):
             out.setdefault(str(d.mount_pathway_id), []).append({"id": str(d.pk), "name": d.name})
         return out
+
+    def _cables(self, rack, tenant) -> dict[str, int] | None:
+        """``{pathway id: cables}`` - the recorded cable ways through each of
+        the rack's pathways (api.cable_ways), of the cables the reader may
+        view; None without a grant on cable ways."""
+        from auth_api import rbac
+
+        from .cable_scope import restrict_cables
+        from .cable_ways import counts_by_pathway
+        from .models import Cable, CableWay
+
+        if not rbac.has_action(self.request.user, tenant, "cableway", "view"):
+            return None
+        ways = rbac.restrict_queryset(CableWay.objects.filter(tenant=tenant, rack=rack),
+                                      self.request.user, tenant, "cableway", "view")
+        ids = restrict_cables(Cable.objects.filter(tenant=tenant, pk__in=ways.values("cable_id")),
+                              self.request.user, tenant, "view").values_list("pk", flat=True)
+        return counts_by_pathway(rack, cable_ids=list(ids))
 
     @extend_schema(request=OpenApiTypes.OBJECT, responses=RackPathwaySerializer)
     @action(detail=False, methods=["post"])

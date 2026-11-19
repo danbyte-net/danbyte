@@ -3681,6 +3681,11 @@ class DeviceSerializer(TableSerializerMixin, StatusSerializerMixin, ObjectPermsS
         source="mount_pathway", queryset=RackPathway.objects.all(),
         write_only=True, required=False, allow_null=True,
     )
+    # The same by the channel's key in its rack, an inherited one included:
+    # its row is made (pinned) when there is none. Blank clears it.
+    mount_pathway_key = serializers.CharField(
+        write_only=True, required=False, allow_blank=True, max_length=100,
+    )
     cabinet = serializers.SerializerMethodField()
     cabinet_id = TenantScopedPrimaryKeyRelatedField(
         source="cabinet", queryset=Cabinet.objects.all(),
@@ -4200,6 +4205,9 @@ class DeviceSerializer(TableSerializerMixin, StatusSerializerMixin, ObjectPermsS
         One left behind - the device moved to another rack, or no longer
         side-mounts - is cleared rather than refused."""
         inst = self.instance
+        key = attrs.pop("mount_pathway_key", None)
+        if key is not None and "mount_pathway" not in attrs:
+            attrs["mount_pathway"] = self._pin_channel(key, rack, mount)
         given = "mount_pathway" in attrs
         pw = attrs.get("mount_pathway") if given else (
             inst.mount_pathway if inst is not None and inst.mount_pathway_id else None)
@@ -4226,6 +4234,24 @@ class DeviceSerializer(TableSerializerMixin, StatusSerializerMixin, ObjectPermsS
         if face and item["face"] and item["face"] != face:
             raise serializers.ValidationError({"mount_pathway_id": (
                 f"That channel is at the {item['face']}; the device faces {face}.")})
+
+    @staticmethod
+    def _pin_channel(key: str, rack, mount):
+        """The row of ``rack``'s 0U channel ``key``, pinned when it is
+        inherited; None for a blank key."""
+        from .rack_pathways import pin, resolve_rack
+
+        key = key.strip()
+        if not key:
+            return None
+        if rack is None or not mount:
+            raise serializers.ValidationError(
+                {"mount_pathway_key": "Side-mount the device first."})
+        item = next((i for i in resolve_rack(rack) if i["key"] == key and not i["orphan"]), None)
+        if item is None or item["kind"] != "channel":
+            raise serializers.ValidationError(
+                {"mount_pathway_key": "Not a 0U channel of this rack."})
+        return pin(rack, key, tenant=rack.tenant)
 
     def _validate_cabinet(self, attrs) -> None:
         """A device in a DIN-rail cabinet (#277): never in a rack as well, at
@@ -4423,7 +4449,7 @@ class DeviceSerializer(TableSerializerMixin, StatusSerializerMixin, ObjectPermsS
                   "effective_platform",
                   "rack", "rack_id", "position", "face", "rack_side",
                   "mount", "mount_offset_mm", "mount_span_u", "mount_pathway",
-                  "mount_pathway_id", "ear_position", "rack_mount",
+                  "mount_pathway_id", "mount_pathway_key", "ear_position", "rack_mount",
                   "u_height", "rack_width",
                   "cabinet", "cabinet_id", "din_rail", "din_rail_id", "din_offset_mm",
                   "location", "location_id", "room", "room_id", "cluster", "cluster_id",
@@ -6856,6 +6882,7 @@ class CableSerializer(TableSerializerMixin, CustomFieldsSerializerMixin, StatusS
         help_text=f"The B {_POINT_HELP}",
     )
     is_fiber = serializers.SerializerMethodField()
+    ways = serializers.SerializerMethodField()
 
     def get_is_fiber(self, obj) -> bool:
         from .fiber_colors import is_fiber_type
@@ -7062,6 +7089,10 @@ class CableSerializer(TableSerializerMixin, CustomFieldsSerializerMixin, StatusS
         self._sync(cable, "B", b)
         if tags is not None:
             cable.tags.set(tags)
+        # bulk_create sends no signals: the ways follow the ends from here.
+        from .cable_ways import schedule
+
+        schedule(cable.pk)
         return cable
 
     @transaction.atomic
@@ -7097,9 +7128,21 @@ class CableSerializer(TableSerializerMixin, CustomFieldsSerializerMixin, StatusS
             self._sync(instance, "A", a)
         if b is not None:
             self._sync(instance, "B", b)
+        if a is not None or b is not None:
+            from .cable_ways import schedule
+
+            schedule(instance.pk)
         if tags is not None:
             instance.tags.set(tags)
         return instance
+
+    @extend_schema_field(serializers.ListField())
+    def get_ways(self, obj):
+        """The cable's ways through racks (api.cable_ways), in short."""
+        return [{"id": str(w.pk), "rack": {"id": str(w.rack_id), "name": w.rack.name},
+                 "end": w.end, "state": w.state, "source": w.source,
+                 "length_mm": w.length_mm, "hops": len(w.hops or [])}
+                for w in obj.ways.all()]
 
     class Meta:
         model = Cable
@@ -7107,7 +7150,7 @@ class CableSerializer(TableSerializerMixin, CustomFieldsSerializerMixin, StatusS
                   "length", "length_unit", "length_source", "color", "description",
                   "fiber_count", "strands", "is_fiber", "pve_vnet",
                   "a_terminations", "b_terminations", "a", "b",
-                  "auto_source", "auto_chassis",
+                  "auto_source", "auto_chassis", "ways",
                   "tags", "tag_ids", "custom_fields", "created_at", "updated_at"]
         read_only_fields = ["id", "numid", "is_fiber", "length_source",
                             "auto_source", "auto_chassis",

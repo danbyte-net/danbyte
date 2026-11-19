@@ -273,6 +273,7 @@ _ENTRIES: list[tuple[str, str, str]] = [
     ("api.FrontPortTemplate", "Front port templates", "DCIM"),
     ("api.Cable", "Cables", "DCIM"),
     ("api.CableRoute", "Cable routes", "DCIM"),
+    ("api.CableWay", "Cable ways", "DCIM"),
     ("api.PortReservation", "Port reservations", "DCIM"),
     ("api.VirtualChassis", "Virtual chassis", "DCIM"),
     ("api.FloorPlan", "Floor plans", "DCIM"),

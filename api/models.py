@@ -6867,6 +6867,59 @@ class RackPathway(TimestampedModel):
         return f"{owner}: {self.name or self.key or self.kind}"
 
 
+class CableWay(TimestampedModel):
+    """A cable's way through one rack (api.cable_ways, docs/dcim/racks.md →
+    Cable ways): the ordered pathway hops from its port to the rack's entry
+    (``exit`` top / bottom / side) or, for both ends in one rack, to the far
+    port (``exit`` port). One per cable and rack.
+
+    ``hops`` is ``[{"pathway": <RackPathway id>, "key", "kind", "enter_u",
+    "leave_u"}]``: every hop names a real row of the rack (``pin`` makes one
+    for an inherited pathway), and its key, so a reset overlay still
+    resolves. ``points`` is the way's polyline in the rack's own millimetres
+    (x right of centre seen from the front, y behind the front, z above the
+    floor) and ``length_mm`` its in-rack length.
+
+    ``state``: *proposed* (worked out, not yet accepted; never counted),
+    *recorded*, or *dismissed* (no way here, don't propose one). ``source``:
+    *auto* (from the proposal engine) or *manual* (someone set the hops);
+    an auto way is replaced when the cable's ends change, a manual one
+    never is."""
+
+    END_CHOICES = [("A", "A"), ("B", "B"), ("AB", "Both")]
+    STATE_CHOICES = [("proposed", "Proposed"), ("recorded", "Recorded"),
+                     ("dismissed", "Dismissed")]
+    SOURCE_CHOICES = [("auto", "Automatic"), ("manual", "Manual")]
+    EXIT_CHOICES = [("port", "Far port"), ("top", "Roof"), ("bottom", "Floor"),
+                    ("side", "Side panel")]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name="cable_ways")
+    cable = models.ForeignKey(Cable, on_delete=models.CASCADE, related_name="ways")
+    rack = models.ForeignKey("Rack", on_delete=models.CASCADE, related_name="cable_ways")
+    end = models.CharField(max_length=2, choices=END_CHOICES)
+    state = models.CharField(max_length=10, choices=STATE_CHOICES, default="recorded")
+    source = models.CharField(max_length=6, choices=SOURCE_CHOICES, default="manual")
+    exit = models.CharField(max_length=6, choices=EXIT_CHOICES, blank=True, default="")
+    hops = models.JSONField(default=list, blank=True)
+    points = models.JSONField(default=list, blank=True)
+    length_mm = models.PositiveIntegerField(null=True, blank=True)
+    reasons = models.JSONField(default=list, blank=True)
+
+    class Meta:
+        ordering = ["cable", "end", "created_at"]
+        constraints = [
+            models.UniqueConstraint(fields=["cable", "rack"], name="cableway_one_per_rack"),
+        ]
+        indexes = [models.Index(fields=["rack", "state"])]
+
+    def __str__(self) -> str:
+        try:
+            return f"{self.cable} in {self.rack.name}"[:255]
+        except Exception:  # noqa: BLE001 - a row mid-cascade
+            return f"Cable way {self.pk}"
+
+
 # ─── Cabinets (DIN-rail enclosures, #277) ────────────────────────────────────
 class CabinetRole(NumIdMixin, TimestampedModel):
     """What a cabinet is for (distribution, control, metering, …). Coloured."""

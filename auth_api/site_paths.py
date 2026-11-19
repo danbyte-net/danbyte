@@ -26,6 +26,8 @@ SITE_PATHS: dict[str, str] = {
     "rack": "site",
     # A rack's pathways are its site's; a rack type's (rack NULL) are shared.
     "rackpathway": "rack__site",
+    # A cable's way through a rack is that rack's site's.
+    "cableway": "rack__site",
     "cabinet": "site",
     "cluster": "site",
     "virtualmachine": "site",

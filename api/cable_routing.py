@@ -196,6 +196,9 @@ class PlanRouter:
         self._devices: dict = {}
         self._terms: dict = {}
         self._risers: dict | None = None
+        #: ``{(cable id, rack id): (way length mm, exit)}`` - the recorded
+        #: cable ways (api.cable_ways) a rack end's drop starts from.
+        self._ways: dict = {}
 
     def add_trays(self, trays) -> None:
         """Route through ``trays`` too (saved, or unsaved previews)."""
@@ -216,6 +219,7 @@ class PlanRouter:
         ids = [c.pk for c in cables if c.pk not in self._terms]
         if not ids:
             return
+        self.prime_ways(ids)
         terms = CableTermination.objects.filter(cable_id__in=ids).select_related(
             *CableTermination.POINT_FIELDS
         ).order_by("end", "created_at", "pk")
@@ -232,6 +236,30 @@ class PlanRouter:
             "id", "rack_id", "cabinet_id", "position", "device_type", "device_type__u_height"
         ):
             self._devices[d.pk] = d
+
+    def prime_ways(self, cable_ids) -> None:
+        """Read the recorded ways of ``cable_ids`` that leave their rack."""
+        from .models import CableWay
+
+        for cid, rid, length, exit_ in CableWay.objects.filter(
+            cable_id__in=list(cable_ids), state="recorded", exit__in=("top", "bottom", "side"),
+        ).values_list("cable_id", "rack_id", "length_mm", "exit"):
+            self._ways[(cid, rid)] = (length or 0, exit_)
+
+    def way_for(self, cable_pk, tile) -> dict | None:
+        """The way a cable end on ``tile`` (a rack's) takes out of its rack:
+        ``{"length_mm", "z_mm"}``, ``z_mm`` the height of the entry it
+        leaves by (the rack's top, the floor, half way up a side)."""
+        if tile is None or not tile.rack_id:
+            return None
+        hit = self._ways.get((cable_pk, tile.rack_id))
+        if hit is None:
+            return None
+        length, exit_ = hit
+        rack = tile.rack
+        top = RACK_PLINTH_MM + (rack.u_height or 0) * U_PITCH_MM if rack is not None else 0.0
+        z = {"top": top, "bottom": 0.0}.get(exit_, top / 2)
+        return {"length_mm": float(length), "z_mm": z}
 
     def add_planned(self, key: str, ends) -> None:
         """Route a cable that is not made yet (Connect to…) under ``key``:
@@ -296,10 +324,14 @@ class PlanRouter:
             if tile is None or end not in out or tile.pk in seen[end]:
                 continue
             seen[end].add(tile.pk)
-            out[end].append({
+            item = {
                 "end": end, "tile": tile, "device": dev_id, "port": port,
                 "height_mm": self.port_height_mm(dev_id, tile),
-            })
+            }
+            way = self.way_for(cable.pk, tile) if tile.device_id != dev_id else None
+            if way is not None:
+                item["way"] = way
+            out[end].append(item)
         return out
 
     def pairs(self, cable) -> list[tuple[dict, dict]]:
@@ -393,6 +425,13 @@ class PlanRouter:
         (:func:`riser_vertical_mm`)."""
         run = polyline_cells(leg["points"]) * self.cell_mm
         ha, hb = a_end["height_mm"], b_end["height_mm"]
+        # An end with a recorded way through its rack leaves by the rack's
+        # entry: the drop runs from there, and the way's own length adds.
+        wa, wb = a_end.get("way"), b_end.get("way")
+        if wa:
+            ha = wa["z_mm"]
+        if wb:
+            hb = wb["z_mm"]
         elev = [float(s.get("elevation_mm") or 0) for s in leg.get("trays") or []]
         if not elev and leg.get("elevation_mm") is not None:
             # A run with no tray kept at one height (a suggested run left
@@ -409,6 +448,8 @@ class PlanRouter:
         else:
             drop_a = drop_b = 0.0
             level = abs(ha - hb)
+        drop_a += wa["length_mm"] if wa else 0.0
+        drop_b += wb["length_mm"] if wb else 0.0
         return run, drop_a, drop_b, level
 
     def measure_leg(self, leg: dict, a_end, b_end) -> dict:
@@ -417,10 +458,30 @@ class PlanRouter:
         run, drop_a, drop_b, level = self.leg_parts(leg, a_end, b_end)
         base = run + drop_a + drop_b + level
         loops, slack, total = length_total(base, self.rules)
-        return {
+        out = {
             "run_mm": round(run), "drop_a_mm": round(drop_a), "drop_b_mm": round(drop_b),
             "extra_mm": round(level) + loops, "slack_mm": slack, "length_mm": total,
         }
+        for key, e in (("way_a_mm", a_end), ("way_b_mm", b_end)):
+            if e.get("way"):
+                out[key] = round(e["way"]["length_mm"])
+        return out
+
+    def remeasure(self, cable, path) -> dict | None:
+        """A stored path's lengths measured again as the plan and the
+        cable's ways are now, its geometry kept. None when its legs no
+        longer pair with the cable's ends here."""
+        pairs = self.pairs(cable)
+        legs = path.legs or []
+        if not pairs or len(legs) != len(pairs):
+            return None
+        measures = []
+        for leg, (a, b) in zip(legs, pairs, strict=True):
+            if (leg.get("from") or {}).get("tile") != str(a["tile"].pk) or \
+                    (leg.get("to") or {}).get("tile") != str(b["tile"].pk):
+                return None
+            measures.append(self.measure_leg(leg, a, b))
+        return max(measures, key=lambda m: m["length_mm"])
 
     def _assemble(self, cable, kind, legs, pairs, tray_order=None) -> dict:
         measures = [self.measure_leg(leg, a, b) for leg, (a, b) in zip(legs, pairs, strict=True)]

@@ -235,6 +235,9 @@ ACCESSORIES = importlib.import_module(
 PATHWAYS = importlib.import_module(
     "auth_api.migrations.0057_site_roles_rack_pathways"
 )
+CABLE_WAYS = importlib.import_module(
+    "auth_api.migrations.0058_site_roles_cable_ways"
+)
 
 
 class SiteRoleUpgradeTests(TestCase):
@@ -351,7 +354,8 @@ class SiteRoleUpgradeTests(TestCase):
             | set(ROUTING_ROWS.NEW_TYPES)
             | set(VULN_EXCEPTIONS.NEW_TYPES)
             | set(DEPENDENCIES.NEW_TYPES)
-            | set(PATHWAYS.NEW_TYPES),
+            | set(PATHWAYS.NEW_TYPES)
+            | set(CABLE_WAYS.NEW_TYPES),
             set(site_role_types()),
         )
         self.assertEqual(
@@ -984,5 +988,25 @@ class SiteRolePathwayUpgradeTests(SiteRoleRoutingRowsUpgradeTests):
             perm.refresh_from_db()
         self.assertIn("rackpathway", view.object_types)
         self.assertIn("rackpathway", edit.object_types)
+        self.assertEqual(len(edit.object_types), len(set(edit.object_types)))
+        self.assertEqual(custom.object_types, ["device", "prefix"])
+
+
+class SiteRoleCableWayUpgradeTests(SiteRoleRoutingRowsUpgradeTests):
+    """0058 gives the site viewers and editors cable ways."""
+
+    def test_roles_gain_cable_ways(self):
+        view = self._role("A - site view", ["view"])
+        edit = self._role("B - site edit", ["view", "add", "change", "delete"])
+        custom = self._old("Ops - site view", ["view"], types=["device", "prefix"])
+        for mod in (ROUTING_ROWS, RPKI, SENSITIVITY, VULN_EXCEPTIONS, DEPENDENCIES,
+                    MODULE_POWER, ACCESSORIES, PATHWAYS):
+            mod.forwards(django_apps, None)
+        CABLE_WAYS.forwards(django_apps, None)
+        CABLE_WAYS.forwards(django_apps, None)
+        for perm in (view, edit, custom):
+            perm.refresh_from_db()
+        self.assertIn("cableway", view.object_types)
+        self.assertIn("cableway", edit.object_types)
         self.assertEqual(len(edit.object_types), len(set(edit.object_types)))
         self.assertEqual(custom.object_types, ["device", "prefix"])
