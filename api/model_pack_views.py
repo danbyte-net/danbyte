@@ -3,7 +3,8 @@
 
 Reading takes view on device types; adding, installing and forgetting a
 pack take what installing one takes (api.model_pack_install.may_install).
-Every row is the active tenant's own.
+Every row is the active tenant's own. A bundle is a row of ``kind`` bundle;
+the packs installed from it are rows of their own, naming it in ``bundle``.
 """
 from __future__ import annotations
 
@@ -32,13 +33,14 @@ class ModelPackSerializer(serializers.ModelSerializer):
     installable = serializers.SerializerMethodField()
     check_errors = serializers.SerializerMethodField()
     check_warnings = serializers.SerializerMethodField()
+    bundle = serializers.SerializerMethodField()
 
     class Meta:
         model = ModelPack
         fields = [
-            "id", "slug", "name", "version", "license", "author", "source", "source_url",
-            "filename", "sha256", "size", "status", "progress", "error", "replace_photos",
-            "overwrite",
+            "id", "kind", "slug", "name", "version", "license", "author", "source",
+            "source_url", "filename", "sha256", "size", "status", "progress", "error",
+            "replace_photos", "overwrite", "requires", "bundle",
             "types", "installable", "check_errors", "check_warnings",
             "created_at", "created_by", "installed_at", "installed_by",
         ]
@@ -54,17 +56,35 @@ class ModelPackSerializer(serializers.ModelSerializer):
         return _user(obj.installed_by) if obj.installed_at else None
 
     def get_types(self, obj):
+        if obj.kind == "bundle" and not obj.installed_at:
+            return sum(int((r.get("import") or {}).get("created") or 0)
+                       + int((r.get("import") or {}).get("matched") or 0)
+                       for r in mpi._sections(obj))
         r = obj.result if obj.installed_at else (obj.report or {}).get("import") or {}
         return int(r.get("created") or 0) + int(r.get("matched") or 0)
 
     def get_installable(self, obj):
-        return obj.status == "checked" and bool(((obj.report or {}).get("check") or {}).get("ok"))
+        return mpi.installable(obj)
+
+    def _count(self, obj, key):
+        if obj.kind == "bundle":
+            own = sum(1 for p in (obj.report or {}).get("problems") or []
+                      if isinstance(p, dict) and p.get("level") == key[:-1])
+            return own + sum(int((r.get("check") or {}).get(key) or 0)
+                             for r in mpi._sections(obj))
+        return int(((obj.report or {}).get("check") or {}).get(key) or 0)
 
     def get_check_errors(self, obj):
-        return int(((obj.report or {}).get("check") or {}).get("errors") or 0)
+        return self._count(obj, "errors")
 
     def get_check_warnings(self, obj):
-        return int(((obj.report or {}).get("check") or {}).get("warnings") or 0)
+        return self._count(obj, "warnings")
+
+    def get_bundle(self, obj):
+        if not obj.bundle_slug:
+            return None
+        return {"id": str(obj.bundle_id) if obj.bundle_id else None, "slug": obj.bundle_slug,
+                "name": obj.bundle_name, "version": obj.bundle_version}
 
 
 class ModelPackDetailSerializer(ModelPackSerializer):
@@ -72,15 +92,23 @@ class ModelPackDetailSerializer(ModelPackSerializer):
     the install changed (``result``), its files and its other copies."""
 
     history = serializers.SerializerMethodField()
+    needs = serializers.SerializerMethodField()
 
     class Meta(ModelPackSerializer.Meta):
-        fields = [*ModelPackSerializer.Meta.fields, "report", "result", "files", "history"]
+        fields = [*ModelPackSerializer.Meta.fields, "report", "result", "files", "history",
+                  "needs"]
         read_only_fields = fields
+
+    def get_needs(self, obj):
+        """The packs this one requires, as they stand now."""
+        if obj.kind != "pack" or not obj.requires:
+            return []
+        return mpi.needs(obj.tenant, obj.requires, version=obj.version)
 
     def get_history(self, obj):
         if not obj.slug:
             return []
-        rows = (ModelPack.objects.filter(tenant_id=obj.tenant_id, slug=obj.slug,
+        rows = (ModelPack.objects.filter(tenant_id=obj.tenant_id, slug=obj.slug, kind=obj.kind,
                                          status__in=("installed", "replaced"))
                 .exclude(pk=obj.pk).select_related("installed_by")
                 .order_by("-installed_at")[:20])
@@ -141,6 +169,11 @@ class ModelPackViewSet(viewsets.GenericViewSet):
             if bad:
                 raise ValidationError({"status": f"Not a status: {', '.join(bad)}."})
             qs = qs.filter(status__in=wanted)
+        kind = request.query_params.get("kind")
+        if kind:
+            if kind not in {c for c, _ in ModelPack.KIND_CHOICES}:
+                raise ValidationError({"kind": "pack or bundle."})
+            qs = qs.filter(kind=kind)
         page = self.paginate_queryset(qs)
         rows = ModelPackSerializer(page if page is not None else qs, many=True).data
         return self.get_paginated_response(rows) if page is not None else Response(rows)
@@ -170,8 +203,11 @@ class ModelPackViewSet(viewsets.GenericViewSet):
 
     @action(detail=True, methods=["post"])
     def install(self, request, pk=None):
-        """Install a checked pack. Body: ``{"replace_photos": bool, "overwrite":
-        bool}`` (overwrite: Update from pack, api.model_pack_update)."""
+        """Install a checked pack or bundle. Body: ``{"replace_photos": bool,
+        "overwrite": bool, "packs": [id, …], "with": [id, …]}`` (overwrite:
+        Update from pack, api.model_pack_update; packs: a bundle's packs to
+        install, default all without check errors; with: missing required
+        packs to fetch from the pack catalog first)."""
         self._installer()
         pack = self._get(pk)
         data = request.data if isinstance(request.data, dict) else None
@@ -183,16 +219,25 @@ class ModelPackViewSet(viewsets.GenericViewSet):
         overwrite = data.get("overwrite", False)
         if not isinstance(overwrite, bool):
             raise ValidationError({"overwrite": "true or false."})
+        lists = {}
+        for key in ("packs", "with"):
+            val = data.get(key)
+            if val is not None and (not isinstance(val, list) or len(val) > 100
+                                    or not all(isinstance(v, str) for v in val)):
+                raise ValidationError({key: "A list of pack ids."})
+            lists[key] = val
         try:
             pack = mpi.start_install(pack, request.user, replace_photos=replace,
-                                     overwrite=overwrite)
+                                     overwrite=overwrite, packs=lists["packs"],
+                                     with_packs=lists["with"])
         except mpi.InstallRefused as exc:
             return Response({exc.field: str(exc)}, status=exc.status)
         return Response(ModelPackDetailSerializer(pack).data, status=status.HTTP_202_ACCEPTED)
 
     def destroy(self, request, pk=None):
         """Forget a pack: the record and its archive go, the device and
-        module types it made or changed stay."""
+        module types it made or changed stay. Forgetting a bundle leaves the
+        packs installed from it (they keep its name)."""
         self._installer()
         pack = self._get(pk)
         if pack.status in mpi.ACTIVE:
@@ -211,6 +256,7 @@ class ModelPackViewSet(viewsets.GenericViewSet):
         return Response({
             "max_bytes": mpi.max_bytes(),
             "source_url": mpi.source_url(),
+            "catalog_url": mpi.catalog_url(),
             "allowed_hosts": mpi.allowed_hosts(),
             "downloads": airgap_refusal() is None,
             "can_install": mpi.may_install(request.user, tenant),

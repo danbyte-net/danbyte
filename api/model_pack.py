@@ -228,6 +228,7 @@ class PackFiles:
         self.source = Path(source)
         self._zip = None
         self._prefix = ""
+        self._owned = True
         if self.source.is_file():
             self._zip = zipfile.ZipFile(self.source)
             refusals = zip_refusals(self._zip)
@@ -240,7 +241,7 @@ class PackFiles:
             tops = {n.split("/", 1)[0] for n in names}
             if len(tops) == 1 and all("/" in n for n in names):
                 top = next(iter(tops))
-                if f"{top}/pack.yaml" in names or any(
+                if f"{top}/pack.yaml" in names or f"{top}/bundle.yaml" in names or any(
                         n.startswith((f"{top}/device-types/", f"{top}/module-types/",
                                       f"{top}/accessory-types/", f"{top}/rack-kits/",
                                       f"{top}/rack-types/"))
@@ -249,8 +250,37 @@ class PackFiles:
         elif not self.source.is_dir():
             raise FileNotFoundError(str(source))
 
+    @classmethod
+    def nested(cls, parent: PackFiles, sub: str) -> PackFiles:
+        """The pack folder ``sub`` (``packs/<id>``) inside a bundle
+        (api.model_pack_bundle), confined to it. A zip's view shares the
+        bundle's open archive, already checked as a whole; closing the view
+        leaves it open."""
+        rel = _clean_path(sub)
+        if rel is None or rel != sub:
+            raise FileNotFoundError(sub)
+        if parent._zip is None:
+            root = parent.source.resolve()
+            path = (root / rel).resolve()
+            if root not in path.parents or not path.is_dir() or (root / rel).is_symlink():
+                raise FileNotFoundError(sub)
+            return cls(path)
+        obj = cls.__new__(cls)
+        obj.source = parent.source
+        obj._zip = parent._zip
+        obj._prefix = f"{parent._prefix}{rel}/"
+        obj._owned = False
+        return obj
+
+    @property
+    def is_bundle(self) -> bool:
+        """A bundle: ``bundle.yaml`` and ``packs/`` at its top
+        (api.model_pack_bundle)."""
+        names = self.names()
+        return "bundle.yaml" in names and any(n.startswith("packs/") for n in names)
+
     def close(self):
-        if self._zip is not None:
+        if self._zip is not None and self._owned:
             self._zip.close()
 
     def names(self) -> list[str]:
@@ -712,6 +742,7 @@ class TypeResult:
 
 @dataclass
 class PackResult:
+    id: str = ""
     name: str = ""
     version: str = ""
     types: list[TypeResult] = field(default_factory=list)
@@ -798,6 +829,7 @@ def import_pack(tenant, files: PackFiles, *, dry_run: bool = True,
         except yaml.YAMLError:
             meta = {}
         if isinstance(meta, dict):
+            result.id = str(meta.get("id") or "")
             result.name = str(meta.get("name") or meta.get("id") or "")
             result.version = str(meta.get("version") or "")
     yamls = [n for n in names
@@ -816,6 +848,8 @@ def import_pack(tenant, files: PackFiles, *, dry_run: bool = True,
         if result.version:
             label += f" {result.version}"
     pack = {"name": result.name, "version": result.version}
+    if result.id:
+        pack["id"] = result.id
     with cause(label), transaction.atomic():
         for done, path in enumerate(yamls):
             if progress is not None:

@@ -3,6 +3,10 @@ docs/dcim/model-packs.md#checking-a-pack).
 
     manage.py check_model_pack <folder|zip> [--json] [--tenant <slug or id>]
 
+A bundle (bundle.yaml and packs/, api.model_pack_bundle) is checked pack by
+pack in its order, with the bundle's own problems first; it fails when any
+pack, or the bundle, has an error.
+
 Prints a table per type (triangles, size, bays, ports, LEDs, problems) and
 every finding; exits 1 when there is an error, 0 otherwise (warnings don't
 fail). ``--json`` prints the report as JSON for CI. Nothing is written, and
@@ -43,6 +47,8 @@ class Command(BaseCommand):
         if not Path(pack).exists():
             raise CommandError(f"No such folder or file: {pack}")
         t = self._tenant(tenant) if tenant else None
+        if self._bundle(pack, t, json):
+            return
         report = check_source(pack, tenant=t)
         if json:
             self.stdout.write(_dumps(report.to_dict()))
@@ -50,6 +56,49 @@ class Command(BaseCommand):
             self._table(pack, report)
         if not report.ok:
             sys.exit(1)
+
+    def _bundle(self, pack, tenant, as_json) -> bool:
+        """Check a bundle; False when ``pack`` isn't one."""
+        import zipfile
+
+        from api.model_pack import PackFiles, PackRefused
+        from api.model_pack_bundle import check_sections, read_bundle
+
+        try:
+            files = PackFiles(pack)
+        except (PackRefused, zipfile.BadZipFile, OSError):
+            return False  # check_source reports it
+        try:
+            if not files.is_bundle:
+                return False
+            bundle = read_bundle(files)
+            for p in files.refusals():
+                bundle.problem("error", p)
+            secs = check_sections(files, bundle, tenant=tenant)
+        finally:
+            files.close()
+        failed = any(p["level"] == "error" for p in bundle.problems) or any(
+            not s.report.ok for s in secs)
+        if as_json:
+            self.stdout.write(_dumps({
+                "ok": not failed, "bundle": bundle.meta, "problems": bundle.problems,
+                "packs": [{"id": s.id, "name": s.name, "version": s.version,
+                           "report": s.report.to_dict()} for s in secs]}))
+        else:
+            head = bundle.meta.get("name") or pack
+            if bundle.meta.get("version"):
+                head += f" {bundle.meta['version']}"
+            self.stdout.write(f"{head} (bundle of {len(secs)} pack"
+                              f"{'s' if len(secs) != 1 else ''})")
+            for p in bundle.problems:
+                self.stdout.write(f"  {p['level']}: {p['message']}")
+            for s in secs:
+                self.stdout.write(f"\n== {s.id}")
+                self._table(s.id, s.report)
+            self.stdout.write(f"\nBundle: {'FAILED' if failed else 'OK'}.")
+        if failed:
+            sys.exit(1)
+        return True
 
     def _tenant(self, ref):
         from core.models import Tenant

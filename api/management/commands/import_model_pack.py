@@ -3,7 +3,11 @@ blocks, accessory types (plugs seated in cabled ports, api.port_plugs), and
 the ``.glb`` files they name (api.model_pack, docs/dcim/model-packs.md).
 
     manage.py import_model_pack <folder|zip> --tenant <slug or id> [--apply]
-                                [--replace-photos] [--overwrite]
+                                [--replace-photos] [--overwrite] [--only id,id]
+
+A bundle (bundle.yaml and packs/, api.model_pack_bundle) imports each pack
+it lists in its order, each in its own transaction, with the checker's
+verdict and what the pack needs printed per pack; ``--only`` picks packs.
 
 Each YAML is matched to an existing type by manufacturer and part number;
 a type that isn't there yet is created from the YAML. The matched or created
@@ -44,9 +48,12 @@ class Command(BaseCommand):
         parser.add_argument("--overwrite", action="store_true",
                             help="Update from pack: let the YAML replace templates, bay "
                                  "module lists and lifecycle dates changed here.")
+        parser.add_argument("--only", default="",
+                            help="A bundle: the pack ids to import, comma-separated "
+                                 "(default: all).")
 
     def handle(self, *args, pack, tenant, apply=False, replace_photos=False, overwrite=False,
-               **opts):
+               only="", **opts):
         from api.model_pack import PackFiles, PackRefused, import_pack
         from core.models import Tenant
 
@@ -64,14 +71,69 @@ class Command(BaseCommand):
         except (FileNotFoundError, OSError, zipfile.BadZipFile) as exc:
             raise CommandError(f"Can't open the pack: {exc}") from exc
         try:
+            if files.is_bundle:
+                self._bundle(files, t, apply=apply, replace_photos=replace_photos,
+                             overwrite=overwrite, only=only)
+                return
+            if only:
+                raise CommandError("--only picks packs of a bundle; this is a pack.")
             result = import_pack(t, files, dry_run=not apply, replace_photos=replace_photos,
                                  overwrite=overwrite)
         finally:
             files.close()
+        self._report(pack, result, t, apply)
+
+    def _bundle(self, files, t, *, apply, replace_photos, overwrite, only):
+        from api.model_pack import import_pack
+        from api.model_pack_bundle import check_sections, read_bundle
+        from api.model_pack_install import needs
+
+        bundle = read_bundle(files)
+        listed = [e.id for e in bundle.entries]
+        picked = [x.strip() for x in only.split(",") if x.strip()] if only else listed
+        bad = [x for x in picked if x not in listed]
+        if bad:
+            raise CommandError(f"Not in the bundle: {', '.join(bad)}.")
+        head = bundle.meta.get("name") or str(files.source)
+        if bundle.meta.get("version"):
+            head += f" {bundle.meta['version']}"
+        self.stdout.write(f"{head} (bundle) → {t.name}{'' if apply else ' (dry run)'}")
+        for p in bundle.problems:
+            self.stdout.write(f"  {p['level']}: {p['message']}")
+        secs = check_sections(files, bundle, tenant=t)
+        present = {s.id for s in secs if s.files is not None}
+        for s in secs:
+            self.stdout.write(f"\n== {s.name} {s.version}".rstrip() + f" ({s.id})")
+            if s.id not in picked:
+                self.stdout.write("  not picked - skipped.")
+                continue
+            rep = s.report
+            self.stdout.write(f"  check: {rep.errors} error{'s' if rep.errors != 1 else ''}, "
+                              f"{rep.warnings} warning{'s' if rep.warnings != 1 else ''}")
+            for f in rep.findings:
+                if f.level == "error":
+                    self.stdout.write(f"    {f.path}: {f.message}")
+            for n in needs(t, rep.pack.get("requires") or [], in_bundle=present - {s.id},
+                           version=s.version):
+                where = {"bundle": "in this bundle",
+                         "installed": f"installed {n['installed'] or ''}".strip(),
+                         }.get(n["state"], f"missing - get {n.get('zip')}")
+                self.stdout.write(f"  needs {n['id']}: {where}")
+            if s.files is None:
+                self.stdout.write("  not in the archive - skipped.")
+                continue
+            result = import_pack(t, s.files, dry_run=not apply, replace_photos=replace_photos,
+                                 overwrite=overwrite)
+            self._rows(result, apply)
+
+    def _report(self, pack, result, t, apply):
         head = result.name or pack
         if result.version:
             head += f" {result.version}"
         self.stdout.write(f"{head} → {t.name}{'' if apply else ' (dry run)'}")
+        self._rows(result, apply)
+
+    def _rows(self, result, apply):
         for tr in result.types:
             noun = tr.kind.replace("-", " ")
             self.stdout.write(f"\n{noun} {tr.name or tr.path}: {tr.action} ({tr.path})")

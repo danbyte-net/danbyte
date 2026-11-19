@@ -6254,7 +6254,11 @@ class ModelPack(TimestampedModel):
     The row is the run and, once installed, the record of what the pack
     changed. Installing a newer copy of the same pack marks the older row
     ``replaced``; the device and module types stay with the tenant either
-    way, so forgetting a pack removes only this record."""
+    way, so forgetting a pack removes only this record.
+
+    A bundle (api.model_pack_bundle) is one row of ``kind`` bundle for the
+    run; each pack installed from it gets its own pack row, with the bundle
+    it came from in ``bundle`` and ``bundle_*``."""
 
     STATUS_CHOICES = [
         ("checking", "Checking"),
@@ -6266,9 +6270,13 @@ class ModelPack(TimestampedModel):
         ("replaced", "Replaced"),
     ]
     SOURCE_CHOICES = [("upload", "Upload"), ("url", "URL")]
+    KIND_CHOICES = [("pack", "Pack"), ("bundle", "Bundle")]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name="model_packs")
+    #: A pack, or a bundle of packs (its run: check, install, report).
+    kind = models.CharField(max_length=8, choices=KIND_CHOICES, default="pack",
+                            db_default="pack")
     #: pack.yaml ``id``, ``name``, ``version``, ``license`` and ``author``.
     slug = models.CharField(max_length=100, blank=True, default="")
     name = models.CharField(max_length=200, blank=True, default="")
@@ -6294,6 +6302,17 @@ class ModelPack(TimestampedModel):
     #: Update from pack: the pack's templates and lifecycle replace what was
     #: changed here (api.model_pack_update).
     overwrite = models.BooleanField(default=False, db_default=False)
+    #: pack.yaml ``requires``: the ids of the packs this one needs.
+    requires = models.JSONField(default=list, blank=True, db_default=[])
+    #: A pack installed from a bundle: the bundle's run, and its
+    #: bundle.yaml ``id``, ``name`` and ``version`` (kept when the run is
+    #: forgotten).
+    bundle = models.ForeignKey(
+        "self", on_delete=models.SET_NULL, null=True, blank=True, related_name="bundle_packs",
+    )
+    bundle_slug = models.CharField(max_length=100, blank=True, default="", db_default="")
+    bundle_name = models.CharField(max_length=200, blank=True, default="", db_default="")
+    bundle_version = models.CharField(max_length=50, blank=True, default="", db_default="")
     error = models.TextField(blank=True, default="")
     created_by = models.ForeignKey(
         "auth.User", on_delete=models.SET_NULL, null=True, blank=True, related_name="+",

@@ -46,6 +46,7 @@ import fnmatch
 import hashlib
 import io
 import math
+import re
 from dataclasses import asdict, dataclass, field
 
 import yaml
@@ -195,9 +196,10 @@ def _names(data: dict, key: str) -> list[str]:
 # ── the checker ─────────────────────────────────────────────────────────────
 
 class _Checker:
-    def __init__(self, files: PackFiles, tenant=None):
+    def __init__(self, files: PackFiles, tenant=None, known_parts=()):
         self.files = files
         self.tenant = tenant
+        self.known_parts = set(known_parts)
         self.report = CheckReport()
         self.names = files.names()
         self.sizes = files.sizes()
@@ -287,6 +289,11 @@ class _Checker:
         for k in PACK_KEYS:
             if meta.get(k) in (None, ""):
                 self.add("error", "pack.yaml", f"No {k}.")
+        requires, bad = read_requires(meta)
+        if requires:
+            self.report.pack["requires"] = requires
+        if bad:
+            self.add("warning", "pack.yaml", bad)
         types = meta.get("types")
         if not isinstance(types, dict):
             self.add("warning", "pack.yaml", "No types: list.")
@@ -651,6 +658,8 @@ class _Checker:
                          row)
 
     def _in_tenant(self, pn: str) -> bool:
+        if pn in self.known_parts:
+            return True
         if self.tenant is None:
             return False
         from .models import ModuleType
@@ -736,10 +745,35 @@ def _transparent(data: bytes) -> bool:
         return False
 
 
-def check_pack(files: PackFiles, *, tenant=None) -> CheckReport:
+def check_pack(files: PackFiles, *, tenant=None, known_parts=()) -> CheckReport:
     """Check a whole pack. ``tenant`` lets a render's module part numbers be
-    found among the tenant's module types too."""
-    return _Checker(files, tenant).run()
+    found among the tenant's module types too; ``known_parts``, among the
+    module types of the other packs in its bundle."""
+    return _Checker(files, tenant, known_parts).run()
+
+
+#: A pack id (pack.yaml ``id``, a bundle's pack folder): lower case, digits,
+#: ``.``, ``_`` and ``-``.
+PACK_ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,99}$")
+
+
+def read_requires(meta: dict) -> tuple[list[str], str]:
+    """``requires:`` of a pack.yaml: the pack ids it needs, and what was
+    wrong with the list (empty when nothing)."""
+    raw = meta.get("requires")
+    if raw in (None, "", []):
+        return [], ""
+    if not isinstance(raw, list):
+        return [], "requires: not a list of pack ids - ignored."
+    out, bad = [], []
+    for x in raw:
+        v = str(x).strip() if isinstance(x, str | int) else ""
+        if PACK_ID_RE.match(v) and v != str(meta.get("id") or ""):
+            if v not in out:
+                out.append(v)
+        else:
+            bad.append(str(x)[:40])
+    return out, (f"requires: {', '.join(bad[:3])} not a pack id - ignored." if bad else "")
 
 
 def check_source(source, *, tenant=None) -> CheckReport:

@@ -782,6 +782,10 @@ MODEL_PACK_REDIRECT_HOSTS = [
         "MODEL_PACK_REDIRECT_HOSTS",
         "objects.githubusercontent.com,release-assets.githubusercontent.com",
     ).split(",") if h.strip()]
+# The pack catalog (the library's packs.json): a required pack it lists can be
+# installed with the pack that needs it. Under MODEL_PACK_SOURCE_URL or on an
+# allowed host, like a pack URL. Empty: no catalog.
+MODEL_PACK_CATALOG_URL = os.getenv("MODEL_PACK_CATALOG_URL", "")
 # Largest vulnerability data file an admin may upload (#451): NVD feeds, OSV
 # zips, KEV, EPSS. Keep it at or under nginx client_max_body_size (512m).
 VULN_IMPORT_MAX_BYTES = int(
