@@ -35,6 +35,11 @@ Group documents with your own **categories** (e.g. *Runbook*, *Warranty*,
 add/edit dialog. There are no built-in categories; you define the vocabulary
 that fits your organization.
 
+A [model pack](../dcim/model-packs.md#meta) that links vendor documents to a
+device type creates the categories those links need (*Datasheet*, *Install
+guide*, *EoL notice*, …) the first time one is needed, or uses yours of the
+same name. They are ordinary categories: rename or delete them as you like.
+
 ## Versioning
 
 When a document is replaced, add the new version and mark it as **superseding**

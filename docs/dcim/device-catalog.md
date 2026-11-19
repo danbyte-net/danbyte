@@ -1344,6 +1344,13 @@ a lifetime progress bar and an at-risk badge across the catalog, the devices
 table, and each device's overview. See
 [Hardware & OS lifecycle](../features/lifecycle.md).
 
+A [model pack](model-packs.md#meta) fills a device type's dates and vendor
+notice URL from its `meta.lifecycle`, and adds its vendor links to the type's
+**Documents** tab. A month-only date (`2017-06`) is stored as the first of the
+month for the release date and the month's last day for an end date, since
+the fields hold whole dates. A re-import never overwrites a date you changed
+on the type; see [What a re-import changes](model-packs.md#what-a-re-import-changes).
+
 ---
 
 All five are **yours to define** - Danbyte ships none of them, so your catalog

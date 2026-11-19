@@ -7,7 +7,9 @@ has left.
 
 Zero pre-filled data applies: Danbyte ships no vendor dates. You enter them
 (from the vendor's EoL notice) on the device type or platform, and everything
-below derives from what you entered.
+below derives from what you entered. A [model pack](../dcim/model-packs.md#meta)
+can bring a device type's dates with it, from its `meta.lifecycle`; a date
+you changed on the type stays.
 
 For operating systems and software, platforms can also take their dates from
 a public source instead - see [End-of-life data](end-of-life-data.md). The two

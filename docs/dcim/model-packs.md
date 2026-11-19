@@ -458,19 +458,23 @@ and when and by whom they were installed. **Install pack…** adds one:
    reference modules), and every error and warning the checker found.
 3. **Install** applies it, again in the background, with an optional
    **Replace hand-uploaded photos** (the `--replace-photos` of the command
-   below). A pack with check errors can't be installed in the app; fix the
-   pack, or import it with the command.
+   below) and **Update from pack** (`--overwrite`: what the dry run lists as
+   *kept* takes the pack's values; see
+   [What a re-import changes](#what-a-re-import-changes)). A pack with check
+   errors can't be installed in the app; fix the pack, or import it with the
+   command.
 
 Nothing changes before Install. The install is one transaction: a failure
 leaves every type as it was. Each change lands in the type's change log
-under the installer's name, with *3D model pack <name> <version>* as its
+under the installer's name, with *Pack import: <name> <version>* as its
 cause. The pack's own page shows what it changed (**Types**, with a link to
 each), the checker's table (**Models**) and findings (**Checks**), its
 other versions and its change log.
 
 **Reinstalling.** Installing a pack whose `id` is already installed (a new
 version, or the same one again) updates the types it matches, and the older
-record becomes *Replaced*. The dry run names the installed version.
+record becomes *Replaced*. The dry run names the installed version and lists,
+per type, what the install would add, update, remove and keep.
 
 **Forget** removes the pack's record and nothing else: the device and
 module types, their models and photos stay. There is no uninstall: a pack
@@ -1036,27 +1040,15 @@ A pack can also be imported with a management command, from a folder or a
 - Each YAML is matched to an existing type by **manufacturer and part
   number** (by name when it has no part number). A type that isn't there is
   created from the YAML, with its templates. A matched device or module
-  type that lacks a power port its YAML names (a PSU type imported before
-  module types carried power ports, a C9300 before its StackPower ports)
-  gets it added, `{position}`-named on a type whose interfaces are; its
-  existing devices gain it with the type's **Sync devices**. Nothing else
-  on a matched type changes.
-- An interface template whose type differs from the YAML's is reported,
-  not changed: `StackPort{position}/1: type cisco-stackwise here,
-  cisco-stackwise-480 in the pack - set the template's type and sync the
-  type to update.` Change the template's type on the device type, then
-  **Sync devices** carries it to the type's devices. A generic
-  `cisco-stackwise` port still takes a StackWise-480 head (see
-  [Stack-cable heads](#stack-cable-heads)), so the note matters only where
-  the exact type does.
+  type's templates, bay module lists, lifecycle dates and links follow the
+  YAML, keeping what was changed in Danbyte: see
+  [What a re-import changes](#what-a-re-import-changes).
 - The matched or created type gets the pack's model and far model,
   replacing what it had, with the scan's report per type. A hand-made port
   mapping on the replaced model is cleared.
-- A matched device type's bays gain the YAML's
-  [suggested modules](#suggested-modules): the pack's part numbers are
-  added to the bay's own, and none is removed.
 - The run is a **dry run** unless `--apply` is given: everything is read,
-  checked and scanned, the report printed, and nothing kept.
+  checked and scanned, the report printed, and nothing kept. `--overwrite`
+  is the app's **Update from pack**.
 - Accessory types are matched by folder (vendor) and name, created or
   updated, and get the pack's model. They are reported as *accessory type*
   rows. A field [changed by hand](pluggables.md#changed-by-hand) on the
@@ -1064,7 +1056,7 @@ A pack can also be imported with a management command, from a folder or a
 - Rack kits are matched by folder (vendor) and name, created or updated,
   and get the pack's kit and far models (*rack kit* rows). Rack types are
   matched by name: a new one is created from its YAML; a matched one gets
-  the YAML's Look, nothing else (*rack type* rows). A `look.kit` names a
+  the YAML's Look and its `meta` (below), nothing else (*rack type* rows). A `look.kit` names a
   kit of the pack - imported first - or one the tenant has.
 - Models no YAML names are listed and not imported.
 - A device type with [rendered photos](#rendered-photos) gets them as its
@@ -1073,21 +1065,139 @@ A pack can also be imported with a management command, from a folder or a
 - A device type left without current [generated images](#generated-images)
   is reported as *images: pending*. They render in a browser, so the type's
   page offers them to its next editor.
-- Applied changes land in each type's change log as system writes, with the
-  pack's name and version as their cause.
+- Applied changes land in each type's change log as system writes, with
+  *Pack import: <name> <version>* as their cause.
 
 Importing a lone YAML with a `model3d:` block (the device library import)
 creates the type and skips the block, with a note: the files come with the
 pack.
+
+## What a re-import changes
+
+A pack's YAML changes between versions: an interface's type is corrected
+(`cisco-stackwise` to `cisco-stackwise-480`), StackPower ports are added, a
+bay's module list grows, an interface becomes a module bay (a C9200's
+StackPort, now a stack adapter's bay). A re-import brings each matched
+device and module type in line with its YAML, and keeps what was changed in
+Danbyte since.
+
+To tell the two apart, each import records on the type what the pack said:
+every template it listed with the values it gave, the lifecycle dates, the
+documents it linked and the whole `meta` block (`pack_state`, read-only). On
+the next import, field by field:
+
+| The type's value | Re-import |
+|---|---|
+| equals what the last import set | takes the YAML's value (*updated*) |
+| equals the YAML's value | nothing to do |
+| is empty | takes the YAML's value |
+| differs from both | kept (*kept your edit*) |
+
+Templates (interfaces, console and console-server ports, power ports and
+outlets, front and rear ports, module bays, device bays; a module type's
+interfaces and power ports), by name - `{position}`-named on a type whose
+interfaces are:
+
+- One the YAML has and the type lacks is **added**; one the last import
+  added and someone removed since stays removed (*kept your removal*).
+- One the YAML no longer has is **removed** only when the last import set it,
+  it is unchanged since, and nothing depends on it: a front port still on a
+  rear port, an outlet on a power port, a faceplate slot or port marker
+  placed by hand, a module port of an installed module. Otherwise it is
+  kept, and the report says why (*changed here*, *still in use*, *not in the
+  pack*).
+- A bay's [suggested modules](#suggested-modules) merge: part numbers the
+  pack added since the last import join the bay's list, ones it dropped
+  leave it, ones added here stay.
+
+A type imported before this record existed (from the device library, or an
+earlier pack import) has nothing to compare with, so everything on it counts
+as its own: missing templates and empty fields are filled in, differences
+are reported as *kept*, and nothing is removed. The record is written then,
+so the next import compares against it.
+
+**Update from pack** (`--overwrite`) lets the YAML win: every *kept* value
+takes the pack's, templates the YAML doesn't have are removed unless
+something depends on them, and removed ones come back. Documents added or
+edited here are still left alone.
+
+The import never changes a device. The report counts the devices of a type
+whose components no longer match its templates (*devices: 3 of 5 out of
+step*); the type's **Sync devices** adds and removes their components.
+Existing components keep the values they were made with, and an installed
+module keeps the ports it was stamped with.
+
+The dry run (the app's check, or the command without `--apply`) shows each
+type's changes in its notes, grouped: *added 2 power ports: StackPower1/A,
+StackPower1/B*, *updated 2 interfaces, type cisco-stackwise →
+cisco-stackwise-480: StackPort1/1, StackPort1/2*, *removed 2 interfaces:
+StackPort1/1, StackPort1/2*, *kept your edit on 1 interface, type
+2.5gbase-t (the pack has 1000base-t): GigabitEthernet1/0/1*. The install is
+the same run, kept: one transaction for the pack, each change in the change
+log with the pack as its cause, in the importing tenant only.
+
+## Meta {#meta}
+
+A YAML's `meta:` block (the export spec's §8) describes the hardware:
+
+```yaml
+meta:
+  category: switch
+  roles: [core, aggregation, campus]
+  family: "Catalyst 9500"
+  summary: "40-port 1/10G SFP/SFP+ 1RU core/aggregation switch."
+  lifecycle:
+    release_date: 2017-06          # YYYY-MM-DD, or YYYY-MM
+    end_of_sale: "2024-04-30"
+    end_of_support: "2029-04-30"
+    source: "https://www.cisco.com/…/c9500-12q-c9500-24q-c9500-40x-eol.html"
+  links:
+    - { kind: datasheet, title: "Cisco Catalyst 9500 Series Data Sheet", url: "https://…" }
+    - { kind: eol-notice, url: "https://…" }
+```
+
+What Danbyte does with it, on a new and a matched type alike, with the same
+rule for changes made here as the templates:
+
+| Key | Device type | Module type | Rack type | Accessory type, rack kit |
+|---|---|---|---|---|
+| `lifecycle` dates | the [lifecycle](../features/lifecycle.md) fields | kept in the record | kept in the record | kept in the record |
+| `lifecycle.source` | the vendor notice URL | kept in the record | kept in the record | kept in the record |
+| `links` | link documents on the **Documents** tab | kept in the record | kept in the record | kept in the record |
+| `summary` | the description, while it is empty | the description, while it is empty | the description, while it is empty | kept in the record |
+| `category`, `family`, `roles`, `sources` | kept in the record | kept in the record | kept in the record | kept in the record |
+
+Only device types have lifecycle fields and a Documents tab; the other kinds
+keep the whole block in their record (an accessory type's and rack kit's in
+`pack_import`), so nothing is lost and a later Danbyte can use it.
+
+- **Dates.** A key the pack leaves out leaves the field alone: Danbyte
+  never guesses. A month-only date is stored as the first of the month for
+  `release_date` and the month's last day for an end date, since the
+  fields hold whole dates. An unreadable date is skipped with a note.
+- **Links.** One link document per URL, named by its `title` (or by its
+  kind: *Data sheet*, *Installation guide*, …), in a category by its kind:
+  *Datasheet*, *Install guide*, *Config guide*, *Product page*, *EoL
+  notice*, *EoL listing*, *Support*, *Software*, *Other*. A category is
+  created in the tenant the first time a link needs it, or one of yours of
+  the same name is used; it is an ordinary, editable category. A
+  re-import renames a document it made when the title changes and removes
+  one the pack dropped, unless it was edited here. A document you added -
+  also one with the same URL - is never touched. A link must be a public
+  `http(s)` URL; Danbyte doesn't fetch it at import (the
+  [dead-link check](../features/documents.md#dead-link-checking) does,
+  through the outbound-request guards).
+- **Summary.** Becomes the description only while that is empty; a type
+  created from a pack already has the YAML's `comments` there.
 
 ## API
 
 | Call | Does |
 |---|---|
 | `GET /api/model-packs/` | The tenant's packs, newest first; `?status=installed` (comma-separated statuses: `checking`, `checked`, `refused`, `installing`, `installed`, `failed`, `replaced`). View on device types. |
-| `GET /api/model-packs/{id}/` | One pack, with `report` (`check`: the checker's report; `import`: the dry run; `installed`: the version installed before), `result` (what the install did: `created`, `matched`, `errors`, `types`), `files` and `history`. |
+| `GET /api/model-packs/{id}/` | One pack, with `report` (`check`: the checker's report; `import`: the dry run; `installed`: the version installed before), `result` (what the install did: `created`, `matched`, `errors`, `types`), `files` and `history`. Each of `types` has `kind`, `path`, `name`, `action`, `id`, `notes` and, for device and module types, `changes` (`added`, `updated`, `removed`, `kept`). |
 | `POST /api/model-packs/` | Add a pack: a multipart `file` (`.zip`) or JSON `{"url": …}`. Answers `202` with the row; poll it while `status` is `checking`. `413` over the size cap. Install rights. |
-| `POST /api/model-packs/{id}/install/` | Install a checked pack without check errors (`installable`). Body `{"replace_photos": bool}`. `202`; poll while `installing`. `409` for a pack that isn't checked, has errors, or while another installs. |
+| `POST /api/model-packs/{id}/install/` | Install a checked pack without check errors (`installable`). Body `{"replace_photos": bool, "overwrite": bool}` (`overwrite`: Update from pack). `202`; poll while `installing`. `409` for a pack that isn't checked, has errors, or while another installs. |
 | `DELETE /api/model-packs/{id}/` | Forget the pack: the record and its archive. The types stay. |
 | `GET /api/model-packs/limits/` | `max_bytes`, `source_url`, `allowed_hosts`, `downloads` (false when airgapped) and `can_install`. |
 | `GET/POST/DELETE /api/module-types/{id}/model/` | A module type's model, as for device types. View / change on the module type. |
