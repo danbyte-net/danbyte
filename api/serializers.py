@@ -1429,60 +1429,46 @@ def prefix_descendant_counts(prefixes, request=None) -> dict:
     gives, ids other than the prefix's own. With a ``request``, only the
     prefixes its reader may view count (#448); without one, all do.
 
-    One query over the tenants' prefixes and a sorted pass per (tenant, VRF,
-    family), instead of a correlated scan per row: the scan made a page cost
-    one comparison per pair of prefixes in the tenant (#337). Unparseable
-    CIDRs count as nothing and contain nothing."""
-    import bisect
-    from collections import defaultdict
+    One query for the given rows alone: each row's children are found
+    through the ``prefix_cidr_inet_gist`` index, so a page costs its own
+    rows whatever the tenant holds (#533). The pass over every prefix of
+    the tenant this replaced (#337) grew with the tenant."""
+    from django.db import connection
 
-    from django.db.models import Q
-
-    rows = list(prefixes)
-    keys = {(p.tenant_id, p.vrf_id) for p in rows}
-    if not keys:
+    rows = [p for p in prefixes]
+    if not rows:
         return {}
+    out = {p.id: 0 for p in rows}
     visible = view_filter(request, Prefix)
     if visible is None:
-        return {p.id: 0 for p in rows}
-    vrf_ids = {v for _, v in keys if v is not None}
-    vrf_q = Q(vrf_id__in=vrf_ids)
-    if any(v is None for _, v in keys):
-        vrf_q |= Q(vrf_id__isnull=True)
-    buckets = defaultdict(list)
-    for pid, tenant_id, vrf_id, cidr in (
+        return out
+    page = [p for p in rows if p.network is not None]
+    if not page:
+        return out
+    children = (
         Prefix.objects.filter(visible)
-        .filter(vrf_q, tenant_id__in={t for t, _ in keys})
+        .filter(tenant_id__in={p.tenant_id for p in page})
         .order_by()
-        .values_list("id", "tenant_id", "vrf_id", "cidr")
-    ):
-        if (tenant_id, vrf_id) not in keys:
-            continue
-        try:
-            net = ipaddress.ip_network(cidr, strict=False)
-        except (ValueError, TypeError):
-            continue
-        buckets[(tenant_id, vrf_id, net.version)].append(
-            (int(net.network_address), net.prefixlen, pid)
+        .values("id", "tenant_id", "vrf_id", "cidr")
+    )
+    sql, params = children.query.sql_with_params()
+    with connection.cursor() as cur:
+        cur.execute(
+            "SELECT p.id, COUNT(c.id) FROM unnest(%s::uuid[], %s::uuid[], %s::uuid[],"
+            " %s::inet[]) AS p(id, tenant_id, vrf_id, net)"
+            f" JOIN ({sql}) c ON c.tenant_id = p.tenant_id"
+            " AND c.vrf_id IS NOT DISTINCT FROM p.vrf_id AND c.id <> p.id"
+            " AND c.cidr::inet <<= p.net GROUP BY p.id",
+            [
+                [str(p.id) for p in page],
+                [str(p.tenant_id) for p in page],
+                [str(p.vrf_id) if p.vrf_id else None for p in page],
+                [str(p.network) for p in page],
+                *params,
+            ],
         )
-    starts = {}
-    for key, members in buckets.items():
-        members.sort()
-        starts[key] = [m[0] for m in members]
-    out = {}
-    for p in rows:
-        n = 0
-        net = p.network
-        key = (p.tenant_id, p.vrf_id, net.version) if net is not None else None
-        if key in buckets:
-            members = buckets[key]
-            lo = bisect.bisect_left(starts[key], int(net.network_address))
-            hi = bisect.bisect_right(starts[key], int(net.broadcast_address))
-            n = sum(
-                1 for _, length, pid in members[lo:hi]
-                if length >= net.prefixlen and pid != p.id
-            )
-        out[p.id] = n
+        for pk, n in cur.fetchall():
+            out[pk] = n
     return out
 
 

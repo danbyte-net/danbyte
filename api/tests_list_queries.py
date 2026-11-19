@@ -63,8 +63,8 @@ class PrefixListTests(_Base):
 
 class PrefixListScaleTests(_Base):
     """A page of prefixes must not pay for every prefix in the tenant: no
-    grouping, no per-row containment scan in SQL, and a plain COUNT for the
-    paginator (#337)."""
+    grouping, a containment count for the page's rows alone (#533), and a
+    plain COUNT for the paginator (#337)."""
 
     # The per-row scan the list used to run; the batched count must agree.
     SQL_DESCENDANTS = (
@@ -90,9 +90,12 @@ class PrefixListScaleTests(_Base):
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.json()["count"], 60)
         self.assertEqual(len(ctx.captured_queries), small)
+        scans = [q["sql"] for q in ctx.captured_queries if "<<=" in q["sql"]]
+        self.assertEqual(len(scans), 1, scans)
+        # Over the page's five rows, not a scan per prefix of the tenant.
+        self.assertIn("FROM unnest(", scans[0])
         for q in ctx.captured_queries:
             sql = q["sql"]
-            self.assertNotIn("<<=", sql, "no per-row containment scan in SQL")
             self.assertNotIn("COUNT(DISTINCT", sql)
             if 'AS "__count"' in sql and "api_prefix" in sql:
                 self.assertNotIn("GROUP BY", sql, "the paginator counts plain rows")
