@@ -955,7 +955,9 @@ front), and in a cabinet stands between its front and rear posts. A door
 gets a second `door:hinge`, mirrored up its leaf.
 
 The far box (`model3d.far`) is fitted to the rack's outer box and drawn at
-middle distance; far off the room draws its plain box, as for every rack.
+middle distance; far off the room draws its plain box, as for every rack. An
+open frame (2-post, 4-post) is never drawn as a box: at middle and far
+distance it is Danbyte's own posts and beams.
 Without a kit, or while it loads, a rack is Danbyte's own drawing of its
 Look. A reader who may view rack types loads one copy of a kit for the
 whole room (`/api/rack-kits/{id}/model/`); anyone else who may view the
