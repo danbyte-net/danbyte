@@ -223,7 +223,6 @@ class RackListTests(_Base):
 
     def test_page_cost_is_flat_and_figures_match(self):
         from .models import Rack, Region
-
         from .test_utils import status_for
 
         region = Region.objects.create(tenant=self.tenant, name="Nordics")
