@@ -547,7 +547,7 @@ class InstallFlowTests(_AppBase):
         new = ChangeLogEntry.objects.exclude(id__in=before)
         dt_entries = new.filter(object_type="api.devicetype", object_id=str(dt.pk))
         self.assertTrue(dt_entries.exists())
-        self.assertEqual({e.cause for e in dt_entries}, {"3D model pack Acme test 1.1.0"})
+        self.assertEqual({e.cause for e in dt_entries}, {"Pack import: Acme test 1.1.0"})
         self.assertEqual({e.user_id for e in dt_entries}, {self.root.pk})
         self.assertTrue(new.filter(object_type="api.modelpack", object_id=str(pack.pk)).exists())
         # The archive goes once installed.
@@ -571,6 +571,29 @@ class InstallFlowTests(_AppBase):
         self.assertEqual(DeviceType.objects.filter(tenant=self.tenant).count(), 1)
         hist = self.client.get(f"/api/model-packs/{second.pk}/").json()["history"]
         self.assertEqual([(h["version"], h["status"]) for h in hist], [("1.1.0", "replaced")])
+
+    def test_update_from_pack_replaces_an_edit(self):
+        from .models import InterfaceTemplate
+
+        first = self.checked()
+        self.install(first.pk)
+        dt = DeviceType.objects.get(tenant=self.tenant, part_number="X1")
+        InterfaceTemplate.objects.filter(device_type=dt, name="Te1/0/1").update(
+            type="25gbase-x-sfp28")
+        self.p.write("pack.yaml", PACK.format(version="1.2.0"))
+        second = self.checked()
+        row = next(t for t in second.report["import"]["types"] if t["kind"] == "device-type")
+        self.assertEqual(row["changes"]["kept"], 1)
+        self.assertIn("kept your edit on 1 interface, type 25gbase-x-sfp28 (the pack has "
+                      "10gbase-x-sfpp): Te1/0/1", row["notes"])
+        self.assertEqual(self.install(second.pk, overwrite="yes").status_code, 400)
+        r = self.install(second.pk, overwrite=True)
+        self.assertEqual(r.status_code, 202, r.content)
+        second.refresh_from_db()
+        self.assertEqual(second.status, "installed", second.error)
+        self.assertTrue(second.overwrite)
+        self.assertTrue(self.client.get(f"/api/model-packs/{second.pk}/").json()["overwrite"])
+        self.assertEqual(dt.interface_templates.get(name="Te1/0/1").type, "10gbase-x-sfpp")
 
     def test_a_pack_with_check_errors_is_not_installed(self):
         self.p.device(sha="ab" * 32)

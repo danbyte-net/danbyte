@@ -38,6 +38,7 @@ class ModelPackSerializer(serializers.ModelSerializer):
         fields = [
             "id", "slug", "name", "version", "license", "author", "source", "source_url",
             "filename", "sha256", "size", "status", "progress", "error", "replace_photos",
+            "overwrite",
             "types", "installable", "check_errors", "check_warnings",
             "created_at", "created_by", "installed_at", "installed_by",
         ]
@@ -169,7 +170,8 @@ class ModelPackViewSet(viewsets.GenericViewSet):
 
     @action(detail=True, methods=["post"])
     def install(self, request, pk=None):
-        """Install a checked pack. Body: ``{"replace_photos": bool}``."""
+        """Install a checked pack. Body: ``{"replace_photos": bool, "overwrite":
+        bool}`` (overwrite: Update from pack, api.model_pack_update)."""
         self._installer()
         pack = self._get(pk)
         data = request.data if isinstance(request.data, dict) else None
@@ -178,8 +180,12 @@ class ModelPackViewSet(viewsets.GenericViewSet):
         replace = data.get("replace_photos", False)
         if not isinstance(replace, bool):
             raise ValidationError({"replace_photos": "true or false."})
+        overwrite = data.get("overwrite", False)
+        if not isinstance(overwrite, bool):
+            raise ValidationError({"overwrite": "true or false."})
         try:
-            pack = mpi.start_install(pack, request.user, replace_photos=replace)
+            pack = mpi.start_install(pack, request.user, replace_photos=replace,
+                                     overwrite=overwrite)
         except mpi.InstallRefused as exc:
             return Response({exc.field: str(exc)}, status=exc.status)
         return Response(ModelPackDetailSerializer(pack).data, status=status.HTTP_202_ACCEPTED)

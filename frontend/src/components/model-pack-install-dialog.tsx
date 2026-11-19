@@ -130,6 +130,7 @@ export function ModelPackInstallDialog({
   const [file, setFile] = useState<File | null>(null)
   const [url, setUrl] = useState("")
   const [replace, setReplace] = useState(false)
+  const [overwrite, setOverwrite] = useState(false)
   const [packId, setPackId] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
@@ -145,6 +146,7 @@ export function ModelPackInstallDialog({
     setFile(null)
     setUrl("")
     setReplace(false)
+    setOverwrite(false)
     setPackId(null)
     setSource("upload")
   }
@@ -175,7 +177,7 @@ export function ModelPackInstallDialog({
     mutationFn: () =>
       api<ModelPackDetail>(`/api/model-packs/${packId}/install/`, {
         method: "POST",
-        body: JSON.stringify({ replace_photos: replace }),
+        body: JSON.stringify({ replace_photos: replace, overwrite }),
       }),
     onSuccess: (row) => qc.setQueryData(["model-packs", row.id], row),
     onError: (e) => apiErrorToast(e),
@@ -287,11 +289,19 @@ export function ModelPackInstallDialog({
         )}
         {p && !busy && <ModelPackReport pack={p} />}
         {p?.status === "checked" && p.installable && (
-          <FormCheckbox
-            label="Replace hand-uploaded photos"
-            checked={replace}
-            onChange={setReplace}
-          />
+          <div className="space-y-2">
+            <FormCheckbox
+              label="Replace hand-uploaded photos"
+              checked={replace}
+              onChange={setReplace}
+            />
+            <FormCheckbox
+              label="Update from pack"
+              checked={overwrite}
+              onChange={setOverwrite}
+              info="The pack replaces what the dry run kept. Documents added or edited here stay."
+            />
+          </div>
         )}
 
         <DialogFooter>

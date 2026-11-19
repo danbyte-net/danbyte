@@ -152,6 +152,10 @@ function ModelPackPage() {
                     : "No"
                   : dash,
               },
+              {
+                label: "Update from pack",
+                value: p.installed_at ? (p.overwrite ? "Yes" : "No") : dash,
+              },
             ]}
           />
           {p.error && (

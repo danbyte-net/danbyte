@@ -254,7 +254,7 @@ def start_url(tenant, user, url: str):
     return pack
 
 
-def start_install(pack, user, *, replace_photos: bool = False):
+def start_install(pack, user, *, replace_photos: bool = False, overwrite: bool = False):
     """Queue the install of a checked pack."""
     from django.db import transaction
 
@@ -271,6 +271,7 @@ def start_install(pack, user, *, replace_photos: bool = False):
             raise InstallRefused("Another pack is being installed.", status=409)
         updated = ModelPack.objects.filter(pk=pack.pk, status="checked").update(
             status="installing", installed_by=user, replace_photos=bool(replace_photos),
+            overwrite=bool(overwrite),
             progress={"phase": "queued"}, updated_at=timezone.now())
     if not updated:
         raise InstallRefused("Only a checked pack can be installed.", status=409)
@@ -337,7 +338,7 @@ def _download(pack, path: Path) -> None:
 
 def _type_rows(result) -> list[dict]:
     return [{"kind": t.kind, "path": t.path, "name": t.name, "action": t.action,
-             "id": t.id, "notes": t.notes} for t in result.types]
+             "id": t.id, "notes": t.notes, "changes": t.changes} for t in result.types]
 
 
 def _summary(result) -> dict:
@@ -423,7 +424,7 @@ def run_check(pack_id: str) -> None:
             set_progress(pack, "dry run", done, total)
 
         dry = import_pack(pack.tenant, files, dry_run=True, progress=tick,
-                          label=f"3D model pack {pack.name or pack.filename} {pack.version}")
+                          label=f"Pack import: {pack.name or pack.filename} {pack.version}")
         installed = None
         if pack.slug:
             prev = ModelPack.objects.filter(
@@ -483,9 +484,10 @@ def run_install(pack_id: str) -> None:
         def tick(done, total):
             set_progress(pack, "installing", done, total)
 
-        label = f"3D model pack {pack.name or pack.slug or pack.filename} {pack.version}"
+        label = f"Pack import: {pack.name or pack.slug or pack.filename} {pack.version}"
         result = import_pack(pack.tenant, files, dry_run=False,
-                             replace_photos=pack.replace_photos, label=label.strip(),
+                             replace_photos=pack.replace_photos, overwrite=pack.overwrite,
+                             label=label.strip(),
                              progress=tick)
         with transaction.atomic():
             if pack.slug:

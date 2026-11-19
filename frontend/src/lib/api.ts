@@ -19637,6 +19637,8 @@ export interface ModelPackType {
   /** Set once installed. */
   id: string
   notes: string[]
+  /** Device and module types: what the import changed on the type. */
+  changes?: { added: number; updated: number; removed: number; kept: number }
 }
 
 export interface ModelPackImport {
@@ -19663,6 +19665,8 @@ export interface ModelPack {
   progress: { phase?: string; done?: number; total?: number }
   error: string
   replace_photos: boolean
+  /** Update from pack: the YAML replaced what was changed here. */
+  overwrite: boolean
   types: number
   installable: boolean
   check_errors: number
