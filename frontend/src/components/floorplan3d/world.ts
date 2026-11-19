@@ -295,6 +295,25 @@ export interface ScenePayload {
 
 /** Rack plinth/base under U1 - visual, matches typical cabinet bases. */
 export const RACK_BASE_M = 0.1
+
+/** A kit-built rack's reference fit (api.rack_kits.kit_fit), or null: a
+ * rack without a kit, or one imported before Danbyte read it. */
+export function rackKitFit(rack: Pick<SceneRack, "look">) {
+  return rack.look?.kit?.fit ?? null
+}
+
+/** Height of unit 1's bottom above the floor (m): the kit's, so gear
+ * stands on its posts, else RACK_BASE_M. */
+export function rackBaseM(rack: Pick<SceneRack, "look">): number {
+  const fit = rackKitFit(rack)
+  return fit ? mm(fit.u1_mm) : RACK_BASE_M
+}
+
+/** The frame above the top unit (m): the kit's, else RACK_CAP_M. */
+export function rackCapM(rack: Pick<SceneRack, "look">): number {
+  const fit = rackKitFit(rack)
+  return fit ? mm(fit.cap_mm) : RACK_CAP_M
+}
 /** Frame added around the rail opening when outer width isn't recorded. */
 export const RACK_FRAME_MM = 150
 /** Render default when a rack has no recorded outer depth. */
@@ -461,7 +480,8 @@ export function rackFootprintM(rack: SceneRack): {
   // space filled the whole cabinet and the 30 mm top panel was drawn inside
   // the highest U - burying two thirds of whatever was installed there. A real
   // 42U cabinet is taller than 42U of rail, for exactly this reason.
-  const height = mm(rack.u_height * PANEL_MM.uPitch) + RACK_BASE_M + RACK_CAP_M
+  const height =
+    mm(rack.u_height * PANEL_MM.uPitch) + rackBaseM(rack) + rackCapM(rack)
   return { width, depth, height }
 }
 
@@ -538,7 +558,7 @@ export function deviceYM(
     ? rack.u_height - (position - rack.starting_unit) - units
     : position - rack.starting_unit
   return {
-    y: RACK_BASE_M + slotFromBottom * pitch,
+    y: rackBaseM(rack) + slotFromBottom * pitch,
     h: (dev.u_height > 0 ? dev.u_height : APPLIANCE_H_U) * pitch,
   }
 }
@@ -551,12 +571,31 @@ export const RAIL_INSET_FRAC = 0.45
  * The rack's mounting rail planes (z, m; the front plane on −Z): the front
  * rail as far in as ever, the rear one `rail_depth_mm` behind it (else as
  * far in from the rear). A 2-post frame has one rail, mid-depth. A rack
- * without a Look (an older cached scene) is the legacy cabinet.
+ * without a Look (an older cached scene) is the legacy cabinet. A rack
+ * built from a kit has its front rail where the kit's posts stand
+ * (`fit.rail_inset_mm` behind the front), a 2-post its only one there.
  */
 export function rackRailPlanesM(
   depthM: number,
-  look: Pick<SceneLook, "frame" | "rail_depth_mm"> | null | undefined
+  look:
+    | (Pick<SceneLook, "frame" | "rail_depth_mm"> & {
+        kit?: SceneLook["kit"]
+      })
+    | null
+    | undefined
 ): { front: number; rear: number } {
+  const fit = look?.kit?.fit
+  if (fit) {
+    const inset = Math.min(mm(fit.rail_inset_mm), depthM / 2)
+    const front = -depthM / 2 + inset
+    if (look?.frame === "2-post") return { front, rear: front }
+    if (look?.rail_depth_mm != null)
+      return {
+        front,
+        rear: Math.min(depthM / 2, front + mm(look.rail_depth_mm)),
+      }
+    return { front, rear: depthM / 2 - inset }
+  }
   if (look?.frame === "2-post") return { front: 0, rear: 0 }
   const front = -depthM * RAIL_INSET_FRAC
   if (look?.rail_depth_mm != null) {
@@ -1246,10 +1285,11 @@ export function sideStripBoxM(
     rack.u_height
   )
   const h = spanU * pitch
-  const rackTop = RACK_BASE_M + rack.u_height * pitch
+  const base = rackBaseM(rack)
+  const rackTop = base + rack.u_height * pitch
   const y = Math.min(
-    RACK_BASE_M + mm(dev.mount_offset_mm ?? 0),
-    Math.max(RACK_BASE_M, rackTop - h)
+    base + mm(dev.mount_offset_mm ?? 0),
+    Math.max(base, rackTop - h)
   )
   const mount = effectiveMount(rack, dev)
   // A kit rack seats it on its 0U channel: its back on the channel (the
@@ -1272,11 +1312,36 @@ export function sideStripBoxM(
     }
   }
   const sign = mount === "side_left" ? -1 : 1
+  // A kit-built open frame without channels: bolted to the outer side of
+  // a post - the rear one on a 4-post (a front `face`: the front one).
+  const fit = rackKitFit(rack)
+  const frame = rack.look?.frame
+  if (fit?.post_outer_mm && (frame === "2-post" || frame === "4-post")) {
+    const rails = rackRailPlanesM(rackDepthM, rack.look)
+    const shift = (rackOpeningM(rack) - mm(PANEL_MM.opening)) / 2
+    const pd = mm(fit.post_depth_mm ?? 40)
+    const rear = frame === "4-post" && dev.face !== "front"
+    return {
+      x:
+        sign *
+        (mm(fit.post_outer_mm) + shift + STRIP_GAP_M / 4 + STRIP_W_M / 2),
+      y,
+      h,
+      z: rear ? rails.rear - pd / 2 : rails.front + pd / 2,
+      seat: null,
+    }
+  }
   // `face` names the CHANNEL the strip bolts into: rear sits back in the
   // cabinet (where a vertical PDU actually lives), front sits forward.
   // Blank stays mid-depth - we genuinely don't know which channel it's in.
-  const z =
-    dev.face === "rear"
+  // A kit-built cabinet without channels: between its front and rear
+  // posts, clear of both.
+  const z = fit
+    ? (() => {
+        const rails = rackRailPlanesM(rackDepthM, rack.look)
+        return (rails.front + rails.rear) / 2
+      })()
+    : dev.face === "rear"
       ? rackDepthM * 0.32
       : dev.face === "front"
         ? -rackDepthM * 0.28

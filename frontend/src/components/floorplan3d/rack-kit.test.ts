@@ -4,6 +4,9 @@ import { describe, expect, it } from "vitest"
 import {
   buildKit,
   indexKit,
+  kitReference,
+  kitTarget,
+  memberCopies,
   mirroredGeometry,
   partName,
   seeThrough,
@@ -338,7 +341,10 @@ describe("kits in the 1000 mm convention", () => {
       2.02,
       1.2,
       "#c9ccce",
-      "solid"
+      "solid",
+      [],
+      // The kit's unit 1 (world rackBaseM from its fit).
+      { baseM: 0.13 }
     )
     const front = built.doors.filter((d) => d.side === "front")
     expect(front).toHaveLength(2)
@@ -558,7 +564,21 @@ describe("rack kit v2 parts", () => {
     const want = wantedParts(look, have, "solid")
     expect(want.has("side:panel:edge")).toBe(true)
     expect(want.has("side:panel")).toBe(false)
-    const built = buildKit(index, "r", look, 42, 0.6, 2.02, 1, "#000", "solid")
+    const built = buildKit(
+      index,
+      "r",
+      look,
+      42,
+      0.6,
+      2.02,
+      1,
+      "#000",
+      "solid",
+      [],
+      {
+        baseM: 0.13,
+      }
+    )
     const edges = boxes(built.plain).filter(
       (b) =>
         Math.abs(b.max.y - b.min.y - 0.03) < 1e-3 && b.max.z - b.min.z > 0.9
@@ -631,5 +651,155 @@ describe("rack kit v2 parts", () => {
     expect(unitNumber(41, 42, { start: 1, desc: false })).toBe(42)
     expect(unitNumber(0, 42, { start: 1, desc: true })).toBe(42)
     expect(unitNumber(41, 42, { start: 1, desc: true })).toBe(1)
+  })
+})
+
+/** The pack's open 4-post as modelled (glTF, m): a left front post at x
+ * 232.6 mm, its rail face 100 mm behind the front, unit 1 at 130 mm and
+ * its top end over unit 42; one corner of each, a width and a depth beam,
+ * one foot - Danbyte places the rest. */
+function openKit() {
+  const s = new THREE.Group()
+  const seg = part(
+    "post:segment",
+    [0.0349, 0.04445, 0.04],
+    [0.2426, 0.13 + 0.022225, -0.12]
+  )
+  s.add(seg)
+  s.add(
+    part("post:top", [0.0349, 0.008, 0.04], [0.2426, 1.9969 + 0.004, -0.12])
+  )
+  s.add(
+    part("post:bottom", [0.0349, 0.008, 0.04], [0.2426, 0.122 + 0.004, -0.12])
+  )
+  s.add(part("corner:top", [0.04, 0.04, 0.04], [0.28, 1.99, -0.12]))
+  s.add(part("corner:bottom", [0.04, 0.04, 0.04], [0.28, 0.12, -0.12]))
+  s.add(part1000("beam:width", "x", [0, 0.04, 0.04], [-0.26, 1.97, -0.1]))
+  s.add(part1000("beam:depth", "y", [0.04, 0.04, 0], [0.26, 1.97, -0.14]))
+  s.add(part("base:feet", [0.05, 0.08, 0.05], [0.25, 0.04, -0.12]))
+  s.updateMatrixWorld(true)
+  return s
+}
+
+describe("an open 4-post kit at its reference size", () => {
+  const index = indexKit(openKit(), 1)
+  const look: SceneLook = {
+    ...LEGACY_LOOK,
+    frame: "4-post",
+    rail_depth_mm: 740,
+    front_door: "none",
+    rear_door: "none",
+    side_panels: false,
+    top: "none",
+    base: "feet",
+    // world.rackRailPlanesM reads the kit's fit.
+    kit: {
+      id: "k",
+      name: "OPEN-4POST",
+      frame: "4-post",
+      parts: {},
+      colours: {},
+      fit: { u1_mm: 130, rail_inset_mm: 100, cap_mm: 13.1, ref_u: 42 },
+      model_url: "/k.glb",
+      far_url: null,
+    },
+  }
+  const ref = kitReference(index, 0.6, 1)
+  const all = (b: ReturnType<typeof buildKit>) =>
+    b.plain.map((p) => p.geometry.boundingBox!.clone().applyMatrix4(p.matrix))
+
+  it("reads the reference rack from the parts", () => {
+    expect(ref.u1).toBeCloseTo(0.13, 6)
+    expect(ref.units).toBe(42)
+    expect(ref.railZ).toBeCloseTo(0.1, 6)
+    expect(ref.box.min.z).toBeCloseTo(0, 6)
+    expect(ref.box.max.x - ref.box.min.x).toBeCloseTo(0.6, 6)
+  })
+
+  it("is as deep as its rails, its rear rail as far in as the front one", () => {
+    const t = kitTarget(ref, "4-post", 0.6, 1, { front: -0.4, rear: 0.34 }, 2)
+    expect(t.min.z).toBeCloseTo(-0.5, 6)
+    expect(t.max.z).toBeCloseTo(0.44, 6)
+    // A cabinet fills its outer box.
+    const c = kitTarget(ref, "cabinet", 0.8, 1.2, { front: -0.5, rear: 0.5 }, 2)
+    expect([c.min.x, c.max.x, c.min.z, c.max.z]).toEqual([-0.4, 0.4, -0.6, 0.6])
+  })
+
+  it("places a member at every corner it belongs to", () => {
+    const t = new THREE.Box3(
+      new THREE.Vector3(-1, 0, -1),
+      new THREE.Vector3(1, 2, 1)
+    )
+    expect(memberCopies("corner:top", t, null)).toHaveLength(4)
+    expect(memberCopies("base:feet", t, null)).toHaveLength(4)
+    expect(memberCopies("beam:width", t, null)).toHaveLength(2)
+    expect(memberCopies("beam:depth", t, -1.8)).toHaveLength(4)
+    expect(memberCopies("top:solid", t, -1.8)).toHaveLength(1)
+    expect(memberCopies("beam:width", t, null, "2-post")).toHaveLength(1)
+  })
+
+  it("builds the frame round its posts", () => {
+    const built = buildKit(
+      index,
+      "r",
+      look,
+      42,
+      0.6,
+      2.01,
+      1,
+      "#000",
+      "solid",
+      [],
+      {
+        baseM: 0.13,
+        widthM: 0.6,
+        depthM: 1,
+      }
+    )
+    const boxes = all(built)
+    const at = (y0: number, y1: number) =>
+      boxes.filter((b) => b.min.y > y0 - 1e-6 && b.max.y < y1 + 1e-6)
+    // Four feet on the floor, at the posts' corners.
+    const feet = at(0, 0.081)
+    expect(feet).toHaveLength(4)
+    for (const f of feet)
+      expect(Math.abs((f.min.x + f.max.x) / 2)).toBeCloseTo(0.25, 3)
+    expect(Math.min(...feet.map((f) => f.min.z))).toBeCloseTo(-0.405, 3)
+    expect(Math.max(...feet.map((f) => f.max.z))).toBeCloseTo(0.345, 3)
+    // Top and bottom corners at the four corners, beams between them.
+    expect(boxes.filter((b) => b.max.x - b.min.x > 0.5)).toHaveLength(4)
+    const depth = boxes.filter((b) => b.max.z - b.min.z > 0.5)
+    expect(depth).toHaveLength(4)
+    for (const b of depth) {
+      expect(b.min.z).toBeCloseTo(-0.36, 3)
+      expect(b.max.z).toBeCloseTo(0.3, 3)
+    }
+    // Each post's ends, at unit 1 and over unit 42.
+    const tops = at(1.9969 - 1e-3, 2.0049 + 1e-3).filter(
+      (b) => b.max.x - b.min.x < 0.04
+    )
+    expect(tops).toHaveLength(4)
+    built.dispose()
+  })
+
+  it("leaves out what the Look says has none", () => {
+    const have = new Set(index.parts.map((p) => p.name))
+    expect(
+      wantedParts({ ...look, base: "none" }, have, "solid").has("base:feet")
+    ).toBe(false)
+    // A base the kit hasn't got: one it has.
+    expect(
+      wantedParts({ ...look, base: "plinth" }, have, "solid").has("base:feet")
+    ).toBe(true)
+    const cab = new Set(["top:vented", "base:plinth", "base:panel"])
+    const enclosed = { ...LEGACY_LOOK, top: "none" as const }
+    expect(wantedParts(enclosed, cab, "solid").has("top:vented")).toBe(false)
+    // A wall cabinet keeps its bottom panel, whatever its base.
+    const wall = {
+      ...LEGACY_LOOK,
+      frame: "wall-cabinet" as const,
+      base: "none" as const,
+    }
+    expect(wantedParts(wall, cab, "solid").has("base:panel")).toBe(true)
   })
 })

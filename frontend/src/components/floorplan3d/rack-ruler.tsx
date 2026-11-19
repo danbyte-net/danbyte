@@ -3,7 +3,7 @@ import * as THREE from "three"
 
 import { PANEL_MM } from "@/lib/faceplate-geometry"
 
-import { RACK_BASE_M, mm, type SceneRack } from "./world"
+import { mm, rackBaseM, type SceneRack } from "./world"
 
 /**
  * The rack's U-number ruler: one canvas texture on a strip standing on the
@@ -66,7 +66,7 @@ export function RackRuler({
     // Front face = −Z; rotate π about Y so the texture reads from the aisle.
     // Just inside the left frame, a hair in front of the face to avoid z-fight.
     <mesh
-      position={[-width / 2 + stripW / 2 + 0.01, RACK_BASE_M + rulerH / 2,
+      position={[-width / 2 + stripW / 2 + 0.01, rackBaseM(rack) + rulerH / 2,
         -depth / 2 - 0.008]}
       rotation={[0, Math.PI, 0]}
       raycast={() => null}

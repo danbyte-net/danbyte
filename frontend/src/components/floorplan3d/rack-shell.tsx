@@ -20,7 +20,13 @@ import { EAR_PLATE_MM } from "@/lib/rack-mount"
 
 import { rackFrameWidthM } from "./rack-models"
 import { useDeviceModel } from "./device-model"
-import { RACK_BASE_M, RACK_CAP_M, TRANSPARENT_ORDER, mm } from "./world"
+import {
+  RACK_BASE_M,
+  RACK_CAP_M,
+  TRANSPARENT_ORDER,
+  mm,
+  rackBaseM,
+} from "./world"
 import type { SceneDevice, SceneRack } from "./world"
 
 /** Painted rack steel - slight sheen so the studio environment reads on it. */
@@ -297,6 +303,7 @@ function Top({
 }) {
   const t = RACK_CAP_M
   const y = h + 0.0015
+  if (look.top === "none") return null
   return (
     <group>
       <Steel pos={[0, h - t / 2, 0]} size={[w, t, d + CAP_LIP]} color={color} />
@@ -333,7 +340,8 @@ function Top({
   )
 }
 
-/** The base within RACK_BASE_M: a plinth, or a frame on casters or feet. */
+/** The base within RACK_BASE_M: a plinth, a plate, a frame on casters or
+ * feet, or none. */
 function Base({
   look,
   w,
@@ -347,6 +355,15 @@ function Base({
   z: number
   color: string
 }) {
+  if (look.base === "none") return null
+  if (look.base === "plate")
+    return (
+      <Steel
+        pos={[0, RACK_BASE_M / 4, z]}
+        size={[w, RACK_BASE_M / 2, d]}
+        color={color}
+      />
+    )
   if (look.base === "plinth")
     return (
       <Steel
@@ -644,6 +661,7 @@ export function BlankingFill({
     [rack, devices, sizes]
   )
   const front = railPlanesM(depth, look).front
+  const base = rackBaseM(rack)
   const plate = EAR_PLATE_MM / 1000
   const panelW = rackFrameWidthM(rack)
   const plain = slots.filter((s) => !models[s.h])
@@ -659,7 +677,7 @@ export function BlankingFill({
       mat.compose(
         new THREE.Vector3(
           0,
-          RACK_BASE_M + s.u * pitch + h / 2 + 0.0004,
+          base + s.u * pitch + h / 2 + 0.0004,
           front - plate / 2
         ),
         new THREE.Quaternion(),
@@ -670,7 +688,7 @@ export function BlankingFill({
     m.count = plain.length
     m.instanceMatrix.needsUpdate = true
     m.computeBoundingSphere()
-  }, [plain, pitch, front, panelW, plate])
+  }, [plain, pitch, front, base, panelW, plate])
 
   return (
     <group>
@@ -694,7 +712,7 @@ export function BlankingFill({
         <BlankModel
           key={`${s.u}:${s.h}`}
           scene={models[s.h]!}
-          position={[0, RACK_BASE_M + s.u * pitch, front - plate]}
+          position={[0, base + s.u * pitch, front - plate]}
         />
       ))}
     </group>

@@ -48,6 +48,9 @@ import {
   type SceneTray,
   type ScenePayload,
   occludesSightLine,
+  rackBaseM,
+  rackCapM,
+  rackRailPlanesM,
   tierFor,
 } from "./world"
 import { LEGACY_LOOK } from "./rack-kit-math"
@@ -1354,5 +1357,104 @@ describe("filletPath - no repeated points for the tube to kink on", () => {
     expect(path[0]).toEqual([1, 2, 3])
     expect(path[path.length - 1]).toEqual([4, 5, 6])
     expect(Math.min(...gaps(path))).toBeGreaterThan(1e-5)
+  })
+})
+
+describe("a kit's fit - gear stands where the kit's posts are", () => {
+  // api.rack_kits.kit_fit of the pack's kits.
+  const kitWith = (frame: "cabinet" | "4-post" | "2-post", fit: object) => ({
+    id: "k",
+    name: frame,
+    frame,
+    colours: {},
+    widths_mm: [600],
+    depths_mm: [1000],
+    model_url: "/k.glb",
+    far_url: null,
+    parts: {},
+    fit: { cap_mm: 18.1, ref_u: 42, ...fit } as {
+      u1_mm: number
+      rail_inset_mm: number
+      cap_mm: number
+      ref_u: number
+      post_outer_mm?: number
+      post_depth_mm?: number
+    },
+  })
+  const cabinet = {
+    ...LEGACY_LOOK,
+    rail_depth_mm: 740,
+    kit: kitWith("cabinet", { u1_mm: 130, rail_inset_mm: 100 }),
+  }
+
+  it("takes unit 1 and the frame's top from the kit", () => {
+    const r = rack({ look: cabinet, outer_depth_mm: 1000 })
+    expect(rackBaseM(r)).toBeCloseTo(0.13, 9)
+    expect(rackCapM(r)).toBeCloseTo(0.0181, 9)
+    expect(rackFootprintM(r).height).toBeCloseTo(
+      0.13 + 42 * 0.04445 + 0.0181,
+      9
+    )
+    expect(deviceYM(r, dev(1)).y).toBeCloseTo(0.13, 9)
+    // Without a fit (no kit, or one imported before it): as before.
+    expect(rackBaseM(rack())).toBe(RACK_BASE_M)
+    expect(
+      rackBaseM(
+        rack({ look: { ...cabinet, kit: { ...cabinet.kit, fit: null } } })
+      )
+    ).toBe(RACK_BASE_M)
+  })
+
+  it("puts the rails at the kit's inset behind the front", () => {
+    expect(rackRailPlanesM(1, cabinet)).toEqual({
+      front: expect.closeTo(-0.4, 9),
+      rear: expect.closeTo(0.34, 9),
+    })
+    // No rail depth: as far in from the rear.
+    const sym = rackRailPlanesM(1.2, { ...cabinet, rail_depth_mm: null })
+    expect(sym.front).toBeCloseTo(-0.5, 9)
+    expect(sym.rear).toBeCloseTo(0.5, 9)
+    // A 2-post's one rail, the kit's base plate ahead of it.
+    const telco = {
+      ...LEGACY_LOOK,
+      frame: "2-post" as const,
+      kit: kitWith("2-post", { u1_mm: 60, rail_inset_mm: 126.5 }),
+    }
+    const two = rackRailPlanesM(0.38, telco)
+    expect(two.front).toBeCloseTo(-0.19 + 0.1265, 9)
+    expect(two.rear).toBe(two.front)
+  })
+
+  it("bolts a 0U strip to a post of an open frame without channels", () => {
+    const open = {
+      ...LEGACY_LOOK,
+      frame: "4-post" as const,
+      rail_depth_mm: 740,
+      kit: kitWith("4-post", {
+        u1_mm: 130,
+        rail_inset_mm: 100,
+        post_outer_mm: 260,
+        post_depth_mm: 40,
+      }),
+    }
+    const r = rack({ look: open, outer_width_mm: 600, outer_depth_mm: 1000 })
+    const pdu = (over = {}) =>
+      dev(1, 0, { position: null, mount: "side_left", face: "rear", ...over })
+    const left = sideStripBoxM(r, pdu(), 0.6, 1)
+    expect(left.seat).toBeNull()
+    // Its inner side on the post's outer side, at the rear post.
+    expect(left.x - STRIP_W_M / 2).toBeLessThan(-0.26)
+    expect(left.x + STRIP_W_M / 2).toBeLessThan(-0.26 + 1e-9)
+    expect(left.x + STRIP_W_M / 2).toBeGreaterThan(-0.27)
+    expect(left.z).toBeCloseTo(0.34 - 0.02, 9)
+    expect(left.y).toBeCloseTo(0.13, 9)
+    const right = sideStripBoxM(
+      r,
+      pdu({ mount: "side_right", face: "front" }),
+      0.6,
+      1
+    )
+    expect(right.x).toBeCloseTo(-left.x, 9)
+    expect(right.z).toBeCloseTo(-0.4 + 0.02, 9)
   })
 })

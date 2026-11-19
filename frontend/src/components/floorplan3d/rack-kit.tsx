@@ -12,8 +12,9 @@ import {
   doorLeaves,
   isEnclosed,
   partMatrix,
+  postEndMatrices,
   postSegmentMatrices,
-  postSpots,
+  postSpotsAt,
   railPlanesM,
   referenceBox,
   stretchedRepeat,
@@ -150,13 +151,132 @@ export function indexKit(
     part.box = to
   }
   for (const part of parts)
-    if (!part.name.startsWith("door:")) ref.union(part.box)
+    if (!part.name.startsWith("door:") && !part.name.startsWith("path:"))
+      ref.union(part.box)
   const out = { ref, parts }
   indexCache.set(scene, out)
   return out
 }
 
 const CHANNEL_RE = /^channel:0u:(left|right):(front|rear)$/
+
+/** The parts that outline the kit's frame: not a door (it swings), a
+ * strip, a bracket or a pathway (inside it, or beside a 2-post). */
+function isFramePart(name: string): boolean {
+  return !/^(door|label|pdu|path):/.test(name)
+}
+
+/**
+ * The kit's reference rack in the rack frame (front at small z): `box`
+ * its outer box - its first width across, centred, its first depth back
+ * from its front (the glTF z = 0 plane of §14, or a frame part standing
+ * ahead of it: a 2-post's base plate), from the floor up to the top of
+ * its top unit - `u1` unit 1's bottom, `units` its units, `railZ` its
+ * front rail's face. What every part is mapped from (`partMatrix`).
+ */
+export interface KitReference {
+  box: THREE.Box3
+  u1: number
+  units: number
+  railZ: number
+}
+
+export function kitReference(
+  index: KitIndex,
+  widthM: number | null,
+  depthM: number | null
+): KitReference {
+  const pitch = mm(PANEL_MM.uPitch)
+  const frame = new THREE.Box3()
+  for (const p of index.parts) if (isFramePart(p.name)) frame.union(p.box)
+  if (frame.isEmpty()) frame.copy(index.ref)
+  const seg = index.parts.find((p) => p.name === "post:segment")
+  const u1 = seg ? seg.box.min.y : 0
+  const end = index.parts.find((p) => p.name === "post:top")
+  // Without end pieces: the whole units below the roof (or the frame's top).
+  const roofs = index.parts.filter((p) => p.name.startsWith("top:"))
+  const over = roofs.length
+    ? Math.min(...roofs.map((p) => p.box.min.y))
+    : frame.max.y
+  const units = end
+    ? Math.max(1, Math.round((end.box.min.y - u1) / pitch))
+    : Math.max(1, Math.floor((over - u1) / pitch + 0.02))
+  const front = Math.min(0, frame.min.z)
+  const w = widthM ?? frame.max.x - frame.min.x
+  const d = depthM ?? frame.max.z - front
+  return {
+    box: new THREE.Box3(
+      new THREE.Vector3(-w / 2, 0, front),
+      new THREE.Vector3(w / 2, u1 + units * pitch, front + d)
+    ),
+    u1,
+    units,
+    railZ: seg ? seg.box.min.z : front,
+  }
+}
+
+/**
+ * Where a kit's reference rack lands in this rack (the rack frame): a
+ * cabinet or wall cabinet fills its outer box; an open frame is as wide
+ * as its kit (moved out for a wider rail, `shiftM` each side) and as
+ * deep as its rails - the front rail at the kit's inset behind its front,
+ * a 4-post's rear rail as far ahead of its rear (the kit's rear members
+ * are its front ones turned round), a 2-post's depth the kit's. Its top
+ * is the top of the top unit, `topY`.
+ */
+export function kitTarget(
+  ref: KitReference,
+  frame: SceneLook["frame"],
+  w: number,
+  d: number,
+  rails: { front: number; rear: number },
+  topY: number,
+  shiftM = 0
+): THREE.Box3 {
+  if (isEnclosed(frame))
+    return new THREE.Box3(
+      new THREE.Vector3(-w / 2, 0, -d / 2),
+      new THREE.Vector3(w / 2, topY, d / 2)
+    )
+  const inset = ref.railZ - ref.box.min.z
+  const depth = ref.box.max.z - ref.box.min.z
+  const z0 = rails.front - inset
+  const z1 = frame === "2-post" ? z0 + depth : rails.rear + inset
+  return new THREE.Box3(
+    new THREE.Vector3(ref.box.min.x - shiftM, 0, z0),
+    new THREE.Vector3(ref.box.max.x + shiftM, topY, Math.max(z1, z0 + 0.01))
+  )
+}
+
+/** The copies a frame member is drawn in (matrices applied after it is
+ * mapped to the rack): the kit models one of each, the spec places them
+ * at every corner - corners and feet at the four, a width beam front and
+ * rear, a depth beam left and right - and a frame's beams again at its
+ * bottom corners (`down`: the drop from its top corners to them). */
+export function memberCopies(
+  name: string,
+  target: THREE.Box3,
+  down: number | null,
+  frame: SceneLook["frame"] = "cabinet"
+): THREE.Matrix4[] {
+  // A 2-post's one rail: its tie beam and base are single.
+  if (frame === "2-post") return [new THREE.Matrix4()]
+  const cz = (target.min.z + target.max.z) / 2
+  const mx = mirrorAbout(0, (target.min.x + target.max.x) / 2)
+  const mz = mirrorAbout(2, cz)
+  const one = new THREE.Matrix4()
+  const four = [one, mx, mz, mx.clone().multiply(mz)]
+  let out: THREE.Matrix4[]
+  if (/^(corner:(top|bottom)|base:(feet|casters))$/.test(name)) out = four
+  else if (name === "beam:width") out = [one, mz]
+  else if (name === "beam:depth") out = [one, mx]
+  else return [one]
+  if (down != null && name.startsWith("beam:")) {
+    const t = new THREE.Matrix4().makeTranslation(0, down, 0)
+    out = [...out, ...out.map((m) => t.clone().multiply(m))]
+  }
+  return out
+}
 
 const mirroredCache = new WeakMap<THREE.BufferGeometry, THREE.BufferGeometry>()
 
@@ -231,12 +351,16 @@ export function wantedParts(
     ])
       if (have.has(n)) return out.add(n)
   }
-  if (look.frame === "2-post") pick("base", "plate", ["plinth"])
-  else if (look.frame === "wall-cabinet")
+  // A wall cabinet's bottom is its enclosure, whatever its base says.
+  if (look.frame === "wall-cabinet")
     pick("base", "panel", [look.base, "plinth", "plate"])
-  else pick("base", look.base, ["plinth", "plate"])
+  else if (look.base !== "none") {
+    if (look.frame === "2-post") pick("base", "plate", ["plinth", "feet"])
+    // A base the kit hasn't got: one it has, so the frame still stands.
+    else pick("base", look.base, ["plinth", "feet", "casters", "plate"])
+  }
   if (isEnclosed(look.frame)) {
-    pick("top", look.top, ["solid", "vented"])
+    if (look.top !== "none") pick("top", look.top, ["solid", "vented"])
     if (mode === "solid" && look.side_panels) {
       // Split (v1.15) when the kit has both pieces, else the whole panel.
       if (have.has("side:panel:edge") && have.has("side:panel:infill")) {
@@ -418,6 +542,8 @@ export function RackKitShell({
   mode,
   seats = NO_SEATS,
   numbering = null,
+  baseM = RACK_BASE_M,
+  shiftM = 0,
   fallback,
 }: {
   rackId: string
@@ -432,6 +558,10 @@ export function RackKitShell({
   seats?: readonly KitSeat[]
   /** The rack's numbering, to print on the strips; null: blank strips. */
   numbering?: UNumbering | null
+  /** Unit 1's bottom above the floor (world rackBaseM). */
+  baseM?: number
+  /** How far the posts move out each side for a rail wider than 19". */
+  shiftM?: number
   fallback: React.ReactNode
 }) {
   const entry = useDeviceModel(kit.model_url)
@@ -440,7 +570,7 @@ export function RackKitShell({
     () =>
       scene
         ? buildKit(
-            indexKit(scene, kitDepthM(kit)),
+            indexKit(scene, kitSizeM(kit.depths_mm)),
             rackId,
             look,
             units,
@@ -449,10 +579,30 @@ export function RackKitShell({
             d,
             color,
             mode,
-            seats
+            seats,
+            {
+              baseM,
+              shiftM,
+              widthM: kitSizeM(kit.widths_mm),
+              depthM: kitSizeM(kit.depths_mm),
+            }
           )
         : null,
-    [scene, rackId, look, units, w, h, d, color, mode, seats]
+    [
+      scene,
+      kit,
+      rackId,
+      look,
+      units,
+      w,
+      h,
+      d,
+      color,
+      mode,
+      seats,
+      baseM,
+      shiftM,
+    ]
   )
   useEffect(() => () => built?.dispose(), [built])
   if (!built) return <>{fallback}</>
@@ -474,7 +624,12 @@ export function RackKitShell({
         />
       ))}
       {built.labels.length > 0 && (
-        <ULabels strips={built.labels} units={units} numbering={numbering} />
+        <ULabels
+          strips={built.labels}
+          units={units}
+          numbering={numbering}
+          baseM={baseM}
+        />
       )}
       {built.doors.map((door) => (
         <SwingDoor
@@ -525,10 +680,12 @@ function ULabels({
   strips,
   units,
   numbering,
+  baseM,
 }: {
   strips: readonly LabelStrip[]
   units: number
   numbering: UNumbering | null
+  baseM: number
 }) {
   const s0 = strips[0]
   const pitch = mm(PANEL_MM.uPitch)
@@ -575,7 +732,7 @@ function ULabels({
       {strips.map((s, i) => (
         <mesh
           key={i}
-          position={[s.x, RACK_BASE_M + h / 2, s.z]}
+          position={[s.x, baseM + h / 2, s.z]}
           // A plane faces +Z; the front strips face the front (−Z).
           rotation={[0, s.facing === "front" ? Math.PI : 0, 0]}
           raycast={() => null}
@@ -617,10 +774,21 @@ function InstancedPart({
   )
 }
 
-/** The kit's reference depth (m): its first listed depth. */
-function kitDepthM(kit: SceneKit): number | null {
-  const d = kit.depths_mm?.[0]
-  return typeof d === "number" && d > 0 ? d / 1000 : null
+/** A kit's reference size (m): the first of its listed widths or depths. */
+function kitSizeM(sizes: number[] | undefined): number | null {
+  const v = sizes?.[0]
+  return typeof v === "number" && v > 0 ? v / 1000 : null
+}
+
+/** How a kit-built rack fits its room (rack-mesh): unit 1's bottom above
+ * the floor (world rackBaseM), the kit's reference width and depth (its
+ * first listed, m), and how far its posts move out each side for a rail
+ * wider than 19" (m). */
+export interface BuildOptions {
+  baseM?: number
+  widthM?: number | null
+  depthM?: number | null
+  shiftM?: number
 }
 
 /** Everything a kit-built rack draws, and what to dispose with it. */
@@ -630,17 +798,29 @@ export function buildKit(
   look: SceneLook,
   units: number,
   w: number,
-  h: number,
+  /** The rack's height; the kit's frame is built to its top unit
+   * (`opts.baseM` and `units`) instead. */
+  _h: number,
   d: number,
   color: string,
   mode: "solid" | "cutaway",
   /** The 0U channels a device is seated on (world sideStripBoxM): a
    * `pdu:bracket` is drawn behind each, as long as the device. */
-  seats: readonly KitSeat[] = []
+  seats: readonly KitSeat[] = [],
+  opts: BuildOptions = {}
 ) {
-  const target = new THREE.Box3(
-    new THREE.Vector3(-w / 2, 0, -d / 2),
-    new THREE.Vector3(w / 2, h, d / 2)
+  const pitch = mm(PANEL_MM.uPitch)
+  const baseM = opts.baseM ?? RACK_BASE_M
+  const kref = kitReference(index, opts.widthM ?? null, opts.depthM ?? null)
+  const rails = railPlanesM(d, look)
+  const target = kitTarget(
+    kref,
+    look.frame,
+    w,
+    d,
+    rails,
+    baseM + units * pitch,
+    opts.shiftM ?? 0
   )
   const owned: THREE.Material[] = []
   const materials = new Map<string, THREE.Material>()
@@ -757,22 +937,49 @@ export function buildKit(
     }
   }
 
-  const rails = railPlanesM(d, look)
   const seg = index.parts.find((p) => p.name === "post:segment")
   let labels: LabelStrip[] = []
   if (seg) {
-    // The reference post's side inset, kept on every post of this rack.
-    const inset = Math.max(0, seg.box.min.x - index.ref.min.x)
-    const spots = postSpots(look.frame, w, rails, inset)
-    const mats = postSegmentMatrices(seg.box, spots, units)
+    // The posts keep their place beside the rail opening (moved out for a
+    // wider rail), whatever the rack's outer width.
+    const spots = postSpotsAt(
+      look.frame,
+      seg.box.min.x - (opts.shiftM ?? 0),
+      rails
+    )
+    const mats = postSegmentMatrices(seg.box, spots, units, baseM)
     for (const pm of seg.meshes) {
       const material = dressAll(pm.material, null)
       for (const m of mats)
         instance(pm, m.clone().multiply(pm.matrix), material)
     }
+    // Each post's end pieces: the bottom one under unit 1, the top one
+    // over the top unit, as the kit models them beside its segment.
+    const ends: [string, number, number][] = [
+      ["post:bottom", kref.u1, baseM],
+      ["post:top", kref.u1 + kref.units * pitch, baseM + units * pitch],
+    ]
+    for (const [name, refY, y] of ends) {
+      const part = index.parts.find((p) => p.name === name)
+      if (!part || !wanted.has(name)) continue
+      for (const m of postEndMatrices(seg.box, spots, refY, y)) draw(part, m)
+    }
     const label = index.parts.find((p) => p.name === "label:u")
     if (label) labels = labelStrips(label, seg.box, spots, units)
   }
+
+  // The drop from the frame's top corners to its bottom ones, for the
+  // bottom beams.
+  const cornerAt = (name: string) => {
+    const c = index.parts.find((p) => p.name === name)
+    return c
+      ? c.box.clone().applyMatrix4(partMatrix(c.box, kref.box, target, "")).min
+          .y
+      : null
+  }
+  const topC = cornerAt("corner:top")
+  const botC = cornerAt("corner:bottom")
+  const down = topC != null && botC != null ? botC - topC : null
 
   // Parts modelled once for both sides: the other is the mirror image.
   const sides = (name: string) =>
@@ -781,13 +988,15 @@ export function buildKit(
   // about the panel's height (its infill's).
   const infill = index.parts.find((p) => p.name === "side:panel:infill")
   for (const part of index.parts) {
-    if (!wanted.has(part.name)) continue
-    const m = partMatrix(part.box, index.ref, target, part.stretch)
-    let copies = [m]
+    if (!wanted.has(part.name) || part.name.startsWith("post:")) continue
+    const m = partMatrix(part.box, kref.box, target, part.stretch)
+    let copies = memberCopies(part.name, target, down, look.frame).map((c) =>
+      c.clone().multiply(m)
+    )
     if (part.name === "side:panel:edge" && infill) {
       const panel = infill.box
         .clone()
-        .applyMatrix4(partMatrix(infill.box, index.ref, target, infill.stretch))
+        .applyMatrix4(partMatrix(infill.box, kref.box, target, infill.stretch))
         .union(part.box.clone().applyMatrix4(m))
       copies.push(mirrorAbout(1, (panel.min.y + panel.max.y) / 2).multiply(m))
     }
@@ -803,7 +1012,7 @@ export function buildKit(
       (p) => p.name === "pdu:bracket" && p.channel === seat.name
     )
     if (!bracket) continue
-    const m = partMatrix(bracket.box, index.ref, target, "")
+    const m = partMatrix(bracket.box, kref.box, target, "")
     const at = bracket.box.clone().applyMatrix4(m)
     const bh = at.max.y - at.min.y
     if (bh <= 1e-6 || seat.h <= 0) continue
@@ -827,7 +1036,7 @@ export function buildKit(
       if (!leaf) continue
       // The whole leaf at this rack's size, as modelled (hinge side and
       // all): where its height and depth come from.
-      const full = partMatrix(leaf.ref, index.ref, target, "xz")
+      const full = partMatrix(leaf.ref, kref.box, target, "xz")
       const mapped = leaf.ref.clone().applyMatrix4(full)
       const width = mapped.max.x - mapped.min.x
       // The modelled hinge side (rack frame x), from its hinge empty; as
@@ -870,12 +1079,15 @@ export function buildKit(
         }
         // Hardware keeps its size and its distance to the leaf's nearer
         // edges (the handle at the free edge, hinges at the hinge edge).
-        for (const hw of hardware)
-          draw(
-            hw,
-            turn.clone().multiply(partMatrix(hw.box, leaf.ref, box, "")),
-            draws
-          )
+        // The kit models one hinge, low on the leaf: a second as high.
+        for (const hw of hardware) {
+          const m = partMatrix(hw.box, leaf.ref, box, "")
+          const at =
+            hw.name === "door:hinge"
+              ? [m, mirrorAbout(1, (box.min.y + box.max.y) / 2).multiply(m)]
+              : [m]
+          for (const c of at) draw(hw, turn.clone().multiply(c), draws)
+        }
         const placed = box.clone().applyMatrix4(turn)
         doors.push({
           id: doorKey(rackId, side, i),

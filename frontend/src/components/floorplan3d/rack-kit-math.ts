@@ -39,11 +39,27 @@ export interface SceneKit {
     }
   >
   colours: Record<string, string>
+  /** Where the kit's reference rack has its units and rails
+   * (api.rack_kits.kit_fit); null for a kit imported before Danbyte read
+   * it, which stands on RACK_BASE_M. */
+  fit?: KitFit | null
   /** The kit's sizes; the first width and depth are its reference. */
   widths_mm?: number[]
   depths_mm?: number[]
   model_url: string | null
   far_url: string | null
+}
+
+/** api.rack_kits.kit_fit: the reference rack's unit 1 above the floor,
+ * its front rail behind the front, the frame above the top unit (mm), its
+ * units, and its post's outer side (|x|) and depth behind the rail face. */
+export interface KitFit {
+  u1_mm: number
+  rail_inset_mm: number
+  cap_mm: number
+  ref_u: number
+  post_outer_mm?: number
+  post_depth_mm?: number
 }
 
 /** A rack's resolved Look as the scene carries it (api.scene_geo). */
@@ -54,8 +70,8 @@ export interface SceneLook {
   rear_door: RackDoor
   hinge: "left" | "right"
   side_panels: boolean
-  top: "vented" | "solid" | "fans" | "brush"
-  base: "plinth" | "casters" | "feet"
+  top: "vented" | "solid" | "fans" | "brush" | "none"
+  base: "plinth" | "casters" | "feet" | "plate" | "none"
   /** Hex. */
   colour: string
   kit: SceneKit | null
@@ -283,7 +299,9 @@ export function postSpots(
 export function postSegmentMatrices(
   seg: THREE.Box3,
   spots: readonly PostSpot[],
-  units: number
+  units: number,
+  /** Unit 1's bottom above the floor (world rackBaseM). */
+  baseM: number = RACK_BASE_M
 ): THREE.Matrix4[] {
   const pitch = mm(PANEL_MM.uPitch)
   // The segment's outer side and rail face, as modelled (a left post).
@@ -298,7 +316,7 @@ export function postSegmentMatrices(
   for (const s of spots) {
     for (let u = 0; u < units; u++) {
       const m = new THREE.Matrix4()
-        .makeTranslation(s.x, RACK_BASE_M + u * pitch, s.z)
+        .makeTranslation(s.x, baseM + u * pitch, s.z)
         .multiply(
           new THREE.Matrix4().makeScale(
             s.mirrorX ? -1 : 1,
@@ -311,6 +329,48 @@ export function postSegmentMatrices(
     }
   }
   return out
+}
+
+/** The posts of a kit-built rack: the left ones' outer side at `outerX`
+ * (negative, as the kit models its post), the right ones mirrored, on the
+ * front rail and - but on a 2-post frame - the rear one. */
+export function postSpotsAt(
+  frame: RackFrame,
+  outerX: number,
+  rails: { front: number; rear: number }
+): PostSpot[] {
+  const front: PostSpot[] = [
+    { x: outerX, z: rails.front, mirrorX: false, mirrorZ: false },
+    { x: -outerX, z: rails.front, mirrorX: true, mirrorZ: false },
+  ]
+  if (frame === "2-post") return front
+  return [
+    ...front,
+    { x: outerX, z: rails.rear, mirrorX: false, mirrorZ: true },
+    { x: -outerX, z: rails.rear, mirrorX: true, mirrorZ: true },
+  ]
+}
+
+/** A post's end piece (`post:top`, `post:bottom`) at every post spot: kept
+ * where the kit models it beside its segment (x, z from the segment's
+ * outer side and rail face), `refY` (the end it belongs to in the
+ * reference rack) moved to `y`. Mirrored as the spot's post. */
+export function postEndMatrices(
+  seg: THREE.Box3,
+  spots: readonly PostSpot[],
+  refY: number,
+  y: number
+): THREE.Matrix4[] {
+  return spots.map((s) =>
+    new THREE.Matrix4()
+      .makeTranslation(s.x, y, s.z)
+      .multiply(
+        new THREE.Matrix4().makeScale(s.mirrorX ? -1 : 1, 1, s.mirrorZ ? -1 : 1)
+      )
+      .multiply(
+        new THREE.Matrix4().makeTranslation(-seg.min.x, -refY, -seg.min.z)
+      )
+  )
 }
 
 // ── blanking fill ───────────────────────────────────────────────────────────

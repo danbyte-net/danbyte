@@ -19,7 +19,11 @@ import type { KitSeat, UNumbering } from "./rack-kit"
 import { LEGACY_LOOK } from "./rack-kit-math"
 import type { SceneLook } from "./rack-kit-math"
 import { BlankingFill, RackShell } from "./rack-shell"
+import { PANEL_MM } from "@/lib/faceplate-geometry"
+
 import {
+  mm,
+  rackBaseM,
   rackOpeningM,
   TRANSPARENT_ORDER,
   tileWorldPose,
@@ -475,6 +479,8 @@ export function RackMesh({
             mode={xray ? "cutaway" : shellMode}
             seats={seats}
             numbering={showOverlays ? numbering : null}
+            baseM={rackBaseM(rack)}
+            shiftM={(rackOpeningM(rack) - mm(PANEL_MM.opening)) / 2}
           />
           {look.blanking_fill && blanksShown && (
             <BlankingFill
@@ -818,6 +824,8 @@ function RackBody({
   mode,
   seats,
   numbering,
+  baseM,
+  shiftM,
 }: {
   rackId: string
   look: SceneLook
@@ -829,6 +837,8 @@ function RackBody({
   mode: "solid" | "cutaway"
   seats: readonly KitSeat[]
   numbering: UNumbering | null
+  baseM: number
+  shiftM: number
 }) {
   const own = (
     <RackShell
@@ -855,6 +865,8 @@ function RackBody({
       mode={mode}
       seats={seats}
       numbering={numbering}
+      baseM={baseM}
+      shiftM={shiftM}
       fallback={own}
     />
   )
