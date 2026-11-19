@@ -299,6 +299,124 @@ class AzureKeyVaultSecretStoreTests(TestCase):
             self.store.delete(self.tid, "csr/abc")
 
 
+class AzurePurgeProtectedVaultTests(TestCase):
+    """A vault with purge protection keeps a deleted secret for its whole
+    retention period and refuses a write to that name with 409; a cleared
+    key is recovered and overwritten instead (#536). A mock that answers as
+    Microsoft documents it - no live vault."""
+
+    DELETED = {"error": {
+        "code": "Conflict",
+        "message": "Secret x is currently in a deleted but recoverable state, and its "
+                   "name cannot be reused; in this state, the secret can only be "
+                   "recovered or purged.",
+        "innererror": {"code": "ObjectIsDeletedButRecoverable"}}}
+    BUSY = {"error": {"code": "Conflict", "message": "Secret x is currently being deleted.",
+                      "innererror": {"code": "ObjectIsBeingDeleted"}}}
+
+    def setUp(self):
+        self.store = AzureKeyVaultSecretStore(
+            "https://kv-danbyte.vault.azure.net/", "dir-id", "client-id", "client-secret")
+        for p in (mock.patch.object(AzureKeyVaultSecretStore, "_access_token",
+                                    return_value="tok"),
+                  mock.patch("monitoring.secret_store_azure._sleep")):
+            p.start()
+            self.addCleanup(p.stop)
+        self.tid = "11111111-1111-1111-1111-111111111111"
+        self.name = self.store._name(self.tid, "ipsec-profiles/abc")
+
+    def _vault(self, purge_protected=True, recover_lag=1):
+        """A tiny Key Vault: live and deleted secrets, purge protection, and
+        a recovery that takes ``recover_lag`` more requests to finish."""
+        state = {"live": {}, "deleted": {}, "recovering": 0}
+
+        def request(method, url, **kw):
+            path = url.split("vault.azure.net/", 1)[1]
+            if state["recovering"]:
+                state["recovering"] -= 1
+                if not state["recovering"]:
+                    state["live"].update(state.pop("pending"))
+            if method == "PUT" and path.startswith("secrets/"):
+                n = path.split("/", 1)[1]
+                if n in state["deleted"]:
+                    return _resp(409, self.DELETED, text="deleted but recoverable")
+                if state["recovering"]:
+                    return _resp(409, {"error": {"code": "Conflict", "innererror": {
+                        "code": "ObjectIsBeingRecovered"}}})
+                state["live"][n] = kw["json"]["value"]
+                return _resp(200)
+            if method == "GET" and path.startswith("secrets/"):
+                n = path.split("/", 1)[1]
+                return _resp(200, {"value": state["live"][n]}) if n in state["live"] \
+                    else _resp(404)
+            if method == "DELETE" and path.startswith("secrets/"):
+                n = path.split("/", 1)[1]
+                if n not in state["live"]:
+                    return _resp(404)
+                state["deleted"][n] = state["live"].pop(n)
+                return _resp(200)
+            if method == "DELETE" and path.startswith("deletedsecrets/"):
+                n = path.split("/", 1)[1]
+                if purge_protected:
+                    return _resp(403, text="purge protection")
+                state["deleted"].pop(n, None)
+                return _resp(204)
+            if method == "POST" and path.endswith("/recover"):
+                n = path.split("/")[1]
+                if n not in state["deleted"]:
+                    return _resp(404)
+                state["pending"] = {n: state["deleted"].pop(n)}
+                state["recovering"] = recover_lag
+                return _resp(200)
+            raise AssertionError((method, path))
+
+        return state, request
+
+    def test_a_cleared_key_can_be_set_again(self):
+        state, request = self._vault()
+        with mock.patch("monitoring.secret_store_azure.requests.request",
+                        side_effect=request) as req:
+            self.store.put(self.tid, "ipsec-profiles/abc", {"psk": "Psk-one-1"})
+            self.store.delete(self.tid, "ipsec-profiles/abc")
+            self.assertIn(self.name, state["deleted"])
+            self.store.put(self.tid, "ipsec-profiles/abc", {"psk": "Psk-two-2"})
+            self.assertEqual(self.store.get(self.tid, "ipsec-profiles/abc"), {"psk": "Psk-two-2"})
+        posts = [c for c in req.call_args_list if c[0][0] == "POST"]
+        self.assertEqual(len(posts), 1)
+        self.assertTrue(posts[0][0][1].endswith(f"/deletedsecrets/{self.name}/recover"))
+        # The secret value is never in a URL.
+        for c in req.call_args_list:
+            self.assertNotIn("Psk-", c[0][1])
+
+    def test_without_purge_protection_nothing_is_recovered(self):
+        state, request = self._vault(purge_protected=False)
+        with mock.patch("monitoring.secret_store_azure.requests.request",
+                        side_effect=request) as req:
+            self.store.put(self.tid, "ipsec-profiles/abc", {"psk": "a"})
+            self.store.delete(self.tid, "ipsec-profiles/abc")
+            self.store.put(self.tid, "ipsec-profiles/abc", {"psk": "b"})
+        self.assertFalse([c for c in req.call_args_list if c[0][0] == "POST"])
+        self.assertEqual(state["live"][self.name], '{"psk": "b"}')
+
+    def test_a_purge_in_progress_is_waited_for(self):
+        answers = [_resp(409, self.BUSY), _resp(409, self.BUSY), _resp(200)]
+        with mock.patch("monitoring.secret_store_azure.requests.request",
+                        side_effect=answers) as req:
+            self.store.put(self.tid, "ipsec-profiles/abc", {"psk": "a"})
+        self.assertEqual([c[0][0] for c in req.call_args_list], ["PUT", "PUT", "PUT"])
+
+    def test_another_conflict_or_a_stuck_name_still_fails(self):
+        with mock.patch("monitoring.secret_store_azure.requests.request",
+                        return_value=_resp(409, {"error": {"code": "Conflict"}}, text="other")):
+            with self.assertRaises(SecretStoreError):
+                self.store.put(self.tid, "ipsec-profiles/abc", {"psk": "a"})
+        with mock.patch("monitoring.secret_store_azure.requests.request",
+                        return_value=_resp(409, self.BUSY, text="busy")) as req:
+            with self.assertRaises(SecretStoreError):
+                self.store.put(self.tid, "ipsec-profiles/abc", {"psk": "a"})
+        self.assertEqual(len(req.call_args_list), 9)
+
+
 class AzureTokenCacheTests(TestCase):
     """One Entra ID token per expiry period, across store instances (#510)."""
 

@@ -78,6 +78,33 @@ def https_url_problem(value: str, label: str) -> str:
     return ""
 
 
+#: A write refused while its name's deleted secret is recovered or purged
+#: is retried this many times, ``WRITE_BACKOFF`` seconds apart and longer.
+WRITE_RETRIES = 8
+WRITE_BACKOFF = 0.5
+_sleep = time.sleep
+
+
+def _conflict(r) -> str | None:
+    """Why Key Vault refused a write with 409: ``"deleted"`` (the name's
+    secret is deleted but recoverable), ``"busy"`` (being deleted, purged or
+    recovered), or ``None`` for any other answer."""
+    if r.status_code != 409:
+        return None
+    try:
+        err = (r.json() or {}).get("error") or {}
+    except ValueError:
+        err = {}
+    inner = (err.get("innererror") or {}).get("code", "") if isinstance(err, dict) else ""
+    text = f"{inner} {err.get('message', '') if isinstance(err, dict) else ''} {r.text or ''}"
+    text = text.lower()
+    if "objectisdeletedbutrecoverable" in text or "deleted but recoverable" in text:
+        return "deleted"
+    if "objectisbeing" in text or "currently being" in text:
+        return "busy"
+    return None
+
+
 def _safe(text: str) -> str:
     out = "".join(c if (c.isascii() and c.isalnum()) else "-" for c in text)
     while "--" in out:
@@ -246,14 +273,41 @@ class AzureKeyVaultSecretStore:
 
     # ─── the SecretStore protocol ───────────────────────────────────────
     def put(self, tenant_id, ref: str, value: dict) -> None:
-        r = self._req(
-            "PUT",
-            f"secrets/{self._name(tenant_id, ref)}",
-            json={"value": json.dumps(value or {})},
+        """Write ``value`` under the ref's name.
+
+        A name whose secret was deleted is refused (409) while Key Vault
+        keeps the deleted secret: under purge protection, for the whole
+        retention period. The deleted secret is then recovered and the new
+        value written over it as its next version (#536), so a key cleared
+        on a purge-protected vault can be set again. Recovery and a purge in
+        progress both finish in seconds; the write is retried meanwhile."""
+        name = self._name(tenant_id, ref)
+        body = {"value": json.dumps(value or {})}
+        recovered = False
+        for attempt in range(WRITE_RETRIES + 1):
+            r = self._req("PUT", f"secrets/{name}", json=body)
+            if r.status_code == 200:
+                return
+            state = _conflict(r)
+            if state is None or attempt == WRITE_RETRIES:
+                break
+            if state == "deleted" and not recovered:
+                self._recover(name)
+                recovered = True
+            _sleep(min(WRITE_BACKOFF * (attempt + 1), 2.0))
+        raise SecretStoreError(
+            f"Key Vault write failed ({r.status_code}): {r.text[:200]}"
         )
-        if r.status_code != 200:
+
+    def _recover(self, name: str) -> None:
+        """Recover the deleted secret ``name`` (``POST deletedsecrets/{name}/
+        recover``). 404: nothing to recover - a purge is under way, and the
+        write goes through once it has finished. 409: a recovery already
+        running."""
+        r = self._req("POST", f"deletedsecrets/{name}/recover")
+        if r.status_code not in (200, 404, 409):
             raise SecretStoreError(
-                f"Key Vault write failed ({r.status_code}): {r.text[:200]}"
+                f"Key Vault recover failed ({r.status_code}): {r.text[:200]}"
             )
 
     def get(self, tenant_id, ref: str) -> dict | None:

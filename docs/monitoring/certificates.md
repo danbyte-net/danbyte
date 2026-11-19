@@ -337,12 +337,20 @@ enables under **Settings → Security → Secret store**:
   values go to the other. Saving refuses `http://`, and a value saved before
   that check leaves the store disabled rather than used.
 
-    The app registration needs **Get**, **Set**, **Delete**, **Purge** and **List** on
-    secrets - an access policy, or the *Key Vault Secrets Officer* role on an
-    RBAC vault. Deleting drops the secret and then purges it, so a revoked
-    request's key really is gone; on a vault with **purge protection** the purge
-    is refused and the secret stays soft-deleted until its retention expires,
-    which is the vault's policy, not an error.
+    The app registration needs **Get**, **Set**, **Delete**, **Purge**,
+    **Recover** and **List** on secrets - an access policy, or the *Key Vault
+    Secrets Officer* role on an RBAC vault. Deleting drops the secret and then
+    purges it, so a revoked request's key really is gone; on a vault with
+    **purge protection** the purge is refused and the secret stays soft-deleted
+    until its retention expires, which is the vault's policy, not an error.
+
+    Key Vault refuses a write to the name of a soft-deleted secret. When a
+    value is set again under such a name - a PSK cleared and later set on an
+    IPsec profile, wireless LAN or FHRP group - Danbyte recovers the deleted
+    secret and writes the new value as its next version, waiting a few
+    seconds for the recovery (or a purge still in progress) to finish. The
+    old value stays in that secret's version history until the secret is
+    deleted again.
 
     Danbyte names its own secrets `danbyte-<tenant>-<ref>-<digest>`, because Key
     Vault names allow only letters, digits and hyphens. A device credential that
