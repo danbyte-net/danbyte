@@ -35,6 +35,9 @@ class BeatTask:
     #: The RQ job, called with the connection id as a string.
     job: Callable
     timeout: int = 300
+    #: ``(connection id, queue=, timeout=) -> bool`` when the system queues the
+    #: job itself (to de-duplicate it); False means one was already queued.
+    enqueue: Callable | None = None
 
 
 @dataclass(frozen=True)
@@ -95,9 +98,14 @@ def enqueue_due(connections, integration_key: str, tasks, *, queue, now) -> dict
         if not integration_enabled(conn.tenant, integration_key):
             continue
         for task in tasks:
-            if task.due(conn, now):
+            if not task.due(conn, now):
+                continue
+            if task.enqueue is not None:
+                if not task.enqueue(str(conn.id), queue=queue, timeout=task.timeout):
+                    continue
+            else:
                 queue.enqueue(task.job, str(conn.id), job_timeout=task.timeout)
-                counts[task.counter] += 1
+            counts[task.counter] += 1
     return counts
 
 

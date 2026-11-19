@@ -104,6 +104,7 @@ class _Base(TestCase):
         c = mock.Mock()
         c.maintenances.return_value = {str(i): {"maintenanceid": str(i)} for i in existing}
         c.create_maintenance.return_value = "77"
+        c.maintenances_by_name.return_value = {}
         return c
 
 
@@ -162,7 +163,9 @@ class ReconcileTests(_Base):
         maintenance.reconcile(self.conn, client=self.fake())
         c = self.fake(existing=["77"])
         counts = maintenance.reconcile(self.conn, client=c)
-        self.assertEqual(counts, {"created": 0, "updated": 0, "deleted": 0, "failed": 0})
+        self.assertEqual(
+            counts, {"created": 0, "updated": 0, "deleted": 0, "adopted": 0, "failed": 0}
+        )
         c.create_maintenance.assert_not_called()
         c.update_maintenance.assert_not_called()
 
@@ -436,3 +439,304 @@ class ApiTests(_Base):
         self.assertEqual(r.status_code, 200, r.content)
         self.conn.refresh_from_db()
         self.assertFalse(self.conn.sync_maintenance)
+
+
+class HealTests(_Base):
+    """A period Zabbix holds but Danbyte lost the id of is found by name."""
+
+    def stuck_row(self, ev, error='Maintenance "x" already exists.'):
+        return ZabbixMaintenance.objects.create(
+            tenant=self.tenant, connection=self.conn, event=ev, maintenanceid="",
+            name=maintenance.period_name(ev), starts_at=ev.starts_at, ends_at=ev.ends_at,
+            hostids=["5"], last_error=error,
+        )
+
+    def test_already_exists_on_create_adopts_the_period(self):
+        ev = self.event(self.device(hostid="5"))
+        name = maintenance.period_name(ev)
+        c = self.fake()
+        c.create_maintenance.side_effect = ZabbixError(f'Maintenance "{name}" already exists.')
+        c.maintenances_by_name.side_effect = [{}, {name: {"maintenanceid": "90", "name": name}}]
+        counts = maintenance.reconcile(self.conn, client=c)
+        self.assertEqual((counts["adopted"], counts["created"], counts["failed"]), (1, 0, 0))
+        mid, payload = c.update_maintenance.call_args.args
+        self.assertEqual(mid, "90")
+        self.assertEqual(payload["name"], name)
+        row = ZabbixMaintenance.objects.get(event=ev)
+        self.assertEqual((row.maintenanceid, row.last_error), ("90", ""))
+
+    def test_a_period_of_that_name_is_adopted_before_any_create(self):
+        ev = self.event(self.device(hostid="5"))
+        name = maintenance.period_name(ev)
+        c = self.fake()
+        c.maintenances_by_name.return_value = {name: {"maintenanceid": "90", "name": name}}
+        counts = maintenance.reconcile(self.conn, client=c)
+        self.assertEqual(counts["adopted"], 1)
+        c.create_maintenance.assert_not_called()
+        c.update_maintenance.assert_called_once()
+        self.assertEqual(ZabbixMaintenance.objects.get(event=ev).maintenanceid, "90")
+
+    def test_a_row_that_lost_its_id_heals_on_the_next_pass(self):
+        ev = self.event(self.device(hostid="5"))
+        self.stuck_row(ev)
+        name = maintenance.period_name(ev)
+        c = self.fake()
+        c.maintenances_by_name.return_value = {name: {"maintenanceid": "91", "name": name}}
+        counts = maintenance.reconcile(self.conn, client=c)
+        self.assertEqual((counts["adopted"], counts["failed"]), (1, 0))
+        self.assertIn(name, c.maintenances_by_name.call_args.args[0])
+        c.create_maintenance.assert_not_called()
+        self.assertEqual(c.update_maintenance.call_args.args[0], "91")
+        row = ZabbixMaintenance.objects.get(event=ev)
+        self.assertEqual((row.maintenanceid, row.last_error), ("91", ""))
+        # Healed: the pass after writes nothing.
+        c2 = self.fake(existing=["91"])
+        counts = maintenance.reconcile(self.conn, client=c2)
+        self.assertEqual(sum(counts.values()), 0)
+
+    def test_a_stuck_period_of_an_ended_event_is_taken_out(self):
+        ev = self.event(self.device(hostid="5"))
+        self.stuck_row(ev)
+        name = maintenance.period_name(ev)
+        ev.status = self.status("completed")
+        ev.save(update_fields=["status"])
+        ev.sync_silence()
+        c = self.fake()
+        c.maintenances_by_name.return_value = {name: {"maintenanceid": "91", "name": name}}
+        counts = maintenance.reconcile(self.conn, client=c)
+        self.assertEqual((counts["adopted"], counts["deleted"]), (1, 1))
+        c.delete_maintenances.assert_called_once_with(["91"])
+        self.assertFalse(ZabbixMaintenance.objects.exists())
+
+    def test_a_failed_create_does_not_block_the_next_pass(self):
+        ev = self.event(self.device(hostid="5"))
+        c = self.fake()
+        c.create_maintenance.side_effect = ZabbixError("Connection reset.")
+        self.assertEqual(maintenance.reconcile(self.conn, client=c)["failed"], 1)
+        c = self.fake()
+        counts = maintenance.reconcile(self.conn, client=c)
+        self.assertEqual(counts["created"], 1)
+        self.assertEqual(ZabbixMaintenance.objects.get(event=ev).maintenanceid, "77")
+
+    def test_a_create_without_an_id_is_a_failure_not_a_link(self):
+        self.event(self.device(hostid="5"))
+        c = self.fake()
+        c.create_maintenance.return_value = ""
+        counts = maintenance.reconcile(self.conn, client=c)
+        self.assertEqual((counts["created"], counts["failed"]), (0, 1))
+
+    def test_a_dry_run_writes_nothing_and_reports_the_plan(self):
+        ev = self.event(self.device(hostid="5"))
+        self.stuck_row(ev)
+        name = maintenance.period_name(ev)
+        c = self.fake()
+        c.maintenances_by_name.return_value = {name: {"maintenanceid": "91", "name": name}}
+        report = []
+        counts = maintenance.reconcile(self.conn, client=c, dry_run=True, report=report)
+        self.assertEqual(counts["adopted"], 1)
+        self.assertEqual(report, [("adopted", name, "91")])
+        c.update_maintenance.assert_not_called()
+        c.create_maintenance.assert_not_called()
+        self.assertEqual(ZabbixMaintenance.objects.get().maintenanceid, "")
+        self.conn.refresh_from_db()
+        self.assertIsNone(self.conn.last_maintenance_sync_at)
+
+
+class SinglePassTests(_Base):
+    """One pass per connection, and one queued pass at most."""
+
+    def hold_lock(self):
+        """Take the connection's lock from another database session, the way
+        a worker would; returns the release callable."""
+        import threading
+
+        from django.db import connections
+
+        taken, release = threading.Event(), threading.Event()
+
+        def run():
+            with maintenance.connection_lock(self.conn.pk) as got:
+                assert got
+                taken.set()
+                release.wait(10)
+            connections.close_all()
+
+        t = threading.Thread(target=run)
+        t.start()
+        taken.wait(10)
+
+        def done():
+            release.set()
+            t.join(10)
+
+        return done
+
+    def test_a_pass_does_not_start_beside_a_running_one(self):
+        self.event(self.device(hostid="5"))
+        done = self.hold_lock()
+        try:
+            c = self.fake()
+            self.assertIsNone(maintenance.reconcile_locked(self.conn, client=c))
+            c.create_maintenance.assert_not_called()
+            self.assertTrue(maintenance.is_running(self.conn.pk))
+        finally:
+            done()
+        self.assertFalse(maintenance.is_running(self.conn.pk))
+        self.assertEqual(maintenance.reconcile_locked(self.conn, client=c)["created"], 1)
+
+    def test_the_queued_job_requeues_itself_behind_a_running_pass(self):
+        done = self.hold_lock()
+        try:
+            with mock.patch.object(maintenance, "LOCK_WAIT", 0), \
+                    mock.patch("django_rq.get_queue") as gq:
+                out = maintenance.run_maintenance_sync(str(self.conn.id))
+        finally:
+            done()
+        self.assertEqual(out, {"skipped": "already running"})
+        gq.return_value.connection.delete.assert_called_once()
+        gq.return_value.enqueue.assert_called_once()
+
+    def test_a_second_enqueue_while_one_is_queued_queues_nothing(self):
+        queue = mock.Mock()
+        queue.connection.set.side_effect = [True, None]
+        self.assertTrue(maintenance.enqueue_maintenance_sync(self.conn.id, queue=queue))
+        self.assertFalse(maintenance.enqueue_maintenance_sync(self.conn.id, queue=queue))
+        queue.enqueue.assert_called_once()
+        key, _v = queue.connection.set.call_args.args
+        self.assertEqual(key, f"zabbix:maintenance-queued:{self.conn.id}")
+        self.assertTrue(queue.connection.set.call_args.kwargs["nx"])
+
+    def test_the_beat_does_not_queue_beside_a_queued_pass(self):
+        self.conn.read_host_status = False
+        self.conn.save(update_fields=["read_host_status"])
+        with mock.patch("django_rq.get_queue") as gq:
+            gq.return_value.connection.set.return_value = None
+            out = enqueue_due_syncs()
+        self.assertEqual(out["maintenance"], 0)
+        gq.return_value.enqueue.assert_not_called()
+
+
+class RepairCommandTests(_Base):
+    def run_cmd(self, client, *args):
+        from io import StringIO
+
+        from django.core.management import call_command
+
+        out = StringIO()
+        with mock.patch.object(maintenance, "_client", return_value=client):
+            call_command("zabbix_maintenance_repair", *args, stdout=out)
+        return out.getvalue()
+
+    def test_dry_run_by_default_then_apply(self):
+        ev = self.event(self.device(hostid="5"))
+        ZabbixMaintenance.objects.create(
+            tenant=self.tenant, connection=self.conn, event=ev, maintenanceid="",
+            name=maintenance.period_name(ev), starts_at=ev.starts_at, ends_at=ev.ends_at,
+            last_error="already exists",
+        )
+        name = maintenance.period_name(ev)
+        c = self.fake()
+        c.maintenances_by_name.return_value = {name: {"maintenanceid": "91", "name": name}}
+        out = self.run_cmd(c)
+        self.assertIn("dry run: zbx", out)
+        self.assertIn("1 adopted", out)
+        self.assertIn("Nothing written", out)
+        c.update_maintenance.assert_not_called()
+        self.assertEqual(ZabbixMaintenance.objects.get().maintenanceid, "")
+
+        out = self.run_cmd(c, "--apply", "--connection", "zbx")
+        self.assertIn("1 adopted", out)
+        self.assertNotIn("dry run", out)
+        self.assertEqual(ZabbixMaintenance.objects.get().maintenanceid, "91")
+
+    def test_an_unknown_connection_is_an_error(self):
+        from django.core.management.base import CommandError
+
+        with self.assertRaises(CommandError):
+            self.run_cmd(self.fake(), "--connection", "nope")
+
+
+class SyncActionTests(_Base):
+    def login(self, user):
+        self.client.force_login(user)
+        sess = self.client.session
+        sess["current_tenant_id"] = str(self.tenant.id)
+        sess.save()
+
+    def url(self):
+        return f"/api/zabbix/connections/{self.conn.id}/sync-maintenance/"
+
+    def admin(self):
+        from django.contrib.auth import get_user_model
+
+        return get_user_model().objects.create_superuser("root", "r@x.io", "pw")
+
+    def test_the_button_runs_a_pass_and_reports_adopted(self):
+        self.login(self.admin())
+        c = self.fake()
+        with mock.patch.object(maintenance, "_client", return_value=c), \
+                mock.patch.object(maintenance, "is_queued", return_value=False):
+            r = self.client.post(self.url())
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["adopted"], 0)
+
+    def test_the_button_while_a_pass_is_queued_starts_nothing(self):
+        self.login(self.admin())
+        self.event(self.device(hostid="5"))
+        c = self.fake()
+        with mock.patch("django_rq.get_queue") as gq, \
+                mock.patch.object(maintenance, "_client", return_value=c):
+            gq.return_value.connection.exists.return_value = 1
+            r = self.client.post(self.url())
+        self.assertEqual(r.status_code, 202, r.content)
+        self.assertEqual(r.json()["busy"], "queued")
+        c.maintenances.assert_not_called()
+
+    def test_the_button_while_a_pass_is_running_starts_nothing(self):
+        self.login(self.admin())
+        self.event(self.device(hostid="5"))
+        done = SinglePassTests.hold_lock(self)
+        c = self.fake()
+        try:
+            with mock.patch.object(maintenance, "is_queued", return_value=False), \
+                    mock.patch.object(maintenance, "_client", return_value=c):
+                r = self.client.post(self.url())
+        finally:
+            done()
+        self.assertEqual(r.status_code, 202, r.content)
+        self.assertEqual(r.json()["busy"], "running")
+        c.create_maintenance.assert_not_called()
+
+    def test_a_viewer_cannot_run_it(self):
+        from django.contrib.auth import get_user_model
+
+        from auth_api.models import ObjectPermission, UserProfile
+
+        viewer = get_user_model().objects.create_user("v", password="x")
+        UserProfile.objects.create(user=viewer, role="custom").tenants.add(self.tenant)
+        perm = ObjectPermission.objects.create(
+            name="v-zbx", object_types=["zabbixconnection"], actions=["view"]
+        )
+        perm.users.add(viewer)
+        perm.tenants.add(self.tenant)
+        self.login(viewer)
+        c = self.fake()
+        with mock.patch.object(maintenance, "_client", return_value=c):
+            self.assertEqual(self.client.get(f"/api/zabbix/connections/{self.conn.id}/")
+                             .status_code, 200)
+            r = self.client.post(self.url())
+        self.assertEqual(r.status_code, 403, r.content)
+        c.maintenances.assert_not_called()
+
+    def test_another_tenants_connection_is_not_found(self):
+        org = Organization.objects.create(name="O2", slug="o2")
+        other = Tenant.objects.create(org=org, name="T2", slug="t2")
+        IntegrationSettings.objects.update_or_create(
+            tenant=other, defaults={"zabbix_enabled": True}
+        )
+        user = self.admin()
+        self.client.force_login(user)
+        sess = self.client.session
+        sess["current_tenant_id"] = str(other.id)
+        sess.save()
+        self.assertEqual(self.client.post(self.url()).status_code, 404)

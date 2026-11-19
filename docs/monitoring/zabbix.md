@@ -452,6 +452,38 @@ somebody adjusted by hand in Zabbix stands until the Danbyte window changes.
 One deleted by hand is noticed and written again, because the window still
 wants it. And Danbyte removes only periods it created - never one it found.
 
+A period's name is the event's name plus the first eight characters of its id
+(`Splice · 3f2a9c1e`), and Zabbix keeps names unique. That name is how a pass
+recognises its own period when the id never reached Danbyte - a lost
+response, a refused write, a pass that raced another. Before creating, the
+pass looks the name up; if Zabbix already has it, the period is **adopted**:
+Danbyte records its id and updates it to the window, and when the window is
+gone it takes that period out like any other. A refused create leaves the row
+in the table as *Failed* with Zabbix's words, and never blocks the next pass.
+
+One pass at a time per connection. The pass holds a database lock on the
+connection, so the timer, a job queued by an edit and the **Sync** button
+never write side by side; Postgres releases the lock if a worker dies
+mid-pass. Saving events queues at most one pass while one is waiting, and
+**Sync** while a pass is queued or running starts nothing and says
+*Already queued* or *Already running*. Its result counts what it adopted,
+created, updated and removed.
+
+#### Repairing maintenance links
+
+Periods whose id Danbyte lost heal on the next ordinary pass. To see what that
+pass would do first, or to run it from a shell:
+
+```bash
+manage.py zabbix_maintenance_repair              # dry run: prints the plan, writes nothing
+manage.py zabbix_maintenance_repair --apply      # do it
+manage.py zabbix_maintenance_repair --connection <id or name> --apply
+```
+
+Each line is one period - adopted, created, updated, deleted or failed - then a
+summary per connection. A window that has already ended takes its stuck
+period out: adopted, then deleted.
+
 ### Acknowledgements
 
 With **Write acknowledgements** on, acknowledging a Danbyte alert that Zabbix

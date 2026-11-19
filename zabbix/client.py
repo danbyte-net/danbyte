@@ -382,6 +382,19 @@ class ZabbixClient:
         }) or []
         return {r["maintenanceid"]: r for r in rows}
 
+    def maintenances_by_name(self, names) -> dict:
+        """name -> period for the names that exist. Names are unique in
+        Zabbix, and Danbyte's carry the event id, so a name finds the period
+        a pass wrote even when the id never reached Danbyte."""
+        wanted = sorted({n for n in names if n})
+        if not wanted:
+            return {}
+        rows = self.call("maintenance.get", {
+            "output": ["maintenanceid", "name", "active_since", "active_till"],
+            "filter": {"name": wanted},
+        }) or []
+        return {r["name"]: r for r in rows if r.get("name") in wanted}
+
     def create_maintenance(self, payload: dict) -> str:
         result = self.call("maintenance.create", payload) or {}
         return str((result.get("maintenanceids") or [""])[0])

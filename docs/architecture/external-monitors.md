@@ -24,7 +24,7 @@ imports a system's package.
 | `adoption.py` | Turning an unknown remote object into a device proposal. Covers the tenant-wide `device_index`, the rule → object → connection-defaults placement chain, the "missing" sentence, re-applying changed defaults to waiting proposals, and `make_device`, which re-reads every catalog id inside the tenant and records an address only inside an existing prefix. |
 | `maintenance.py` | `desired_windows(tenant)`, the open windows that own a silence, with their devices. `desired_for_links(tenant, links)` narrows them to the devices a connection has linked. |
 | `hooks.py` | Registries: `register_ack_writer(check_kind, fn, system=…)` and `register_window_listener(name, fn)`. Monitoring connects the one signal handler for each. |
-| `beat.py` | `register_beat(name, label, enqueue_due, own_timer=…)`, `enqueue_due()` over a system's connections, and `skip_reason()`: the run-time check (row exists, tenant active, integration on) that every job starts with. |
+| `beat.py` | `register_beat(name, label, enqueue_due, own_timer=…)`, `enqueue_due()` over a system's connections (a `BeatTask` with its own `enqueue` queues the job itself, to de-duplicate it), and `skip_reason()`: the run-time check (row exists, tenant active, integration on) that every job starts with. |
 | `policy.py` | `device_matches(rule, device)` for rules that pick devices. These are the global, region, site, platform, device type, device role and device scopes, plus the tag, name and hardware filters from `monitoring/policy_scopes.py`. |
 
 ## Tables stay per system

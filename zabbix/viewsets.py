@@ -105,13 +105,29 @@ class ZabbixConnectionViewSet(IntegrationToggleMixin, TenantScopedViewSet):
     @action(detail=True, methods=["post"], url_path="sync-maintenance")
     def sync_maintenance(self, request, pk=None):
         """Reconcile Danbyte's windows into Zabbix now. The same function the
-        timer and the workflow hooks run, so the button cannot drift."""
-        from .maintenance import reconcile
+        timer and the workflow hooks run, so the button cannot drift - and it
+        heals: a window whose period lost its id is adopted by name.
+
+        Never a second pass beside one already queued or running: that is
+        how a period gets created twice. 202 with ``busy`` says which.
+        """
+        from .maintenance import is_queued, reconcile_locked
 
         conn = self.get_object()
         if not conn.sync_maintenance:
             return Response({"detail": "Maintenance sync is off."}, status=400)
-        return Response(reconcile(conn))
+        if is_queued(conn.pk):
+            return Response(
+                {"busy": "queued", "detail": "A maintenance sync is already queued."},
+                status=202,
+            )
+        counts = reconcile_locked(conn)
+        if counts is None:
+            return Response(
+                {"busy": "running", "detail": "A maintenance sync is already running."},
+                status=202,
+            )
+        return Response(counts)
 
 
 class ZabbixMaintenanceViewSet(IntegrationToggleMixin, TenantScopedViewSet):

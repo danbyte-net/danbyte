@@ -62,13 +62,16 @@ def enqueue_due_syncs(now=None) -> dict:
     """Queue every connection whose interval has elapsed - the provisioning
     pass, the maintenance reconcile and the host-status read, each on its
     own stamp."""
-    from .maintenance import run_maintenance_sync
+    from .maintenance import enqueue_maintenance_sync, run_maintenance_sync
     from .status import run_status_sync
 
     now = now or timezone.now()
     tasks = (
         BeatTask("queued", lambda c, at: c.auto_sync and c.sync_due(at), run_sync, 900),
-        BeatTask("maintenance", lambda c, at: c.maintenance_due(at), run_maintenance_sync),
+        BeatTask(
+            "maintenance", lambda c, at: c.maintenance_due(at), run_maintenance_sync,
+            enqueue=enqueue_maintenance_sync,
+        ),
         BeatTask("status", lambda c, at: c.status_due(at), run_status_sync),
     )
     return enqueue_due(

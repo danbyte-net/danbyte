@@ -19,6 +19,7 @@ import {
 import { TimeCell } from "@/components/cells/time-ago"
 import { DataTable, SortHeader } from "@/components/data-table"
 import { EmptyState } from "@/components/empty-state"
+import { Loading } from "@/components/loading"
 import { Section } from "@/components/ui/section"
 
 /**
@@ -48,15 +49,23 @@ export function ZabbixMaintenanceList({
   const sync = useMutation({
     mutationFn: () =>
       api<{
-        created: number
-        updated: number
-        deleted: number
-        failed: number
+        created?: number
+        updated?: number
+        deleted?: number
+        adopted?: number
+        failed?: number
+        busy?: "queued" | "running"
+        detail?: string
       }>(`/api/zabbix/connections/${connection.id}/sync-maintenance/`, {
         method: "POST",
       }),
     onSuccess: (r) => {
+      if (r.busy) {
+        toast.info(r.busy === "queued" ? "Already queued" : "Already running")
+        return
+      }
       const parts = [
+        r.adopted && `${r.adopted} adopted`,
         r.created && `${r.created} created`,
         r.updated && `${r.updated} updated`,
         r.deleted && `${r.deleted} removed`,
@@ -193,7 +202,7 @@ export function ZabbixMaintenanceList({
       }
     >
       {rows_.isLoading ? (
-        <p className="text-[13px] text-muted-foreground">Loading…</p>
+        <Loading />
       ) : rows.length === 0 ? (
         <EmptyState title="No windows">
           {connection.sync_maintenance

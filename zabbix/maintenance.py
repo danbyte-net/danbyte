@@ -12,9 +12,13 @@ either side, and twice.
 from __future__ import annotations
 
 import logging
+import time
+import uuid
+from contextlib import contextmanager
 from datetime import timedelta
 
 import django_rq
+from django.db import connection as db_connection
 from django.db import transaction
 from django.utils import timezone
 
@@ -89,27 +93,56 @@ def desired(conn) -> dict:
     return desired_for_links(conn.tenant, links)
 
 
-def reconcile(conn, *, client=None) -> dict:
+def _already_exists(exc) -> bool:
+    return "already exists" in str(exc).lower()
+
+
+def reconcile(conn, *, client=None, dry_run=False, report=None) -> dict:
     """Make Zabbix's periods match Danbyte's windows for this connection.
 
     Compares against what Danbyte last wrote, not against Zabbix's current
     shape: a period somebody adjusted by hand in Zabbix stands until the
     Danbyte window itself changes. One somebody *deleted* by hand is noticed
     and written again, because the window still wants it.
+
+    A row whose id is missing or no longer exists is matched by name before
+    anything is created: the name carries the event id and Zabbix keeps names
+    unique, so a period an earlier pass wrote but never recorded (a lost
+    response, a second pass racing the first) is adopted and updated rather
+    than created twice - and taken out when the window is gone.
+
+    ``dry_run`` reads only and writes nothing on either side; ``report``, a
+    list, collects one ``(verb, name, detail)`` per row touched. Callers that
+    write go through :func:`reconcile_locked`.
     """
     client = client or _client(conn)
-    counts = {"created": 0, "updated": 0, "deleted": 0, "failed": 0}
+    counts = {"created": 0, "updated": 0, "deleted": 0, "adopted": 0, "failed": 0}
     now = timezone.now()
     wanted = desired(conn)
     rows = {r.event_id: r for r in ZabbixMaintenance.objects.filter(connection=conn)}
 
+    def note(verb, name, detail=""):
+        if report is not None:
+            report.append((verb, name, detail))
+
     try:
         existing = client.maintenances([r.maintenanceid for r in rows.values()])
+        # Every name that has no live id: the windows about to be created and
+        # the rows that lost theirs. One read for all of them.
+        orphans = [r.name for r in rows.values() if r.maintenanceid not in existing]
+        fresh = [
+            period_name(event) for event_id, (event, _h) in wanted.items()
+            if event_id not in rows or rows[event_id].maintenanceid not in existing
+        ]
+        by_name = client.maintenances_by_name(orphans + fresh)
     except ZabbixError as exc:
         # Nothing can be compared, so nothing is written. Say so on every row
         # rather than on none.
-        ZabbixMaintenance.objects.filter(connection=conn).update(last_error=str(exc)[:500])
-        _stamp(conn, now)
+        if not dry_run:
+            ZabbixMaintenance.objects.filter(connection=conn).update(
+                last_error=str(exc)[:500]
+            )
+            _stamp(conn, now)
         return {**counts, "error": str(exc)[:500]}
 
     for event_id, (event, hostids) in wanted.items():
@@ -127,19 +160,38 @@ def reconcile(conn, *, client=None) -> dict:
                     and list(row.hostids) == hostids and not row.last_error
                 ):
                     continue
-                client.update_maintenance(row.maintenanceid, payload)
-                counts["updated"] += 1
+                if not dry_run:
+                    client.update_maintenance(row.maintenanceid, payload)
+                maintenanceid, verb = row.maintenanceid, "updated"
             else:
-                maintenanceid = client.create_maintenance(payload)
-                if row is None:
-                    row = ZabbixMaintenance(tenant=conn.tenant, connection=conn, event=event)
-                row.maintenanceid = maintenanceid
-                counts["created"] += 1
+                found = by_name.get(name) or (row is not None and by_name.get(row.name))
+                if found:
+                    maintenanceid, verb = str(found["maintenanceid"]), "adopted"
+                    if not dry_run:
+                        client.update_maintenance(maintenanceid, payload)
+                elif dry_run:
+                    maintenanceid, verb = "", "created"
+                else:
+                    maintenanceid, adopted = _create(client, payload, name)
+                    verb = "adopted" if adopted else "created"
+            counts[verb] += 1
+            note(verb, name, maintenanceid)
+            if dry_run:
+                continue
+            if row is None:
+                row = ZabbixMaintenance(tenant=conn.tenant, connection=conn, event=event)
+            row.maintenanceid = maintenanceid
             row.name, row.starts_at, row.ends_at, row.hostids = name, since, till, hostids
             row.synced_at, row.last_error = now, ""
             row.save()
         except ZabbixError as exc:
             counts["failed"] += 1
+            note("failed", name, str(exc)[:500])
+            if dry_run:
+                continue
+            # The row records the refusal for the table. Its id stays empty,
+            # which never blocks a later pass: that pass looks the name up
+            # first.
             if row is None:
                 row = ZabbixMaintenance(
                     tenant=conn.tenant, connection=conn, event=event, maintenanceid="",
@@ -149,20 +201,55 @@ def reconcile(conn, *, client=None) -> dict:
             row.save()
 
     # Whatever is left was written for a window that no longer wants it: the
-    # event closed, was deleted, or lost every linked device.
+    # event closed, was deleted, or lost every linked device. A row without a
+    # live id still takes its period out if one of that name exists.
     for row in rows.values():
         try:
             if row.maintenanceid in existing:
-                client.delete_maintenances([row.maintenanceid])
+                target = row.maintenanceid
+            elif row.name in by_name:
+                target = str(by_name[row.name]["maintenanceid"])
+                counts["adopted"] += 1
+                note("adopted", row.name, target)
+            else:
+                target = ""
+            if target:
+                if not dry_run:
+                    client.delete_maintenances([target])
                 counts["deleted"] += 1
-            row.delete()
+                note("deleted", row.name, target)
+            if not dry_run:
+                row.delete()
         except ZabbixError as exc:
             counts["failed"] += 1
-            row.last_error = str(exc)[:500]
-            row.save(update_fields=["last_error"])
+            note("failed", row.name, str(exc)[:500])
+            if not dry_run:
+                row.last_error = str(exc)[:500]
+                row.save(update_fields=["last_error"])
 
-    _stamp(conn, now)
+    if not dry_run:
+        _stamp(conn, now)
     return counts
+
+
+def _create(client, payload, name) -> tuple[str, bool]:
+    """Create the period - or, when Zabbix says one of that name already
+    exists (the answer a pass gets when another wrote it first), adopt and
+    update that one. ``(id, adopted)``."""
+    try:
+        maintenanceid = client.create_maintenance(payload)
+    except ZabbixError as exc:
+        if not _already_exists(exc):
+            raise
+        found = client.maintenances_by_name([name]).get(name)
+        if not found:
+            raise
+        maintenanceid = str(found["maintenanceid"])
+        client.update_maintenance(maintenanceid, payload)
+        return maintenanceid, True
+    if not maintenanceid:
+        raise ZabbixError("Zabbix created the period but returned no id.")
+    return maintenanceid, False
 
 
 def _stamp(conn, now) -> None:
@@ -170,9 +257,114 @@ def _stamp(conn, now) -> None:
     conn.save(update_fields=["last_maintenance_sync_at"])
 
 
+# ── one pass at a time ─────────────────────────────────────────────────
+#
+# Two passes over one connection both see a window without a period and both
+# create it; Zabbix keeps one and refuses the other. So a pass holds a
+# Postgres advisory lock keyed by the connection - shared by the web process,
+# every RQ worker and the repair command, and released by Postgres itself if
+# the process holding it dies. It is a session lock rather than a
+# transaction's: a pass talks to Zabbix for a while and must not hold a
+# transaction open for it.
+
+#: Advisory-lock class for the maintenance pass (the key is the connection).
+LOCK_CLASS = 0x5A4D  # "ZM"
+#: How long a queued pass waits for a running one before it re-queues.
+LOCK_WAIT = 120
+#: Marker that a pass is queued and not started, so a second is not queued.
+QUEUED_KEY = "zabbix:maintenance-queued:{}"
+QUEUED_TTL = 900
+
+
+def _lock_key(connection_id) -> int:
+    # Signed 32-bit: what the two-int form takes. Two connections sharing a
+    # key merely take turns.
+    v = uuid.UUID(str(connection_id)).int & 0xFFFFFFFF
+    return v - (1 << 32) if v >= (1 << 31) else v
+
+
+@contextmanager
+def connection_lock(connection_id, *, wait: float = 0):
+    """Hold the pass lock for a connection; yields whether it was taken.
+
+    ``wait`` is how long to keep trying; 0 tries once.
+    """
+    key = _lock_key(connection_id)
+    deadline = time.monotonic() + wait
+    with db_connection.cursor() as cur:
+        while True:
+            cur.execute("SELECT pg_try_advisory_lock(%s, %s)", [LOCK_CLASS, key])
+            got = bool(cur.fetchone()[0])
+            if got or time.monotonic() >= deadline:
+                break
+            time.sleep(0.5)
+    try:
+        yield got
+    finally:
+        if got:
+            try:
+                with db_connection.cursor() as cur:
+                    cur.execute("SELECT pg_advisory_unlock(%s, %s)", [LOCK_CLASS, key])
+            except Exception:  # noqa: BLE001 - a dropped connection already released it
+                log.warning("could not release the maintenance lock for %s", connection_id)
+
+
+def is_running(connection_id) -> bool:
+    """Whether a pass holds the lock right now (from any process)."""
+    with connection_lock(connection_id) as got:
+        return not got
+
+
+def reconcile_locked(conn, *, client=None, wait: float = 0, **kwargs) -> dict | None:
+    """:func:`reconcile` under the connection's lock; None if another pass
+    held it for longer than ``wait``."""
+    with connection_lock(conn.pk, wait=wait) as got:
+        if not got:
+            return None
+        return reconcile(conn, client=client, **kwargs)
+
+
+def _queue():
+    return django_rq.get_queue("low")
+
+
+def is_queued(connection_id, queue=None) -> bool:
+    try:
+        return bool((queue or _queue()).connection.exists(QUEUED_KEY.format(connection_id)))
+    except Exception:  # noqa: BLE001 - Redis down: nothing is queued either
+        return False
+
+
+def enqueue_maintenance_sync(connection_id, *, queue=None, timeout=300) -> bool:
+    """Queue a pass unless one is already queued and not started. True when
+    this call queued it.
+
+    A pass that is *running* does not stop another being queued: the window
+    may have changed after it read it, and the queued one waits for it.
+    """
+    queue = queue or _queue()
+    key = QUEUED_KEY.format(connection_id)
+    try:
+        if not queue.connection.set(key, "1", nx=True, ex=QUEUED_TTL):
+            return False
+    except Exception:  # noqa: BLE001 - without the marker, queue anyway
+        log.warning("could not mark the maintenance sync of %s queued", connection_id)
+    queue.enqueue(run_maintenance_sync, str(connection_id), job_timeout=timeout)
+    return True
+
+
+def _clear_queued(connection_id) -> None:
+    try:
+        _queue().connection.delete(QUEUED_KEY.format(connection_id))
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def run_maintenance_sync(connection_id: str) -> dict:
     """One connection's reconcile, as an RQ job. The switches are re-checked
     here, at run time, for the same reason the provisioning pass does."""
+    # Started: a change from here on needs a pass of its own.
+    _clear_queued(connection_id)
     conn = (
         ZabbixConnection.objects.filter(pk=connection_id).select_related("tenant").first()
     )
@@ -182,13 +374,18 @@ def run_maintenance_sync(connection_id: str) -> dict:
     if not (conn.enabled and conn.sync_maintenance and conn.token_set):
         return {"skipped": "maintenance sync off"}
     try:
-        counts = reconcile(conn)
+        counts = reconcile_locked(conn, wait=LOCK_WAIT)
     except Exception:
         # Stamp the attempt so a broken connection backs off to its interval
         # instead of being re-queued every minute.
         log.exception("zabbix maintenance sync %s failed", conn.name)
         _stamp(conn, timezone.now())
         raise
+    if counts is None:
+        # Another pass is still going. It may have read the windows before
+        # the change that queued this one, so go again after it.
+        enqueue_maintenance_sync(connection_id)
+        return {"skipped": "already running"}
     log.info("zabbix maintenance sync %s: %s", conn.name, counts)
     return counts
 
@@ -206,9 +403,9 @@ def schedule_for_tenant(tenant_id) -> int:
         return 0
 
     def _go():
-        queue = django_rq.get_queue("low")
+        queue = _queue()
         for cid in ids:
-            queue.enqueue(run_maintenance_sync, str(cid), job_timeout=300)
+            enqueue_maintenance_sync(cid, queue=queue)
 
     transaction.on_commit(_go)
     return len(ids)
