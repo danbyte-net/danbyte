@@ -444,10 +444,12 @@ validated again on save.
 ## Installing in the app
 
 **Settings → Device library → 3D model packs** lists the packs installed in
-the tenant: name, version, licence, author, how many types they brought,
-and when and by whom they were installed. **Install pack…** adds one:
+the tenant, grouped under the [bundle](#bundles) they came from: name,
+version, licence, author, how many types they brought, and when and by whom
+they were installed. **Install pack…** adds one:
 
-1. **Upload** a `.zip` of the pack (the way in for an airgapped install),
+1. **Upload** a `.zip` of the pack or of a [bundle](#bundles) (the way in
+   for an airgapped install),
    or give its **URL**. A URL must be `https`, under the configured pack
    source or on an allowed host; see
    [the settings](../reference/settings.md#3d-model-packs-model_pack_).
@@ -455,7 +457,8 @@ and when and by whom they were installed. **Install pack…** adds one:
    unsafe archive, runs the [pack checker](#checking-a-pack) and a **dry
    run** of the import. The dialog shows the result: the types it would
    create or update, with each type's notes (its model scan, photos,
-   reference modules), and every error and warning the checker found.
+   reference modules), every error and warning the checker found, and
+   [what the pack needs](#requires).
 3. **Install** applies it, again in the background, with an optional
    **Replace hand-uploaded photos** (the `--replace-photos` of the command
    below) and **Update from pack** (`--overwrite`: what the dry run lists as
@@ -490,6 +493,100 @@ the whole tenant's. The background jobs check these again when they run.
 A pack that is checked but never installed is dropped after a day; a check
 or install that stops (a worker restart) is marked failed after two hours.
 
+### Bundles
+
+A **bundle** is one download holding several packs: the library's
+`cisco-catalyst` bundle holds the Catalyst 9200, 9300 and 9500 packs, Cisco
+optics and generic connectors; `danbyte-starter` holds every pack. Packs stay
+what Danbyte tracks; a bundle has no entries of its own.
+
+```text
+danbyte-starter-1.6.23/
+  bundle.yaml          # id, name, description, version, packs: [{id, name, version}]
+  packs/
+    generic-connectors/  # a complete pack folder, with its pack.yaml
+    cisco-optics/
+    …
+```
+
+**Install pack…** takes a bundle zip like a pack zip. The check runs the
+[pack checker](#checking-a-pack) and a dry run **per pack**, in the order
+`bundle.yaml` lists them, and shows a row per pack: a tick, its status, what
+it would create and update, its errors and warnings, what it needs, and,
+unfolded, its types and findings.
+
+| Status | Means |
+|---|---|
+| Ready | No check errors; not installed yet. |
+| Errors | Check errors: not installed. |
+| Installed | This version is installed. Installing again updates its types. |
+| Update | Another version is installed. |
+
+Above the rows are the bundle's own problems: a pack `bundle.yaml` lists
+that the archive doesn't hold (an error on that pack), a folder under
+`packs/` it doesn't list (a warning; not installed), a list entry that isn't
+a pack id, and a pack whose `pack.yaml` `id` or `version` isn't what
+`bundle.yaml` says (an error on that pack).
+
+**Install** applies the ticked packs (all of them unless you untick some),
+in the bundle's order, each **in its own transaction**: a pack with check
+errors is skipped and reported, a pack whose install fails is rolled back
+and reported, and the others still install. *Replace hand-uploaded photos*
+and *Update from pack* apply to every ticked pack. Each pack's changes land
+in the change log with its own *Pack import: <name> <version>* cause. The
+dialog then lists each pack as Installed, Skipped or Failed, with why.
+
+Each installed pack gets **its own record**, as when installed alone, naming
+the bundle it came from (*From bundle* on its page). The list groups packs
+under their bundle. The bundle's own row (its page shows the per-pack check
+and what the install did) is kept like a pack's; forgetting it leaves the
+packs' records, which keep the bundle's name.
+
+**Installing a bundle again** matches each pack by its `id`: the same
+version updates that pack's record, a new version gets a new record and the
+older one becomes *Replaced*. A later single-pack install of one of them
+replaces just that pack. The types are matched by manufacturer and part
+number as always, and each type's pack link (its `pack_state`) moves to the
+pack that imported it last.
+
+**A pack from before the split.** A tenant may have one pack record that
+held everything (an early *Cisco Catalyst 9500* that also carried the 9200,
+9300 and optics). Installing the split packs updates the same types, nothing
+is duplicated, and once none of that record's types names it any more (they
+all moved to the split packs) it becomes *Replaced*. While some of its types
+are still its own (only part of the bundle installed), it stays installed.
+
+A pack's dry run is against the tenant as it is: a pack that builds on
+another pack of the same bundle may show notes the install won't have,
+because the packs install in order. Module part numbers in another pack of
+the bundle count as found for the checker.
+
+### What a pack requires {#requires}
+
+`pack.yaml` may list the packs a pack needs, by id:
+
+```yaml
+id: cisco-catalyst-9300
+requires: [generic-connectors]
+```
+
+The check lists each one as **Installed** (with its version), **In bundle**
+or **Missing**. Missing is a warning, never a refusal: a switch without plug
+models still works. For a missing pack:
+
+- with a pack catalog configured
+  ([`MODEL_PACK_CATALOG_URL`](../reference/settings.md#3d-model-packs-model_pack_),
+  the library's `packs.json`) that lists it, an **Install with it** tick
+  downloads it, checks it and installs it **first**. The download passes the
+  same guards as any pack URL (under the pack source or an allowed host,
+  `https`, redirects only to allowed hosts, the size cap, the outbound-request
+  guard), its SHA-256 must be the catalog's when the catalog gives one, and
+  its `pack.yaml` `id` must be the one asked for; a pack with check errors is
+  skipped. Its own `requires` are listed on its page, not followed.
+- otherwise (airgapped, no catalog, or not listed) the warning names the zip
+  to get, `<id>-<version>.zip` - the library builds every pack at one
+  version - to upload as well.
+
 ### Security limits
 
 A pack is data. Nothing in it is executed, and nothing is extracted to
@@ -515,6 +612,14 @@ outbound-request guard and may only be redirected to an allowed host. The
 archive's SHA-256 is recorded, and an install refuses an archive that
 changed since its check.
 
+A [bundle](#bundles) is one archive and gets **one** set of these limits,
+not one per pack: the upload cap, the 5,000 entries and the 1 GB unpacked
+total are for the whole bundle, and each file has its cap as in a pack, so a
+bundle is never a way round a limit. A path that leaves its pack folder
+(`packs/<id>/../…`) refuses the whole bundle. The starter bundle (43 MB, 293
+files, 60 MB unpacked) fits the default cap, so an airgapped install uploads
+it in one go.
+
 ## Checking a pack
 
 The pack checker runs the review Danbyte gives a pack before shipping or
@@ -527,14 +632,17 @@ installing it, against the export spec:
 
 It prints a row per type (triangles and size of the model and its far
 copy, bays, ports, LEDs, errors, warnings) and every finding, and exits `1`
-when there is an error, `0` otherwise. `--json` prints the report for CI. It
+when there is an error, `0` otherwise. A [bundle](#bundles) is checked pack by
+pack, with the bundle's own problems first; it fails when any pack or the
+bundle has an error, and `--json` gives `{ok, bundle, problems, packs: [{id,
+name, version, report}]}`. `--json` prints the report for CI. It
 writes nothing and reads no database, unless `--tenant <slug>` is given: a
 render's module part number may then be a module type the tenant has.
 
 | Check | Error | Warning |
 |---|---|---|
 | Archive | A refusal from [the limits above](#security-limits). | |
-| `pack.yaml` | Missing; no `name`, `id`, `version` or `license`; `types` lists a part with no YAML. | No `types`; a YAML it doesn't list. |
+| `pack.yaml` | Missing; no `name`, `id`, `version` or `license`; `types` lists a part with no YAML. | No `types`; a YAML it doesn't list; a `requires` entry that isn't a pack id. |
 | Accessory types | No `name`; a `kind` other than `plug`, `transceiver`, `cord`, `blanking`, `cable-manager` or `shelf`; no usable `fits` (a rack part: no `u_height` of 1 to 10, or 0 for a cable manager); `model3d.file` missing, outside the pack or not a valid `.glb`. | A `fits` entry that isn't a type slug; `parts` not a list, or an entry that isn't a part number; a `wavelength_nm` that isn't a whole number of nm; a `cable:` block that isn't usable (unknown `profile`, no `jacket_mm`, a size that isn't a positive number of mm, a ribbon without a `count` of 2-8 or a `pitch_mm` at least its jacket, a key Danbyte doesn't read), a `min_bend_by_part` entry that isn't a positive size or names a part the accessory doesn't list, or one on a transceiver; a part number two accessory types list; over the triangle budget (a transceiver 1,500, a cord or plug 2,000); a transceiver with a connector but no `port:<connector>` empty; a cord with a `cable:` block but no `cable` empty; a part `types: accessory:` doesn't list. |
 | Rack kits | No `name`; a `frame` other than `cabinet`, `4-post`, `2-post` or `wall-cabinet`; `model3d.file` or `far` missing from the pack or not a valid `.glb`; no `post:segment` in the model. | No far box; over the budget (the kit 20,000 triangles, its far box 2,000); a stretched part without `danbyte_ref_mm`, or a `danbyte_stretch` that isn't `x`, `y`, `z` or a mix; a door without its `hinge` empty; a pathway without its sizes; a part name Danbyte doesn't read; a `colours` entry that isn't a hex colour; a kit `types: rack-kit:` doesn't list. |
 | Rack types | No `manufacturer` or `model`; a `look.kit` that is no kit in the pack (or the tenant). | A `look:` value Danbyte doesn't know; a rack type `types: rack-type:` doesn't list. |
@@ -1094,6 +1202,19 @@ A pack can also be imported with a management command, from a folder or a
 - Applied changes land in each type's change log as system writes, with
   *Pack import: <name> <version>* as their cause.
 
+A bundle imports pack by pack, in its order, each in its own transaction;
+`--only` picks packs:
+
+```bash
+.venv/bin/python manage.py import_model_pack danbyte-starter-1.6.23.zip --tenant acme
+.venv/bin/python manage.py import_model_pack danbyte-starter-1.6.23.zip --tenant acme \
+    --only generic-connectors,cisco-optics --apply
+```
+
+Each pack's section prints its check's errors, what it needs and the import
+report. Like a lone pack, the command imports a pack with check errors (the
+app skips it) and keeps no pack record.
+
 Importing a lone YAML with a `model3d:` block (the device library import)
 creates the type and skips the block, with a note: the files come with the
 pack.
@@ -1220,12 +1341,12 @@ keep the whole block in their record (an accessory type's and rack kit's in
 
 | Call | Does |
 |---|---|
-| `GET /api/model-packs/` | The tenant's packs, newest first; `?status=installed` (comma-separated statuses: `checking`, `checked`, `refused`, `installing`, `installed`, `failed`, `replaced`). View on device types. |
-| `GET /api/model-packs/{id}/` | One pack, with `report` (`check`: the checker's report; `import`: the dry run; `installed`: the version installed before), `result` (what the install did: `created`, `matched`, `errors`, `types`), `files` and `history`. Each of `types` has `kind`, `path`, `name`, `action`, `id`, `notes` and, for device and module types, `changes` (`added`, `updated`, `removed`, `kept`). |
-| `POST /api/model-packs/` | Add a pack: a multipart `file` (`.zip`) or JSON `{"url": …}`. Answers `202` with the row; poll it while `status` is `checking`. `413` over the size cap. Install rights. |
-| `POST /api/model-packs/{id}/install/` | Install a checked pack without check errors (`installable`). Body `{"replace_photos": bool, "overwrite": bool}` (`overwrite`: Update from pack). `202`; poll while `installing`. `409` for a pack that isn't checked, has errors, or while another installs. |
-| `DELETE /api/model-packs/{id}/` | Forget the pack: the record and its archive. The types stay. |
-| `GET /api/model-packs/limits/` | `max_bytes`, `source_url`, `allowed_hosts`, `downloads` (false when airgapped) and `can_install`. |
+| `GET /api/model-packs/` | The tenant's packs and bundles, newest first; `?status=installed` (comma-separated statuses: `checking`, `checked`, `refused`, `installing`, `installed`, `failed`, `replaced`), `?kind=pack` or `bundle`. Each row has `kind`, `requires` (pack ids) and `bundle` (`{id, slug, name, version}` of the bundle a pack came from - `id` null once the bundle's row is forgotten - or null). View on device types. |
+| `GET /api/model-packs/{id}/` | One pack, with `report` (`check`: the checker's report; `import`: the dry run; `installed`: the version installed before; `needs`: each required pack's `{id, state, installed, zip, available}`, `state` `installed`, `bundle` or `missing`, `available` the catalog's `{url, name, version, sha256, size}`; `catalog_error`), `result` (what the install did: `created`, `matched`, `errors`, `types`, and `requires`: the required packs installed with it), `files`, `history` and `needs` (the required packs as they stand now). A bundle's `report` has `bundle` (its `bundle.yaml`), `problems` (`[{level, message}]`) and `packs`: a section per pack with `id`, `name`, `version`, `license`, `author`, `description`, `requires`, `files`, `check`, `import`, `installed`, `needs`, `installable` and `status` (`ready`, `errors`, `installed`, `update`); its `result` has `packs`: per pack `{id, name, version, status, reason, record, created, matched, errors, superseded}`, `status` `installed`, `skipped`, `failed` (or `refused`, for a required pack). Each of `types` has `kind`, `path`, `name`, `action`, `id`, `notes` and, for device and module types, `changes` (`added`, `updated`, `removed`, `kept`). |
+| `POST /api/model-packs/` | Add a pack or a bundle: a multipart `file` (`.zip`) or JSON `{"url": …}`. Answers `202` with the row; poll it while `status` is `checking`. `413` over the size cap. Install rights. |
+| `POST /api/model-packs/{id}/install/` | Install a checked pack without check errors, or a checked bundle with at least one (`installable`). Body `{"replace_photos": bool, "overwrite": bool, "packs": [id, …], "with": [id, …]}` (`overwrite`: Update from pack; `packs`: a bundle's packs to install, default all - one with check errors is skipped; `with`: missing required packs the catalog offers, installed first). `202`; poll while `installing`. `400` for a `packs` id not in the bundle or a `with` id the catalog doesn't offer; `409` for a pack that isn't checked, has errors, a bundle with nothing installable picked, or while another installs. |
+| `DELETE /api/model-packs/{id}/` | Forget the pack: the record and its archive. The types stay. Forgetting a bundle leaves its packs' records. |
+| `GET /api/model-packs/limits/` | `max_bytes`, `source_url`, `catalog_url`, `allowed_hosts`, `downloads` (false when airgapped) and `can_install`. |
 | `GET/POST/DELETE /api/module-types/{id}/model/` | A module type's model, as for device types. View / change on the module type. |
 | `GET/POST/DELETE /api/{device-types,module-types,devices}/{id}/model-far/` | The far copy. Needs the full model first; removing the full model removes it too. |
 | `GET /api/devices/{id}/module-model/{module id}/` (and `module-model-far/`) | An installed module's model, through its device. |

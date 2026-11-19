@@ -397,6 +397,7 @@ These govern [installing model packs in the app](../dcim/model-packs.md#installi
 | `MODEL_PACK_MAX_BYTES` | `209715200` (200 MB) | The largest pack `.zip` an upload or a download may be. Keep it at or under the web server's `client_max_body_size`: 512 MB in the shipped nginx templates, 100 MB in the Docker stack's. |
 | `MODEL_PACK_SOURCE_URL` | `https://github.com/danbyte-net/device-models/releases/download/` | The configured pack source: a download URL under it is allowed. Empty turns it off. |
 | `MODEL_PACK_ALLOWED_HOSTS` | empty | More hosts any `https` pack URL may come from, comma-separated (an internal mirror). |
+| `MODEL_PACK_CATALOG_URL` | empty | The pack catalog: the library's `packs.json`. A missing [required pack](../dcim/model-packs.md#requires) it lists can be installed with the pack that needs it. It must be under `MODEL_PACK_SOURCE_URL` or on an allowed host, like any pack URL, and so must each zip it names. Empty: no catalog; the check names the zip to upload instead. |
 | `MODEL_PACK_REDIRECT_HOSTS` | `objects.githubusercontent.com,release-assets.githubusercontent.com` | Hosts a download may be redirected to, and only redirected to: GitHub serves release assets from these. |
 
 Every download also passes the outbound-request guard: the host must
