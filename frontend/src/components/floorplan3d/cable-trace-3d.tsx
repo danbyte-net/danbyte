@@ -298,11 +298,13 @@ function portEndRun(
     const p = stripPortLocalM(strip, dev, point.port)
     const outward = mount === "side_left" ? -1 : 1
     const chanX = outward * (width / 2 + 0.04)
-    const stubZ = p.z + p.out * 0.05
+    // A stub straight out of the outlet, then across to the rail lane.
+    const stubX = p.x + p.dir[0] * 0.05
+    const stubZ = p.z + p.dir[1] * 0.05
     return {
       entry: [
         worldOf(scene, tile, p.x, p.y, p.z),
-        worldOf(scene, tile, p.x, p.y, stubZ),
+        worldOf(scene, tile, stubX, p.y, stubZ),
         worldOf(scene, tile, chanX, p.y, stubZ),
       ],
       railAt: (y) => worldOf(scene, tile, chanX, y, stubZ),

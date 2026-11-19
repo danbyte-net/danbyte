@@ -640,6 +640,25 @@ describe("kitChannelSeat - 0U strips on their kit's channels", () => {
     const plain = sideStripBoxM(rack(), pdu(), 0.8, 1.2)
     expect(plain.seat).toBeNull()
   })
+
+  it("puts a seated strip's outlets on the face its channel faces", () => {
+    const d = pdu()
+    const b = sideStripBoxM(
+      rack({ look, outer_width_mm: 800, outer_depth_mm: 1200 }),
+      d,
+      0.8,
+      1.2
+    )
+    const p = stripPortLocalM(b, d, "C13-1")
+    // Facing in (+x), on the box's inner side - over the model's outlets.
+    expect(p.dir[0]).toBeCloseTo(1, 6)
+    expect(Math.abs(p.dir[1])).toBeCloseTo(0, 6)
+    expect(p.x).toBeCloseTo(b.x + STRIP_W_M / 2 + 0.002, 6)
+    expect(p.z).toBeCloseTo(b.z, 6)
+    // Off a channel: the rear face, as before.
+    const q = stripPortLocalM(sideStripBoxM(rack(), d, 0.8, 1.2), d, "C13-1")
+    expect(q.dir).toEqual([0, 1])
+  })
 })
 
 describe("effectiveMount - 0U gear with no side recorded", () => {

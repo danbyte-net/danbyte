@@ -1381,10 +1381,24 @@ export const STRIP_PORT_QUAD_M = 0.03
  * the cable layer invented its own positions on the strip's side face.
  */
 export function stripPortLocalM(
-  strip: { x: number; y: number; h: number; z: number },
+  strip: {
+    x: number
+    y: number
+    h: number
+    z: number
+    seat?: KitChannelSeat | null
+  },
   dev: SceneDevice,
   portName: string
-): { x: number; y: number; z: number; out: 1 | -1 } {
+): {
+  x: number
+  y: number
+  z: number
+  out: 1 | -1
+  /** The way the outlet faces (level, unit): a seated strip's channel's,
+   * else along z (`out`). */
+  dir: [number, number]
+} {
   const idx = Number(/(\d+)\s*$/.exec(portName)?.[1] ?? 0)
   const top = strip.y + strip.h
   const y =
@@ -1397,7 +1411,29 @@ export function stripPortLocalM(
   // `face` names the channel the strip bolts into; its ports look out the
   // matching end. Blank (unknown channel) keeps the rear-facing default.
   const out = dev.face === "front" ? -1 : 1
-  return { x: strip.x, y, z: strip.z + out * (STRIP_D_M / 2 + 0.002), out }
+  // On a kit channel the strip's outlets face the way the channel does (its
+  // model's front, spec §14): the quads sit on that face, over the model's
+  // outlets, not on a box face behind it.
+  const seat = strip.seat
+  if (seat) {
+    const [dx, dz] = seat.out
+    const off =
+      Math.abs(dx) * (STRIP_W_M / 2) + Math.abs(dz) * (STRIP_D_M / 2) + 0.002
+    return {
+      x: strip.x + dx * off,
+      y,
+      z: strip.z + dz * off,
+      out,
+      dir: [dx, dz],
+    }
+  }
+  return {
+    x: strip.x,
+    y,
+    z: strip.z + out * (STRIP_D_M / 2 + 0.002),
+    out,
+    dir: [0, out],
+  }
 }
 
 // ─── Cable-run geometry (P8) ─────────────────────────────────────────────────

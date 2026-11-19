@@ -165,7 +165,8 @@ export function SideStripMesh({
             key={p.name}
             name={p.name}
             position={[at.x, at.y, at.z]}
-            rotation={[0, at.out === 1 ? 0 : Math.PI, 0]}
+            // A plane faces +Z: turned to face the outlet's way.
+            rotation={[0, Math.atan2(at.dir[0], at.dir[1]), 0]}
             onClick={(e) => {
               e.stopPropagation()
               // Unmarked power components resolve under face-ports' REAR
