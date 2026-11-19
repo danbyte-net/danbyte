@@ -218,7 +218,7 @@ def has_bays(owner) -> bool:
 
 # ── installed parts ─────────────────────────────────────────────────────────
 
-def installed_parts(devices, user=None, tenant=None) -> None:
+def installed_parts(devices, user=None, tenant=None, *, names: bool = True) -> None:
     """Load what each device has in its module bays, for the devices whose
     drawn model names bays, in one batch: stored on each as
     ``_installed_parts`` - ``[{name, position, module, type, type_viewable}]``
@@ -226,7 +226,11 @@ def installed_parts(devices, user=None, tenant=None) -> None:
 
     With ``user`` (and ``tenant``) only the bays and modules the reader may
     view count, and a module type's own URL is used only where the reader may
-    view the type. A device whose model names no bays gets ``[]``."""
+    view the type. A device whose model names no bays gets ``[]``.
+
+    ``names`` also loads the batch's template names, which a model's
+    anchors resolve against; False leaves them to load on first use - for a
+    read that draws no model, so it doesn't pay for names nothing reads."""
     from auth_api import rbac
 
     from .anchor_names import prime as prime_anchor_names
@@ -238,7 +242,8 @@ def installed_parts(devices, user=None, tenant=None) -> None:
     for d in devices:
         d._installed_parts = []
     if not wanted:
-        prime_anchor_names(devices)
+        if names:
+            prime_anchor_names(devices)
         return
     ids = [d.id for d in wanted]
     bays = ModuleBay.objects.filter(device_id__in=ids).order_by()
@@ -268,7 +273,8 @@ def installed_parts(devices, user=None, tenant=None) -> None:
         d._installed_parts = sorted(per.get(d.id, []), key=lambda r: natural_key(r["name"]))
     # A stack member's anchors resolve against its types' templates: loaded
     # here for the batch too.
-    prime_anchor_names(devices)
+    if names:
+        prime_anchor_names(devices)
 
 
 def parts_of(device) -> list:

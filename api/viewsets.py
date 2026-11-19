@@ -4248,8 +4248,10 @@ class DeviceViewSet(
         from . import model_3d
 
         obj = super().get_object()
+        # One device: its template names are only read by a drawn model.
         model_3d.installed_parts(
-            [obj], self.request.user, _get_active_tenant(self.request)
+            [obj], self.request.user, _get_active_tenant(self.request),
+            names=model_3d.effective_owner(obj) is not None,
         )
         return obj
     rbac_action_map = {
@@ -5513,6 +5515,8 @@ class DeviceViewSet(
             device.interfaces.select_related(
                 "device", "vlan", "vrf", "status",
                 "parent__device", "lag__device", "bridge__device",
+                # The transceiver recorded in the port, read per row.
+                "transceiver",
             )
             .prefetch_related(
                 TAGS, "children", "lag_members", "tagged_vlans", "mac_addresses",
