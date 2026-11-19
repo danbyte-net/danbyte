@@ -346,8 +346,8 @@ The rack page's **Pathways** tab lists where cables run in the rack: its
 vertical cable managers and corner channels, horizontal managers, cable
 **entries** (roof cut-outs, brush grommets, floor and side-panel openings)
 and **0U channels** (where vertical PDUs mount), with the **Cables** whose
-recorded [way](#cable-ways) runs through each (a link to them). Nothing is
-drawn from them in 3D yet.
+recorded [way](#cable-ways) runs through each (a link to them). The 3D
+views draw them, and the cables along them ([In 3D](#cable-ways-3d)).
 
 | Kind | Where | Size |
 |---|---|---|
@@ -367,13 +367,17 @@ the cable manager model it is.
   the rack: vertical ones run its full height, a full-depth manager grows
   with its depth, a 0U channel keeps the units it leaves free at the top,
   and an entry keeps its place as a share of the roof or base. Entries come
-  with the roof and base the [Look](#look) uses (none for Top *None*). Of a
-  side's vertical managers the kit installs one, rear first, then full
-  depth, then front; the others are **add-ons**, hidden until shown.
+  with the roof and base the [Look](#look) uses (none for Top *None*). The
+  vertical managers a kit's racks have from the start are the ones its
+  `kit.yaml` lists under `pathways: installed:`; a kit that lists none
+  installs a cabinet's front managers and rear corner channels, and on
+  other frames one per side - rear first, then full depth, then front. The
+  others are **add-ons**, hidden until shown.
 - **Default**: a rack without a kit, or with a kit imported before 0.21,
-  gets its frame's: a cabinet two rear corner channels, a roof and a floor
-  entry and two rear 0U channels; a wall cabinet a roof and a floor entry;
-  a 2-post a vertical finger manager each side; an open 4-post none.
+  gets its frame's: a cabinet a front vertical manager each side, two rear
+  corner channels, a roof and a floor entry and two rear 0U channels; a
+  wall cabinet a roof and a floor entry; a 2-post a vertical finger manager
+  each side; an open 4-post none.
 - **Type**: added on the rack type's **Pathways** tab, for every rack of
   the type.
 - **Manual**: added on this rack.
@@ -388,6 +392,19 @@ didn't. **Hide** takes one away (and **Show** brings back an add-on),
 as *Not in kit* while the rack still has changes on it; delete them there.
 Kit, default and type pathways are only stored for a rack once changed or
 pointed at; the list is worked out each time.
+
+**Where they are.** Each pathway also has its place in the rack (`geo`, in
+mm: across from the centre seen from the front, back from the front, up
+from the floor), where the 3D views draw it and the [ways](#cable-ways) run.
+A kit's manager stands where its part is in the kit's reference rack: as far
+in from the nearer side panel (an open frame: beside its posts), a front one
+as far behind the front, a rear one as far from the rear, a full-depth one
+both, and up the pathway's units; its inside is its `path` empty's. A kit
+imported before Danbyte stored the places is read from its model once (and
+cached); a re-import stores them. A pathway without a kit part, a default
+or one of a type or rack stands where its frame has room: a cabinet's
+between the rail opening and the side panel, a 2-post's outside its posts,
+an entry where its across and back say, a 0U channel at its depth.
 
 **Checks.** A vertical or 0U channel needs its side and face, an entry its
 surface; a 0U channel is at the front or the rear; a 2-post frame's
@@ -437,7 +454,9 @@ Gi1/0/12 → Right rear → Roof rear-right → tray OH-A
 with its length, the end it is (A, B, or A + B for both ends in this rack)
 and its state: **Proposed**, **Recorded** (*Automatic* when Danbyte
 recorded it), **Dismissed**, or **Out of date** (a pathway it names is gone
-or hidden, or the cable's ends in the rack changed).
+or hidden, the cable's ends in the rack changed, or the port's device moved
+to another unit, face or side since it was recorded). **Show in rack** opens
+the rack's 3D view with the cable's way lit.
 
 - **Accept** records the proposal; **Change** opens the hops: one of the
   rack's shown pathways each, in order, and for a vertical manager or a 0U
@@ -454,6 +473,14 @@ someone accepts it, and it counts (Pathways tab, lengths) only then.
 change; when the ends change again, an automatic way is worked out again.
 In Propose mode an accepted automatic way whose proposal changes goes back
 to Proposed.
+
+Every writer of cable ends counts, not only the cable form and the API: a
+switch stack's [auto-connected](virtual-chassis.md) cables, imports and
+integrations too. **A device that moves** - another unit, face, rack, half
+or 0U channel - refreshes its cables' ways the same way: an automatic way
+is worked out again (recorded again in Record mode; back to Proposed in
+Propose mode when it changed), and a manual one is kept but shows **Out of
+date**.
 
 ### How a way is proposed
 
@@ -506,7 +533,10 @@ The next distinct ways are offered as **alternatives**
 ### Lengths and the room route {#cable-way-lengths}
 
 A way's length is its run in the rack, square (across, front to back and up
-and down): a unit is 44.45 mm, the plinth 100 mm, as the floor plan reckons.
+and down), through the pathways' [places](#pathways): a unit is 44.45 mm
+from unit 1 where the 3D rack stands it (its kit's, else 100 mm up), the
+ports a little in front of the front rail (behind the rear one), and the
+roof entries at the rack's height.
 
 When the cable has a stored [floor-plan route](../features/floor-plans.md#lengths)
 between racks, the route's first or last tray at each rack chooses the way
@@ -557,6 +587,48 @@ audited.
   (`pathway`, pinned for an inherited one) and its `key`.
 - A cable's `ways` (on `/api/cables/<id>/`) sums them up; `/api/cables/
   ?pathway=<row id>` lists the cables with a recorded way through one.
+
+### In 3D {#cable-ways-3d}
+
+The rack's 3D view and the floor plan's 3D room draw each rack's pathways and
+the cables along their ways:
+
+- **Managers and entries.** A kit's vertical managers stand in their
+  [places](#pathways), stretched to their units; an add-on only once it is
+  shown. Horizontal managers are devices, drawn by their models. A kit's
+  roof and plinth carry their entries' cut-outs and brushes. A manager's
+  cover (a kit part `<manager>:cover`, spec §14 v1.16) is left off while the
+  ways are shown, see-through while they are ghosted and closed while they
+  are hidden. Without a kit, and for pathways of a type or a rack, Danbyte
+  draws its own: a thin channel open on the side its cables enter (with
+  fingers at their pitch for a finger manager or D-ring), and an entry as a
+  framed opening with its brush.
+- **Cables along their ways.** Each stored way is drawn from its port (the
+  drawn cord's end, where there is one) along the face to its manager, into
+  it at the port's unit, along it, and to the far port or under the roof
+  (over the floor) to its entry and out. Cables sharing a manager lie side by
+  side in its inside, in lanes fixed by cable, one diameter apart and never
+  outside it. Colour is the cable's; thickness its outer diameter, else its
+  type's (Cat6 6.1 mm, fibre 3 mm, a DAC 4.5 mm, a power cord 8 mm).
+  **Recorded** ways are solid; **proposed** ones see-through, as they count
+  for nothing until accepted. Dismissed ways draw nothing. A way that names a
+  pathway the rack no longer shows skips that hop.
+- **Near and far.** Up close each cable is drawn; further off each manager's
+  cables are one bundle, as thick as their cross-sections together.
+- **In the room** a cable with a way leaves its rack by the entry and the
+  room's run carries on from there along its trays to the other rack's entry,
+  so it reads as one cable, rack → tray → rack. A cable without a way, or with
+  **Cable ways** on *Hide*, runs port to port as before.
+- **Cable ways: Show / Ghost / Hide** (the rack view's toolbar; the room's
+  View menu) - Ghost draws the cables see-through with the managers and
+  entries solid. Kept in this browser, shared by both views.
+- **Fill** colours each manager by how full it is: the recorded cables'
+  cross-sections over its inside times its fill limit - green, amber from
+  70 %, red past the limit. Indicative only: it uses type diameters where a
+  cable records none; the [Pathways](#pathways) tab's counts are the record.
+- **Trace.** Click a cable in a rack (or a run in the room) to pick it: its
+  way lights through both racks and the trays, everything else ghosted; its
+  card links to the cable. A click elsewhere or **Esc** lets it go.
 
 `manage.py propose_cable_ways --tenant <slug> [--rack <name or id>]
 [--cable <id>]` prints the way it would propose for each cable with an end
@@ -737,7 +809,10 @@ plan's 3D View menu on this device. **Pluggables** and **Stacks** choose
 how the parts in model ports and a switch stack's
 [stack cables](virtual-chassis.md#in-3d) draw (**Show**, **Ghost** or
 **Hide**, kept in this browser), and **Blanks** shows or hides the
-[blanking fill](#look). Other cables are not drawn in this view yet.
+[blanking fill](#look). **Cable ways** and **Fill** draw the rack's
+[cables along their ways](#cable-ways-3d) and how full its managers are;
+`?cable=<id>` (the Way card's **Show in rack**) opens it with that cable's
+way lit.
 
 The cabinet is built from its [Look](#look): its frame, doors, side
 panels, top, base and colour, from its rack kit's parts when it has one.
@@ -944,7 +1019,16 @@ scene carries for a rack tile: size, numbering and outer dimensions (its
 type's when the rack has none), plus the
 positioned and side-mounted devices with their photos, port markers, power
 component names and the feed type of each PDU. The devices are limited to the
-ones you can view.
+ones you can view. `pathways` are its shown pathways with their places
+(`key`, `source`, `kind`, `subkind`, `side`, `face`, `surface`, `u_from`,
+`u_to`, `inner_w_mm`, `inner_d_mm`, `fill_limit_pct`, `label`, `addon` and
+`geo`: a manager's `x0`/`x1`, `y0`/`y1`, `z0`/`z1`, `cx`/`cy` (its inside's
+centre), `wall`, `open` and `pitch_mm`; an entry's `x`, `y`, `z`, `w`, `d`;
+a 0U channel's `x`, `y`, `z0`, `z1` - mm as above). `ways` are the stored
+recorded and proposed [cable ways](#cable-ways) through it of the cables you
+can view: `cable_id`, `label`, `color`, `type`, `outer_diameter_mm`, `end`,
+`state`, `source`, `exit`, `hops` and `ends` (each `end`, `device`, `port`
+and `kind`).
 
 ## API: the elevation as a PDF
 

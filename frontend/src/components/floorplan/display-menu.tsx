@@ -25,6 +25,15 @@ import {
   useStacksMode,
 } from "@/lib/stacks-pref"
 import type { StacksMode } from "@/lib/stacks-pref"
+import {
+  CABLE_WAYS_LABEL,
+  CABLE_WAYS_MODES,
+  setCableWaysFill,
+  setCableWaysMode,
+  useCableWaysFill,
+  useCableWaysMode,
+} from "@/lib/cable-ways-pref"
+import type { CableWaysMode } from "@/lib/cable-ways-pref"
 import { setBlanksShown, useBlanksShown } from "@/lib/blanks-pref"
 import { CABLE_SCALE_MAX, CABLE_SCALE_MIN } from "@/lib/render-quality"
 import type { CableLook, RenderQualitySetting } from "@/lib/render-quality"
@@ -111,6 +120,8 @@ export function DisplayMenu({
   // viewer and the rack's 3D view.
   const pluggables = usePluggablesMode()
   const stacks = useStacksMode()
+  const ways = useCableWaysMode()
+  const waysFill = useCableWaysFill()
   const blanks = useBlanksShown()
   return (
     <Popover>
@@ -399,6 +410,26 @@ export function DisplayMenu({
                 }))}
               />
             </div>
+            <div className="px-2 pt-1 pb-1.5">
+              <span className="mb-1 block text-[10px] font-medium tracking-[0.08em] text-muted-foreground uppercase">
+                Cable ways
+              </span>
+              <SegmentedTabs<CableWaysMode>
+                value={ways}
+                onValueChange={setCableWaysMode}
+                label="Cable ways"
+                items={CABLE_WAYS_MODES.map((m) => ({
+                  value: m,
+                  label: CABLE_WAYS_LABEL[m],
+                }))}
+              />
+            </div>
+            <FormCheckbox
+              label="Fill"
+              checked={waysFill}
+              onChange={setCableWaysFill}
+              className="items-center rounded px-2 py-1.5 text-[13px] hover:bg-muted/60"
+            />
             <FormCheckbox
               label="Blanks"
               checked={blanks}

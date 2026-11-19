@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useContext, useEffect, useMemo, useRef, useState } from "react"
 import type { ReactNode } from "react"
 import { Camera } from "lucide-react"
 import { useQuery } from "@tanstack/react-query"
@@ -21,6 +21,17 @@ import {
   useStacksMode,
 } from "@/lib/stacks-pref"
 import { stackOf } from "@/lib/stacks"
+import {
+  CABLE_WAYS_LABEL,
+  CABLE_WAYS_MODES,
+  readCableWaysMode,
+  setCableWaysFill,
+  setCableWaysMode,
+  useCableWaysFill,
+  useCableWaysMode,
+} from "@/lib/cable-ways-pref"
+import { CableWayStore } from "@/lib/cable-way-store"
+import { PickedWayCard } from "@/components/cable-way-pick-card"
 import { setBlanksShown, useBlanksShown } from "@/lib/blanks-pref"
 import { useDeviceLedsPayload } from "@/lib/use-device-leds"
 import { cn } from "@/lib/utils"
@@ -29,11 +40,7 @@ import { useMe } from "@/lib/use-me"
 import { FaceplateLegend } from "@/components/device-faceplate"
 import { Loading } from "@/components/loading"
 import { CameraModeToggle } from "@/components/camera-mode-toggle"
-import {
-  BarButton,
-  BarMenuTrigger,
-  BarToggle,
-} from "@/components/map-toolbar"
+import { BarButton, BarMenuTrigger, BarToggle } from "@/components/map-toolbar"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -65,6 +72,8 @@ import {
 } from "./object-view"
 import type { ObjectView } from "./object-view"
 import { RackMesh } from "./rack-mesh"
+import { CableWaysContext } from "./cable-ways-3d"
+import type { CableWaysScene } from "./cable-ways-3d"
 import { newModelBudget, useDrawnModelDevices } from "./rack-model-draw"
 import {
   StackCables,
@@ -112,9 +121,13 @@ export function useRackScene(rackId: string) {
 export function RackScene({
   rackId,
   lead,
+  cableId = null,
 }: {
   rackId: string
   lead?: ReactNode
+  /** A cable to light the way of from the start (the Way card's Show in
+   * rack). */
+  cableId?: string | null
 }) {
   const supported = useMemo(webglSupported, [])
   const scene = useRackScene(rackId)
@@ -150,8 +163,31 @@ export function RackScene({
     )
   return (
     <StackRoot>
-      <RackView rack={scene.data} toolbar={toolbar} />
+      <WaysRoot cableId={cableId}>
+        <RackView rack={scene.data} toolbar={toolbar} />
+      </WaysRoot>
     </StackRoot>
+  )
+}
+
+/** The view's cable ways (cable-ways-3d): the picked cable, for the canvas
+ * and the card. */
+function WaysRoot({
+  cableId,
+  children,
+}: {
+  cableId: string | null
+  children: ReactNode
+}) {
+  const [ways] = useState<CableWaysScene>(() => {
+    const store = new CableWayStore()
+    if (cableId) store.select(cableId)
+    return { store }
+  })
+  return (
+    <CableWaysContext.Provider value={ways}>
+      {children}
+    </CableWaysContext.Provider>
   )
 }
 
@@ -188,6 +224,9 @@ function RackView({
     useDrawnModelDevices(budget)
   )
   const stacksMode = useStacksMode()
+  const waysMode = useCableWaysMode()
+  const waysFill = useCableWaysFill()
+  const ways = useContext(CableWaysContext)!
   const pluggables = usePluggablesMode()
   const blanks = useBlanksShown()
   const { width, depth, height } = rackFootprintM(rack)
@@ -255,6 +294,19 @@ function RackView({
             onChange={(v) => setStacksMode(readStacksMode(v))}
           />
           {stacksMode !== "hide" && <StackCablesMenu store={stackLinks} />}
+          <ModeMenu
+            label="Cable ways"
+            value={waysMode}
+            modes={CABLE_WAYS_MODES}
+            labels={CABLE_WAYS_LABEL}
+            onChange={(v) => setCableWaysMode(readCableWaysMode(v))}
+          />
+          <BarToggle
+            pressed={waysFill}
+            onClick={() => setCableWaysFill(!waysFill)}
+          >
+            Fill
+          </BarToggle>
           <BarToggle pressed={blanks} onClick={() => setBlanksShown(!blanks)}>
             Blanks
           </BarToggle>
@@ -286,7 +338,10 @@ function RackView({
           stamp={`${selection?.deviceId ?? ""}|${selection?.portName ?? ""}`}
           invalidateRef={invalidateRef}
           captureRef={captureRef}
-          onPointerMissed={() => setSelection(null)}
+          onPointerMissed={() => {
+            setSelection(null)
+            ways.store.select(null)
+          }}
         >
           <RackMesh
             plan={SOLO_PLAN}
@@ -349,6 +404,11 @@ function RackView({
           />
         )}
         <StackCableCard store={stackLinks} />
+        <PickedWayCard
+          store={ways.store}
+          ways={rack.ways ?? []}
+          className="right-2 bottom-2"
+        />
         <PartMarkerMenu menu={partMenu} onClose={() => setPartMenu(null)} />
         {deviceMenus.menus}
       </div>

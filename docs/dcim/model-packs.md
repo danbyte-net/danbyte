@@ -997,6 +997,9 @@ model3d:
 widths_mm: [600, 800]
 depths_mm: [1000, 1200]
 colours: { black: "#1b1c1e", grey: "#c9ccce" }
+pathways:                     # optional: the vertical managers its racks have
+  installed: [path:vertical:left:front, path:vertical:right:front,
+              path:vertical:left:rear, path:vertical:right:rear]
 ```
 
 `pack.yaml` lists kits under `types: rack-kit: [CABINET, …]`.
@@ -1027,13 +1030,15 @@ every rack built from it:
 
 | Part | What Danbyte records |
 |---|---|
-| `path:vertical:<left\|right>:<front\|rear\|full>` | A vertical manager or channel on that side and face, the rack's full height. Its child empty `path` gives `danbyte_inner_w` / `danbyte_inner_d` (mm) and `danbyte_kind` (`finger`, `d-ring`, `channel`, `lacing`). Per side the rear one is installed, else full depth, else front; the others are add-ons a rack can show. |
+| `path:vertical:<left\|right>:<front\|rear\|full>` | A vertical manager or channel on that side and face, the rack's full height. Its child empty `path` gives `danbyte_inner_w` / `danbyte_inner_d` (mm) and `danbyte_kind` (`finger`, `d-ring`, `channel`, `lacing`). The ones `kit.yaml` lists under `pathways: installed:` are installed; without the list a cabinet installs its front and rear ones, other frames one per side (rear, else full depth, else front). The others are add-ons a rack can show. v1.16: `danbyte_open` on the `path` empty (`front`, `rear`, `inner`, `outer`, `ends`) is the side cables enter from, `danbyte_pitch_mm` its finger pitch, and a part `<name>:cover` its cover. |
 | `entry:<top\|bottom\|side>:<name>` | A cable entry: `danbyte_w` / `danbyte_h` (mm) and `danbyte_kind` (`open`, `brush`, `gland`, `sealed`), with its place across and back as a share of the roof or base it is a child of. A rack takes the entries of the roof and base its Look draws. |
 | `channel:0u:<left\|right>:<front\|rear>` | A 0U channel: `danbyte_depth` (mm behind the front rail), `danbyte_len_u` (its length at the reference height; a taller rack keeps the units it leaves free) and its lower end above unit 1. |
 
 A `path` without its sizes, or an entry without `danbyte_w` / `danbyte_h`,
-is noted on import and by the checker. The 3D view doesn't draw pathways
-yet; `brush:*` meshes are known and not noted. Any other name with a `:` is
+is noted on import and by the checker. The 3D views draw each shown
+manager in its [place](racks.md#pathways) and the cables along it
+([In 3D](racks.md#cable-ways-3d)); `brush:*` meshes come with their roof or
+base and are not noted. Any other name with a `:` is
 noted on import.
 
 **How a kit fits a rack.** The import reads the kit's reference rack from

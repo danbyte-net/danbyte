@@ -17,6 +17,7 @@ import type { RackMountInfo } from "@/lib/rack-mount"
 
 import { raisedContains } from "../floorplan/raised-floor-shape"
 import type { SceneLook } from "./rack-kit-math"
+import type { ScenePathway, SceneWay } from "./way-geometry"
 import {
   planAngleToRotY,
   poseContains,
@@ -100,6 +101,10 @@ export interface SceneRack {
    * payloads, which draw the legacy cabinet (rack-kit-math LEGACY_LOOK). */
   look?: SceneLook
   devices: SceneDevice[]
+  /** Its shown pathways with their places, and the stored cable ways
+   * through it (api.scene_geo; absent in older cached payloads). */
+  pathways?: ScenePathway[]
+  ways?: SceneWay[]
 }
 
 /** A DIN-rail cabinet on a tile: the room draws its enclosure, closed, at

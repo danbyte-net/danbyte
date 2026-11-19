@@ -1,4 +1,9 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import {
+  createFileRoute,
+  Link,
+  useNavigate,
+  useSearch,
+} from "@tanstack/react-router"
 import { lookKvRows } from "@/components/rack-look-fields"
 import { useUrlTab } from "@/lib/use-url-tab"
 import { ShowOnFloorPlan } from "@/components/show-on-floor-plan"
@@ -572,6 +577,9 @@ const SHOW_OPTIONS: readonly { value: RackShow; label: string }[] = [
 function RackFaces({ rack, ports }: { rack: Rack; ports?: RackPortState }) {
   // The rack in 2D or in 3D, in the URL as the cabinet keeps its plate's.
   const [viz, setViz] = useUrlTab<Viz>("2d", "viz", VIZ)
+  // The Way card's Show in rack: the cable whose way the 3D view lights.
+  const search: Record<string, unknown> = useSearch({ strict: false })
+  const wayCable = typeof search.cable === "string" ? search.cable : null
   const vizSwitch = (
     <SegmentedTabs<Viz>
       value={viz}
@@ -646,7 +654,7 @@ function RackFaces({ rack, ports }: { rack: Rack; ports?: RackPortState }) {
               </>
             }
           >
-            <RackScene rackId={rack.id} lead={vizSwitch} />
+            <RackScene rackId={rack.id} lead={vizSwitch} cableId={wayCable} />
           </Suspense>
         ) : (
           <>

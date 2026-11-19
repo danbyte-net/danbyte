@@ -44,6 +44,10 @@ import type { DeviceLeds } from "@/lib/led-state"
 import { useDeviceLeds } from "@/lib/use-device-leds"
 import { stackModeLeds } from "@/lib/stacks"
 import { useStacksMode } from "@/lib/stacks-pref"
+import { useCableWaysFill, useCableWaysMode } from "@/lib/cable-ways-pref"
+import { RackCableWays } from "./cable-ways-3d"
+import { pathwayFills } from "./way-geometry"
+import type { ScenePathway, Vec3 } from "./way-geometry"
 import { useBlanksShown } from "@/lib/blanks-pref"
 
 import type { ModelBudget } from "./rack-models"
@@ -97,6 +101,8 @@ export function rackFrameColor({
   if (base) return hovered ? lighter(base) : base
   return hovered ? FRAME_HOVER : FRAME_COLOR
 }
+
+const NO_PATHWAYS: readonly ScenePathway[] = []
 
 /** A focus-ghosted rack (everything that is NOT the focused one). */
 const FOCUS_GHOST_OPACITY = 0.08
@@ -432,6 +438,32 @@ export function RackMesh({
     () => stackModeLeds(rawLeds, stacksMode),
     [rawLeds, stacksMode]
   )
+  // Cable ways (cable-ways-3d): the viewer's choice, the fill overlay, and
+  // what the kit draws of them (its managers, their covers, their fill).
+  const waysMode = useCableWaysMode()
+  const waysFill = useCableWaysFill()
+  const pathways = rack.pathways ?? NO_PATHWAYS
+  const fills = useMemo(
+    () =>
+      waysFill
+        ? pathwayFills(
+            new Map(pathways.map((p) => [p.key, p])),
+            rack.ways ?? []
+          )
+        : null,
+    [waysFill, pathways, rack.ways]
+  )
+  const covers =
+    waysMode === "show" ? "hide" : waysMode === "ghost" ? "ghost" : "solid"
+  const toLocal = useMemo(() => {
+    const c = Math.cos(rotY)
+    const sn = Math.sin(rotY)
+    return (p: Vec3): Vec3 => {
+      const dx = p[0] - cx
+      const dz = p[2] - cz
+      return [dx * c - dz * sn, p[1], dx * sn + dz * c]
+    }
+  }, [cx, cz, rotY])
 
   return (
     <group
@@ -481,6 +513,9 @@ export function RackMesh({
             numbering={showOverlays ? numbering : null}
             baseM={rackBaseM(rack)}
             shiftM={(rackOpeningM(rack) - mm(PANEL_MM.opening)) / 2}
+            pathways={pathways}
+            covers={covers}
+            fills={fills}
           />
           {look.blanking_fill && blanksShown && (
             <BlankingFill
@@ -629,6 +664,16 @@ export function RackMesh({
             />
           )}
         </group>
+      )}
+      {!dimmed && (
+        <RackCableWays
+          rack={rack}
+          tier={tier}
+          mode={waysMode}
+          fill={waysFill}
+          kitDrawn={!!look.kit?.model_url}
+          toLocal={toLocal}
+        />
       )}
       {!dimmed &&
         mounted.map((d) => (
@@ -838,6 +883,9 @@ function RackBody({
   numbering,
   baseM,
   shiftM,
+  pathways,
+  covers,
+  fills,
 }: {
   rackId: string
   look: SceneLook
@@ -851,6 +899,9 @@ function RackBody({
   numbering: UNumbering | null
   baseM: number
   shiftM: number
+  pathways: readonly ScenePathway[]
+  covers: "hide" | "ghost" | "solid"
+  fills: ReadonlyMap<string, string> | null
 }) {
   const own = (
     <RackShell
@@ -879,6 +930,9 @@ function RackBody({
       numbering={numbering}
       baseM={baseM}
       shiftM={shiftM}
+      pathways={pathways}
+      covers={covers}
+      fills={fills}
       fallback={own}
     />
   )

@@ -56,7 +56,8 @@ import {
   trayElevationM,
   trayRideY,
 } from "./world"
-import type { ScenePayload, SceneTile } from "./world"
+import type { SceneDevice, SceneRack, ScenePayload, SceneTile } from "./world"
+import { rackWayExits } from "./way-geometry"
 
 /** Fallback tint for cables with no recorded colour. */
 const CABLE_FALLBACK = "#64748b"
@@ -272,18 +273,25 @@ export interface CordLookup {
   get: (deviceId: string, port: string) => CordEnd | null
 }
 
-/** Resolve one termination to its port-anchored EndRun, or null. */
-function portEndRun(
-  scene: ScenePayload,
-  sites: Map<string, DeviceSite>,
-  point: { device: string; port: string }
-): EndRun | null {
-  const site = sites.get(point.device)
-  if (site?.floor) return floorEndRun(scene, site.tile, point)
-  if (!site?.tile.rack) return null
-  const { tile } = site
-  const rack = tile.rack!
-  const dev = rack.devices[site.devIndex]
+/** A port on a racked device in its rack's own frame (m): the port, the
+ * end of the short stub out of its face, which way it faces (rear: the
+ * rack's +Z side), whether a marker anchored it, and the corner lane x the
+ * room's runs rise in. Null when the device has no place in the rack. */
+export interface PortLocal {
+  p: Vec3
+  stub: Vec3
+  rear: boolean
+  anchored: boolean
+  chanX: number
+  /** A side-mounted 0U strip's outlet (a PDU). */
+  strip: boolean
+}
+
+export function portLocal(
+  rack: SceneRack,
+  dev: SceneDevice,
+  portName: string
+): PortLocal | null {
   const { width, depth } = rackFootprintM(rack)
 
   // ── Side-mounted 0U strip (a vertical PDU). No U, so deviceBoxM geometry
@@ -295,22 +303,19 @@ function portEndRun(
     const mount = effectiveMount(rack, dev)
     if (!mount) return null
     const strip = sideStripBoxM(rack, dev, width, depth)
-    const p = stripPortLocalM(strip, dev, point.port)
+    const q = stripPortLocalM(strip, dev, portName)
     const outward = mount === "side_left" ? -1 : 1
     const chanX = outward * (width / 2 + 0.04)
     // A stub straight out of the outlet, then across to the rail lane.
-    const stubX = p.x + p.dir[0] * 0.05
-    const stubZ = p.z + p.dir[1] * 0.05
+    const stubX = q.x + q.dir[0] * 0.05
+    const stubZ = q.z + q.dir[1] * 0.05
     return {
-      entry: [
-        worldOf(scene, tile, p.x, p.y, p.z),
-        worldOf(scene, tile, stubX, p.y, stubZ),
-        worldOf(scene, tile, chanX, p.y, stubZ),
-      ],
-      railAt: (y) => worldOf(scene, tile, chanX, y, stubZ),
-      rear: p.out === 1,
+      p: [q.x, q.y, q.z],
+      stub: [stubX, q.y, stubZ],
+      rear: q.out === 1,
       anchored: true,
-      local: { tile, x: p.x, y: p.y, z: p.z, stubZ, chanX },
+      chanX,
+      strip: true,
     }
   }
 
@@ -329,7 +334,7 @@ function portEndRun(
   const find = (panel: "front" | "rear") =>
     findPortMarker(
       dev.image_ports?.[panel] ?? [],
-      point.port,
+      portName,
       dev.vc_position ?? null
     )
   const onFront = find("front")
@@ -350,7 +355,7 @@ function portEndRun(
   const synth = m
     ? undefined
     : syntheticPortMarkers(dev).find(
-        (s) => normalizePortName(s.name) === normalizePortName(point.port)
+        (s) => normalizePortName(s.name) === normalizePortName(portName)
       )
   const panelRear = synth ? true : portRear
   const [lx, ly, lz] = portLocalM(
@@ -358,10 +363,6 @@ function portEndRun(
     m ?? synth ?? { x: 0.5, y: 0.5 },
     panelRear
   )
-
-  const world = (x: number, y: number, z: number): Vec3 =>
-    worldOf(scene, tile, x, y, z)
-
   // Stub OUT of the face (toward the rack-space side portLocalM resolved the
   // panel to), then sweep sideways at stub depth - clear of every faceplate -
   // to the nearest RAIL edge, and rise there: the corner channel, like a
@@ -372,17 +373,55 @@ function portEndRun(
   // aisle.
   const outZ = panelRear !== box.mountedRear ? 0.06 : -0.06
   const chanX = (lx >= 0 ? 1 : -1) * (rackOpeningM(rack) / 2 + 0.02)
-  const chanZ = lz + outZ * 0.5
+  return {
+    p: [lx, ly, lz],
+    stub: [lx, ly, lz + outZ],
+    rear: panelRear,
+    anchored: Boolean(m ?? synth),
+    chanX,
+    strip: false,
+  }
+}
+
+/** Resolve one termination to its port-anchored EndRun, or null. */
+function portEndRun(
+  scene: ScenePayload,
+  sites: Map<string, DeviceSite>,
+  point: { device: string; port: string }
+): EndRun | null {
+  const site = sites.get(point.device)
+  if (site?.floor) return floorEndRun(scene, site.tile, point)
+  if (!site?.tile.rack) return null
+  const { tile } = site
+  const rack = tile.rack!
+  const dev = rack.devices[site.devIndex]
+  const at = portLocal(rack, dev, point.port)
+  if (!at) return null
+  const world = (x: number, y: number, z: number): Vec3 =>
+    worldOf(scene, tile, x, y, z)
+  const [lx, ly, lz] = at.p
+  const stubZ = at.stub[2]
+  if (at.strip) {
+    const [sx, , sz] = at.stub
+    return {
+      entry: [world(lx, ly, lz), world(sx, ly, sz), world(at.chanX, ly, sz)],
+      railAt: (y) => world(at.chanX, y, sz),
+      rear: at.rear,
+      anchored: true,
+      local: { tile, x: lx, y: ly, z: lz, stubZ: sz, chanX: at.chanX },
+    }
+  }
+  const chanZ = lz + (stubZ - lz) * 0.5
   return {
     entry: [
       world(lx, ly, lz),
-      world(lx, ly, lz + outZ),
-      world(chanX, ly, chanZ),
+      world(lx, ly, stubZ),
+      world(at.chanX, ly, chanZ),
     ],
-    railAt: (y) => world(chanX, y, chanZ),
-    rear: panelRear,
-    anchored: Boolean(m ?? synth),
-    local: { tile, x: lx, y: ly, z: lz, stubZ: lz + outZ, chanX },
+    railAt: (y) => world(at.chanX, y, chanZ),
+    rear: at.rear,
+    anchored: at.anchored,
+    local: { tile, x: lx, y: ly, z: lz, stubZ, chanX: at.chanX },
   }
 }
 
@@ -432,9 +471,38 @@ export function cableRunPoints(
   scene: ScenePayload,
   sites: Map<string, DeviceSite>,
   cp: FloorPlanCablePath,
-  cords?: CordLookup | null
+  cords?: CordLookup | null,
+  exits?: WayExits | null
 ): Vec3[] | null {
-  return cableRun(scene, sites, cp, cords)?.points ?? null
+  return cableRun(scene, sites, cp, cords, exits)?.points ?? null
+}
+
+/** Where each rack's cable ways leave it (way-geometry rackWayExits), by
+ * tile: a run with a way at an end starts there, the rack drawing the rest
+ * (cable-ways-3d). Null: the ways are hidden, runs go port to port. */
+export type WayExits = ReadonlyMap<string, ReadonlyMap<string, Vec3>>
+
+/** `rackWayExits` of every rack tile in the room. */
+export function roomWayExits(
+  scene: ScenePayload
+): Map<string, Map<string, Vec3>> {
+  const out = new Map<string, Map<string, Vec3>>()
+  for (const t of scene.tiles) {
+    if (!t.rack?.ways?.length) continue
+    out.set(t.id, rackWayExits(t.rack))
+  }
+  return out
+}
+
+/** Whether a rack draws this cable between two of its own ports (an AB
+ * way), so the room draws none of it. */
+function rackDrawsAll(
+  scene: ScenePayload,
+  tileId: string,
+  cableId: string
+): boolean {
+  const t = scene.tiles.find((x) => x.id === tileId)
+  return !!t?.rack?.ways?.some((w) => w.cable_id === cableId && w.end === "AB")
 }
 
 /** A cable's run and the cords at its ends (null where none is drawn). */
@@ -468,7 +536,8 @@ export function cableRun(
   scene: ScenePayload,
   sites: Map<string, DeviceSite>,
   cp: FloorPlanCablePath,
-  cords?: CordLookup | null
+  cords?: CordLookup | null,
+  exits?: WayExits | null
 ): CableRun | null {
   const { plan } = scene
   const tileCentre = (tileId: string): Pt | null => {
@@ -481,6 +550,13 @@ export function cableRun(
   // A lead between two devices in one cabinet stays inside its closed box.
   if (cp.a_tiles[0] === cp.b_tiles[0] && cabinetTileOf(scene, cp.a_tiles[0]))
     return null
+  // Both ends in one rack along a way: the rack draws it.
+  if (
+    exits &&
+    cp.a_tiles[0] === cp.b_tiles[0] &&
+    rackDrawsAll(scene, cp.a_tiles[0], cp.id)
+  )
+    return null
   const endLane = cableLane(cp.id)
 
   const ends: [CordEnd | null, CordEnd | null] = [null, null]
@@ -489,6 +565,27 @@ export function cableRun(
     tileId: string,
     side: 0 | 1
   ): EndRun => {
+    // A way through this end's rack: the run starts where it leaves the
+    // rack (past its roof or floor entry), the rack draws it to the port.
+    const out = exits?.get(tileId)?.get(`${cp.id}|${side === 0 ? "A" : "B"}`)
+    const wayTile = out ? scene.tiles.find((x) => x.id === tileId) : undefined
+    if (out && wayTile) {
+      const at = worldOf(scene, wayTile, out[0], out[1], out[2])
+      return {
+        entry: [at],
+        railAt: (y) => worldOf(scene, wayTile, out[0], y, out[2]),
+        rear: true,
+        anchored: true,
+        local: {
+          tile: wayTile,
+          x: out[0],
+          y: out[1],
+          z: out[2],
+          stubZ: out[2],
+          chanX: out[0],
+        },
+      }
+    }
     for (const p of points) {
       if (p.hidden) continue
       const r = portEndRun(scene, sites, p)
@@ -702,11 +799,13 @@ export function CableTrace3D({
   scene,
   cableId,
   scale = 1,
+  exits = null,
 }: {
   planId: string
   scene: ScenePayload
   cableId: string
   scale?: number
+  exits?: WayExits | null
 }) {
   const paths = useCablePaths(planId)
   const cp = paths.data?.cables.find((c) => c.id === cableId)
@@ -714,9 +813,9 @@ export function CableTrace3D({
   const cords = useCordEnds()
   const version = useCordVersion(cords)
   const points = useMemo(
-    () => (cp ? cableRunPoints(scene, sites, cp, cords) : null),
+    () => (cp ? cableRunPoints(scene, sites, cp, cords, exits) : null),
     // `version` stands for what `cords` holds.
-    [cp, scene, sites, cords, version]
+    [cp, scene, sites, cords, version, exits]
   )
   if (!points) return null
   return (
@@ -745,6 +844,8 @@ export function CablesLayer({
   selectedId,
   onSelect,
   skip,
+  exits = null,
+  dimOthers = false,
 }: {
   planId: string
   scene: ScenePayload
@@ -762,6 +863,11 @@ export function CablesLayer({
   onSelect: (cableId: string) => void
   /** Cables another layer draws (a switch stack's, stack-scene). */
   skip?: ReadonlySet<string>
+  /** Where the racks' cable ways leave them (`roomWayExits`): runs with a
+   * way start there. Null: port to port. */
+  exits?: WayExits | null
+  /** A cable way is picked (cable-ways-3d): the other runs ghost. */
+  dimOthers?: boolean
 }) {
   const paths = useCablePaths(planId)
   const sites = useMemo(() => deviceSites(scene), [scene])
@@ -775,7 +881,7 @@ export function CablesLayer({
     runs: Map<string, { sig: string; run: CableRun | null }>
   }>({ base: [], runs: new Map() })
   const runs = useMemo(() => {
-    const base = [paths.data, scene, sites, cords]
+    const base = [paths.data, scene, sites, cords, exits]
     if (base.some((b, i) => b !== cache.current.base[i]))
       cache.current = { base, runs: new Map() }
     const kept = cache.current.runs
@@ -787,14 +893,14 @@ export function CablesLayer({
       const sig = `${endSignature(a)}\u0000${endSignature(b)}`
       let hit = kept.get(cp.id)
       if (!hit || hit.sig !== sig) {
-        hit = { sig, run: cableRun(scene, sites, cp, cords) }
+        hit = { sig, run: cableRun(scene, sites, cp, cords, exits) }
         kept.set(cp.id, hit)
       }
       if (hit.run) out.push({ cp, run: hit.run })
     }
     return out
     // `version` stands for what `cords` holds.
-  }, [paths.data, scene, sites, cords, version, skip])
+  }, [paths.data, scene, sites, cords, version, skip, exits])
 
   // Each run is its own Line2/tube draw call, so a big hall is well over a
   // thousand per frame - the dominant cost while orbiting. Hide the bulk layer
@@ -841,6 +947,7 @@ export function CablesLayer({
               radius={cableRadiusM(cp.type) * scale}
               profile={runProfile(run, scale)}
               xray={xray}
+              dim={dimOthers}
               onClick={() => onSelect(cp.id)}
             />
           ) : (
@@ -849,7 +956,7 @@ export function CablesLayer({
               points={run.points}
               color={runColor(cp, run)}
               scale={scale}
-              xray={xray}
+              xray={xray || dimOthers}
               onClick={() => onSelect(cp.id)}
             />
           )
@@ -880,6 +987,7 @@ function CableTube({
   radius,
   profile = null,
   xray = false,
+  dim = false,
   onClick,
 }: {
   points: [number, number, number][]
@@ -888,6 +996,8 @@ function CableTube({
   /** The cord's cross-section where a cord is drawn at an end. */
   profile?: RunProfile | null
   xray?: boolean
+  /** Another cable is picked: this one see-through. */
+  dim?: boolean
   onClick: () => void
 }) {
   const [hovered, setHovered] = useState(false)
@@ -931,13 +1041,15 @@ function CableTube({
       renderOrder={xray ? XRAY_CABLE_ORDER : 0}
     >
       <meshStandardMaterial
+        key={dim ? "dim" : "solid"}
         color={color}
         roughness={0.55}
         emissive={color}
         emissiveIntensity={hovered ? 0.5 : 0}
         depthTest={!xray}
-        transparent={xray}
-        opacity={xray ? 0.75 : 1}
+        transparent={xray || dim}
+        opacity={dim ? 0.15 : xray ? 0.75 : 1}
+        depthWrite={!dim}
       />
     </mesh>
   )

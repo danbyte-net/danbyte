@@ -187,6 +187,16 @@ export function CableWayCard({ cableId }: { cableId: string }) {
                       {lengthText(s.length)}
                     </span>
                   )}
+                  {stored && stored.state !== "dismissed" && (
+                    <Link
+                      to="/racks/$id"
+                      params={{ id: r.rack.id }}
+                      search={{ viz: "3d", cable: doc.cable_id }}
+                      className="link text-sm whitespace-nowrap"
+                    >
+                      Show in rack
+                    </Link>
+                  )}
                 </div>
                 {s.way && (
                   <p className="text-sm">

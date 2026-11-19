@@ -52,6 +52,7 @@ import {
   cableRunBox,
   CablesLayer,
   CableTrace3D,
+  roomWayExits,
   useCablePaths,
 } from "./cable-trace-3d"
 import {
@@ -111,6 +112,10 @@ import { levelsBounds, placeLevels } from "./building-math"
 import { ExplodeDriver } from "./level-explode-3d"
 import { CordEndsContext } from "./cord-ends"
 import { StackCables, StackSceneContext, newStackScene } from "./stack-scene"
+import { CableWaysContext } from "./cable-ways-3d"
+import { CableWayStore } from "@/lib/cable-way-store"
+import type { CableWaysScene } from "./cable-ways-3d"
+import { useCableWaysMode } from "@/lib/cable-ways-pref"
 import type { StackScene } from "./stack-scene"
 import { CordEndStore } from "@/lib/cord-run"
 import { poseBounds, tilePose } from "../floorplan/tile-pose"
@@ -352,6 +357,11 @@ export default function FloorScene3D({
     [deviceMenus.open]
   )
   const [cableSel, setCableSel] = useState<string | null>(null)
+  // Cable ways (cable-ways-3d): the picked cable lights its way through
+  // the racks; a click on one in a rack opens its card like a run's.
+  const [waysStore] = useState(() => new CableWayStore())
+  const waysMode = useCableWaysMode()
+  const pickWayRef = useRef<(id: string) => void>(() => {})
   /** An opened tray: near rail dropped in 3D, contents listed in the HUD. */
   const [traySel, setTraySel] = useState<string | null>(null)
   const flyToRef = useRef<FlyToRequest | null>(null)
@@ -468,6 +478,41 @@ export default function FloorScene3D({
   const invalidateRef = useRef<(() => void) | null>(null)
   // Where the room's drawn cords start their cables (cord-ends).
   const [cordEnds] = useState(() => new CordEndStore())
+  const waysScene = useMemo<CableWaysScene>(
+    () => ({
+      store: waysStore,
+      cords: cordEnds,
+      onPick: (id) => pickWayRef.current(id),
+    }),
+    [waysStore, cordEnds]
+  )
+  // Where the racks' ways leave them: the room's runs carry on from there.
+  const wayExits = useMemo(
+    () =>
+      !scene.data || waysMode === "hide" ? null : roomWayExits(scene.data),
+    [scene.data, waysMode]
+  )
+  const wayCableIds = useMemo(
+    () =>
+      new Set(
+        (scene.data?.tiles ?? []).flatMap((t) =>
+          (t.rack?.ways ?? []).map((w) => w.cable_id)
+        )
+      ),
+    [scene.data]
+  )
+  const wayPicked =
+    waysMode !== "hide" && cableSel != null && wayCableIds.has(cableSel)
+  useEffect(() => {
+    waysStore.select(cableSel ?? traceCableId ?? null)
+  }, [waysStore, cableSel, traceCableId])
+  pickWayRef.current = (id: string) => {
+    setSelection(null)
+    setStructSel(null)
+    setTraySel(null)
+    setCableSel(id)
+    onOpenCable?.(id)
+  }
 
   // ── Cable building ─────────────────────────────────────────────────────────
   // `connecting` holds the resolved A end while the user picks the far end in
@@ -1112,7 +1157,7 @@ export default function FloorScene3D({
           setFocusOn(false)
         }}
       >
-        <RoomContexts cordEnds={cordEnds} stacks={stackScene}>
+        <RoomContexts cordEnds={cordEnds} stacks={stackScene} ways={waysScene}>
           <ExplodeDriver store={explodeStore} />
           <Room
             scene={data}
@@ -1467,6 +1512,8 @@ export default function FloorScene3D({
               look={cableLook}
               selectedId={cableSel}
               skip={stackCables}
+              exits={wayExits}
+              dimOthers={wayPicked}
               onSelect={(id) => {
                 setSelection(null)
                 setStructSel(null)
@@ -1482,6 +1529,7 @@ export default function FloorScene3D({
               scene={data}
               cableId={traceCableId}
               scale={cableScale}
+              exits={wayExits}
             />
           )}
           <StackCables stacks={roomStacks} mode={stacksMode} />
@@ -2057,16 +2105,20 @@ function cameraViewsStamp(views: readonly CameraView[]): string {
 function RoomContexts({
   cordEnds,
   stacks,
+  ways,
   children,
 }: {
   cordEnds: CordEndStore
   stacks: StackScene
+  ways: CableWaysScene
   children: ReactNode
 }) {
   return (
     <CordEndsContext.Provider value={cordEnds}>
       <StackSceneContext.Provider value={stacks}>
-        {children}
+        <CableWaysContext.Provider value={ways}>
+          {children}
+        </CableWaysContext.Provider>
       </StackSceneContext.Provider>
     </CordEndsContext.Provider>
   )

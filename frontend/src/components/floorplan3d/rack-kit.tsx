@@ -21,6 +21,8 @@ import {
 } from "./rack-kit-math"
 import type { PostSpot, SceneKit, SceneLook } from "./rack-kit-math"
 import { RACK_BASE_M, TRANSPARENT_ORDER, mm } from "./world"
+import { isManager, rackLocal } from "./way-geometry"
+import type { ManagerGeo, ScenePathway } from "./way-geometry"
 
 /** Blender's ``.001`` suffix, dropped from a part's name (api.rack_kits). */
 export function partName(name: string): string {
@@ -85,7 +87,18 @@ export function indexKit(
     if (name.includes(":")) {
       const meshes: PartMesh[] = []
       let hinge: THREE.Vector3 | null = null
-      o.traverse((c) => {
+      // A part named inside a part (a manager's `:cover`) is its own part.
+      const nested: THREE.Object3D[] = []
+      const walk = (c: THREE.Object3D, fn: (c: THREE.Object3D) => void) => {
+        const cn = partName(String(c.userData.gltfName ?? c.name ?? ""))
+        if (c !== o && /^path:.*:cover$/.test(cn)) {
+          nested.push(c)
+          return
+        }
+        fn(c)
+        c.children.forEach((k) => walk(k, fn))
+      }
+      walk(o, (c) => {
         const cn = partName(String(c.userData.gltfName ?? c.name ?? ""))
         if (c !== o && cn === "hinge" && !hinge) {
           hinge = new THREE.Vector3()
@@ -121,6 +134,7 @@ export function indexKit(
           ...(channel ? { channel } : {}),
         })
       }
+      nested.forEach((c) => visit(c, channel))
       return
     }
     o.children.forEach((c) => visit(c, channel))
@@ -136,6 +150,9 @@ export function indexKit(
     ? Math.min(...roofs.map((p) => p.origin.y))
     : fixedTop
   for (const part of parts) {
+    // A pathway's manager is placed from where the server lays it out
+    // (buildKit `pathways`), from its raw 1000 mm mesh.
+    if (part.name.startsWith("path:")) continue
     const to = referenceBox(
       part.origin,
       part.box,
@@ -544,6 +561,9 @@ export function RackKitShell({
   numbering = null,
   baseM = RACK_BASE_M,
   shiftM = 0,
+  pathways = NO_PATHWAYS,
+  covers = "hide",
+  fills = null,
   fallback,
 }: {
   rackId: string
@@ -562,6 +582,11 @@ export function RackKitShell({
   baseM?: number
   /** How far the posts move out each side for a rail wider than 19". */
   shiftM?: number
+  /** The rack's shown pathways, their managers' covers and fill colours
+   * (BuildOptions). */
+  pathways?: readonly ScenePathway[]
+  covers?: "hide" | "ghost" | "solid"
+  fills?: ReadonlyMap<string, string> | null
   fallback: React.ReactNode
 }) {
   const entry = useDeviceModel(kit.model_url)
@@ -585,6 +610,9 @@ export function RackKitShell({
               shiftM,
               widthM: kitSizeM(kit.widths_mm),
               depthM: kitSizeM(kit.depths_mm),
+              pathways,
+              covers,
+              fills,
             }
           )
         : null,
@@ -602,6 +630,9 @@ export function RackKitShell({
       seats,
       baseM,
       shiftM,
+      pathways,
+      covers,
+      fills,
     ]
   )
   useEffect(() => () => built?.dispose(), [built])
@@ -659,6 +690,7 @@ export function RackKitShell({
 }
 
 const NO_SEATS: readonly KitSeat[] = []
+const NO_PATHWAYS: readonly ScenePathway[] = []
 
 /** A rack's unit numbering (the 2D elevation's): `start` the lowest unit
  * number, `desc` counting from the top. */
@@ -789,6 +821,14 @@ export interface BuildOptions {
   widthM?: number | null
   depthM?: number | null
   shiftM?: number
+  /** The rack's shown pathways (api.scene_geo): the kit's
+   * `path:vertical:*` manager of each is drawn in its place. */
+  pathways?: readonly ScenePathway[]
+  /** A manager's `:cover` (spec §14 v1.16): hidden while cables are
+   * shown, see-through while they are ghosted, solid while hidden. */
+  covers?: "hide" | "ghost" | "solid"
+  /** The fill overlay's colour of a manager, by key. */
+  fills?: ReadonlyMap<string, string> | null
 }
 
 /** Everything a kit-built rack draws, and what to dispose with it. */
@@ -1023,6 +1063,41 @@ export function buildKit(
     draw(bracket, fit.multiply(m))
   }
 
+  // The kit's vertical managers of the rack's shown pathways, each in the
+  // box the server places it in (rack-local from its mm), with its cover.
+  const covers = opts.covers ?? "hide"
+  for (const p of opts.pathways ?? []) {
+    if (p.kind !== "vertical" || !isManager(p)) continue
+    const part = index.parts.find((q) => q.name === p.key)
+    if (!part) continue
+    const to = managerBox(p.geo, d)
+    const m = boxToBox(part.box, to)
+    const tint = opts.fills?.get(p.key) ?? null
+    for (const pm of part.meshes) {
+      let material = dressAll(pm.material, repeatOf(part, m))
+      if (tint) material = tinted(material, tint, owned)
+      plain.push({
+        geometry: pm.geometry,
+        material,
+        matrix: m.clone().multiply(pm.matrix),
+        renderOrder: 0,
+      })
+    }
+    const cover = index.parts.find((q) => q.name === `${p.key}:cover`)
+    if (!cover || covers === "hide") continue
+    // Modelled on its manager with the same stretch: placed as it is.
+    for (const pm of cover.meshes) {
+      let material = dressAll(pm.material, repeatOf(cover, m))
+      if (covers === "ghost") material = ghosted(material, owned)
+      plain.push({
+        geometry: pm.geometry,
+        material,
+        matrix: m.clone().multiply(pm.matrix),
+        renderOrder: covers === "ghost" ? TRANSPARENT_ORDER.ghost : 0,
+      })
+    }
+  }
+
   const doors: DoorDraw[] = []
   if (mode === "solid" && isEnclosed(look.frame)) {
     const hardware = index.parts.filter((p) =>
@@ -1115,6 +1190,54 @@ export function buildKit(
       }
     },
   }
+}
+
+/** A manager's box in the rack frame (m) from its place in the rack's mm
+ * (way-geometry ManagerGeo), for a rack `depthM` deep. */
+export function managerBox(g: ManagerGeo, depthM: number): THREE.Box3 {
+  const [xa, , za] = rackLocal(depthM, g.x0, g.y0, 0)
+  const [xb, , zb] = rackLocal(depthM, g.x1, g.y1, 0)
+  return new THREE.Box3(
+    new THREE.Vector3(Math.min(xa, xb), g.z0 / 1000, Math.min(za, zb)),
+    new THREE.Vector3(Math.max(xa, xb), g.z1 / 1000, Math.max(za, zb))
+  )
+}
+
+function eachMaterial(
+  mat: THREE.Material | THREE.Material[],
+  fn: (m: THREE.Material) => THREE.Material
+): THREE.Material | THREE.Material[] {
+  return Array.isArray(mat) ? mat.map(fn) : fn(mat)
+}
+
+/** `mat` in the fill overlay's colour (a copy, owned by the build). */
+function tinted(
+  mat: THREE.Material | THREE.Material[],
+  color: string,
+  owned: THREE.Material[]
+): THREE.Material | THREE.Material[] {
+  return eachMaterial(mat, (m) => {
+    const c = m.clone() as THREE.MeshStandardMaterial
+    if ("color" in c) c.color.set(color)
+    if ("map" in c) c.map = null
+    owned.push(c)
+    return c
+  })
+}
+
+/** `mat` see-through, as a ghosted cover (a copy, owned by the build). */
+function ghosted(
+  mat: THREE.Material | THREE.Material[],
+  owned: THREE.Material[]
+): THREE.Material | THREE.Material[] {
+  return eachMaterial(mat, (m) => {
+    const c = m.clone()
+    c.transparent = true
+    c.opacity = 0.25
+    c.depthWrite = false
+    owned.push(c)
+    return c
+  })
 }
 
 /**
