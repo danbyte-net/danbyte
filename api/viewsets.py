@@ -6926,7 +6926,7 @@ class InventoryItemViewSet(_DevicePortViewSet):
     queryset = (
         InventoryItem.objects
         .select_related("device", "device__site", "manufacturer", "parent", "interface",
-                        "accessory_type")
+                        "accessory_type", "status")
         .prefetch_related(TAGS)
         .order_by(natural("device__name"), NATURAL_NAME)
     )
@@ -7568,7 +7568,7 @@ class ClusterViewSet(TenantScopedViewSet):
         qs = (
             super()
             .get_queryset()
-            .select_related("type", "group", "site")
+            .select_related("type", "group", "site", "status")
             .prefetch_related(TAGS)
             .annotate(vm_count_annotated=_visible_n(self, "virtual_machines"))
         )
@@ -8544,7 +8544,7 @@ class RackViewSet(ImageAttachmentMixin, TenantScopedViewSet):
         qs = (
             super().get_queryset()
             .select_related(
-                "site", "site__region", "role", "location", "room",
+                "site", "site__region", "role", "location", "room", "status",
                 "rack_type__manufacturer", "rack_type__kit", "kit",
             )
             .prefetch_related(TAGS, capacity.racked_devices_prefetch(), "power_feeds", "cooling_feeds")
@@ -9249,7 +9249,7 @@ class IPRangeViewSet(TenantScopedViewSet):
         qs = (
             super()
             .get_queryset()
-            .select_related("vrf", "role", "prefix")
+            .select_related("vrf", "role", "prefix", "status")
             .prefetch_related(TAGS)
             # Backs a DHCP exclusion? → serializer `dhcp` flag ("exclusion").
             # Reverse accessor - no integrations import.
@@ -10241,7 +10241,7 @@ class PowerFeedViewSet(SafeBulkDeleteMixin, ComponentBulkMixin, TenantScopedView
         qs = (
             super()
             .get_queryset()
-            .select_related("power_panel", "rack")
+            .select_related("power_panel", "rack", "status")
             .prefetch_related(TAGS)
             # The Terminations tab's count: distinct cables among the feed's
             # terminations, annotated so the list stays one query.
@@ -10569,7 +10569,7 @@ class WirelessLANViewSet(SafeBulkDeleteMixin, SecretPSKViewSetMixin, TenantScope
         qs = (
             super()
             .get_queryset()
-            .select_related("group", "vlan")
+            .select_related("group", "vlan", "status")
             .prefetch_related(TAGS)
         )
         if self.request:
@@ -10679,7 +10679,7 @@ class TunnelViewSet(TenantScopedViewSet):
         qs = (
             super()
             .get_queryset()
-            .select_related("group", "ipsec_profile")
+            .select_related("group", "ipsec_profile", "status")
             .prefetch_related(
                 TAGS,
                 Prefetch("terminations", queryset=ends),
@@ -11180,7 +11180,7 @@ class LocationViewSet(ImageAttachmentMixin, TenantScopedViewSet):
         return LocationSerializer
 
     def get_queryset(self):
-        qs = super().get_queryset().select_related("site", "parent", "location_type")
+        qs = super().get_queryset().select_related("site", "parent", "location_type", "status")
         # Detail tabs show Devices/Racks/Cabinets counts; annotated so the
         # serializer serves them without an N+1 per row, and narrowed to the
         # rows the reader may view (#438).

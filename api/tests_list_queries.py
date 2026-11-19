@@ -224,10 +224,15 @@ class RackListTests(_Base):
     def test_page_cost_is_flat_and_figures_match(self):
         from .models import Rack, Region
 
+        from .test_utils import status_for
+
         region = Region.objects.create(tenant=self.tenant, name="Nordics")
         site = Site.objects.create(tenant=self.tenant, name="HQ", region=region)
+        # Every rack with a status: the status is joined, not read per rack (#530).
+        statuses = [status_for(self.tenant), status_for(self.tenant, "planned")]
         for i in range(6):
-            r = Rack.objects.create(tenant=self.tenant, site=site, name=f"r{i}")
+            r = Rack.objects.create(
+                tenant=self.tenant, site=site, name=f"r{i}", status=statuses[i % 2])
             for k in range(8):
                 Device.objects.create(
                     tenant=self.tenant, name=f"d-{i}-{k}", site=site, rack=r, position=k + 1
@@ -241,6 +246,9 @@ class RackListTests(_Base):
         self.assertEqual(row["used_units"], 8)
         self.assertEqual(row["document_count"], 0)
         self.assertEqual(row["power"]["allocated_w"], 0)
+        self.assertEqual(
+            {r["name"]: r["status"]["slug"] for r in body["results"]},
+            {f"r{i}": ("active", "planned")[i % 2] for i in range(6)})
 
 
 class IpListTests(_Base):
@@ -1099,3 +1107,52 @@ class CatalogListTests(_Base):
         self.assertEqual([r["name"] for r in lt["roles_detail"]], ["role"])
         self.assertEqual(self._rows("manufacturers")["mf0"]["owning_site"]["name"], "HQ")
         self.assertEqual(self._rows("nat-rules")["nat0"]["source_prefix"]["vlan"]["name"], "vl0")
+
+
+class StatusJoinTests(_Base):
+    """Every list whose rows show a status joins it (#530): a status read per
+    row cost one query per rack, and would on any other list too."""
+
+    def test_every_list_with_a_status_selects_it(self):
+        from django.urls import get_resolver
+        from rest_framework.request import Request
+        from rest_framework.test import APIRequestFactory
+
+        from .serializers import StatusSerializerMixin
+
+        admin = User.objects.get(username="admin")
+        factory = APIRequestFactory()
+        seen, missing = set(), []
+
+        def visit(patterns):
+            for p in patterns:
+                if hasattr(p, "url_patterns"):
+                    visit(p.url_patterns)
+                    continue
+                cb = getattr(p, "callback", None)
+                cls = getattr(cb, "cls", None)
+                actions = getattr(cb, "actions", None) or {}
+                if cls is None or actions.get("get") != "list" or cls in seen:
+                    continue
+                seen.add(cls)
+                ser = getattr(cls, "serializer_class", None)
+                if not (isinstance(ser, type) and issubclass(ser, StatusSerializerMixin)):
+                    continue
+                django_req = factory.get("/")
+                django_req.user = admin
+                django_req.session = self.client.session
+                view = cls(action="list", request=None, format_kwarg=None, kwargs={}, args=())
+                view.request = Request(django_req)
+                view.request.user = admin
+                if view.get_serializer_class() is not ser:
+                    continue
+                qs = view.get_queryset()
+                sr = qs.query.select_related
+                prefetched = {str(getattr(x, "prefetch_to", x)) for x in qs._prefetch_related_lookups}
+                if not (sr is True or (isinstance(sr, dict) and "status" in sr)
+                        or "status" in prefetched):
+                    missing.append(f"{cls.__module__}.{cls.__name__}")
+
+        visit(get_resolver().url_patterns)
+        self.assertGreater(len(seen), 10)
+        self.assertEqual(sorted(missing), [])
