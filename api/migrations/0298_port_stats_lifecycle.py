@@ -3,7 +3,7 @@
 #
 # DevicePortStat: table only - its rows are built after the upgrade, batch by
 # batch and resumable, by `manage.py list_summaries` (api.list_summaries),
-# never in one transaction here. LifecycleEntry: a view over key columns
+# never in one transaction here. LifecycleEntry: a view over its sources
 # (api.lifecycle_view), nothing to fill.
 
 import django.db.models.deletion
@@ -26,6 +26,14 @@ class Migration(migrations.Migration):
                 ('id', models.CharField(max_length=64, primary_key=True, serialize=False)),
                 ('kind', models.CharField(max_length=16)),
                 ('source', models.CharField(max_length=16)),
+                ('name', models.CharField(max_length=255)),
+                ('item_id', models.UUIDField(null=True)),
+                ('item_name', models.CharField(max_length=255, null=True)),
+                ('version', models.CharField(blank=True, max_length=255)),
+                ('entered_start', models.DateField(null=True)),
+                ('entered_end', models.DateField(null=True)),
+                ('warranty_end', models.DateField(null=True)),
+                ('cov_contract_end', models.DateField(null=True)),
             ],
             options={
                 'db_table': 'api_lifecycle_entry',

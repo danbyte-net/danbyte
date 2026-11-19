@@ -12199,13 +12199,10 @@ class DevicePortStat(models.Model):
 class LifecycleEntry(models.Model):
     """One row of the Lifecycle page (#436, #535): a device's hardware, OS
     or support coverage, a VM's OS, or an installed application. A database
-    view (``api_lifecycle_entry``, migration 0298) naming only which rows
-    exist - every name, date and mapping is joined at read through these
-    keys (``api.lifecycle_api``), so the page is never stale and needs no
-    upkeep. The view reads ``id``, ``tenant_id``, ``device_type_id`` and
-    ``platform_id`` of devices, VMs and installs and their parent keys: a
-    migration that alters one of those columns drops the view first and
-    creates it again after (``api.lifecycle_view``)."""
+    view (``api_lifecycle_entry``, ``api.lifecycle_view``) over the devices,
+    VMs and installs, each value picked from its source's own tables - never
+    stale, nothing to keep up. The effective dates, days left, window and
+    status are worked out at read (``api.lifecycle_list``)."""
 
     id = models.CharField(max_length=64, primary_key=True)
     tenant = models.ForeignKey(Tenant, on_delete=models.DO_NOTHING, related_name="+")
@@ -12217,6 +12214,33 @@ class LifecycleEntry(models.Model):
                                         null=True, related_name="+")
     install = models.ForeignKey("InstalledSoftware", on_delete=models.DO_NOTHING, null=True,
                                 related_name="+")
+    #: The device's or VM's name, site and role.
+    name = models.CharField(max_length=255)
+    site = models.ForeignKey("Site", on_delete=models.DO_NOTHING, null=True, related_name="+")
+    role = models.ForeignKey("DeviceRole", on_delete=models.DO_NOTHING, null=True,
+                             related_name="+")
+    #: The device type's manufacturer (every row of a device), or the
+    #: application's (a software row).
+    manufacturer = models.ForeignKey("Manufacturer", on_delete=models.DO_NOTHING, null=True,
+                                     related_name="+")
+    #: The device type, platform or application, and its name (an
+    #: application's with the version).
+    item_id = models.UUIDField(null=True)
+    item_name = models.CharField(max_length=255, null=True)
+    application = models.ForeignKey("Application", on_delete=models.DO_NOTHING, null=True,
+                                    related_name="+")
+    version = models.CharField(max_length=255, blank=True)
+    #: The dates someone entered, and the mapping that fills what is blank.
+    entered_start = models.DateField(null=True)
+    entered_end = models.DateField(null=True)
+    mapping = models.ForeignKey("compliance.EolMapping", on_delete=models.DO_NOTHING,
+                                null=True, related_name="+")
+    #: Coverage rows: the warranty, the device's latest contract end
+    #: (9999-12-31 for an open-ended one) and the contract with it.
+    warranty_end = models.DateField(null=True)
+    cov_contract_end = models.DateField(null=True)
+    cov_contract = models.ForeignKey("SupportContract", on_delete=models.DO_NOTHING, null=True,
+                                     related_name="+")
 
     class Meta:
         managed = False

@@ -139,3 +139,53 @@ class MigrationSafetyTests(SimpleTestCase):
         # Nullable columns are fine, and 0184 is only defaults.
         self.assertNotIn("availability_since", joined)
         self.assertNotIn("0184", joined)
+
+
+#: Each app's leaf when the Lifecycle view (#535, api 0298) was added: every
+#: migration after these runs with the view in place, so a column the view
+#: reads is altered only with the view dropped around it.
+VIEW_BASELINE = {
+    "api": "0298_port_stats_lifecycle", "compliance": "0010_vulnerabilities_rule",
+}
+
+
+def view_problems(loader: MigrationLoader | None = None) -> list[str]:
+    """Migrations after the view's that alter, rename or remove a column
+    ``api.lifecycle_view`` reads without dropping the view in the same
+    migration - PostgreSQL refuses them half-way through an upgrade."""
+    from api.lifecycle_view import DROP_SQL, READS
+
+    loader = loader or MigrationLoader(None, ignore_no_migrations=True)
+    before: set = set()
+    for app, name in VIEW_BASELINE.items():
+        if (app, name) in loader.graph.nodes:
+            before.update(loader.graph.forwards_plan((app, name)))
+    found = []
+    for key in sorted(loader.graph.nodes):
+        if key in before or key[0] not in VIEW_BASELINE:
+            continue
+        migration = loader.graph.nodes[key]
+        drops = any(isinstance(op, ops.RunSQL) and DROP_SQL in str(op.sql)
+                    for op in migration.operations)
+        for op in migration.operations:
+            if not isinstance(op, (ops.AlterField, ops.RemoveField, ops.RenameField)):
+                continue
+            try:
+                model = apps.get_model(key[0], op.model_name)
+            except LookupError:
+                continue
+            reads = READS.get(model._meta.db_table, set())
+            name = getattr(op, "old_name", None) or op.name
+            try:
+                column = model._meta.get_field(name).column
+            except Exception:  # noqa: BLE001 - removed since
+                column = name
+            if (column in reads or f"{name}_id" in reads) and not drops:
+                found.append(f"{key[0]}.{key[1]}: {op.model_name}.{name} is read by "
+                             "api_lifecycle_entry - drop the view before and create it after")
+    return found
+
+
+class LifecycleViewMigrationTests(SimpleTestCase):
+    def test_columns_the_view_reads_are_altered_around_it(self):
+        self.assertEqual(view_problems(), [])

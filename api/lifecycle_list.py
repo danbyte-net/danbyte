@@ -46,14 +46,13 @@ from django.db.models import (
     F,
     Func,
     IntegerField,
-    Max,
     OuterRef,
     Q,
     Subquery,
     Value,
     When,
 )
-from django.db.models.functions import Cast, Coalesce, Concat, Greatest, Trim
+from django.db.models.functions import Cast, Coalesce, Greatest
 from django.utils import timezone
 from rest_framework import serializers, viewsets
 from rest_framework.decorators import action
@@ -72,7 +71,6 @@ from .models import (
     InstalledSoftware,
     LifecycleEntry,
     SupportContract,
-    SupportCoverage,
     VirtualMachine,
 )
 from .natural import natural
@@ -98,24 +96,6 @@ _FAR = 10 ** 9
 def _is(source: str, kind: str | None = None) -> Q:
     q = Q(source=source)
     return q & Q(kind=kind) if kind else q
-
-
-def _pick(paths: dict, output_field):
-    """One expression over the sources: ``{(source, kind) | source: path}``."""
-    whens = []
-    for key, path in paths.items():
-        source, kind = key if isinstance(key, tuple) else (key, None)
-        whens.append(When(_is(source, kind), then=F(path) if isinstance(path, str) else path))
-    return Case(*whens, default=None, output_field=output_field)
-
-
-_MAPS = {("os", "device"): "device__platform__eol_mapping",
-         ("os", "virtualmachine"): "virtual_machine__platform__eol_mapping",
-         "software": "install__eol_mapping"}
-
-
-def _mapped(field: str, output_field):
-    return _pick({k: f"{v}__{field}" for k, v in _MAPS.items()}, output_field)
 
 
 class _Ctx:
@@ -152,22 +132,14 @@ def annotate(qs, request):
     c = _Ctx.of(request)
     today = c.today
     date = DateField()
-    entered_start = _pick({"hardware": "device__device_type__release_date",
-                           ("os", "device"): "device__platform__release_date",
-                           ("os", "virtualmachine"): "virtual_machine__platform__release_date",
-                           "software": "install__release_date"}, date)
-    entered_end = _pick({"hardware": "device__device_type__end_of_support",
-                         ("os", "device"): "device__platform__end_of_support",
-                         ("os", "virtualmachine"): "virtual_machine__platform__end_of_support",
-                         "software": "install__end_of_support"}, date)
-    qs = qs.annotate(_e_start=entered_start, _e_end=entered_end)
+    qs = qs.annotate(_e_start=F("entered_start"), _e_end=F("entered_end"))
     if c.eol.enabled:
         qs = qs.annotate(
-            _m_synced=_mapped("synced_at", DateField()),
-            _m_release=_mapped("release_date", date),
-            _m_eol=_mapped("eol_date", date),
-            _m_reached=_mapped("eol_reached", BooleanField()),
-            _m_source=_mapped("source", CharField()),
+            _m_synced=F("mapping__synced_at"),
+            _m_release=F("mapping__release_date"),
+            _m_eol=F("mapping__eol_date"),
+            _m_reached=F("mapping__eol_reached"),
+            _m_source=F("mapping__source"),
         )
         m_ok = Q(_m_synced__isnull=False)
         m_end = m_ok & (Q(_m_eol__isnull=False) | Q(_m_reached__isnull=False))
@@ -178,16 +150,10 @@ def annotate(qs, request):
                          _m_reached=Cast(Value(None), BooleanField()),
                          _m_source=Cast(Value(None), CharField()))
         m_end = m_start = Q(pk__in=[])
-    contracts = SupportCoverage.objects.filter(device=OuterRef("device_id")).order_by()
     qs = qs.annotate(
-        _cov_contract_end=Case(When(_is("coverage"), then=Subquery(
-            contracts.values("device").annotate(m=Max(Coalesce(
-                "contract__end_date", Value(cov.OPEN_ENDED), output_field=date))).values("m"),
-            output_field=date)), default=None, output_field=date),
-        _cov_contract=Case(When(_is("coverage"), then=Subquery(
-            contracts.order_by(*cov.contract_order("contract__")).values("contract_id")[:1])),
-            default=None),
-        _cov_warranty=_pick({"coverage": "device__warranty_end"}, date),
+        _cov_contract_end=F("cov_contract_end"),
+        _cov_contract=F("cov_contract_id"),
+        _cov_warranty=F("warranty_end"),
     ).annotate(
         _cov_raw=Greatest(F("_cov_contract_end"), F("_cov_warranty"), output_field=date),
     )
@@ -274,34 +240,26 @@ def annotate(qs, request):
                                for w, p in WINDOW_PARAMS.items()], output_field=CharField()),
         lc_source_rank=Case(*[When(source=s, then=Value(i)) for i, s in enumerate(SOURCES)],
                             output_field=IntegerField()),
-        lc_name=Coalesce(F("device__name"), F("virtual_machine__name")),
-        lc_site=Coalesce(F("device__site_id"), F("virtual_machine__site_id")),
-        lc_site_name=Coalesce(F("device__site__name"), F("virtual_machine__site__name")),
-        lc_role=Coalesce(F("device__role_id"), F("virtual_machine__role_id")),
-        lc_role_name=Coalesce(F("device__role__name"), F("virtual_machine__role__name")),
-        lc_role_color=Coalesce(F("device__role__color"), F("virtual_machine__role__color")),
-        lc_mfr=Case(When(_is("software"), then=F("install__application__manufacturer_id")),
-                    When(kind="device", then=F("device__device_type__manufacturer_id")),
-                    default=None),
-        lc_mfr_name=Case(
-            When(_is("software"), then=F("install__application__manufacturer__name")),
-            When(kind="device", then=F("device__device_type__manufacturer__name")),
-            default=None, output_field=CharField()),
-        lc_app=_pick({"software": "install__application_id"}, None),
-        lc_app_name=_pick({"software": "install__application__name"}, CharField()),
+        lc_name=F("name"),
+        lc_site=F("site_id"),
+        lc_site_name=F("site__name"),
+        lc_role=F("role_id"),
+        lc_role_name=F("role__name"),
+        lc_role_color=F("role__color"),
+        lc_mfr=F("manufacturer_id"),
+        lc_mfr_name=F("manufacturer__name"),
+        lc_app=F("application_id"),
+        lc_app_name=F("application__name"),
     )
     qs = qs.annotate(lc_contract_number=Case(
         When(lc_governed="contract", then=contract_number), default=None,
         output_field=CharField()))
     item = Case(
-        When(_is("hardware"), then=F("device__device_type__name")),
-        When(_is("os", "device"), then=F("device__platform__name")),
-        When(_is("os", "virtualmachine"), then=F("virtual_machine__platform__name")),
-        When(_is("software"), then=Trim(Concat(F("install__application__name"), Value(" "),
-                                              F("install__version"), output_field=CharField()))),
-        When(lc_governed="contract", then=Coalesce(F("lc_contract_number"), Value("Contract"))),
-        When(lc_governed="warranty", then=Value("Warranty")),
-        default=None, output_field=CharField(),
+        When(_is("coverage") & Q(lc_governed="contract"),
+             then=Coalesce(F("lc_contract_number"), Value("Contract"))),
+        When(_is("coverage") & Q(lc_governed="warranty"), then=Value("Warranty")),
+        When(_is("coverage"), then=Value(None)),
+        default=F("item_name"), output_field=CharField(),
     )
     return qs.annotate(lc_item=item, lc_status_label=Case(
         *[When(lc_status=k, then=Value(v)) for k, v in STATUS_LABELS.items()],
@@ -458,7 +416,7 @@ def scoped(request, tenant):
         allowed |= Q(source="software", install_id__in=installs) & parents
     qs = qs.filter(allowed)
     if site:
-        qs = qs.filter(Q(device__site_id=site) | Q(virtual_machine__site_id=site))
+        qs = qs.filter(site_id=site)
     return qs
 
 
@@ -500,8 +458,7 @@ class LifecycleViewSet(TableListMixin, viewsets.GenericViewSet):
                            "lc_source_rank", "pk")
 
     def list(self, request, *args, **kwargs):
-        qs = self.filter_queryset(self.get_queryset()).select_related(
-            "device", "virtual_machine", "install")
+        qs = self.filter_queryset(self.get_queryset())
         page = self.paginate_queryset(qs)
         return self.get_paginated_response(_rows(request, self._tenant(), page or []))
 
@@ -553,18 +510,14 @@ def _rows(request, tenant, page) -> list[dict]:
         oid = e.device_id or e.virtual_machine_id
         start = e.lc_start
         if e.source == "hardware":
-            item = {"id": str(e.device.device_type_id), "type": "devicetype",
-                    "name": e.lc_item}
+            item = {"id": str(e.item_id), "type": "devicetype", "name": e.lc_item}
         elif e.source == "os":
-            pid = (e.device.platform_id if e.kind == "device"
-                   else e.virtual_machine.platform_id)
-            item = {"type": "platform", "id": str(pid), "name": e.lc_item,
+            item = {"type": "platform", "id": str(e.item_id), "name": e.lc_item,
                     "date_source": e.lc_date_source}
         elif e.source == "software":
-            inst = e.install
-            item = {"type": "application", "id": str(inst.application_id), "name": e.lc_item,
-                    "application": e.lc_app_name, "version": inst.version,
-                    "install": str(inst.pk), "date_source": e.lc_date_source}
+            item = {"type": "application", "id": str(e.item_id), "name": e.lc_item,
+                    "application": e.lc_app_name, "version": e.version,
+                    "install": str(e.install_id), "date_source": e.lc_date_source}
         elif e.lc_governed == "warranty":
             item = _WARRANTY
         elif e.lc_governed == "contract":
