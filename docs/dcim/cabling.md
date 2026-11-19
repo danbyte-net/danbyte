@@ -26,6 +26,12 @@ ports** - so USB console links or video runs are first-class cables.
    - **tick the port(s)** on that device. Selected ports appear as chips; switch
      the device or type and keep ticking to add ports from **several devices**
      on the same end (breakout).
+
+   Each port in the list, and its chip once picked, shows the port's **label**
+   after its name (`Gi1/0/7  Uplink core`), or its **description** when it
+   has no label; console, power and aux ports have no label, so they show
+   the description. **Filter ports…** matches the name, the label and the
+   description.
 3. Optionally set the cable's **type**, **status**, **length**, **color**, and a
    description.
 4. Save with **Create cable** (or **Enter**), or keep going with **Save and

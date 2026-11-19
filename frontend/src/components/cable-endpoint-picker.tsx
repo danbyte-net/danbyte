@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { IconTip } from "@/components/icon-tip"
 import { Input } from "@/components/ui/input"
+import { TruncatedText } from "@/components/ui/truncated-text"
 import { DevicePicker } from "@/components/device-picker"
 import { FaceplateView, useHasImagePorts } from "@/components/device-faceplate"
 import { SegmentedTabs } from "@/components/segmented-tabs"
@@ -43,6 +44,10 @@ const KIND_TABS = PORT_KIND_TABS
 interface PortRow {
   id: string
   name: string
+  /** Interfaces, front and rear ports carry a label; every port a
+   * description. Either says which port this is better than its name (#537). */
+  label?: string
+  description?: string
   cable?: { id: string } | null
   mark_connected?: boolean
   device?: { id: string; name: string }
@@ -53,6 +58,24 @@ interface PortRow {
 }
 
 const keyOf = (t: { kind: TerminationKind; id: string }) => `${t.kind}:${t.id}`
+
+/** What follows a port's name in the lists and chips: its label, else its
+ * description, else nothing (#537). */
+export function portNote(r: { label?: string; description?: string }): string {
+  return (r.label || "").trim() || (r.description || "").trim()
+}
+
+/** The "Filter ports…" match: the name, the label or the description. */
+export function portMatches(
+  r: { name: string; label?: string; description?: string },
+  q: string
+): boolean {
+  const needle = q.trim().toLowerCase()
+  if (!needle) return true
+  return [r.name, r.label, r.description].some((v) =>
+    (v ?? "").toLowerCase().includes(needle)
+  )
+}
 
 /** One line of capacity: bar + "12 of 48 free". The full card belongs on a
  * device page; in a form it only has to answer "is there room here?". */
@@ -123,6 +146,8 @@ export function CableEndpointPicker({
   )
   const [q, setQ] = useState("")
   const [names, setNames] = useState<Record<string, string>>({})
+  // A picked port's label or description, shown after its name on the chip.
+  const [notes, setNotes] = useState<Record<string, string>>({})
   const [slotNames, setSlotNames] = useState<Record<number, string>>({})
   // Front or rear panel - servers and many switches have ports on both.
   const [side, setSide] = useState<"front" | "rear">(
@@ -184,9 +209,12 @@ export function CableEndpointPicker({
     ).then((rows) => {
       if (!alive) return
       const add: Record<string, string> = {}
+      const addNotes: Record<string, string> = {}
       rows.forEach((r, i) => {
         if (!r) return
         const v = unresolved[i]
+        if (v.kind !== "circuit_termination" && portNote(r))
+          addNotes[keyOf(v)] = portNote(r)
         add[keyOf(v)] =
           v.kind === "circuit_termination"
             ? `${r.circuit?.cid ?? "circuit"}:Side ${r.term_side}`
@@ -197,6 +225,8 @@ export function CableEndpointPicker({
           setSlots((prev) => [r.device!.id, ...prev.slice(1)])
       })
       if (Object.keys(add).length) setNames((prev) => ({ ...prev, ...add }))
+      if (Object.keys(addNotes).length)
+        setNotes((prev) => ({ ...prev, ...addNotes }))
     })
     return () => {
       alive = false
@@ -244,19 +274,19 @@ export function CableEndpointPicker({
         ? "bare"
         : "rendered"
   const selected = useMemo(() => new Set(value.map(keyOf)), [value])
-  const rows = (ports.data?.results ?? []).filter((r) =>
-    q ? r.name.toLowerCase().includes(q.toLowerCase()) : true
-  )
+  const rows = (ports.data?.results ?? []).filter((r) => portMatches(r, q))
 
   const toggle = (
     k: TerminationKind,
     id: string,
     cabled: boolean,
-    name?: string
+    name?: string,
+    note?: string
   ) => {
     if (cabled) return
     const key = keyOf({ kind: k, id })
     if (name) setNames((prev) => ({ ...prev, [key]: name }))
+    if (note) setNotes((prev) => ({ ...prev, [key]: note }))
     onChange(
       selected.has(key)
         ? value.filter((v) => keyOf(v) !== key)
@@ -539,13 +569,20 @@ export function CableEndpointPicker({
                   const marked = !cabled && !!r.mark_connected
                   const key = keyOf({ kind: kind as TerminationKind, id: r.id })
                   const on = selected.has(key)
+                  const note = portNote(r)
                   return (
                     <button
                       key={r.id}
                       type="button"
                       disabled={cabled}
                       onClick={() =>
-                        toggle(kind as TerminationKind, r.id, cabled, r.name)
+                        toggle(
+                          kind as TerminationKind,
+                          r.id,
+                          cabled,
+                          r.name,
+                          note
+                        )
                       }
                       onMouseEnter={() => setHoverId(r.id)}
                       onMouseLeave={() =>
@@ -556,19 +593,28 @@ export function CableEndpointPicker({
                         setHoverId((cur) => (cur === r.id ? null : cur))
                       }
                       className={cn(
-                        "flex w-full items-center justify-between px-3 py-1.5 text-left text-xs",
+                        "flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-xs",
                         on && "bg-accent text-accent-foreground",
                         cabled
                           ? "cursor-not-allowed text-muted-foreground/60"
                           : "hover:bg-accent/60"
                       )}
                     >
-                      <span className="truncate font-mono">{r.name}</span>
+                      <span className="flex min-w-0 items-baseline gap-2">
+                        <span className="shrink-0 font-mono">{r.name}</span>
+                        {note && (
+                          <TruncatedText className="text-muted-foreground">
+                            {note}
+                          </TruncatedText>
+                        )}
+                      </span>
                       {cabled && (
-                        <span className="text-[10px]">already cabled</span>
+                        <span className="shrink-0 text-[10px]">
+                          already cabled
+                        </span>
                       )}
                       {marked && (
-                        <span className="text-[10px] text-muted-foreground">
+                        <span className="shrink-0 text-[10px] text-muted-foreground">
                           marked connected
                         </span>
                       )}
@@ -600,6 +646,11 @@ export function CableEndpointPicker({
                 <span className="font-mono">
                   {names[keyOf(v)] ?? v.id.slice(0, 8)}
                 </span>
+                {notes[keyOf(v)] && (
+                  <TruncatedText className="max-w-40 font-normal text-muted-foreground">
+                    {notes[keyOf(v)]}
+                  </TruncatedText>
+                )}
                 <IconTip label="Remove">
                   <Button
                     type="button"
