@@ -25,7 +25,7 @@ from .devicetype_import import import_devicetype_yaml, import_racktype_yaml
 from .model_pack import PackFiles, import_pack
 from .model_pack_check import check_pack
 from .models import AccessoryType, Device, DeviceType, Rack, RackKit, RackType, Site
-from .rack_kits import read_look, scan_parts
+from .rack_kits import read_look, scan_parts, set_look
 from .rack_look import resolve
 from .rack_mount import check_ear_position, mount_of, normalise
 from .tests_model_anchors import model
@@ -487,6 +487,36 @@ class RackTypeYamlLookTests(_Base):
         self.assertEqual(got, {"kit_name": "CABINET", "colour": "white"})
         self.assertEqual(len(notes), 3)
 
+    def test_open_frames_none_and_plate(self):
+        # The pack's 2-post and open frames: no roof, a plate or no base, no
+        # rear rail - all kept, nothing noted.
+        notes = []
+        got = read_look({"rail_depth_mm": 0, "look": {"top": "none", "base": "plate"}},
+                        notes)
+        self.assertEqual(got, {"top": "none", "base": "plate"})
+        self.assertEqual(notes, [])
+        got = read_look({"look": {"base": "none"}}, notes)
+        self.assertEqual((got, notes), ({"base": "none"}, []))
+
+    def test_a_kit_names_the_frame(self):
+        kit = RackKit.objects.create(tenant=self.tenant, vendor="Generic", name="TELCO-2POST",
+                                     frame="2-post")
+        text = ("manufacturer: Generic\nmodel: Generic 45U 2-post\nu_height: 45\n"
+                "width: 19\nrail_depth_mm: 0\n"
+                "look:\n  kit: TELCO-2POST\n  top: none\n  base: plate\n")
+        rep = import_racktype_yaml(self.tenant, text, kit_vendor="Generic")
+        self.assertTrue(rep["ok"], rep)
+        self.assertEqual(rep["skipped"], [])
+        rt = RackType.objects.get(name="Generic 45U 2-post")
+        self.assertEqual((rt.frame, rt.kit, rt.top, rt.base, rt.rail_depth_mm),
+                         ("2-post", kit, "none", "plate", None))
+        # A frame the type gives wins over its kit's.
+        notes = []
+        rt.frame = "cabinet"
+        set_look(rt, read_look({"look": {"kit": "TELCO-2POST", "frame": "4-post"}}, notes),
+                 notes, "Generic")
+        self.assertEqual(rt.frame, "4-post")
+
 
 # ── kits from a pack ────────────────────────────────────────────────────────
 
@@ -524,6 +554,23 @@ class KitScanTests(SimpleTestCase):
         for name in ("entry:", "brush:", "path:", "channel:", "pdu:", "base:panel"):
             self.assertNotIn(name, noted)
         self.assertIn("frame:mystery", noted)
+
+    def test_fit(self):
+        """Where the kit's units and rails are: unit 1 at the segment's
+        origin, the rail face behind the front (glTF z 0, or a frame part
+        ahead of it), the frame over the top unit."""
+        from .model_3d import validate_glb
+
+        fit = scan_parts(validate_glb(kit_glb()))[0]["post:segment"]["fit"]
+        self.assertEqual(fit["u1_mm"], 120.0)
+        # The width beam (a unit box at z -0.02) stands furthest forward.
+        self.assertEqual(fit["rail_inset_mm"], 530.0)
+        self.assertGreaterEqual(fit["ref_u"], 1)
+        self.assertGreaterEqual(fit["cap_mm"], 0)
+        self.assertIn("post_outer_mm", fit)
+        # Without a post: no fit.
+        parts = scan_parts(validate_glb(kit_glb(segment=False)))[0]
+        self.assertNotIn("post:segment", parts)
 
 
 class KitImportTests(_Base):
@@ -655,6 +702,17 @@ class KitEndpointTests(_Base):
         self.assertEqual(look["blanks"][0]["u_height"], 1)
         self.assertTrue(look["kit"]["model_url"].startswith(f"/api/rack-kits/{self.kit.id}/"))
         self.assertIn("post:segment", look["kit"]["parts"])
+        self.assertEqual(look["kit"]["fit"]["u1_mm"], 120.0)
+
+    def test_scene_takes_the_types_outer_size(self):
+        """A rack made without the form (which copies them) draws its
+        model's outer size; its own wins."""
+        scene = self.client.get(f"/api/racks/{self.rack.id}/scene/").json()
+        self.assertEqual((scene["outer_width_mm"], scene["outer_depth_mm"]), (600, 1000))
+        self.rack.outer_depth_mm = 1200
+        self.rack.save()
+        scene = self.client.get(f"/api/racks/{self.rack.id}/scene/").json()
+        self.assertEqual(scene["outer_depth_mm"], 1200)
 
     def test_delete_leaves_types_drawn_without_it(self):
         res = self.client.delete(f"/api/rack-kits/{self.kit.id}/")

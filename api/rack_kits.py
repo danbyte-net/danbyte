@@ -168,6 +168,7 @@ def scan_parts(doc: dict) -> tuple[dict, list[str]]:
     parts: dict[str, dict] = {}
     notes: list[str] = []
     unknown: set[str] = set()
+    seen: dict[str, int] = {}
     for i in world:
         node = nodes[i]
         raw = part_name(str(node.get("name") or ""))
@@ -183,6 +184,7 @@ def scan_parts(doc: dict) -> tuple[dict, list[str]]:
             continue
         if raw in parts:
             continue
+        seen[raw] = i
         stretch = str(extras.get("danbyte_stretch") or "").strip().lower()
         if stretch and not _STRETCH.match(stretch):
             notes.append(f"{raw}: danbyte_stretch {stretch!r} is not x, y, z or a mix.")
@@ -206,9 +208,72 @@ def scan_parts(doc: dict) -> tuple[dict, list[str]]:
     for r in REQUIRED:
         if r not in parts:
             notes.append(f"no {r}; the kit can't build a rack.")
+    fit = kit_fit(doc, world, seen)
+    if fit is not None:
+        parts["post:segment"]["fit"] = fit
     for u in sorted(unknown):
         notes.append(f"{u}: not a part Danbyte reads - ignored.")
     return dict(sorted(parts.items())), notes
+
+
+#: The EIA-310 unit (m).
+U_M = 0.04445
+#: Parts that are not the frame's own outline: doors open, a strip or a
+#: bracket sits inside it.
+_NOT_FRAME = ("door:", "label:", "pdu:")
+
+
+def kit_fit(doc: dict, world: dict, nodes: dict[str, int]) -> dict | None:
+    """Where the kit's reference rack has its units and rails, so the room
+    stands a kit-built rack's gear where the kit's posts are: ``u1_mm`` the
+    bottom of unit 1 above the floor, ``rail_inset_mm`` the front rail's
+    face behind the rack's front (the front-most frame part, or the glTF
+    z = 0 plane of §14), ``cap_mm`` the frame above the top unit, ``ref_u``
+    the reference rack's units, and ``post_outer_mm`` / ``post_depth_mm`` the
+    post's outer side from the centre and its depth behind the rail face.
+    None without a ``post:segment``."""
+    from .model_anchors import subtree_box
+
+    seg = nodes.get("post:segment")
+    if seg is None or seg not in world:
+        return None
+    m = world[seg]
+    u1, rail_z = m[1][3], m[2][3]
+    front = 0.0
+    top = None
+    roofs = []
+    for name, i in nodes.items():
+        if name.startswith(_NOT_FRAME) or i not in world:
+            continue
+        box = subtree_box(doc, i, world)
+        if box is None:
+            continue
+        lo, hi = box
+        front = max(front, hi[2])
+        if name.startswith("top:"):
+            roofs.append(hi[1])
+            continue
+        stretch = ""
+        extras = (doc.get("nodes") or [])[i].get("extras")
+        if isinstance(extras, dict):
+            stretch = str(extras.get("danbyte_stretch") or "").lower()
+        if "z" not in stretch:
+            top = hi[1] if top is None else max(top, hi[1])
+    if roofs:
+        top = max(top or 0.0, min(roofs))
+    post_top = nodes.get("post:top")
+    ends = subtree_box(doc, post_top, world) if post_top in world else None
+    span = (ends[0][1] if ends else (top or u1)) - u1
+    ref_u = max(1, round(span / U_M))
+    cap = (top - (u1 + ref_u * U_M)) if top is not None else 0.0
+    out = {"u1_mm": round(u1 * 1000, 1), "rail_inset_mm": round((front - rail_z) * 1000, 1),
+           "cap_mm": round(max(cap, 0.0) * 1000, 1), "ref_u": ref_u}
+    post = subtree_box(doc, seg, world)
+    if post is not None:
+        # The post's outer side (|x|) and its depth behind the rail face.
+        out["post_outer_mm"] = round(max(abs(post[0][0]), abs(post[1][0])) * 1000, 1)
+        out["post_depth_mm"] = round((rail_z - post[0][2]) * 1000, 1)
+    return out
 
 
 def _channel(m, extras: dict) -> dict:
@@ -334,6 +399,9 @@ def read_look(data: dict, notes: list[str]) -> dict:
         else:
             notes.append(f"frame {frame!r} not one of {', '.join(FRAMES)} - dropped")
     depth = data.get("rail_depth_mm", data.get("mounting_depth"))
+    if depth == 0 and not isinstance(depth, bool):
+        # No rear rail (a 2-post frame): the same as leaving it out.
+        depth = None
     if depth not in (None, ""):
         if isinstance(depth, bool) or not isinstance(depth, (int, float)) or not (
                 100 <= depth <= 2000):
@@ -380,7 +448,9 @@ def find_kit(tenant, name: str, vendor: str = ""):
 
 
 def set_look(rt, look: dict, notes: list[str], vendor: str = "") -> None:
-    """Set a rack type's Look from ``read_look``'s fields (unsaved)."""
+    """Set a rack type's Look from ``read_look``'s fields (unsaved). A type
+    that names a kit but no frame takes the kit's frame: the kit says what
+    it builds."""
     for k, v in look.items():
         if k != "kit_name":
             setattr(rt, k, v)
@@ -389,6 +459,8 @@ def set_look(rt, look: dict, notes: list[str], vendor: str = "") -> None:
         if kit is None:
             notes.append(f"look.kit: no kit named {look['kit_name']} - drawn without one.")
         rt.kit = kit
+        if kit is not None and "frame" not in look:
+            rt.frame = kit.frame
 
 
 def apply_rack_type(tenant, path: str, text: str, data, *, dry_run: bool = False):
@@ -427,8 +499,9 @@ def may_view(user, tenant) -> bool:
 
 
 def kit_doc(kit, rack, shared: bool) -> dict | None:
-    """A kit as the 3D room reads it: ``{id, name, frame, parts, colours,
-    widths_mm, depths_mm, model_url, far_url}`` (the first width and depth
+    """A kit as the 3D room reads it: ``{id, name, frame, parts, fit, colours,
+    widths_mm, depths_mm, model_url, far_url}`` (``fit``: ``kit_fit``'s, null
+    for a kit imported before Danbyte read it) (the first width and depth
     are the reference cabinet's); the URLs the kit's own for a reader who may view
     rack types (``shared``), else through ``rack``. None without a model."""
     from .model_3d import version_of
@@ -446,7 +519,11 @@ def kit_doc(kit, rack, shared: bool) -> dict | None:
             return f"/api/rack-kits/{kit.pk}/model/{q}"
         return f"/api/racks/{rack.pk}/kit-model/{q}"
 
+    parts = kit.parts or {}
+    seg = parts.get("post:segment")
+    fit = seg.get("fit") if isinstance(seg, dict) else None
     return {"id": str(kit.pk), "name": kit.name, "frame": kit.frame,
-            "parts": kit.parts or {}, "colours": kit.colours or {},
+            "parts": parts, "fit": fit if isinstance(fit, dict) else None,
+            "colours": kit.colours or {},
             "widths_mm": kit.widths_mm or [], "depths_mm": kit.depths_mm or [],
             "model_url": url(False), "far_url": url(True)}

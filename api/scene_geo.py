@@ -211,6 +211,17 @@ def racked_device_geo(d, img, feed_types, viewable_types) -> dict:
     return geo
 
 
+def _outer(r, field: str):
+    """The rack's outer size in mm: its own, else its rack type's (a rack
+    made without the form, which copies them, still draws its model's
+    size), else null (the room's default)."""
+    own = getattr(r, field)
+    if own is not None:
+        return own
+    rt = r.rack_type if r.rack_type_id else None
+    return getattr(rt, field, None) if rt is not None else None
+
+
 def rack_geo(r, img, feed_types, viewable_types=None, look_ctx=None) -> dict:
     """One rack and the devices it holds, as the 3D views draw it. With
     ``viewable_types`` each positioned or side-mounted device carries its 3D model; its
@@ -222,8 +233,8 @@ def rack_geo(r, img, feed_types, viewable_types=None, look_ctx=None) -> dict:
         "starting_unit": r.starting_unit,
         "desc_units": r.desc_units,
         "width": r.width,
-        "outer_width_mm": r.outer_width_mm,
-        "outer_depth_mm": r.outer_depth_mm,
+        "outer_width_mm": _outer(r, "outer_width_mm"),
+        "outer_depth_mm": _outer(r, "outer_depth_mm"),
         "look": rack_look_geo(r, look_ctx),
         "devices": [
             racked_device_geo(d, img, feed_types, viewable_types)
