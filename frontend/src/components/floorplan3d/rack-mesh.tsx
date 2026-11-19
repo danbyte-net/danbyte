@@ -16,7 +16,7 @@ import type { PortLabelSource } from "@/lib/api"
 import { FaceLabel } from "./text-sprite"
 import { RackKitFar, RackKitShell } from "./rack-kit"
 import type { KitSeat, UNumbering } from "./rack-kit"
-import { LEGACY_LOOK } from "./rack-kit-math"
+import { LEGACY_LOOK, isEnclosed } from "./rack-kit-math"
 import type { SceneLook } from "./rack-kit-math"
 import { BlankingFill, RackShell } from "./rack-shell"
 import { PANEL_MM } from "@/lib/faceplate-geometry"
@@ -591,6 +591,18 @@ export function RackMesh({
               h={height}
               d={depth}
               color={tint ?? undefined}
+            />
+          ) : !isEnclosed(look.frame) ? (
+            // An open frame is never a closed box, near or far: Danbyte's
+            // own posts and frame, a few boxes.
+            <RackShell
+              rackId={rack.id}
+              look={look}
+              w={width}
+              h={height}
+              d={depth}
+              color={frameColor}
+              mode="cutaway"
             />
           ) : tier === "mid" && look.kit?.far_url ? (
             // Mid range: the kit's far box; far off, the plain one.

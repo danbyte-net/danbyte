@@ -588,8 +588,8 @@ export function rackRailPlanesM(
   if (fit) {
     const inset = Math.min(mm(fit.rail_inset_mm), depthM / 2)
     const front = -depthM / 2 + inset
-    if (look?.frame === "2-post") return { front, rear: front }
-    if (look?.rail_depth_mm != null)
+    if (look.frame === "2-post") return { front, rear: front }
+    if (look.rail_depth_mm != null)
       return {
         front,
         rear: Math.min(depthM / 2, front + mm(look.rail_depth_mm)),
