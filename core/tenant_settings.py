@@ -98,6 +98,8 @@ class TenantSettingsSerializer(serializers.ModelSerializer):
             "cable_service_loop_mm",
             "cable_length_step_mm",
             "cable_standalone_height_mm",
+            # cable ways in racks (api.cable_ways)
+            "cable_ways_mode",
             # report cover page (api/reports/cover.py)
             "report_cover_style",
             "report_cover_horizon",

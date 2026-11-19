@@ -1366,6 +1366,15 @@ class TenantSettings(TimestampedModel):
         validators=[MaxValueValidator(20000)],
         help_text="Port height of a device standing on its own tile, in millimetres.",
     )
+    # ─── cable ways in racks (api.cable_ways) ───────────────────────────────
+    # Whether a worked-out way through a rack waits to be accepted (propose)
+    # or is recorded straight away (record). Tenant only. Read through
+    # ``core.effective_settings.cable_ways_mode``.
+    CABLE_WAYS_CHOICES = [("propose", "Propose"), ("record", "Record automatically")]
+    cable_ways_mode = models.CharField(
+        max_length=8, choices=CABLE_WAYS_CHOICES, default="propose", db_default="propose",
+        help_text="Propose a cable's way through a rack, or record it automatically.",
+    )
 
     # ─── first-run onboarding ──────────────────────────────────────────────
     # Per-tenant bookkeeping (like digest_last_run) - not an inheritable

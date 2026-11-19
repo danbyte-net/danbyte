@@ -251,6 +251,23 @@ def cable_length_rules(tenant) -> dict:
     return dict(zip(CABLE_LENGTH_DEFAULTS, (int(v) for v in row), strict=True))
 
 
+def cable_ways_mode(tenant) -> str:
+    """``"propose"`` or ``"record"``: whether a cable's way through a rack
+    waits to be accepted or is recorded straight away (api.cable_ways).
+    Tenant only; no row means propose. Never creates a row."""
+    if tenant is None:
+        return "propose"
+    from core.models import TenantSettings
+
+    tenant_id = getattr(tenant, "pk", tenant)
+    mode = (
+        TenantSettings.objects.filter(tenant_id=tenant_id)
+        .values_list("cable_ways_mode", flat=True)
+        .first()
+    )
+    return "record" if mode == "record" else "propose"
+
+
 def effective_floorplan_row(tenant):
     """The object whose floor-plan popover config applies.
 
