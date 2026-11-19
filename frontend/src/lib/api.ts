@@ -19847,8 +19847,70 @@ export interface ModelPackImport {
   unused_models: string[]
 }
 
+/** A pack a pack needs (pack.yaml `requires`) and where it stands. */
+export interface ModelPackNeed {
+  id: string
+  state: "installed" | "bundle" | "missing"
+  /** The installed version, if any. */
+  installed: string | null
+  /** Missing: the zip to get. */
+  zip?: string
+  /** Missing, and the pack catalog offers it: "Install with it". */
+  available?: {
+    url: string
+    name: string
+    version: string
+    sha256: string
+    size: number | null
+  }
+}
+
+export interface ModelPackCheck {
+  ok: boolean
+  errors: number
+  warnings: number
+  pack: Record<string, string | string[]>
+  parts: ModelPackPart[]
+  findings: ModelPackFinding[]
+}
+
+/** One pack of a bundle in its check. */
+export interface ModelPackSection {
+  id: string
+  name: string
+  version: string
+  license: string
+  author: string
+  description: string
+  requires: string[]
+  files: { path: string; size: number }[]
+  check: ModelPackCheck
+  import: ModelPackImport | null
+  installed: { id: string; version: string; sha256: string } | null
+  needs: ModelPackNeed[]
+  installable: boolean
+  status: "ready" | "errors" | "installed" | "update"
+}
+
+/** What the install did with one pack of a bundle, or a required pack. */
+export interface ModelPackOutcome {
+  id: string
+  name: string
+  version: string
+  status: "installed" | "skipped" | "failed" | "refused"
+  reason: string
+  via?: "requires"
+  /** The pack's record, once installed. */
+  record?: string
+  superseded?: string[]
+  created?: number
+  matched?: number
+  errors?: number
+}
+
 export interface ModelPack {
   id: string
+  kind: "pack" | "bundle"
   slug: string
   name: string
   version: string
@@ -19860,11 +19922,27 @@ export interface ModelPack {
   sha256: string
   size: number
   status: ModelPackStatus
-  progress: { phase?: string; done?: number; total?: number }
+  progress: {
+    phase?: string
+    done?: number
+    total?: number
+    /** A bundle: the pack at work. */
+    pack?: string
+    index?: number
+    count?: number
+  }
   error: string
   replace_photos: boolean
   /** Update from pack: the YAML replaced what was changed here. */
   overwrite: boolean
+  requires: string[]
+  /** The bundle a pack was installed from. */
+  bundle: {
+    id: string | null
+    slug: string
+    name: string
+    version: string
+  } | null
   types: number
   installable: boolean
   check_errors: number
@@ -19878,19 +19956,29 @@ export interface ModelPack {
 export interface ModelPackDetail extends ModelPack {
   report: {
     refusals?: string[]
-    check?: {
-      ok: boolean
-      errors: number
-      warnings: number
-      pack: Record<string, string>
-      parts: ModelPackPart[]
-      findings: ModelPackFinding[]
-    }
+    check?: ModelPackCheck
     import?: ModelPackImport
-    installed?: { id: string; version: string; sha256: string } | null
+    installed?: { id: string; version: string; sha256?: string } | null
+    needs?: ModelPackNeed[]
+    catalog_error?: string
+    /** A bundle: bundle.yaml, its own problems and a section per pack. */
+    bundle?: {
+      id?: string
+      name?: string
+      description?: string
+      version?: string
+      packs: { id: string; name: string; version: string }[]
+    }
+    problems?: { level: "error" | "warning"; message: string }[]
+    packs?: ModelPackSection[]
   }
-  result: Partial<ModelPackImport>
+  result: Partial<ModelPackImport> & {
+    packs?: ModelPackOutcome[]
+    requires?: ModelPackOutcome[]
+  }
   files: { path: string; size: number }[]
+  /** The packs this one requires, as they stand now. */
+  needs: ModelPackNeed[]
   history: {
     id: string
     version: string
@@ -19903,6 +19991,7 @@ export interface ModelPackDetail extends ModelPack {
 export interface ModelPackLimits {
   max_bytes: number
   source_url: string
+  catalog_url: string
   allowed_hosts: string[]
   downloads: boolean
   can_install: boolean

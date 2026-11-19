@@ -35,15 +35,21 @@ import {
   packLabel,
 } from "@/components/columns/model-pack-columns"
 import { useModelPack } from "@/components/model-pack-install-dialog"
+import {
+  BundleReport,
+  InstallOutcomes,
+  NeedsLine,
+} from "@/components/model-pack-report"
 
-type Tab = "overview" | "types" | "models" | "checks" | "changelog"
+type Tab = "overview" | "packs" | "types" | "models" | "checks" | "changelog"
 
 export const Route = createFileRoute("/settings/device-library_/packs/$id")({
   component: ModelPackPage,
 })
 
 /** One 3D model pack: what it is, what installing it changed, what the
- * checker found, and its other versions. */
+ * checker found, and its other versions. A bundle: its packs, their checks
+ * and what the install did with each. */
 function ModelPackPage() {
   const { id } = Route.useParams()
   const qc = useQueryClient()
@@ -74,6 +80,8 @@ function ModelPackPage() {
   const p = q.data
   const check = p.report.check
   const types = (p.installed_at ? p.result.types : p.report.import?.types) ?? []
+  const isBundle = p.kind === "bundle"
+  const outcomes = [...(p.result.requires ?? []), ...(p.result.packs ?? [])]
 
   return (
     <div className="max-w-6xl space-y-4">
@@ -94,37 +102,106 @@ function ModelPackPage() {
         </div>
       </div>
       <SegmentedTabs
-        items={[
-          { value: "overview", label: "Overview" },
-          { value: "types", label: "Types", count: types.length },
-          { value: "models", label: "Models", count: check?.parts.length },
-          { value: "checks", label: "Checks", count: check?.findings.length },
-          { value: "changelog", label: "Change log" },
-        ]}
+        items={
+          isBundle
+            ? [
+                { value: "overview", label: "Overview" },
+                {
+                  value: "packs",
+                  label: "Packs",
+                  count: p.report.packs?.length,
+                },
+                { value: "changelog", label: "Change log" },
+              ]
+            : [
+                { value: "overview", label: "Overview" },
+                { value: "types", label: "Types", count: types.length },
+                {
+                  value: "models",
+                  label: "Models",
+                  count: check?.parts.length,
+                },
+                {
+                  value: "checks",
+                  label: "Checks",
+                  count: check?.findings.length,
+                },
+                { value: "changelog", label: "Change log" },
+              ]
+        }
         value={tab}
         onValueChange={setTab}
         label="Pack sections"
       />
       {tab === "overview" && (
         <div className="grid gap-4 lg:grid-cols-2">
-          <KvCard
-            title="Pack"
-            rows={[
-              { label: "Name", value: p.name || dash },
-              { label: "Pack id", value: mono(p.slug) },
-              { label: "Version", value: mono(p.version) },
-              { label: "Licence", value: p.license || dash },
-              { label: "Author", value: p.author || dash },
-              {
-                label: "Types",
-                value: (
-                  <span className="tabular-nums">
-                    {types.filter((t) => t.action !== "error").length}
-                  </span>
-                ),
-              },
-            ]}
-          />
+          {isBundle ? (
+            <KvCard
+              title="Bundle"
+              rows={[
+                { label: "Name", value: p.name || dash },
+                { label: "Bundle id", value: mono(p.slug) },
+                { label: "Version", value: mono(p.version) },
+                {
+                  label: "Packs",
+                  value: (
+                    <span className="tabular-nums">
+                      {p.report.packs?.length ?? 0}
+                    </span>
+                  ),
+                },
+                {
+                  label: "Types",
+                  value: <span className="tabular-nums">{p.types}</span>,
+                },
+              ]}
+            />
+          ) : (
+            <KvCard
+              title="Pack"
+              rows={[
+                { label: "Name", value: p.name || dash },
+                { label: "Pack id", value: mono(p.slug) },
+                { label: "Version", value: mono(p.version) },
+                { label: "Licence", value: p.license || dash },
+                { label: "Author", value: p.author || dash },
+                {
+                  label: "Types",
+                  value: (
+                    <span className="tabular-nums">
+                      {types.filter((t) => t.action !== "error").length}
+                    </span>
+                  ),
+                },
+                {
+                  label: "From bundle",
+                  value: p.bundle ? (
+                    p.bundle.id ? (
+                      <Link
+                        to="/settings/device-library/packs/$id"
+                        params={{ id: p.bundle.id }}
+                        className="link"
+                      >
+                        {`${p.bundle.name || p.bundle.slug} ${p.bundle.version}`.trim()}
+                      </Link>
+                    ) : (
+                      `${p.bundle.name || p.bundle.slug} ${p.bundle.version}`.trim()
+                    )
+                  ) : (
+                    dash
+                  ),
+                },
+                {
+                  label: "Needs",
+                  value: p.needs.length ? (
+                    <NeedsLine needs={p.needs} label={false} />
+                  ) : (
+                    dash
+                  ),
+                },
+              ]}
+            />
+          )}
           <KvCard
             title="Install"
             rows={[
@@ -187,6 +264,10 @@ function ModelPackPage() {
           )}
         </div>
       )}
+      {tab === "overview" && outcomes.length > 0 && (
+        <InstallOutcomes outcomes={outcomes} />
+      )}
+      {tab === "packs" && <BundleReport pack={p} />}
       {tab === "types" && (
         <DataTable
           data={types}

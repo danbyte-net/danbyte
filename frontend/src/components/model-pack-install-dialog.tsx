@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Link } from "@tanstack/react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Upload } from "lucide-react"
@@ -8,7 +8,6 @@ import { api, formatBytes } from "@/lib/api"
 import type { ModelPackDetail, ModelPackLimits } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
 import {
   Dialog,
   DialogContent,
@@ -16,16 +15,17 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { DataTable } from "@/components/data-table"
 import { FormCheckbox } from "@/components/forms/checkbox"
 import { FormText } from "@/components/forms/text"
 import { Loading } from "@/components/loading"
 import { SegmentedTabs } from "@/components/segmented-tabs"
+import { packLabel } from "@/components/columns/model-pack-columns"
 import {
-  buildModelPackFindingColumns,
-  buildModelPackTypeColumns,
-  packLabel,
-} from "@/components/columns/model-pack-columns"
+  BundleReport,
+  InstallOutcomes,
+  ModelPackReport,
+  NeedsLine,
+} from "@/components/model-pack-report"
 
 type Source = "upload" | "url"
 
@@ -44,75 +44,19 @@ export function useModelPack(id: string | null | undefined) {
 
 function progressText(p: ModelPackDetail): string {
   const phase = p.progress.phase ?? ""
-  const { done, total } = p.progress
+  const { done, total, pack, index, count: packs } = p.progress
   const count = total ? ` ${done ?? 0} of ${total}` : ""
-  if (phase === "downloading") return "Downloading…"
-  if (phase === "dry run") return `Dry run${count}…`
-  if (p.status === "installing") return `Installing${count}…`
+  const which = pack
+    ? ` · ${pack}${index && packs ? ` (${index} of ${packs})` : ""}`
+    : ""
+  if (phase === "downloading") return `Downloading${which}…`
+  if (phase === "dry run") return `Dry run${count}${which}…`
+  if (p.status === "installing") return `Installing${count}${which}…`
   return "Checking…"
 }
 
-/** The check's outcome: what the install would do, and what the checker
- * found. Shared with the pack's page. */
-export function ModelPackReport({ pack }: { pack: ModelPackDetail }) {
-  const check = pack.report.check
-  const dry = pack.report.import
-  const typeColumns = useMemo(() => buildModelPackTypeColumns(), [])
-  const findingColumns = useMemo(() => buildModelPackFindingColumns(), [])
-  if (pack.report.refusals?.length)
-    return (
-      <ul className="space-y-0.5 text-sm text-destructive">
-        {pack.report.refusals.map((r) => (
-          <li key={r}>{r}</li>
-        ))}
-      </ul>
-    )
-  if (!check || !dry) return null
-  const installed = pack.report.installed
-  return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-2 text-sm">
-        <span className="font-medium">
-          {packLabel(pack)} {pack.version}
-        </span>
-        {pack.license && <Badge variant="secondary">{pack.license}</Badge>}
-        <Badge variant="secondary">{dry.created} to create</Badge>
-        <Badge variant="secondary">{dry.matched} to update</Badge>
-        {check.errors > 0 && (
-          <Badge variant="destructive">
-            {check.errors} error{check.errors === 1 ? "" : "s"}
-          </Badge>
-        )}
-        {check.warnings > 0 && (
-          <Badge variant="warning">
-            {check.warnings} warning{check.warnings === 1 ? "" : "s"}
-          </Badge>
-        )}
-        {installed && (
-          <span className="text-xs text-muted-foreground">
-            Installed: {installed.version}
-          </span>
-        )}
-      </div>
-      <DataTable
-        data={dry.types}
-        columns={typeColumns}
-        tableId="model-pack-types"
-        flexColumn="notes"
-        autoColumns={false}
-      />
-      {check.findings.length > 0 && (
-        <DataTable
-          data={check.findings}
-          columns={findingColumns}
-          tableId="model-pack-findings"
-          flexColumn="message"
-          autoColumns={false}
-        />
-      )}
-    </div>
-  )
-}
+const toggle = (list: string[], id: string, on: boolean) =>
+  on ? [...new Set([...list, id])] : list.filter((x) => x !== id)
 
 /**
  * Install a 3D model pack: upload a .zip or give a URL, read the check and
@@ -132,6 +76,10 @@ export function ModelPackInstallDialog({
   const [replace, setReplace] = useState(false)
   const [overwrite, setOverwrite] = useState(false)
   const [packId, setPackId] = useState<string | null>(null)
+  // A bundle's picked packs (null: every pack it can install) and the
+  // missing required packs to fetch from the pack catalog first.
+  const [picked, setPicked] = useState<string[] | null>(null)
+  const [withPacks, setWithPacks] = useState<string[]>([])
   const fileRef = useRef<HTMLInputElement>(null)
 
   const limits = useQuery({
@@ -148,6 +96,8 @@ export function ModelPackInstallDialog({
     setReplace(false)
     setOverwrite(false)
     setPackId(null)
+    setPicked(null)
+    setWithPacks([])
     setSource("upload")
   }
 
@@ -173,11 +123,24 @@ export function ModelPackInstallDialog({
     onError: (e) => apiErrorToast(e),
   })
 
+  const isBundle = p?.kind === "bundle"
+  const sections = p?.report.packs ?? []
+  const pickedIds =
+    picked ?? sections.filter((s) => s.installable).map((s) => s.id)
+  const canInstall = isBundle
+    ? sections.some((s) => s.installable && pickedIds.includes(s.id))
+    : !!p?.installable
+
   const install = useMutation({
     mutationFn: () =>
       api<ModelPackDetail>(`/api/model-packs/${packId}/install/`, {
         method: "POST",
-        body: JSON.stringify({ replace_photos: replace, overwrite }),
+        body: JSON.stringify({
+          replace_photos: replace,
+          overwrite,
+          with: withPacks,
+          ...(isBundle ? { packs: pickedIds } : {}),
+        }),
       }),
     onSuccess: (row) => qc.setQueryData(["model-packs", row.id], row),
     onError: (e) => apiErrorToast(e),
@@ -198,7 +161,12 @@ export function ModelPackInstallDialog({
   useEffect(() => {
     if (!p || !done || announced.current === p.id) return
     announced.current = p.id
-    toast.success(`Installed ${packLabel(p)} ${p.version}`)
+    const outcomes = p.result.packs
+    toast.success(
+      outcomes
+        ? `Installed ${outcomes.filter((o) => o.status === "installed").length} of ${outcomes.length} packs`
+        : `Installed ${packLabel(p)} ${p.version}`
+    )
     void qc.invalidateQueries({ queryKey: ["model-packs"] })
   }, [done, p, qc])
 
@@ -287,8 +255,42 @@ export function ModelPackInstallDialog({
         {p && !busy && p.error && (
           <p className="text-sm text-destructive">{p.error}</p>
         )}
-        {p && !busy && <ModelPackReport pack={p} />}
-        {p?.status === "checked" && p.installable && (
+        {p && !busy && done && (
+          <InstallOutcomes
+            outcomes={[...(p.result.requires ?? []), ...(p.result.packs ?? [])]}
+            onOpen={() => onOpenChange(false)}
+          />
+        )}
+        {p && !busy && isBundle && (
+          <BundleReport
+            pack={p}
+            picked={p.status === "checked" ? pickedIds : undefined}
+            onPick={
+              p.status === "checked"
+                ? (id, on) => setPicked(toggle(pickedIds, id, on))
+                : undefined
+            }
+            withPacks={withPacks}
+            onWith={
+              p.status === "checked"
+                ? (id, on) => setWithPacks(toggle(withPacks, id, on))
+                : undefined
+            }
+          />
+        )}
+        {p && !busy && !isBundle && <ModelPackReport pack={p} />}
+        {p && !busy && !isBundle && (
+          <NeedsLine
+            needs={p.report.needs ?? []}
+            withPacks={withPacks}
+            onWith={
+              p.status === "checked"
+                ? (id, on) => setWithPacks(toggle(withPacks, id, on))
+                : undefined
+            }
+          />
+        )}
+        {p?.status === "checked" && canInstall && (
           <div className="space-y-2">
             <FormCheckbox
               label="Replace hand-uploaded photos"
@@ -328,7 +330,7 @@ export function ModelPackInstallDialog({
           {p && !done && (
             <Button
               size="sm"
-              disabled={!p.installable || busy || install.isPending}
+              disabled={!canInstall || busy || install.isPending}
               onClick={() => install.mutate()}
             >
               {p.status === "installing" || install.isPending

@@ -61,6 +61,31 @@ export function buildModelPackColumns(): ColumnDef<ModelPack, unknown>[] {
       meta: { label: "Name" },
     },
     {
+      id: "bundle",
+      accessorFn: (p) =>
+        p.bundle
+          ? `${p.bundle.name || p.bundle.slug} ${p.bundle.version}`.trim()
+          : "",
+      header: ({ column }) => <SortHeader column={column} label="Bundle" />,
+      cell: ({ row }) => {
+        const b = row.original.bundle
+        if (!b) return dash
+        const label = `${b.name || b.slug} ${b.version}`.trim()
+        return b.id ? (
+          <Link
+            to="/settings/device-library/packs/$id"
+            params={{ id: b.id }}
+            className="link whitespace-nowrap"
+          >
+            {label}
+          </Link>
+        ) : (
+          <span className="whitespace-nowrap">{label}</span>
+        )
+      },
+      meta: { label: "Bundle" },
+    },
+    {
       id: "version",
       accessorKey: "version",
       header: "Version",
