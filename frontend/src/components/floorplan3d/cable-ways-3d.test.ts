@@ -15,7 +15,17 @@ describe("the merged cables mesh", () => {
       idx: number[]
     }
     const c = new THREE.Color("#2563eb")
-    tubeInto([[0, 0, 0], [0, 1, 0], [1, 1, 0]], 0.003, 6, c, out)
+    tubeInto(
+      [
+        [0, 0, 0],
+        [0, 1, 0],
+        [1, 1, 0],
+      ],
+      0.003,
+      6,
+      c,
+      out
+    )
     expect(out.pos.length / 3).toBe(3 * 6)
     expect(out.idx.length / 3).toBe(2 * 6 * 2)
     // Every ring point is the radius from its centre.
