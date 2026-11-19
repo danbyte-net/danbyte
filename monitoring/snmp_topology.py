@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 
-from api.models import Cable, Device, Interface
+from api.models import Device, Interface
 from api.topology_views import _status_mini
 
 from .models import DeviceSnmp
@@ -92,19 +92,29 @@ def _snmp_rows(tenant, device_ids) -> dict:
 
 def _cabled_pairs(tenant, device_ids) -> set:
     """Set of ``frozenset({device_id, device_id})`` that already share a cable -
-    so we never draw a ghost over a real one."""
-    pairs: set = set()
-    cables = Cable.objects.filter(tenant=tenant).prefetch_related(
-        "terminations__interface__device",
-        "terminations__front_port__device",
-        "terminations__rear_port__device",
+    so we never draw a ghost over a real one.
+
+    Read as ``(cable, device)`` values, not cables with their terminations,
+    ports and devices as model objects: a tenant's every cable costs one
+    narrow query (#528)."""
+    from django.db.models.functions import Coalesce
+
+    from api.models import CableTermination
+
+    by_cable: dict = {}
+    rows = (
+        CableTermination.objects.filter(cable__tenant=tenant)
+        .annotate(dev=Coalesce(
+            "interface__device_id", "front_port__device_id", "rear_port__device_id"))
+        .filter(dev__isnull=False)
+        .order_by()
+        .values_list("cable_id", "dev")
     )
-    for cab in cables:
-        devs = set()
-        for t in cab.terminations.all():
-            p = t.interface or t.front_port or t.rear_port
-            if p is not None and p.device_id in device_ids:
-                devs.add(str(p.device_id))
+    for cable_id, dev in rows.iterator(chunk_size=20000):
+        if dev in device_ids:
+            by_cable.setdefault(cable_id, set()).add(str(dev))
+    pairs: set = set()
+    for devs in by_cable.values():
         for a in devs:
             for b in devs:
                 if a != b:
@@ -190,6 +200,9 @@ def ghost_edges(tenant, devices) -> list[dict]:
     st = _Stacks(tenant, devices)
     snmp = _snmp_rows(tenant, device_ids | set(st.of))
     rows = _neighbor_rows(tenant, devices, st, snmp)
+    if not any(rows.values()):
+        # No LLDP neighbour to draw: nothing to match against the cables.
+        return []
     # name / observed-sysName → device, for resolving LLDP remote names.
     by_key: dict[str, Device] = {}
     for d in devices:

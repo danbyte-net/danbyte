@@ -3304,6 +3304,8 @@ def snmp_topology_ghosts_view(request):
     site = request.query_params.get("site")
     if site:
         devices = devices.filter(site_id=site)
+    # The edges read a device's id, name and stack alone (#528).
+    devices = devices.only("id", "name", "virtual_chassis_id")
     return Response({"edges": ghost_edges(tenant, list(devices))})
 
 
