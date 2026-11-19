@@ -18,6 +18,8 @@ Usage:
 """
 from __future__ import annotations
 
+from django.dispatch import Signal
+
 from .context import current_cause, current_request_id, current_user
 from .models import ChangeAction, ChangeLogEntry
 from .signals import _actor, _diff, _ser
@@ -44,12 +46,20 @@ def _entry(instance, action, changes, user, rid):
     )
 
 
+#: Sent by :func:`log_bulk_update` after its entries, ``sender`` the rows'
+#: model, with ``rows`` (the values from before the write), ``updates`` and
+#: ``per_row`` - what a ``queryset.update()`` changed, for the derived data
+#: that follows it (the stored list summaries, api.summary_hooks).
+bulk_updated = Signal()
+
+
 def log_bulk_update(rows, updates: dict, per_row: dict | None = None) -> None:
     """One UPDATE entry per row whose value actually changed. ``updates`` keys
     are model attnames (``status``, ``vrf_id``, …) as passed to ``.update()``.
     ``per_row`` adds what differs per row (``{pk: {attname: value}}``) - a
     merged ``custom_fields``, a group dropped by a cluster move - to that
     row's one entry. ``rows`` hold the values from before the write."""
+    rows = list(rows)
     user = current_user()
     rid = current_request_id()
     entries = []
@@ -69,6 +79,8 @@ def log_bulk_update(rows, updates: dict, per_row: dict | None = None) -> None:
             entries.append(_entry(r, ChangeAction.UPDATE, changes, user, rid))
     if entries:
         ChangeLogEntry.objects.bulk_create(entries)
+    if rows:
+        bulk_updated.send(sender=type(rows[0]), rows=rows, updates=updates, per_row=per_row)
 
 
 def log_bulk_delete(rows) -> None:

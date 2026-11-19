@@ -13,6 +13,8 @@ if [ "${MIGRATE_ON_START:-0}" = "1" ]; then
   echo "[entrypoint] applying migrations…"
   python manage.py migrate --noinput
   python manage.py rebuild_search_index >/dev/null 2>&1 || true
+  # The list summaries a new release adds build in the background (#527).
+  (python manage.py list_summaries --missing >/dev/null 2>&1 &) || true
   echo "[entrypoint] bootstrap (idempotent)…"
   python manage.py bootstrap
   echo "[entrypoint] collectstatic…"

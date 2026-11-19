@@ -202,7 +202,7 @@ from .io_views import (
 from .lifecycle_api import lifecycle_overview
 from .list_fields import list_fields_view
 from .mac_bulk import mac_bulk_remove_view, mac_object_bulk_delete_view
-from .mac_views import mac_detail_view, mac_list_view
+from .mac_views import MacListViewSet, mac_detail_view
 from .oui_views import OuiRangeViewSet, oui_import, oui_import_run, oui_status
 from .led_state_api import device_leds_view
 from .panel_layouts_api import PanelLayoutViewSet
@@ -739,7 +739,9 @@ urlpatterns = [
     path("oui/status/", oui_status, name="oui-status"),
     path("oui/import/", oui_import, name="oui-import"),
     path("oui/import/<uuid:run_id>/", oui_import_run, name="oui-import-run"),
-    path("macs/", mac_list_view, name="macs"),
+    path("macs/", MacListViewSet.as_view({"get": "list"}), name="macs"),
+    path("macs/facets/", MacListViewSet.as_view({"get": "table_facets"}), name="macs-facets"),
+    path("macs/table-ids/", MacListViewSet.as_view({"get": "table_ids"}), name="macs-table-ids"),
     path("macs/bulk-remove/", mac_bulk_remove_view, name="macs-bulk-remove"),
     # Ahead of the router so it wins over the mac-addresses detail route.
     path(

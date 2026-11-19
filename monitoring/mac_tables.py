@@ -560,7 +560,23 @@ def record_mac_tables(state, result: dict) -> dict | None:
         DeviceSnmp.objects.filter(pk=state.pk).update(**updates)
         for field, value in updates.items():
             setattr(state, field, value)
+        if owner is not None:
+            _touch_mac_list(state.tenant_id, owner.id, now)
     return {"fdb": fdb["meta"].get("core", {}), "arp": arp}
+
+
+def _touch_mac_list(tenant_id, owner_id, now) -> None:
+    """The MAC list's learned Location (#527): mark the recorded MACs this
+    read saw, or saw go - their Location may have moved."""
+    from django.db.models import Q
+
+    from api import mac_summary
+
+    from .models import MacSighting
+
+    mac_summary.touch_sighted(tenant_id, MacSighting.objects.filter(
+        Q(gone_at__isnull=True) | Q(gone_at__gte=now),
+        tenant_id=tenant_id, polled_device_id=owner_id))
 
 
 def _record_fdb(state, owner, members, result, observed, pm, now) -> dict:

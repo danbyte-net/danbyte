@@ -143,8 +143,9 @@ times for one client's fewer round trips.
 
 A few lists page differently. Tags, statuses, IP roles and zones answer 500
 rows a page whatever `page_size` says; follow `next` for more. The monitoring check and history lists and
-the MAC lists answer `{count, page, page_size, num_pages, results}` with
-their own default and cap, as their schema entries say. The script SDK's
+the learned MAC sightings (`/api/monitoring/mac-sightings/`) answer
+`{count, page, page_size, num_pages, results}` with their own default and
+cap, as their schema entries say. The script SDK's
 `db.list()` follows `next` for you ([Scripts SDK](scripts-sdk.md)).
 
 ## Sorting and facets on the big lists
@@ -178,6 +179,8 @@ the page's ids first, with only the filters and the sort, then those rows in
 full. A deep page or a sort on a joined column (site, type, status) does not
 make the server build every row it skips.
 
+The MAC list (`/api/macs/`, below) takes the same parameters.
+
 The facets per list:
 
 - **Devices**: `status`, `role`, `platform`, `eol`, `coverage`, `type`,
@@ -188,6 +191,28 @@ The facets per list:
 - **Virtual machines**: `cluster` and `group` (by name), `status`, `power`,
   `synced_from`, `site`, `role`, `platform`, `eol`, `software_version`,
   `software_target`, `tags`.
+
+- **MAC list**: `vendor` (by name), `location` (the learned site by name,
+  `__nosite__`, `__none__`), `interfaces`, `ips`, `description` (each `yes` /
+  `no`: carried by an interface, an IP, a MAC object), `tags`.
+
+### The MAC list {#mac-list}
+
+`GET /api/macs/` pages like every other list since 0.21 (#527): 100 rows by
+default, `?page_size=` up to the cap, `next` to the rest. It used to answer
+every MAC of the tenant in one response - 90 MB at 200,000 MACs; a script
+that read `results` once now reads the first page only, so follow `next`.
+Each row is unchanged (`mac`, `vendor`, `interfaces`, `vm_interfaces`, `ips`,
+`objects`, `location`) and has an `id`: the MAC as the list keys it (trimmed,
+lower case), which `POST /api/macs/bulk-remove/` takes as a value. It sorts
+by `ordering=mac` (the default) or `location`, searches with `search=`, and
+filters by the facets above and the `expr` fields `mac`, `vendor.name`,
+`location.site.name`, `location.location.name`, `location.device.name` and
+`location.port_name`. `facets/` and `table-ids/` (MAC values) answer as on
+the other lists. The answer also carries `summary: {building, updating}`:
+`building` while the list's stored summary is still being built after an
+upgrade (the rows built so far are listed), `updating` while recent writes
+are still being worked in.
 
 ```bash
 # The second page of planned devices at one site, by site then name

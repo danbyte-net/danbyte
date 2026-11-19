@@ -823,6 +823,42 @@ background once the site is back (`danbyte-search-reindex.service`), and the
 container entrypoint rebuilds it after migrating; if you migrate by hand, run
 `manage.py rebuild_search_index` once afterwards (it also runs nightly).
 
+## List summaries
+
+The MAC list and the Port utilization list read stored summaries - one row
+per MAC, one per device - so they page, filter and sort in the database (see
+[Stored list summaries](../architecture/data-model.md#stored-list-summaries)).
+The migration that adds a summary creates its table only. The rows are built
+by `manage.py list_summaries`, which the same background unit runs right after
+the search index once the site is back, the container entrypoint starts after
+migrating, and the nightly timer repeats:
+
+- it builds each tenant's summaries a batch of 5,000 rows at a time, each
+  batch committed on its own with its place saved - an interrupted build
+  (a restart, a worker killed) resumes where it stopped on the next run;
+- until a tenant's build finishes, its list shows the rows built so far and
+  says **Building**; a small tenant (up to 5,000 MACs or devices) is built on
+  the spot the first time its list is opened;
+- on an already built summary it reconciles: every row is compared with its
+  sources and only those that differ are written. The output names how many
+  rows it walked and wrote.
+
+On a tenant with 200,000 MACs and 20,000 devices the build takes a few minutes
+and runs beside normal use. If you migrate by hand, run it once afterwards:
+
+```bash
+manage.py list_summaries            # build what is missing, reconcile the rest
+manage.py list_summaries --missing  # only summaries never built
+manage.py list_summaries --check    # count the rows that differ, write nothing (exit 1 on drift)
+manage.py list_summaries --kind mac --tenant acme --restart
+```
+
+Between builds every write that changes a summary row marks it, in the same
+transaction, and a background job on the `low` queue rebuilds the marked rows
+within seconds; the list also works off a backlog of marks before it reads.
+With the workers down the marks wait for the next list read or the nightly
+run - nothing is lost.
+
 ## Database extensions
 
 Global search relies on the PostgreSQL `pg_trgm` and `unaccent` extensions.

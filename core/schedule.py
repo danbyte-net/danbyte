@@ -198,9 +198,9 @@ SCHEDULE: tuple[ScheduledTask, ...] = (
     ),
     ScheduledTask(
         unit="danbyte-search-reindex",
-        commands=("rebuild_search_index",),
+        commands=("rebuild_search_index", "list_summaries"),
         at=("03:40",),
-        label="Rebuild the global search index",
+        label="Rebuild the global search index; build and reconcile the list summaries",
     ),
     ScheduledTask(
         unit="danbyte-cleanup",

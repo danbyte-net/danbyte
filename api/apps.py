@@ -26,6 +26,10 @@ class ApiConfig(AppConfig):
         from . import applications, dependencies, io, signals  # noqa: F401
 
         applications.connect_signals()
+        # The stored list summaries follow their sources (#527, #535).
+        from . import summary_hooks
+
+        summary_hooks.connect()
         from . import flow_requirements
 
         flow_requirements.connect_signals()

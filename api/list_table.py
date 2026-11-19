@@ -151,6 +151,11 @@ class Facet:
     #: a count from the related rows' side (the hosts' worst vulnerability)
     #: that beats any per-row form. Must agree with ``buckets``.
     counter: Callable | None = None
+    #: ``custom``: a facet the list filters and counts itself (a summary
+    #: row's tags, which live on other rows) - ``filter_fn(qs, request,
+    #: values) -> qs`` and ``count_fn(qs, request, selected) -> [bucket]``.
+    filter_fn: Callable | None = None
+    count_fn: Callable | None = None
 
     def filter(self, qs, request, values):
         if self.kind == "range":
@@ -163,6 +168,8 @@ class Facet:
             return qs
         if len(wanted) > MAX_VALUES:
             raise ValidationError({"facets": "Too many values in one facet."})
+        if self.kind == "custom":
+            return self.filter_fn(qs, request, wanted)
         if self.kind == "tags":
             model = qs.model
             holders = model.objects.filter(tags__slug__in=wanted).values("pk")
@@ -200,6 +207,8 @@ class Facet:
             return []
         if self.kind == "tags":
             return _tag_buckets(qs, selected)
+        if self.kind == "custom":
+            return self.count_fn(qs, request, selected)
         if self.kind == "buckets" and self.counter is not None:
             known = self.buckets(request)
             if not known:
@@ -494,6 +503,11 @@ class TableSpec:
     #: The advanced filter's field paths that name something else on the
     #: model (``device_type`` for the SPA's ``type``…): path → ORM path.
     aliases: Mapping[str, str] = field(default_factory=dict)
+    #: Advanced-filter fields read from annotations rather than model
+    #: fields: path → ``(kind, annotation)``, the annotations added by
+    #: ``expr_prepare(qs, request)`` before the filter applies.
+    expr_fields: Mapping[str, tuple[str, str]] = field(default_factory=dict)
+    expr_prepare: Callable | None = None
 
 
 def _catalog_sort(model, key: str, serializer_cls) -> Sort | None:
@@ -659,6 +673,8 @@ class _Expr:
             if not _CF_KEY.match(key):
                 raise ValidationError({"expr": f"Unknown field: {fld}."})
             return ("json", key)
+        if fld in self.spec.expr_fields:
+            return self.spec.expr_fields[fld]
         alias = self.spec.aliases.get(fld)
         path = alias or _orm_path(self.model, fld, self.serializer_cls)
         if path is None and fld.endswith((".name", ".slug", ".label")):
@@ -832,6 +848,8 @@ class TableListMixin:
             qs = facet.filter(qs, self.request, params.get(key))
         raw = params.get("expr")
         if raw:
+            if self.table_spec.expr_prepare is not None:
+                qs = self.table_spec.expr_prepare(qs, self.request)
             qs = qs.filter(self._expr_q(raw))
         return qs
 

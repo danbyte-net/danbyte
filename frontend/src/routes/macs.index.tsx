@@ -6,10 +6,11 @@ import { useId, useMemo, useState } from "react"
 import { api } from "@/lib/api"
 import { apiAll } from "@/lib/api-all"
 import type { MacEntry, MacSightingPage, MacSightingRow } from "@/lib/api"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { DataTable, selectionColumn } from "@/components/data-table"
-import { buildMacColumns, learnedAtKey } from "@/components/columns/mac-columns"
-import { useUrlTableFilters } from "@/components/table-filters"
+import { buildMacColumns } from "@/components/columns/mac-columns"
+import { wireFacetColumns } from "@/components/table-filters"
 import { ListPageShell } from "@/components/list-page-shell"
 import { TableActions } from "@/components/table-actions"
 import { MacBulkBar } from "@/components/mac-bulk-bar"
@@ -38,13 +39,10 @@ import {
 } from "@/components/ui/select"
 import { buildLearnedMacColumns } from "@/components/columns/learned-mac-columns"
 import { useUrlSearch } from "@/lib/url-filters"
+import { useServerList } from "@/lib/server-list"
 
-interface MacList {
-  count: number
-  results: MacEntry[]
-}
-
-/** A list row keyed by its MAC, so a tick stays on the address it was put on. */
+/** A list row keyed by its MAC (the server's `id`, trimmed and lower case),
+ * so a tick stays on the address it was put on. */
 type MacRow = MacEntry & { id: string }
 
 /** The list's URL: the tab, and the Learned tab's filters and page - declared
@@ -309,6 +307,24 @@ function RailFilter({
   )
 }
 
+/** The recorded MAC list's facets, counted and filtered by the server
+ * (`/api/macs/facets/`, #527). */
+const MAC_FACETS = [
+  "vendor",
+  "location",
+  "interfaces",
+  "ips",
+  "tags",
+  "description",
+]
+
+/** The stored summary behind the list: still building after an upgrade, or
+ * catching up with recent writes. */
+interface MacListSummary {
+  building: boolean
+  updating: boolean
+}
+
 function RecordedMacs() {
   const { canDo } = useMe()
   const canAdd = canDo("macaddress", "add")
@@ -324,69 +340,43 @@ function RecordedMacs() {
   const [ranges, setRanges] = useState(false)
   const [selected, setSelected] = useState<MacRow[]>([])
 
-  const query = useQuery({
-    queryKey: ["macs"],
-    queryFn: () => api<MacList>("/api/macs/"),
+  // One page at a time from the server, searched, sorted and counted there.
+  const facetColumns = useMemo(() => buildMacColumns<MacRow>(), [])
+  const list = useServerList<MacRow>({
+    endpoint: "/api/macs/",
+    queryKey: "macs",
+    columns: facetColumns,
+    facets: MAC_FACETS,
+    savedViews: "macaddress",
   })
-
-  const allRows = useMemo<MacRow[]>(
-    () => (query.data?.results ?? []).map((m) => ({ ...m, id: m.mac })),
-    [query.data]
-  )
-  const rows = useMemo(() => {
-    const needle = q.trim().toLowerCase()
-    if (!needle) return allRows
-    return allRows.filter((m) => {
-      if (m.mac.toLowerCase().includes(needle)) return true
-      if (m.vendor?.name.toLowerCase().includes(needle)) return true
-      if (
-        m.interfaces.some(
-          (i) =>
-            i.name.toLowerCase().includes(needle) ||
-            i.device.name.toLowerCase().includes(needle)
-        )
-      )
-        return true
-      if (
-        m.vm_interfaces.some(
-          (i) =>
-            i.name.toLowerCase().includes(needle) ||
-            i.vm.name.toLowerCase().includes(needle)
-        )
-      )
-        return true
-      if (m.objects.some((o) => o.description.toLowerCase().includes(needle)))
-        return true
-      if (learnedAtKey(m).toLowerCase().includes(needle)) return true
-      return m.ips.some((ip) => ip.ip_address.toLowerCase().includes(needle))
-    })
-  }, [allRows, q])
-
+  const { selectedValues, toggleValue } = list
   const columns = useMemo<ColumnDef<MacRow>[]>(
     () =>
-      canRemove
-        ? [selectionColumn<MacRow>(), ...buildMacColumns<MacRow>()]
-        : buildMacColumns<MacRow>(),
-    [canRemove]
+      wireFacetColumns(
+        canRemove
+          ? [selectionColumn<MacRow>(), ...buildMacColumns<MacRow>()]
+          : buildMacColumns<MacRow>(),
+        selectedValues,
+        toggleValue
+      ),
+    [canRemove, selectedValues, toggleValue]
   )
-  const {
-    rail,
-    filteredRows,
-    snapshot,
-    restore,
-    activeCount,
-    columns: wiredColumns,
-  } = useUrlTableFilters(columns, rows)
+  const summary = (list.query.data as { summary?: MacListSummary } | undefined)
+    ?.summary
+  // A row ticked by "Select all" on another page is only its id - its MAC.
+  const picked = useMemo(
+    () => selected.map((r) => (r.mac ? r : { ...r, mac: r.id })),
+    [selected]
+  )
+  const empty =
+    !!list.query.data && list.total === 0 && !list.search && !list.activeCount
 
   return (
     <ListPageShell
       title="MAC addresses"
-      count={query.data ? filteredRows.length : undefined}
-      rail={rail}
-      savedViews={{
-        objectType: "macaddress",
-        filters: { snapshot, restore, activeCount },
-      }}
+      count={list.query.data ? list.total : undefined}
+      rail={list.rail}
+      savedViews={list.savedViews}
       search={{
         value: q,
         onChange: setQ,
@@ -405,27 +395,38 @@ function RecordedMacs() {
           )}
         </>
       }
-      query={query}
+      summary={
+        summary?.building && (
+          <p className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Badge variant="warning">Building</Badge>
+            The list is still being built - some MACs are not in it yet.
+          </p>
+        )
+      }
+      query={list.query}
     >
       {/* The table stays mounted while a search or filter matches nothing,
           so rows filtered away leave the selection as on the other lists. */}
-      {allRows.length === 0 ? (
+      {empty ? (
         <p className="text-sm text-muted-foreground">
           No MAC addresses yet - set a MAC on an interface, or pair one with an
           IP, and it shows up here.
         </p>
       ) : (
         <DataTable
-          data={filteredRows}
-          columns={wiredColumns}
+          data={list.rows}
+          columns={columns}
+          {...list.tableProps}
           onSelectedRowsChange={canRemove ? setSelected : undefined}
           selectedRows={selected}
           flexColumn="description"
           tableId="macs"
+          exportName="macs"
+          exportTitle="MAC addresses"
         />
       )}
       <MacBulkBar
-        selected={allRows.length ? selected : []}
+        selected={empty ? [] : picked}
         onCleared={() => setSelected([])}
       />
       <MacObjectDialog open={adding} onOpenChange={setAdding} />

@@ -1,7 +1,8 @@
 """MAC address registry for the IPAM MAC page.
 
-``GET /api/macs/`` → every MAC address known in the active tenant, aggregated
-from four places: device interface hardware addresses, virtual-machine
+``GET /api/macs/`` → the MAC addresses known in the active tenant, a page at
+a time (#527: the stored summary of api.mac_summary), aggregated from four
+places: device interface hardware addresses, virtual-machine
 interface addresses, IP↔MAC pairings, and first-class
 :class:`~api.models.MACAddress` objects. Each MAC is one row carrying the
 interfaces that bear it, the IPs paired with it, and any MAC objects (with
@@ -19,20 +20,39 @@ view.
 """
 from __future__ import annotations
 
+import functools
+import operator
 import re
 
+from django.db.models import Case, CharField, F, OuterRef, Q, Subquery, Value, When
+from django.db.models.functions import Coalesce, Collate, Concat, NullIf
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiResponse, extend_schema
+from rest_framework import serializers, viewsets
 from rest_framework.decorators import api_view, permission_classes
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from auth_api import rbac
+from core.models import Tag
 from core.tags import TAGS, tags_of
 
-from .models import Device, Interface, IPAddress, MACAddress, VirtualMachine, VMInterface
+from . import list_summaries, mac_summary
+from .list_table import Facet, Sort, TableListMixin, TableSpec
+from .mac_summary import source_rows
+from .models import (
+    Device,
+    Interface,
+    IPAddress,
+    MACAddress,
+    MacSummary,
+    VirtualMachine,
+    VMInterface,
+)
 from .natural import natural
-from .oui import hexkey, vendor_for, vendors_for
+from .oui import vendor_for
+from .pagination import StandardResultsSetPagination
 from .serializers import TagSerializer
 from .views import _get_active_tenant
 
@@ -249,118 +269,406 @@ def _mac_object(
     return obj
 
 
-@extend_schema(
-    summary="List every MAC address known in the active tenant, aggregated from "
-    "interfaces, IP↔MAC pairings and first-class MAC objects",
-    tags=["mac-addresses"],
-    request=None,
-    responses=OpenApiResponse(
-        response=OpenApiTypes.OBJECT,
-        description="Aggregated MAC rows: {count, results:[{mac, vendor, interfaces[], "
-        "vm_interfaces[], ips[], objects[], location}]}. location is where the "
-        "network learned the MAC (site, location, device, port, since, last_seen), "
-        "or null.",
-    ),
+# ─── the list (#527) ─────────────────────────────────────────────────────────
+
+#: The sources of a row: (row type, model, tenant path, row list key).
+_SOURCE_SLUGS = (
+    ("interface", Interface, "device__tenant", "interfaces"),
+    ("vminterface", VMInterface, "vm__tenant", "vm_interfaces"),
+    ("ipaddress", IPAddress, "tenant", "ips"),
+    ("macaddress", MACAddress, "tenant", "objects"),
 )
-@api_view(["GET"])
-@permission_classes([IsAuthenticated])
-def mac_list_view(request):
-    tenant = _get_active_tenant(request)
-    if tenant is None:
-        return Response({"count": 0, "results": []})
+
+
+class MacScope:
+    """What the caller may see of a tenant's MACs, once per request: every
+    row of every source (and every device, for the learned Location) - then
+    the stored counts and vendor are theirs - or the visible rows of each
+    source, which the list's filters and facets then read live."""
+
+    def __init__(self, request, tenant):
+        user = request.user
+        self.tenant = tenant
+        self.user = user
+        self.grants = {
+            slug: rbac.row_filter(user, tenant, slug, "view")
+            for slug in ("interface", "vminterface", "ipaddress", "macaddress", "device")
+        }
+        self.all = all(v is True for v in self.grants.values())
+
+    @classmethod
+    def of(cls, request, tenant) -> MacScope:
+        got = getattr(request, "_mac_scope", None)
+        if got is None or got.tenant.pk != tenant.pk:
+            got = cls(request, tenant)
+            try:
+                request._mac_scope = got
+            except AttributeError:
+                pass
+        return got
+
+    def rows(self, slug: str):
+        """The visible rows carrying a MAC of one source, keyed ``_k``; None
+        when the caller sees none of them."""
+        if self.grants[slug] is None:
+            return None
+        _, model, path, _ = next(s for s in _SOURCE_SLUGS if s[0] == slug)
+        # Through the row restriction even for an open grant (a no-op then),
+        # so no path reads a source unrestricted.
+        return _visible(source_rows(model, f"{path}_id", self.tenant.pk),
+                        self.user, self.tenant, slug)
+
+    def keys(self, slug: str, q: Q | None = None):
+        """A subquery of the visible keys of one source (rows matching
+        ``q``), or None."""
+        rows = self.rows(slug)
+        if rows is None:
+            return None
+        if q is not None:
+            rows = rows.filter(q)
+        return rows.order_by().values("_k")
+
+    def devices(self):
+        """A subquery of the devices the caller may view; None for all."""
+        if self.grants["device"] is True:
+            return None
+        if self.grants["device"] is None:
+            return Device.objects.none().values("pk")
+        return _visible(Device.objects.filter(tenant=self.tenant), self.user, self.tenant,
+                        "device").values("pk")
+
+
+def _any_key(scope: MacScope, slugs, q_of=None) -> Q:
+    """Rows whose key one of ``slugs``' visible rows carries."""
+    out = Q(pk__in=[])
+    for slug in slugs:
+        keys = scope.keys(slug, q_of(slug) if q_of else None)
+        if keys is not None:
+            out |= Q(key__in=keys)
+    return out
+
+
+def _has(scope: MacScope, field: str, slugs) -> Q:
+    if scope.all:
+        return functools.reduce(operator.or_, (Q(**{f"{f}__gt": 0}) for f in field))
+    return _any_key(scope, slugs)
+
+
+def _vendor_expr(scope: MacScope):
+    oui = NullIf(F("oui_vendor"), Value(""))
+    if scope.all:
+        return Coalesce(NullIf(F("vendor_override"), Value("")), oui)
+    objects = scope.rows("macaddress")
+    if objects is None:
+        return oui
+    first = (objects.filter(_k=OuterRef("key")).exclude(vendor_override="")
+             .order_by("numid", "pk").values("vendor_override")[:1])
+    return Coalesce(Subquery(first, output_field=CharField()), oui)
+
+
+def _learned_q(scope: MacScope) -> Q:
+    q = Q(learned_device__isnull=False)
+    devices = scope.devices()
+    if devices is not None:
+        q &= Q(learned_device__in=devices)
+    return q
+
+
+def _masked(scope: MacScope, path):
+    """``path`` of the learned Location, NULL where the caller may not see
+    the switch it was learned on."""
+    expr = F(path) if isinstance(path, str) else path
+    return Case(When(_learned_q(scope), then=expr), default=None, output_field=CharField())
+
+
+def _annotate(qs, request):
+    """What the rail, the sorts and the search read from a row."""
+    if "_vendor" in qs.query.annotations:
+        return qs
+    scope = MacScope.of(request, _get_active_tenant(request))
+    learned = _learned_q(scope)
+    return qs.annotate(
+        _vendor=_vendor_expr(scope),
+        _loc_site=Case(
+            When(learned & Q(learned_device__site__isnull=False),
+                 then=F("learned_device__site__name")),
+            When(learned, then=Value(NOSITE)),
+            default=None, output_field=CharField(),
+        ),
+        # The Location sort reads a learned place without a site as an
+        # empty name, as the table sorted it in the browser.
+        _loc_site_name=Case(
+            When(learned, then=Coalesce(F("learned_device__site__name"), Value(""))),
+            default=None, output_field=CharField(),
+        ),
+        _loc_location=_masked(scope, "learned_device__location__name"),
+        _loc_device=_masked(scope, "learned_device__name"),
+        _loc_port=_masked(scope, Coalesce(F("learned_interface__name"), F("learned_port"))),
+    )
+
+
+NOSITE = "__nosite__"
+
+
+def _yes_no(field: tuple, slugs):
+    def buckets(request):
+        scope = MacScope.of(request, _get_active_tenant(request))
+        yes = _has(scope, field, slugs)
+        return {"yes": yes, "no": ~yes}
+
+    return buckets
+
+
+def _tag_filter(qs, request, wanted):
+    scope = MacScope.of(request, _get_active_tenant(request))
+    keys = scope.keys("macaddress", Q(tags__slug__in=wanted))
+    return qs.filter(key__in=keys) if keys is not None else qs.none()
+
+
+def _tag_count(qs, request, selected):
+    from .list_table import _by_count, _cap, _text_color, group_count
+
+    scope = MacScope.of(request, _get_active_tenant(request))
+    objects = scope.rows("macaddress")
+    if objects is None:
+        return []
+    pairs = (objects.filter(_k__in=qs.order_by().values("key"), tags__isnull=False)
+             .annotate(_tag=F("tags__id")).order_by().values("_tag", "_k").distinct())
+    counts = dict(group_count(pairs, "_tag"))
+    merged: dict = {}
+    for t in (Tag.objects.filter(pk__in=list(counts)).order_by("name", "id")
+              .values("id", "slug", "name", "color")):
+        got = merged.setdefault(t["slug"], {
+            "value": t["slug"], "label": t["name"], "count": 0,
+            "color": t["color"] or None, "text_color": _text_color(t["color"]), "id": t["id"],
+        })
+        got["count"] += counts[t["id"]]
+    return _cap(_by_count(merged.values()), selected)
+
+
+def _location_sort(qs, request):
+    return _annotate(qs, request)
+
+
+MAC_SPEC = TableSpec(
+    facets={
+        "vendor": Facet(field="_vendor", prepare=_annotate, none_label="Unknown", blank=True),
+        "location": Facet(field="_loc_site", prepare=_annotate, none_label="Not learned",
+                          labels={NOSITE: "No site"}),
+        "interfaces": Facet(kind="buckets", buckets=_yes_no(
+            ("interfaces", "vm_interfaces"), ("interface", "vminterface")),
+            labels={"yes": "Has interface", "no": "No interface"}),
+        "ips": Facet(kind="buckets", buckets=_yes_no(("ips",), ("ipaddress",)),
+                     labels={"yes": "Has IP", "no": "No IP"}),
+        "description": Facet(kind="buckets", buckets=_yes_no(("mac_objects",), ("macaddress",)),
+                             labels={"yes": "Has object", "no": "No object"}),
+        "tags": Facet(kind="custom", filter_fn=_tag_filter, count_fn=_tag_count),
+    },
+    sorts={
+        "mac": Sort((Collate("key", "C"),)),
+        "location": Sort((natural("_loc_site_name"), natural("_loc_location"),
+                          natural("_loc_device"), natural("_loc_port")),
+                         prepare=_location_sort),
+    },
+    # The advanced filter: the row's scalar fields, as the caller sees them.
+    expr_fields={
+        "mac": ("text", "key"),
+        "vendor.name": ("text", "_vendor"),
+        "location.site.name": ("text", "_loc_site_name"),
+        "location.location.name": ("text", "_loc_location"),
+        "location.device.name": ("text", "_loc_device"),
+        "location.port_name": ("text", "_loc_port"),
+        "location.interface.name": ("text", "_loc_port"),
+    },
+    expr_prepare=_annotate,
+)
+
+
+def _search_q(scope: MacScope, needle: str) -> Q:
+    """The search box: the MAC, its vendor, where it was learned, and the
+    names, addresses and descriptions of the rows the caller may see."""
+    loc = Concat(
+        Coalesce("_loc_site", Value("")), Value(" "), Coalesce("_loc_location", Value("")),
+        Value(" "), Coalesce("_loc_device", Value("")), Value(" "),
+        Coalesce("_loc_port", Value("")), output_field=CharField(),
+    )
+    text = {
+        "interface": Q(name__icontains=needle) | Q(device__name__icontains=needle),
+        "vminterface": Q(name__icontains=needle) | Q(vm__name__icontains=needle),
+        "ipaddress": Q(ip_address__icontains=needle),
+        "macaddress": Q(description__icontains=needle),
+    }
+    return (Q(key__contains=needle.lower()) | Q(_vendor__icontains=needle)
+            | Q(_loc_text__icontains=needle)
+            | _any_key(scope, text, lambda slug: text[slug])), loc
+
+
+class _NoFields(serializers.Serializer):
+    """The list's rows are built by hand (:func:`_page_entries`); the
+    advanced filter reads :data:`MAC_SPEC`'s fields only."""
+
+    class Meta:
+        fields = ()
+
+
+class MacListViewSet(TableListMixin, viewsets.GenericViewSet):
+    """``GET /api/macs/`` - one row per MAC value the tenant records (on a
+    device or VM interface, an IP pairing or a MAC object), paged, searched,
+    sorted and counted in SQL from the stored summary (api.mac_summary).
+    The list contract of api.list_table: ``page``/``page_size``,
+    ``ordering`` (``mac``, ``location``), ``search``, ``f_<facet>``
+    (``vendor``, ``location``, ``interfaces``, ``ips``, ``description``,
+    ``tags``) and ``facets/``. Each row: ``{id, mac, vendor, interfaces[],
+    vm_interfaces[], ips[], objects[], location}``, cut to the caller's
+    view scope; ``summary: {building, updating}`` says whether the stored
+    rows are complete yet."""
+
+    rbac_object_type = "macaddress"
+    #: Read-only: whatever the action, the list reads.
+    rbac_action_map = {"retrieve": "view", "partial_update": "view", "destroy": "view"}
+    permission_classes = [IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
+    queryset = MacSummary.objects.all()
+    filter_backends: list = []
+    table_spec = MAC_SPEC
+
+    def _tenant(self):
+        tenant = _get_active_tenant(self.request)
+        if tenant is not None and not rbac.has_action(
+                self.request.user, tenant, "macaddress", "view"):
+            raise PermissionDenied("macaddress.view required.")
+        return tenant
+
+    def get_queryset(self):
+        tenant = self._tenant()
+        if tenant is None:
+            return MacSummary.objects.none()
+        scope = MacScope.of(self.request, tenant)
+        qs = MacSummary.objects.filter(tenant=tenant)
+        # The MAC objects the caller may view, read for every caller: a row
+        # is theirs only through a source row they may view.
+        scope.rows("macaddress")
+        if not scope.all:
+            qs = qs.filter(_any_key(scope, [s[0] for s in _SOURCE_SLUGS]))
+        needle = (self.request.query_params.get("search") or "").strip()
+        if needle:
+            q, loc = _search_q(scope, needle[:200])
+            qs = _annotate(qs, self.request).annotate(_loc_text=loc).filter(q)
+        return qs.order_by(Collate("key", "C"))
+
+    def list(self, request, *args, **kwargs):
+        tenant = self._tenant()
+        if tenant is None:
+            return Response({"count": 0, "next": None, "previous": None, "results": []})
+        summary = list_summaries.ensure(mac_summary.KIND, tenant)
+        page = self.paginate_queryset(self.filter_queryset(self.get_queryset()))
+        rows = _page_entries(tenant, request, page or [])
+        response = self.get_paginated_response(rows)
+        response.data["summary"] = summary
+        return response
+
+    def table_facets(self, request):
+        tenant = self._tenant()
+        if tenant is not None:
+            list_summaries.ensure(mac_summary.KIND, tenant)
+        return super().table_facets(request)
+
+    def get_serializer_class(self):
+        return _NoFields
+
+    def table_sortable(self) -> list[str]:
+        return list(self.table_spec.sorts)
+
+    def table_ids(self, request):
+        """Every MAC the filters match, in the list's order - what *Select
+        all* ticks (the rows' ids are their MACs)."""
+        from django.conf import settings
+
+        cap = int(getattr(settings, "API_MAX_SELECT", 50_000))
+        qs = self.filter_queryset(self.get_queryset())
+        ids = list(qs.values_list("key", flat=True)[: cap + 1])
+        return Response({"count": len(ids[:cap]), "truncated": len(ids) > cap,
+                         "results": ids[:cap]})
+
+
+def _page_entries(tenant, request, summaries) -> list[dict]:
+    """The rows of one page, in its order: each source's visible rows that
+    carry the page's MACs, read for those keys alone."""
+    from monitoring.mac_location import location_cells
+    from monitoring.mac_tables import canon_mac
+
     user = request.user
-    if not rbac.has_action(user, tenant, "macaddress", "view"):
-        return Response({"detail": "macaddress.view required."}, status=403)
+    scope = MacScope.of(request, tenant)
+    keys = [s.key for s in summaries]
+    if not keys:
+        return []
+    entries = {
+        s.key: {"id": s.key, "mac": None, "vendor": None, "interfaces": [],
+                "vm_interfaces": [], "ips": [], "objects": [], "location": None}
+        for s in summaries
+    }
+    display: dict = {}
 
-    entries: dict[str, dict] = {}
+    def seen(key, raw, rank):
+        if key in entries and (key not in display or display[key][0] > rank):
+            display[key] = (rank, raw)
 
-    def bucket(mac: str) -> dict:
-        key = _norm(mac)
-        if key not in entries:
-            entries[key] = {
-                "mac": mac,
-                "interfaces": [],
-                "vm_interfaces": [],
-                "ips": [],
-                "objects": [],
-            }
-        return entries[key]
-
-    ifaces = _visible(
-        Interface.objects.filter(device__tenant=tenant)
-        .exclude(mac_address="")
-        .select_related("device"),
-        user, tenant, "interface",
-    )
-    for i in ifaces:
-        bucket(i.mac_address)["interfaces"].append(_iface_ref(i))
-
-    # VM interfaces carry the same kind of address as a device port (#142).
-    vm_ifaces = _visible(
-        VMInterface.objects.filter(vm__tenant=tenant)
-        .exclude(mac_address="")
-        .select_related("vm"),
-        user, tenant, "vminterface",
-    )
-    for vi in vm_ifaces:
-        bucket(vi.mac_address)["vm_interfaces"].append(_vm_iface_ref(vi))
-
-    ips = list(
-        _visible(
-            IPAddress.objects.filter(tenant=tenant)
-            .exclude(mac_address="")
-            .select_related("assigned_device"),
-            user, tenant, "ipaddress",
+    rows = scope.rows("interface")
+    if rows is not None:
+        for i in (rows.filter(_k__in=keys).select_related("device")
+                  .order_by(natural("device__name"), natural("name"), "pk")):
+            entries[i._k]["interfaces"].append(_iface_ref(i))
+            seen(i._k, i.mac_address, 0)
+    rows = scope.rows("vminterface")
+    if rows is not None:
+        for vi in (rows.filter(_k__in=keys).select_related("vm")
+                   .order_by(natural("vm__name"), natural("name"), "pk")):
+            entries[vi._k]["vm_interfaces"].append(_vm_iface_ref(vi))
+            seen(vi._k, vi.mac_address, 1)
+    rows = scope.rows("ipaddress")
+    if rows is not None:
+        ips = list(rows.filter(_k__in=keys).select_related("assigned_device")
+                   .order_by("ip_address", "pk"))
+        # An IP's device is its own row: named only when the caller may view it.
+        devices = _visible_ids(
+            Device, "tenant", {ip.assigned_device_id for ip in ips} - {None},
+            user, tenant, "device",
         )
-    )
-    # An IP's device is its own row: named only when the caller may view it.
-    devices = _visible_ids(
-        Device, "tenant", {ip.assigned_device_id for ip in ips} - {None},
-        user, tenant, "device",
-    )
-    for ip in ips:
-        bucket(ip.mac_address)["ips"].append(
-            {
+        for ip in ips:
+            entries[ip._k]["ips"].append({
                 "id": str(ip.id),
                 "ip_address": ip.ip_address,
                 "device": (
                     {"id": str(ip.assigned_device_id), "name": ip.assigned_device.name}
-                    if ip.assigned_device_id in devices
-                    else None
+                    if ip.assigned_device_id in devices else None
                 ),
-            }
-        )
+            })
+            seen(ip._k, ip.mac_address, 2)
+    rows = scope.rows("macaddress")
+    if rows is not None:
+        seen_tags: dict = {}
+        for m in (rows.filter(_k__in=keys).select_related("assigned_interface__device")
+                  .only(*_MAC_ROW).prefetch_related(TAGS).order_by("numid", "pk")):
+            entries[m._k]["objects"].append(_mac_object(m, seen_tags=seen_tags))
+            seen(m._k, m.mac_address, 3)
 
-    # First-class MAC objects - surface even when no interface/IP string carries
-    # the address yet, so a standalone object is still listed and its
-    # description / tags show on the row.
-    objects = _visible(
-        MACAddress.objects.filter(tenant=tenant)
-        .select_related("assigned_interface__device")
-        .only(*_MAC_ROW)
-        .prefetch_related(TAGS),
-        user, tenant, "macaddress",
-    )
-    seen_tags: dict = {}
-    for m in objects:
-        bucket(m.mac_address)["objects"].append(_mac_object(m, seen_tags=seen_tags))
-
-    from monitoring.mac_location import location_cells
-    from monitoring.mac_tables import canon_mac
-
-    vendors = vendors_for(entries.keys(), tenant)
-    # Where each MAC was learned - the MAC page's Location, for every row in
-    # one batch (#344).
-    canon = {key: canon_mac(key) for key in entries}
-    located = location_cells(tenant, set(canon.values()) - {None}, user)
-    for key, entry in entries.items():
-        override = next((o["vendor_override"] for o in entry["objects"] if o["vendor_override"]), "")
-        entry["vendor"] = (
-            {"name": override, "source": "override"} if override else vendors.get(hexkey(key))
-        )
-        entry["location"] = located.get(canon[key])
-    results = sorted(entries.values(), key=lambda e: _norm(e["mac"]))
-    return Response({"count": len(results), "results": results})
+    # Where each MAC was learned, among the switches the caller may view
+    # (#344) - for the page's MACs alone.
+    canon = {k: canon_mac(k) for k in keys}
+    located = location_cells(tenant, {c for c in canon.values() if c}, user)
+    out = []
+    for s in summaries:
+        entry = entries[s.key]
+        entry["mac"] = display.get(s.key, (0, s.key))[1]
+        override = next((o["vendor_override"] for o in entry["objects"]
+                         if o["vendor_override"]), "")
+        if override:
+            entry["vendor"] = {"name": override, "source": "override"}
+        elif s.oui_vendor:
+            entry["vendor"] = {"name": s.oui_vendor, "source": s.oui_source}
+        entry["location"] = located.get(canon[s.key]) if canon[s.key] else None
+        out.append(entry)
+    return out
 
 
 @extend_schema(

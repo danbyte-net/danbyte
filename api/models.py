@@ -6,7 +6,7 @@ import uuid
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.contrib.postgres.indexes import GinIndex, GistIndex, OpClass
-from django.db.models.functions import Cast, Greatest, Least, Upper
+from django.db.models.functions import Cast, Greatest, Least, Lower, Trim, Upper
 from django.db import models, transaction
 from django.utils import timezone
 
@@ -3796,6 +3796,10 @@ class IPAddress(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         # DNS-name lookup each walked the whole table at a few hundred
         # thousand addresses (#186). The Upper index matches ``iexact``.
         indexes = [
+            # The MAC list's key (#527): its summary rows are matched to
+            # the rows carrying a MAC by it.
+            models.Index(Lower(Trim("mac_address")), condition=~models.Q(mac_address=""),
+                         name="ip_mac_key_idx"),
             models.Index(fields=["tenant", "status"], name="ip_tenant_status_idx"),
             models.Index(fields=["tenant", "role"], name="ip_tenant_role_idx"),
             models.Index(fields=["tenant", "site"], name="ip_tenant_site_idx"),
@@ -4441,6 +4445,12 @@ class Interface(TimestampedModel, CustomFieldsMixin, TaggableMixin):
     class Meta:
         unique_together = ("device", "name")
         ordering = [natural("name")]
+        indexes = [
+            # The MAC list's key (#527): its summary rows are matched to
+            # the rows carrying a MAC by it.
+            models.Index(Lower(Trim("mac_address")), condition=~models.Q(mac_address=""),
+                         name="iface_mac_key_idx"),
+        ]
 
     def save(self, *args, **kwargs):
         # A virtual, bridge or aggregate type has no physical port, and LACP
@@ -4511,6 +4521,12 @@ class MACAddress(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin)
                 name="uniq_macaddress_tenant_addr_iface",
                 nulls_distinct=False,
             )
+        ]
+        indexes = [
+            # The MAC list's key (#527): its summary rows are matched to
+            # the rows carrying a MAC by it.
+            models.Index(Lower(Trim("mac_address")), condition=~models.Q(mac_address=""),
+                         name="macaddr_mac_key_idx"),
         ]
 
     def save(self, *args, **kwargs):
@@ -6043,6 +6059,12 @@ class VMInterface(TimestampedModel, CustomFieldsMixin, TaggableMixin):
                 fields=["vm", "index"], condition=models.Q(index__isnull=False),
                 name="uniq_vminterface_vm_index",
             ),
+        ]
+        indexes = [
+            # The MAC list's key (#527): its summary rows are matched to
+            # the rows carrying a MAC by it.
+            models.Index(Lower(Trim("mac_address")), condition=~models.Q(mac_address=""),
+                         name="vmiface_mac_key_idx"),
         ]
 
     def __str__(self) -> str:
@@ -12028,3 +12050,100 @@ class DeviceDependency(NumIdMixin, TimestampedModel, CustomFieldsMixin, Taggable
                 and str(self.upstream_id) > str(self.downstream_id)):
             up, down = self.upstream, self.downstream
             self.upstream, self.downstream = down, up
+
+
+# ─── Stored list summaries (#527, #535) ──────────────────────────────────────
+#
+# Derived data the big lists page, filter, facet and sort on in SQL - what was
+# worked out per row in Python before. Each is rebuilt from its sources, never
+# adjusted by deltas (api.list_summaries); never edited, never change-logged.
+
+
+class ListSummaryDirty(models.Model):
+    """One summary row to rebuild: a MAC key (``kind="mac"``) or a device id
+    (``kind="port"``) whose sources changed. Written in the same transaction
+    as the change, so a rolled-back write leaves no mark and a committed one
+    is never lost; worked off by the background job and by the list itself
+    before it reads."""
+
+    id = models.BigAutoField(primary_key=True)
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name="+")
+    kind = models.CharField(max_length=16)
+    key = models.CharField(max_length=64)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "kind", "key"], name="list_summary_dirty_uniq"
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.kind} {self.key}"
+
+
+class ListSummaryState(models.Model):
+    """Where a tenant's summary of one kind stands: ``built_at`` once a full
+    build has finished (until then the list says it is still building), and
+    the build's ``cursor`` so an interrupted one resumes where it stopped."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name="+")
+    kind = models.CharField(max_length=16)
+    built_at = models.DateTimeField(null=True, blank=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    cursor = models.CharField(max_length=64, blank=True, default="")
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["tenant", "kind"], name="list_summary_state_uniq"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.kind} summary of {self.tenant_id}"
+
+
+class MacSummary(models.Model):
+    """One row of the MAC list (#527): a MAC value Danbyte records in a
+    tenant - on a device or VM interface, paired with an IP, or as a MAC
+    object - keyed as the list groups them (trimmed, lower case). Holds what
+    the list filters, counts and sorts on: how many rows of each source
+    carry it, its vendor (an object's override, the OUI resolution) and
+    where the network learned it. What a row shows is read live for the
+    page (api.mac_views)."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name="+")
+    key = models.CharField(max_length=64)
+    #: The key's 12 hex digits when it is a whole MAC, else blank - what the
+    #: learned sightings are matched by.
+    hex = models.CharField(max_length=12, blank=True, default="")
+    interfaces = models.PositiveIntegerField(default=0)
+    vm_interfaces = models.PositiveIntegerField(default=0)
+    ips = models.PositiveIntegerField(default=0)
+    mac_objects = models.PositiveIntegerField(default=0)
+    #: The first MAC object's vendor override (by number), else blank.
+    vendor_override = models.CharField(max_length=255, blank=True, default="")
+    #: The OUI resolution (api.oui.vendors_for), blank when nothing matches.
+    oui_vendor = models.CharField(max_length=255, blank=True, default="")
+    oui_source = models.CharField(max_length=16, blank=True, default="")
+    #: Where the network learned it (monitoring.mac_location.locate).
+    learned_device = models.ForeignKey(
+        "Device", on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    learned_interface = models.ForeignKey(
+        "Interface", on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    learned_port = models.CharField(max_length=128, blank=True, default="")
+    refreshed_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["tenant", "key"], name="mac_summary_tenant_key"),
+        ]
+        indexes = [
+            models.Index(fields=["tenant", "hex"], name="mac_summary_tenant_hex"),
+        ]
+
+    def __str__(self) -> str:
+        return self.key

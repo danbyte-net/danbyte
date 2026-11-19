@@ -43,6 +43,7 @@ from rest_framework.response import Response
 from audit.bulk import log_bulk_update
 from auth_api import rbac
 
+from . import list_summaries
 from .models import Interface, IPAddress, MACAddress, VMInterface
 from .views import _get_active_tenant
 
@@ -185,7 +186,8 @@ def mac_bulk_remove_view(request):
                 raise PermissionDenied(" or ".join(f"{s}.{a}" for s, a in needs) + " required.")
 
     sources = {}
-    with transaction.atomic():
+    # The MAC list's summary is marked once for the batch (#527).
+    with transaction.atomic(), list_summaries.batched():
         for key, option, slug, action in SOURCES:
             permitted, rows, skipped = _plan(user, tenant, key, slug, action, keys)
             applied = permitted and not dry_run and data[option]
@@ -230,7 +232,7 @@ def mac_object_bulk_delete_view(request):
     ser = MacBulkDeleteSerializer(data=request.data)
     ser.is_valid(raise_exception=True)
     qs = _objects(tenant).filter(pk__in=ser.validated_data["ids"])
-    with transaction.atomic():
+    with transaction.atomic(), list_summaries.batched():
         rows = list(rbac.restrict_queryset(qs, user, tenant, "macaddress", "delete"))
         deleted = _delete_objects(rows)
     return Response({"deleted": deleted})

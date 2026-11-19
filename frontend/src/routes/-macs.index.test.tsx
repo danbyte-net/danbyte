@@ -1,14 +1,13 @@
 // @vitest-environment jsdom
-import { Suspense } from "react"
 import type { ReactNode } from "react"
 import {
   cleanup,
   fireEvent,
-  render,
   screen,
+  waitFor,
   within,
 } from "@testing-library/react"
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import type { RouteComponent } from "@tanstack/react-router"
 import {
   afterEach,
   beforeAll,
@@ -21,54 +20,55 @@ import {
 
 import type { MacEntry } from "@/lib/api"
 import { Route } from "./macs.index"
+import { mountRoute, stubDom } from "./-bulk-list-test-utils"
 
-// A search that matches no MAC must not leave a selection behind (#251):
-// the table stays mounted, so the rows filtered away leave the selection
-// and the bulk bar goes with them - Remove can never act on rows that are
-// neither visible nor ticked.
+// The Recorded MAC list pages on the server (#527): one request per page,
+// the search, sort and rail sent as params, the rail's counts from
+// /api/macs/facets/ and "Select all" from /api/macs/table-ids/ - whose ids
+// are the MACs the bulk removal takes. A search that matches nothing still
+// leaves no selection behind (#251).
 
-const { apiMock, url } = vi.hoisted(() => {
-  const location: { search: Record<string, unknown> } = { search: {} }
-  return {
-    apiMock: vi.fn<(path: string, init?: RequestInit) => Promise<unknown>>(),
-    url: location,
-  }
-})
+const { apiMock } = vi.hoisted(() => ({
+  apiMock: vi.fn<(path: string, init?: RequestInit) => Promise<unknown>>(),
+}))
 vi.mock("@/lib/api", async (orig) => ({
   ...(await orig<object>()),
   api: apiMock,
 }))
-vi.mock("@/lib/use-me", () => ({
-  useMe: () => ({ me: {}, canDo: () => true }),
+vi.mock("@/lib/api-all", () => ({
+  apiAll: (path: string) => apiMock(path),
 }))
-// No router: the list's filters read `url.search` (empty unless a test sets
-// it) and their URL writes go nowhere (the search box still follows typing).
-vi.mock("@tanstack/react-router", async (orig) => ({
-  ...(await orig<object>()),
-  Link: ({ children }: { children: ReactNode }) => <a>{children}</a>,
-  useSearch: () => url.search,
-  useNavigate: () => () => Promise.resolve(),
+vi.mock("@/lib/use-me", () => ({
+  useMe: () => ({ me: {}, canDo: () => true, humanIds: false }),
+  objCan: (_o: unknown, _a: string, fallback: boolean) => fallback,
 }))
 // The page opens on its Recorded tab - the list under test.
 vi.mock("@/lib/use-url-tab", () => ({
   useUrlTab: () => ["recorded", () => {}],
 }))
-// The page's chrome is not under test: the shell keeps its search box and
-// children, the header actions and dialogs render nothing.
 vi.mock("@/components/list-page-shell", () => ({
   ListPageShell: ({
+    rail,
     search,
+    summary,
     children,
+    count,
   }: {
+    rail?: ReactNode
     search: { value: string; onChange: (v: string) => void }
+    summary?: ReactNode
     children: ReactNode
+    count?: number
   }) => (
     <div>
+      <span data-testid="count">{count}</span>
       <input
         aria-label="Search"
         value={search.value}
         onChange={(e) => search.onChange(e.target.value)}
       />
+      <div data-testid="summary">{summary}</div>
+      <aside data-testid="rail">{rail}</aside>
       {children}
     </div>
   ),
@@ -81,18 +81,11 @@ vi.mock("@/components/oui-ranges-dialog", () => ({
   OuiRangesDialog: () => null,
 }))
 
-class ResizeObserverStub {
-  observe() {}
-  unobserve() {}
-  disconnect() {}
-}
-if (!("ResizeObserver" in globalThis)) {
-  ;(globalThis as unknown as Record<string, unknown>).ResizeObserver =
-    ResizeObserverStub
-}
-
-const entry = (mac: string): MacEntry => ({
-  mac,
+const TOTAL = 60
+const mac = (i: number) => `aa:00:00:00:00:${String(i).padStart(2, "0")}`
+const entry = (i: number): MacEntry & { id: string } => ({
+  id: mac(i),
+  mac: mac(i).toUpperCase(),
   vendor: null,
   interfaces: [],
   vm_interfaces: [],
@@ -100,127 +93,146 @@ const entry = (mac: string): MacEntry => ({
   objects: [],
   location: null,
 })
-const MACS = ["aa:00:00:00:00:01", "aa:00:00:00:00:02", "aa:00:00:00:00:03"]
 
-afterEach(cleanup)
-// The route's component is code-split: load it once up front.
-beforeAll(async () => {
-  const lazy = Route.options.component as { preload?: () => Promise<void> }
-  await lazy.preload?.()
-})
-let listed: MacEntry[] = []
-beforeEach(() => {
-  url.search = {}
-  listed = MACS.map(entry)
-  apiMock.mockReset()
-  // The list, and an empty answer for the table's own preference reads.
-  apiMock.mockImplementation((path) =>
-    Promise.resolve(
-      path === "/api/macs/" ? { count: listed.length, results: listed } : {}
-    )
-  )
-})
+let total = TOTAL
+let building = false
+let first: (i: number) => MacEntry & { id: string } = entry
 
-function mount() {
-  const Page = Route.options.component as React.ComponentType
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  render(
-    <QueryClientProvider client={qc}>
-      <Suspense fallback={null}>
-        <Page />
-      </Suspense>
-    </QueryClientProvider>
-  )
+function answer(path: string): unknown {
+  const url = new URL(path, "http://x")
+  const p = url.pathname
+  if (p === "/api/me/prefs/")
+    return { values: { page_size: 25 }, defaults: {}, user_set: [] }
+  if (p === "/api/macs/facets/")
+    return {
+      facets: {
+        vendor: [{ value: "Acme", label: null, count: 4 }],
+        location: [{ value: "__none__", label: "Not learned", count: TOTAL }],
+      },
+      sortable: ["mac", "location"],
+    }
+  if (p === "/api/macs/table-ids/")
+    return {
+      count: total,
+      truncated: false,
+      results: Array.from({ length: total }, (_, i) => mac(i + 1)),
+    }
+  if (p === "/api/macs/") {
+    const page = Number(url.searchParams.get("page") ?? 1)
+    const size = Number(url.searchParams.get("page_size") ?? 100)
+    const start = (page - 1) * size
+    const n = url.searchParams.get("search") === "nothing" ? 0 : total
+    return {
+      count: n,
+      next: start + size < n ? "next" : null,
+      previous: null,
+      results: Array.from(
+        { length: Math.max(0, Math.min(size, n - start)) },
+        (_, i) => first(start + i + 1)
+      ),
+      summary: { building, updating: false },
+    }
+  }
+  return { results: [], count: 0 }
 }
 
-const rowOf = (mac: string) => screen.getByText(mac).closest("tr")!
-const tick = (mac: string) =>
-  fireEvent.click(within(rowOf(mac)).getByRole("checkbox"))
-const search = (text: string) =>
-  fireEvent.change(screen.getByLabelText("Search"), {
-    target: { value: text },
+const pageCalls = () =>
+  apiMock.mock.calls.map(([p]) => p).filter((p) => p.startsWith("/api/macs/?"))
+
+const component = (
+  Route as unknown as { options: { component: RouteComponent } }
+).options.component
+
+afterEach(cleanup)
+beforeAll(async () => {
+  stubDom()
+  const lazy = component as { preload?: () => Promise<void> }
+  await lazy.preload?.()
+})
+beforeEach(() => {
+  total = TOTAL
+  building = false
+  first = entry
+  apiMock.mockReset()
+  apiMock.mockImplementation((path) => Promise.resolve(answer(path)))
+})
+
+const rowOf = (text: string) => screen.getByText(text).closest("tr")!
+
+describe("MAC list (#527)", () => {
+  it("asks the server for one page and shows its count", async () => {
+    mountRoute("/macs", component)
+    await screen.findByText(mac(1).toUpperCase())
+    expect(screen.getByTestId("count").textContent).toBe(String(TOTAL))
+    const call = pageCalls().at(-1)!
+    expect(call).toContain("page=1")
+    expect(call).toContain("page_size=25")
+    expect(screen.queryByText(mac(26).toUpperCase())).toBeNull()
   })
-const removeButton = () => screen.queryByRole("button", { name: /Remove/ })
 
-describe("MAC list selection", () => {
-  it("drops the selection when a search matches nothing", async () => {
-    mount()
-    await screen.findByText(MACS[0])
-    tick(MACS[0])
-    tick(MACS[1])
-    expect(removeButton()).toBeTruthy()
-
-    search("no-such-mac")
-    expect(screen.getByText("No results.")).toBeTruthy()
-    expect(removeButton()).toBeNull()
-
-    search("")
-    await screen.findByText(MACS[0])
-    const ticked = screen
-      .getAllByRole("checkbox")
-      .filter((b) => b.getAttribute("data-state") === "checked")
-    expect(ticked).toEqual([])
-    expect(removeButton()).toBeNull()
+  it("searches on the server and drops the selection when nothing matches", async () => {
+    mountRoute("/macs", component)
+    await screen.findByText(mac(1).toUpperCase())
+    fireEvent.click(
+      within(rowOf(mac(1).toUpperCase())).getByRole("checkbox", {
+        name: "Select row",
+      })
+    )
+    expect(await screen.findByRole("button", { name: /Remove/ })).toBeTruthy()
+    fireEvent.change(screen.getByLabelText("Search"), {
+      target: { value: "nothing" },
+    })
+    await waitFor(() =>
+      expect(pageCalls().some((p) => p.includes("search=nothing"))).toBe(true)
+    )
+    expect(await screen.findByText("No results.")).toBeTruthy()
+    expect(screen.queryByRole("button", { name: /Remove/ })).toBeNull()
   })
 
-  it("shows where each MAC was learned, and finds it by place (#344)", async () => {
-    listed[0] = {
-      ...listed[0],
-      location: {
-        kind: "access",
-        site: { id: "s1", name: "HQ" },
-        location: { id: "l1", name: "Room 1" },
-        device: { id: "d1", name: "sw-acc-03" },
-        interface: { id: "i1", name: "Gi1/0/5" },
-        port_name: "Gi1/0/5",
-        vlan: 10,
-        since: "2026-10-01T10:00:00Z",
-        last_seen: "2026-10-01T12:00:00Z",
-        stale: false,
-      },
-    }
-    mount()
-    await screen.findByText(MACS[0])
-    expect(screen.getByRole("columnheader", { name: /Location/ })).toBeTruthy()
-    const row = within(rowOf(MACS[0]))
+  it("filters by ?tag=<slug> on the server", async () => {
+    mountRoute("/macs", component, "/macs?tag=core")
+    await screen.findByText(mac(1).toUpperCase())
+    expect(pageCalls().at(-1)).toContain("f_tags=core")
+  })
+
+  it("shows where each MAC was learned", async () => {
+    first = (i) =>
+      i === 1
+        ? {
+            ...entry(1),
+            location: {
+              kind: "access",
+              site: { id: "s1", name: "HQ" },
+              location: { id: "l1", name: "Room 1" },
+              device: { id: "d1", name: "sw-acc-03" },
+              interface: { id: "i1", name: "Gi1/0/5" },
+              port_name: "Gi1/0/5",
+              vlan: 10,
+              since: "2026-10-01T10:00:00Z",
+              last_seen: "2026-10-01T12:00:00Z",
+              stale: false,
+            },
+          }
+        : entry(i)
+    mountRoute("/macs", component)
+    await screen.findByText(mac(1).toUpperCase())
+    const row = within(rowOf(mac(1).toUpperCase()))
     expect(row.getByText("sw-acc-03")).toBeTruthy()
-    expect(row.getByText("Gi1/0/5")).toBeTruthy()
     expect(row.getByText("HQ · Room 1")).toBeTruthy()
-
-    search("room 1")
-    expect(screen.getByText(MACS[0])).toBeTruthy()
-    expect(screen.queryByText(MACS[1])).toBeNull()
   })
 
-  it("filters by ?tag=<slug> like the other lists", async () => {
-    const tag = (id: number, slug: string) => ({
-      id,
-      name: slug,
-      slug,
-      color: "",
-      text_color: "",
-    })
-    const object = (tags: ReturnType<typeof tag>[]) => ({
-      id: `o${tags.length}`,
-      numid: 1,
-      mac_address: "",
-      description: "",
-      vendor_override: "",
-      assigned_interface: null,
-      tags,
-    })
-    listed[0] = { ...listed[0], objects: [object([tag(1, "core")])] }
-    listed[1] = { ...listed[1], objects: [object([tag(2, "edge")])] }
-    url.search = { tag: "core" }
-    mount()
-    await screen.findByText(MACS[0])
-    expect(screen.queryByText(MACS[1])).toBeNull()
-    expect(screen.queryByText(MACS[2])).toBeNull()
+  it("says the list is still building after an upgrade", async () => {
+    building = true
+    mountRoute("/macs", component)
+    await screen.findByText(mac(1).toUpperCase())
+    expect(
+      within(screen.getByTestId("summary")).getByText("Building")
+    ).toBeTruthy()
   })
 
   it("says the list is empty only when there are no MACs at all", async () => {
-    listed = []
-    mount()
+    total = 0
+    mountRoute("/macs", component)
     expect(await screen.findByText(/No MAC addresses yet/)).toBeTruthy()
   })
 })

@@ -185,6 +185,11 @@ def sync_registry(entries: dict[str, str], *, on_progress=None) -> dict:
         done += len(gone[i : i + batch])
         if on_progress:
             on_progress(done, total)
+    if total:
+        # Every tenant's MAC list resolves its vendors anew (#527).
+        from .mac_summary import touch_vendors
+
+        touch_vendors(None)
     return {
         "created": len(to_create),
         "updated": len(to_update),

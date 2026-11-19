@@ -121,6 +121,27 @@ shows `-`. The column is on by default; it sorts by site, location, switch
 and port, the rail filters it by **Learned at site**, and the search box
 matches its site, location, switch and port names.
 
+The list pages, searches, sorts and filters on the server (#527), like the
+Devices list: one page at a time, the rail's counts over every row the other
+filters leave, the URL holding the page, sort and filters, saved views and
+Download of every match. The rail filters by **Vendor**, **Learned at site**
+(*Not learned*, *No site* for a switch without one), **Interface**, **IP**,
+**MAC object** and **Tags** (the tags of the MAC objects), and the advanced
+filter takes the MAC, the vendor and the Location's site, location, switch
+and port. *Select all* ticks every match across pages for
+[bulk removal](#removing-macs-in-bulk). The search box matches the MAC, the
+vendor, the Location's names and the interfaces, devices, VMs, IP addresses
+and object descriptions you may view.
+
+It reads a stored summary, one row per MAC value (see
+[MAC list summary](../architecture/data-model.md#stored-list-summaries)):
+what the rail and the sorts need - how many interfaces, VM interfaces, IPs and
+objects carry it, its vendor, where it was learned - kept up to date by every
+write that changes one of them, and the rows a page shows are read live for
+that page. After an upgrade that adds it, the summary is built in the
+background; until it finishes the page says **Building** and lists the MACs
+built so far.
+
 **Learned** is the network's own MAC table - see
 [the Learned list](#the-learned-list).
 
@@ -141,6 +162,14 @@ constraints. An IP's device and interface are named only when you may view
 them too, and SNMP sightings list only devices and VMs you may view. A viewer
 limited to one site never learns another site's addresses or ports through a
 shared MAC; a MAC that only such rows carry is not listed at all.
+
+For such a viewer the rail and the sorts read the same scope: Interface, IP
+and MAC object count only the rows they may view, Vendor reads only the MAC
+objects they may view, and Tags only those objects' tags. **Learned at site**
+and the Location sort use where the MAC sits network-wide, and only when
+that switch is one they may view: a MAC their Location column shows behind
+an uplink, because its access port is on a hidden switch, filters as *Not
+learned*.
 
 ### Where is this MAC? {#where-is-this-mac}
 
@@ -177,8 +206,9 @@ become MAC objects or change an IP address on their own.
 `GET /api/macs/<mac>/` returns these as `location`, `ips_observed` (each IP
 with its sources) and `names` / `name`, next to the existing keys.
 
-The lists carry the Location too: each row of `GET /api/macs/` and each MAC
-object from `GET /api/mac-addresses/` has a read-only `location` - `kind`
+The lists carry the Location too: each row of `GET /api/macs/` (see
+[the API reference](../reference/api.md#mac-list)) and each MAC object from
+`GET /api/mac-addresses/` has a read-only `location` - `kind`
 (`access` or `behind_uplink`), `site`, `location`, `device`, `interface`,
 `port_name`, `vlan`, `since`, `last_seen` and `stale` (last seen more than a
 day ago) - or `null`. It is resolved for the whole page at once, so a page

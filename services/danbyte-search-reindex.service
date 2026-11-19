@@ -1,5 +1,5 @@
 [Unit]
-Description=Danbyte global search index rebuild
+Description=Danbyte global search index rebuild and list summaries
 After=network.target
 Wants=danbyte-infra.service
 
@@ -8,6 +8,10 @@ Type=oneshot
 WorkingDirectory=%h/danbyte
 Environment=PYTHONUNBUFFERED=1
 ExecStart=%h/danbyte/.venv/bin/python manage.py rebuild_search_index
+# The stored list summaries (MAC list, port utilization): built after an
+# upgrade, reconciled nightly (api.list_summaries).
+ExecStart=%h/danbyte/.venv/bin/python manage.py list_summaries
 
-# Triggered nightly by danbyte-search-reindex.timer.
+# Triggered nightly by danbyte-search-reindex.timer, and at the end of every
+# upgrade.
 # Logs: journalctl --user -fu danbyte-search-reindex

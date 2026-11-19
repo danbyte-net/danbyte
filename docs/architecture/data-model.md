@@ -135,6 +135,37 @@ needs its own such index.
     LDP. The first render after upgrading from an earlier version can differ
     from a stored bundle or a device's running config by line order alone.
 
+## Stored list summaries
+
+Some lists filter, count and sort on values that are worked out from other
+rows - a MAC's vendor from the OUI table, where the network learned it, how
+many interfaces carry it. Worked out per row in Python, such a list had to
+load the whole tenant on every visit. These values are stored instead, in
+summary tables the lists read with ordinary SQL (`api/list_summaries.py`):
+
+| Table | One row per | Holds | Read by |
+|---|---|---|---|
+| `MacSummary` | MAC value a tenant records (key: the MAC trimmed and lower case) | `interfaces`, `vm_interfaces`, `ips`, `mac_objects` (how many rows of each source carry it), `vendor_override` (the first MAC object's), `oui_vendor` / `oui_source`, `learned_device` / `learned_interface` / `learned_port` (where the network learned it), `hex` | the MAC list (`/api/macs/`) |
+| `ListSummaryDirty` | summary row to rebuild | `tenant`, `kind`, `key` | the background job, the lists |
+| `ListSummaryState` | tenant and kind | `built_at`, `cursor` (an unfinished build's place) | the lists, `list_summaries` |
+
+The rules every summary keeps:
+
+- **Rebuilt, never adjusted.** A row is recomputed from its sources; there
+  are no running deltas to drift. A write that may change one *marks* it
+  (`ListSummaryDirty`, in the writer's transaction - the model signals in
+  `api/summary_hooks.py`, the audited bulk updates through
+  `audit.bulk.bulk_updated`, a poll's learned MACs, an OUI change), and the
+  marked rows are rebuilt by a job after the commit and by the list before it
+  reads. The nightly `list_summaries` reconcile puts right anything a writer
+  missed.
+- **Per tenant, scoped like the rows.** A summary row belongs to one tenant
+  and a list reads only the active tenant's, through the caller's permissions:
+  the stored counts are used as they are only for a caller who may view every
+  row they count; anyone else's filters and counts read the rows they may view.
+- **Derived, so not audited.** Summaries are never edited and never
+  change-logged; the writes behind them are.
+
 ## Conventional VRF = NULL
 
 We don't seed a "Global" VRF row. `vrf=NULL` *is* the Global VRF - that's why
