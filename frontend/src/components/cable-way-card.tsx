@@ -12,6 +12,7 @@ import type {
   ResolvedPathways,
 } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
+import { useSaveObject } from "@/lib/save-object"
 import { useMe } from "@/lib/use-me"
 import {
   hopOptions,
@@ -313,6 +314,7 @@ function WayDialog({
     setHops(draftOf(src?.hops ?? []))
   }, [row, reset])
 
+  const saveObject = useSaveObject()
   const save = useMutation({
     mutationFn: () => {
       const body = {
@@ -326,11 +328,11 @@ function WayDialog({
         state: "recorded",
       }
       const id = row?.way?.id
-      return api<CableWay>(id ? `/api/cable-ways/${id}/` : "/api/cable-ways/", {
-        method: id ? "PATCH" : "POST",
-        body: JSON.stringify(
-          id ? body : { ...body, cable_id: cableId, rack_id: rackId }
-        ),
+      return saveObject<CableWay>({
+        objectType: "api.cableway",
+        endpoint: "/api/cable-ways/",
+        id,
+        payload: id ? body : { ...body, cable_id: cableId, rack_id: rackId },
       })
     },
     onSuccess: () => {
