@@ -387,7 +387,11 @@ class IpListOrderIndexTests(_Base):
             cur.execute("RESET enable_seqscan")
             cur.execute("RESET enable_sort")
         self.assertIn("ip_tenant_addr_idx", plan)
-        self.assertNotIn("Sort", plan)
+        # The id breaking address ties (#529) is sorted within each address
+        # the index already orders, never over the whole tenant.
+        self.assertNotRegex(plan, r"(^|->  )Sort  \(")
+        if "Incremental Sort" in plan:
+            self.assertRegex(plan, r"Presorted Key: (api_ipaddress\.)?ip_address")
 
 
 class VrfListTests(_Base):

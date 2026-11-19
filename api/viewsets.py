@@ -28,7 +28,6 @@ from rest_framework.decorators import (
     permission_classes as drf_permission_classes,
 )
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
-from rest_framework.pagination import PageNumberPagination
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 
@@ -56,7 +55,7 @@ from .filters import apply_tag_filter
 from .floor_plan_from_map import FromMapRequestSerializer
 from .natural import natural, natural_key
 from .prefix_space_views import PrefixSpaceMixin
-from .pagination import StandardResultsSetPagination
+from .pagination import StablePagination, StandardResultsSetPagination
 from .visible_counts import (
     path_count_expr,
     related_count_expr,
@@ -2209,7 +2208,7 @@ class IPAddressViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet)
 # pickers always show every option in the active tenant so the user can
 # scroll/search inside the combobox.
 
-class _PickerPagination(PageNumberPagination):
+class _PickerPagination(StablePagination):
     page_size = 500
     max_page_size = 5000
 
@@ -2477,7 +2476,7 @@ class VLANViewSet(FieldWriteAllowList, CloneableMixin, TenantScopedViewSet):
     editable_fk_fields = {"site_id": Site, "zone_id": Zone, "vrf_id": VRF, "status_id": Status}
     queryset = (
         VLAN.objects.select_related("site", "group", "zone", "vrf", "status")
-        .prefetch_related(TAGS).all().order_by("vlan_id")
+        .prefetch_related(TAGS).all().order_by("vlan_id", "pk")
     )
     serializer_class = VLANSerializer
     pagination_class = StandardPagination

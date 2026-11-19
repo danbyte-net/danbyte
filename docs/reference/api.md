@@ -101,6 +101,11 @@ Every list endpoint pages its answer:
 - **`next`** / **`previous`** - full links to the neighbouring pages, with
   your filters and `page_size` kept, or `null` at either end. To read a
   whole list, follow `next` until it is `null`.
+- **The order is total.** Rows that tie on a list's sort (VLANs with the
+  same ID at different sites, change-log entries written at the same
+  instant) are ordered by their `id` as well, so walking the pages returns
+  every row exactly once. Before 0.21 a walk of the VLAN list could repeat
+  some VLANs and skip others.
 
 ```bash
 # Every interface, 1,000 at a time
