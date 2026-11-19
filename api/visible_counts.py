@@ -75,16 +75,15 @@ def path_count_expr(request, related, path: str):
 def _count_subquery(related, f, path: str):
     """Correlated count of the ``related`` rows matching ``f`` whose ``path``
     is the outer row; 0 when ``f`` is ``None`` (nothing granted)."""
+    from .list_table import fans_out
+
     if f is None:
         return Value(0, output_field=IntegerField())
-    sub = (
-        related._default_manager.filter(f)
-        .filter(**{path: OuterRef("pk")})
-        .order_by()
-        .values(path)
-        .annotate(c=Count("pk", distinct=True))
-        .values("c")
-    )
+    rows = related._default_manager.filter(f).filter(**{path: OuterRef("pk")}).order_by()
+    # Distinct only where a row can repeat (a to-many join in the scope or
+    # the path): COUNT(DISTINCT) sorts each row's ids, a plain COUNT reads
+    # the foreign key's index alone (#531).
+    sub = rows.values(path).annotate(c=Count("pk", distinct=fans_out(rows))).values("c")
     return Coalesce(Subquery(sub, output_field=IntegerField()), Value(0))
 
 

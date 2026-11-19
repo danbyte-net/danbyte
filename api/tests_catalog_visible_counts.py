@@ -161,6 +161,32 @@ class CatalogVisibleCountTests(_TwoSites):
         # and rack, which have none).
         self.assertEqual(self._detail(f"/api/statuses/{self.status.id}/")["usage_count"], 2)
 
+    def test_status_picker_counts_nothing_and_the_list_counts_scoped(self):
+        """The picker shape has no usage count, so it runs no count at all;
+        the list still counts what the reader may view (#531)."""
+        url = "/api/statuses/?available_to=device&picker=1&page_size=1000"
+        self.client.get(url)
+        with CaptureQueriesContext(connection) as ctx:
+            rows = self._list(url)
+        self.assertIn(str(self.status.id), {str(r["id"]) for r in rows})
+        self.assertNotIn("usage_count", rows[0])
+        status_reads = [q["sql"] for q in ctx.captured_queries if 'FROM "api_status"' in q["sql"]]
+        self.assertTrue(status_reads)
+        for sql in status_reads:
+            # No usage count: no subquery over the objects using a status.
+            for table in ("api_device", "api_ipaddress", "api_virtualmachine"):
+                self.assertNotIn(f'FROM "{table}"', sql)
+        self.assertEqual(self._row("/api/statuses/", self.status)["usage_count"], 2)
+        self._as_admin()
+        with CaptureQueriesContext(connection) as ctx:
+            self.assertEqual(self._row("/api/statuses/", self.status)["usage_count"], 7)
+        # Nothing in an administrator's scope joins a to-many relation: plain
+        # counts, no per-status sort of ids.
+        listed = [q["sql"] for q in ctx.captured_queries if 'FROM "api_status"' in q["sql"]
+                  and "COUNT(" in q["sql"]]
+        self.assertTrue(listed)
+        self.assertNotIn("COUNT(DISTINCT", listed[-1])
+
     def test_manufacturer_counts_local_device_types_of_own_sites(self):
         dep = DeploymentSettings.load()
         dep.enhanced_site_separation = True

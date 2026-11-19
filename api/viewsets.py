@@ -3180,6 +3180,10 @@ class StatusViewSet(_IpCatalogViewSet):
             avail = self.request.query_params.get("available_to")
             if avail:
                 qs = qs.filter(available_to__contains=[avail])
+        if self.action == "list" and self.get_serializer_class() is self.picker_serializer_class:
+            # The picker shape has no usage count: don't pay 18 counts per
+            # status for it (#531).
+            return qs
         return qs.annotate(usage_count_annotated=_status_usage_expr(self.request))
 
     def _after_save(self, obj):
