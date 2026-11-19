@@ -211,6 +211,11 @@ status marked **Planned** - all or nothing, through the same checks as
 **Many at once**. Mark a cable status *Planned* (Settings → Statuses) to
 use it; none is created for you.
 
+A cable with an end in a rack gets a **Way** card on its page: the rack's
+[pathways](racks.md#cable-ways) it runs along, proposed from where its
+ports are, to accept, change or dismiss, and the length that adds up from
+its ways and its floor-plan route.
+
 A cable between two floors is routed through a
 [riser](../features/floor-plans.md#cables-between-floors-risers): on each
 floor to the riser and up or down it, its computed length the whole run.

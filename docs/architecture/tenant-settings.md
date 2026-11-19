@@ -47,6 +47,11 @@ length - `{"slack_pct", "service_loop_mm", "step_mm",
 `cable_length_step_mm` and `cable_standalone_height_mm` (10 / 0 / 500 / 0
 without a row; Settings → Floor plans → Cable lengths;
 [stored routes and lengths](../features/floor-plans.md#lengths)).
+`cable_ways_mode(tenant)` returns `"propose"` (the default, no row) or
+`"record"` from `cable_ways_mode`: whether a cable's
+[way through a rack](../dcim/racks.md#cable-ways) waits to be accepted or
+is recorded when the cable's ends are set (Settings → Floor plans → Cable
+ways).
 The PDF report cover's look is per tenant only (no deployment layer):
 `report_cover_style` (`waves`/`plain`/`upload`/`none`; `upload` needs an
 image), the colours `report_cover_horizon`, `report_cover_wave` and

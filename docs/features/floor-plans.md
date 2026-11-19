@@ -3502,6 +3502,9 @@ lengths**:
 | **Standalone port height** | 0 mm | Ports of a device on its own tile or in a cabinet. |
 
 A run with no tray stays at the ports' height and climbs only between them.
+An end in a rack with a recorded [cable way](../dcim/racks.md#cable-way-lengths)
+drops from the rack's roof or floor entry instead of from the port, and the
+way's length in the rack adds to that drop.
 Lengths are as right as the plan's scale: with a CAD drawing whose scale
 was never set (`scale_source` *assumed*), Document routes warns
 *Drawing not calibrated - lengths may be wrong*.

@@ -330,8 +330,12 @@ right - so it stands in its rack instead of not at all. **0U gear never counts a
 parked at a U position, which previously (and wrongly) charged a full unit.
 
 A side-mounted device can also name the **0U channel** it sits in, one of
-the rack's [pathways](#pathways) (`mount_pathway_id` on the device, a row
-of `/api/rack-pathways/`; `pin/` makes the row for an inherited channel).
+the rack's [pathways](#pathways): the device form's **0U channel** lists
+the rack's shown channels on the strip's rail and, with a face, at that
+face (`mount_pathway_id` on the device, a row of `/api/rack-pathways/`;
+or `mount_pathway_key`, the channel's key, which pins the row for an
+inherited channel itself; blank clears it). A power cord to a strip in a
+channel is [proposed](#cable-ways) along that channel.
 The channel must be on the device's rail side and, when the device has a
 face, at that face. Moving the device to another rack or taking away its
 side mount clears it. Without one the device is placed exactly as above.
@@ -341,9 +345,9 @@ side mount clears it. Without one the device is placed exactly as above.
 The rack page's **Pathways** tab lists where cables run in the rack: its
 vertical cable managers and corner channels, horizontal managers, cable
 **entries** (roof cut-outs, brush grommets, floor and side-panel openings)
-and **0U channels** (where vertical PDUs mount). It is the groundwork for
-documenting each cable's way through the rack, its fill and its length;
-nothing is drawn from it yet.
+and **0U channels** (where vertical PDUs mount), with the **Cables** whose
+recorded [way](#cable-ways) runs through each (a link to them). Nothing is
+drawn from them in 3D yet.
 
 | Kind | Where | Size |
 |---|---|---|
@@ -414,7 +418,151 @@ pathway (`path:vertical:left:rear`, `entry:top:roof`,
 a row with a `key` a blank or null field inherits and `hidden` is true,
 false or null (inherit). The owner and key never change.
 `POST /api/rack-pathways/pin/` with `{rack_id, key}` returns the rack's row
-for that pathway, making it (201) when there is none.
+for that pathway, making it (201) when there is none. On a rack, each
+resolved item also has `cables`: the recorded cable ways through it, of the
+cables the reader may view (absent without a grant on cable ways).
+
+## Cable ways {#cable-ways}
+
+A cable's **way** is the pathways it runs along inside a rack: from its
+port, maybe through the horizontal manager next to it, along a vertical
+manager to the far port's unit or to the rack's top or bottom, and out of a
+roof or floor entry. The cable page's **Way** card shows it per rack the
+cable is in, as one chain:
+
+```
+Gi1/0/12 → Right rear → Roof rear-right → tray OH-A
+```
+
+with its length, the end it is (A, B, or A + B for both ends in this rack)
+and its state: **Proposed**, **Recorded** (*Automatic* when Danbyte
+recorded it), **Dismissed**, or **Out of date** (a pathway it names is gone
+or hidden, or the cable's ends in the rack changed).
+
+- **Accept** records the proposal; **Change** opens the hops: one of the
+  rack's shown pathways each, in order, and for a vertical manager or a 0U
+  channel the units it enters and leaves at; **Dismiss** records that this
+  rack has no way to propose; **Reset** removes a recorded or dismissed
+  way, so the proposal shows again.
+- A way someone sets is *manual*: it is never replaced. An automatic one
+  follows the cable's ends.
+
+**Propose or record.** Settings → Floor plans → **Cable ways**, per
+tenant: *Propose* (the default) shows the worked-out way on the cable until
+someone accepts it, and it counts (Pathways tab, lengths) only then.
+*Record automatically* records it when the cable is made or its ends
+change; when the ends change again, an automatic way is worked out again.
+In Propose mode an accepted automatic way whose proposal changes goes back
+to Proposed.
+
+### How a way is proposed
+
+Only shown pathways take part, and a rack with none (an open 4-post
+without pathways) gets no proposal. For each end the engine reads:
+
+- **the port's unit**: its device's middle unit (a 0U device's channel's
+  middle);
+- **its face and side**: from the port's photo marker, the face it is on
+  (a rear-facing device's front ports are at the rack's rear) and the half
+  of the faceplate it is in, seen from the front; without a marker, the
+  face is a guess from its kind (interfaces, front and console ports at the
+  device's front; rear ports and power at its rear) and the side unknown.
+
+Then, of every way that serves the port, the one with the fewest
+compromises, then the shortest, then by pathway key - so the same cable
+always gets the same proposal:
+
+- a vertical manager on the port's side at the port's face (or full
+  depth), reaching the port's unit; one on the other side counts as a
+  compromise, a full-depth one as a small one;
+- the horizontal manager at or next to the port's units on its face, when
+  there is one, first;
+- **both ends in one rack**: the manager reaching both units; front to rear
+  prefers a full-depth manager, else crosses the depth; two ports next to
+  one horizontal manager go through it alone;
+- **a power cord to a 0U PDU**: across to the PDU's channel (its
+  `mount_pathway`, else the rack's channel on its rail and face); a PDU's
+  own cord runs along its channel and out;
+- **out of the rack**: to the top of the manager and the roof entry, or
+  the bottom and the floor entry, by where the room route meets the rack
+  (below); with no route, the first entry there is; without entries (an
+  open frame), out of the top of the manager;
+- no manager reaches the port: straight to the entry.
+
+The next distinct ways are offered as **alternatives**
+(`accept/` with `alternative`). Each way carries short **reasons**:
+
+| Reason | |
+|---|---|
+| `side-left`, `side-right` | The port's half of its face. |
+| `side-guessed`, `face-guessed` | Not known from a photo marker. |
+| `other-side` | No manager on the port's side. |
+| `full-depth`, `crosses-depth` | Front to rear. |
+| `horizontal-manager` | Through the horizontal manager next to the port. |
+| `pdu-channel` | Along or to a PDU's 0U channel. |
+| `exit-overhead`, `exit-underfloor`, `exit-default`, `exit-against-route` | The way out. |
+| `no-vertical`, `no-entry`, `same-rack` | |
+
+### Lengths and the room route {#cable-way-lengths}
+
+A way's length is its run in the rack, square (across, front to back and up
+and down): a unit is 44.45 mm, the plinth 100 mm, as the floor plan reckons.
+
+When the cable has a stored [floor-plan route](../features/floor-plans.md#lengths)
+between racks, the route's first or last tray at each rack chooses the way
+out: a tray at or above half the rack's height means the **roof** entry
+(overhead), below it the **floor** entry (underfloor or on the floor). With
+a recorded way, the route's drop at that end runs from the entry (the
+rack's top, or the floor) to the tray instead of from the port, and the
+way's own length adds:
+
+```
+length = route run + level changes
+       + (way A + entry A ↔ first tray) + (way B + last tray ↔ entry B)
+       + service loop × 2, then + slack %, rounded up to the step
+```
+
+An end without a recorded way keeps the floor plan's own drop. For a cable
+with both ends in one rack the estimate is its way, by the same rules.
+Recording or changing a way re-measures the cable's stored routes, and a
+cable length a route computed follows; a length a person entered is never
+changed. The Way card shows the estimate.
+
+### Permissions and API
+
+Ways are the *Cable ways* object type, scoped by the rack's site, and the
+cable must be one the reader may view; site roles get it. Every way is
+audited.
+
+- `GET /api/cable-ways/summary/?cable=<id>` (and `POST
+  /api/cable-ways/propose/` with `{cable_id}`, the same): `mode`, `racks`
+  (each `rack`, `end`, `ports`, `route` - `{exit, elevation_mm, tray}` from
+  the stored route, or null - `proposal` with `hops`, `exit`, `points`,
+  `length_mm`, `reasons`, `alternatives`, and the stored `way`), `orphans`
+  (ways of racks the cable left) and `length` (`length_mm`, `ways`,
+  `route`, `run_mm`, `drop_a_mm`, `drop_b_mm`, `way_a_mm`, `way_b_mm`,
+  `extra_mm`, `slack_mm`). Nothing is written.
+- `POST /api/cable-ways/accept/` `{cable_id, rack_id, alternative?}`
+  records the proposal (an automatic way); `POST /api/cable-ways/dismiss/`
+  `{cable_id, rack_id}` records a dismissed one.
+- `/api/cable-ways/` (`?cable=`, `?rack=`, `?pathway=`, `?state=`): a way
+  is `cable_id`, `rack_id`, `state` (`recorded` or `dismissed`), `hops`
+  (`[{key or pathway_id, enter_u, leave_u}]`) and, optionally, `exit`
+  (`top`, `bottom`, `side`; an entry as the last hop says it, and a way
+  between two ports in one rack ends at the far `port`). The hops must be
+  the rack's shown pathways, an entry last, a run's units inside the
+  pathway and joining the hop before; `points` (mm in the rack: across
+  from the centre, back from the front, up from the floor), `length_mm`
+  and `end` are worked out. Every hop is stored with its pathway's row
+  (`pathway`, pinned for an inherited one) and its `key`.
+- A cable's `ways` (on `/api/cables/<id>/`) sums them up; `/api/cables/
+  ?pathway=<row id>` lists the cables with a recorded way through one.
+
+`manage.py propose_cable_ways --tenant <slug> [--rack <name or id>]
+[--cable <id>]` prints the way it would propose for each cable with an end
+in those racks, its length and reasons; nothing is written without
+`--apply`, which records them (Record automatically) or stores them as
+proposals to accept (Propose). Manual and dismissed ways are kept.
 
 ## Rack elevations
 
