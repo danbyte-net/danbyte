@@ -7,8 +7,11 @@ denormalised onto the impact so site separation keeps working after the fact.
 """
 from __future__ import annotations
 
+from datetime import UTC
+
 from django.db import transaction
 from django.db.models import Q
+from django.utils.dateparse import parse_datetime
 from rest_framework import serializers, status
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
@@ -63,6 +66,13 @@ class MaintenanceEventSerializer(StatusSerializerMixin, TenantScopedModelSeriali
     )
     impacts = EventImpactSerializer(many=True, read_only=True)
     is_open = serializers.BooleanField(read_only=True)
+    recurrence_weekdays = serializers.ListField(
+        child=serializers.IntegerField(min_value=0, max_value=6), required=False,
+    )
+    recurrence_start_time = serializers.TimeField(
+        required=False, allow_null=True, format="%H:%M",
+    )
+    recurrence_summary = serializers.SerializerMethodField()
 
     class Meta:
         model = MaintenanceEvent
@@ -70,10 +80,76 @@ class MaintenanceEventSerializer(StatusSerializerMixin, TenantScopedModelSeriali
             "id", "kind", "status", "status_id", "name", "description",
             "provider", "provider_name", "external_ref",
             "starts_at", "ends_at", "etr",
+            "recurrence", "recurrence_weekdays", "recurrence_start_time",
+            "recurrence_duration", "timezone", "recurrence_summary",
             "raw_email", "impacts", "is_open",
             "created_at", "updated_at",
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
+
+    def get_recurrence_summary(self, obj) -> str:
+        """``Every day 21:55-07:00 until 27 Nov``; blank for a one-off."""
+        rule = obj.rule
+        return rule.summary() if rule is not None else ""
+
+    def _validate_recurrence(self, attrs, kind):
+        from datetime import timedelta
+
+        from core.timezones import resolve_timezone
+
+        from .recurrence import FREQUENCIES, MAX_DURATION, MIN_DURATION, WEEKLY
+
+        current = self.instance
+
+        def get(f, default=None):
+            return attrs.get(f, getattr(current, f, default))
+
+        freq = get("recurrence", "") or ""
+        if not freq:
+            # One-off: nothing of a rule is kept.
+            attrs.update(recurrence="", recurrence_weekdays=[],
+                         recurrence_start_time=None, recurrence_duration=None)
+            return
+        if freq not in FREQUENCIES:
+            raise serializers.ValidationError({"recurrence": "None, daily or weekly."})
+        if kind != MaintenanceEventKind.MAINTENANCE:
+            raise serializers.ValidationError(
+                {"recurrence": "Only maintenance repeats; an outage is a one-off."}
+            )
+        if get("recurrence_start_time") is None:
+            raise serializers.ValidationError(
+                {"recurrence_start_time": "A repeating window needs a start time."}
+            )
+        minutes = get("recurrence_duration")
+        if not minutes:
+            raise serializers.ValidationError(
+                {"recurrence_duration": "A repeating window needs a duration."}
+            )
+        if not MIN_DURATION <= timedelta(minutes=minutes) <= MAX_DURATION:
+            raise serializers.ValidationError(
+                {"recurrence_duration": "Between 5 minutes and 24 hours."}
+            )
+        days = sorted(set(get("recurrence_weekdays") or []))
+        if freq == WEEKLY and not days:
+            raise serializers.ValidationError(
+                {"recurrence_weekdays": "Pick at least one day."}
+            )
+        attrs["recurrence_weekdays"] = days if freq == WEEKLY else []
+        zone = resolve_timezone(get("timezone", "") or "")
+        if zone is None:
+            raise serializers.ValidationError(
+                {"timezone": "Not a time zone this server knows (e.g. Europe/Copenhagen)."}
+            )
+        if not zone:
+            # Fixed at save, so a later change of the tenant's display zone
+            # does not move the windows.
+            from api.views import _get_active_tenant
+            from core.effective_settings import effective_datetime_values
+
+            request = self.context.get("request")
+            tenant = _get_active_tenant(request) if request is not None else None
+            zone = effective_datetime_values(tenant)["timezone"] if tenant else "UTC"
+        attrs["timezone"] = zone
 
     def validate(self, attrs):
         current = self.instance
@@ -93,9 +169,12 @@ class MaintenanceEventSerializer(StatusSerializerMixin, TenantScopedModelSeriali
                               "events - add the type on the status, or pick "
                               "another (Settings → Statuses)."}
             )
+        self._validate_recurrence(attrs, kind)
+        recurring = bool(attrs.get("recurrence"))
         if kind == MaintenanceEventKind.MAINTENANCE:
             # A maintenance window has a planned end; ETR is outage vocabulary.
-            if ends is None:
+            # A repeating one may run until somebody changes it.
+            if ends is None and not recurring:
                 raise serializers.ValidationError(
                     {"ends_at": "A maintenance window needs an end."}
                 )
@@ -162,6 +241,19 @@ class MaintenanceEventViewSet(BulkEditMixin, TenantScopedViewSet):
             qs = qs.filter(starts_at__lte=now).filter(
                 Q(ends_at__gte=now) | Q(ends_at__isnull=True)
             )
+            # A recurring event is open only inside an occurrence, not across
+            # its whole validity span.
+            moment = parse_datetime(str(now))
+            if moment is not None:
+                if moment.tzinfo is None:
+                    moment = moment.replace(tzinfo=UTC)
+                idle = [
+                    e.pk for e in MaintenanceEvent.objects.filter(
+                        pk__in=qs.exclude(recurrence="").values("pk")
+                    ) if e.rule is not None and e.rule.at(moment) is None
+                ]
+                if idle:
+                    qs = qs.exclude(pk__in=idle)
         return qs
 
     def perform_create(self, serializer):

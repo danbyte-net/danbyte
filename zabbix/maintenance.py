@@ -15,7 +15,7 @@ import logging
 import time
 import uuid
 from contextlib import contextmanager
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 
 import django_rq
 from django.db import connection as db_connection
@@ -48,7 +48,35 @@ def period_name(event) -> str:
     return f"{event.name[: 128 - len(stub) - 3]} · {stub}"
 
 
-def maintenance_payload(conn, *, name, since, till, hostids, description="") -> dict:
+#: ``active_till`` for a repeating window with no end: Zabbix keeps it as a
+#: 32-bit timestamp.
+OPEN_END = datetime(2038, 1, 1, tzinfo=UTC)
+
+
+def recurring_timeperiods(event) -> list:
+    """The Zabbix ``timeperiods`` for a repeating event: one daily (type 2)
+    or weekly (type 3, ``dayofweek`` bits) period at the start time, in
+    seconds. Empty for a one-off window. Zabbix reads ``start_time`` in its
+    own server's time zone - the event's zone has to be that one."""
+    from monitoring.recurrence import DAILY, weekday_mask
+
+    rule = event.rule
+    if rule is None:
+        return []
+    period = {
+        "timeperiod_type": 2 if rule.freq == DAILY else 3,
+        "every": 1,
+        "start_time": rule.start_time.hour * 3600 + rule.start_time.minute * 60,
+        "period": int(rule.duration.total_seconds()),
+    }
+    if rule.freq != DAILY:
+        period["dayofweek"] = weekday_mask(rule.weekdays)
+    return [period]
+
+
+def maintenance_payload(
+    conn, *, name, since, till, hostids, description="", timeperiods=None
+) -> dict:
     """The write shape for one period.
 
     Hosts are objects from 6.4 and plain ids before, and a write with the
@@ -65,7 +93,7 @@ def maintenance_payload(conn, *, name, since, till, hostids, description="") -> 
         "active_till": till_ts,
         "maintenance_type": 0,
         "description": (description or "")[:65535],
-        "timeperiods": [
+        "timeperiods": timeperiods or [
             {"timeperiod_type": 0, "start_date": since_ts, "period": till_ts - since_ts}
         ],
     }
@@ -147,17 +175,25 @@ def reconcile(conn, *, client=None, dry_run=False, report=None) -> dict:
 
     for event_id, (event, hostids) in wanted.items():
         row = rows.pop(event_id, None)
-        since, till = event.silence.starts_at, event.silence.ends_at
+        # A one-off window is its silence; a repeating one is a single period
+        # over its whole validity, repeating on Zabbix's side, while its
+        # silence moves from occurrence to occurrence.
+        periods = recurring_timeperiods(event)
+        if periods:
+            since, till = event.starts_at, event.ends_at or OPEN_END
+        else:
+            since, till = event.silence.starts_at, event.silence.ends_at
         name = period_name(event)
         payload = maintenance_payload(
             conn, name=name, since=since, till=till, hostids=hostids,
-            description=event.description,
+            description=event.description, timeperiods=periods,
         )
         try:
             if row is not None and row.maintenanceid in existing:
                 if (
                     row.name == name and row.starts_at == since and row.ends_at == till
                     and list(row.hostids) == hostids and not row.last_error
+                    and list(row.timeperiods or []) == periods
                 ):
                     continue
                 if not dry_run:
@@ -182,6 +218,7 @@ def reconcile(conn, *, client=None, dry_run=False, report=None) -> dict:
                 row = ZabbixMaintenance(tenant=conn.tenant, connection=conn, event=event)
             row.maintenanceid = maintenanceid
             row.name, row.starts_at, row.ends_at, row.hostids = name, since, till, hostids
+            row.timeperiods = periods
             row.synced_at, row.last_error = now, ""
             row.save()
         except ZabbixError as exc:
@@ -196,6 +233,7 @@ def reconcile(conn, *, client=None, dry_run=False, report=None) -> dict:
                 row = ZabbixMaintenance(
                     tenant=conn.tenant, connection=conn, event=event, maintenanceid="",
                     name=name, starts_at=since, ends_at=till, hostids=hostids,
+                    timeperiods=periods,
                 )
             row.last_error = str(exc)[:500]
             row.save()

@@ -173,7 +173,8 @@ period counts there.
 **Exclude planned maintenance** removes the time of every maintenance event
 that touches a member's device or circuit (a carrier's announced works),
 unless the event is tentative, cancelled or
-rescheduled. Outage events are never excluded. See
+rescheduled. A repeating window excludes its occurrences, not the time
+between them. Outage events are never excluded. See
 [Maintenance](maintenance.md).
 
 Changing a rule creates a new **revision**. The running period uses the new

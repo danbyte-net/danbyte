@@ -5,6 +5,7 @@ import { api, type MaintenanceEvent } from "@/lib/api"
 import { MaintenanceEventForm } from "@/components/monitoring/maintenance-event-form"
 import { EventImpactPanel } from "@/components/monitoring/event-impact-panel"
 import { EditPageShell } from "@/components/edit-page-shell"
+import { Loading } from "@/components/loading"
 import { QueryError } from "@/components/query-error"
 
 export const Route = createFileRoute("/maintenance/$id_/edit")({
@@ -28,8 +29,9 @@ function EditMaintenanceEventPage() {
         { label: q.data?.name ?? "…" },
       ]}
       title={q.data ? q.data.name : "Edit event"}
+      subtitle={q.data?.recurrence_summary || undefined}
     >
-      {q.isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
+      {q.isLoading && <Loading />}
       {q.isError && <QueryError error={q.error} />}
       {q.data && (
         <div className="grid gap-8">

@@ -11,7 +11,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import type * as Api from "@/lib/api"
 import type { MaintenanceEvent } from "@/lib/api"
-import { MaintenanceEventForm, impactSummary } from "./maintenance-event-form"
+import {
+  MaintenanceEventForm,
+  durationBetween,
+  endTime,
+  impactSummary,
+} from "./maintenance-event-form"
 import type { InitialImpact } from "./maintenance-event-form"
 
 // "Plan maintenance" on a power or cooling source (#434) opens the form with
@@ -65,6 +70,9 @@ beforeEach(() => {
   apiMock.mockImplementation((path, init) => {
     if (init?.method === "POST" || init?.method === "PATCH")
       return Promise.resolve({ id: "e-new" })
+    // The time pickers read the viewer's time style.
+    if (path.startsWith("/api/me/"))
+      return Promise.resolve({ perms: [], permissions: {} })
     if (path.startsWith("/api/statuses/"))
       return page([
         {
@@ -171,5 +179,56 @@ describe("MaintenanceEventForm impacts", () => {
     const { method, body } = sent()
     expect(method).toBe("PATCH")
     expect(body).not.toHaveProperty("impacts")
+  })
+})
+
+describe("repeating windows", () => {
+  it("turns From and To into a start and a duration across midnight", () => {
+    expect(durationBetween("21:55", "07:00")).toBe(545)
+    expect(durationBetween("02:00", "04:30")).toBe(150)
+    expect(durationBetween("08:00", "08:00")).toBe(24 * 60)
+    expect(endTime("21:55", 545)).toBe("07:00")
+  })
+
+  it("sends the rule of a weekly event it edits", async () => {
+    const event = {
+      id: "e2",
+      kind: "maintenance",
+      status: { id: "st1" },
+      name: "Weekend power-off",
+      description: "",
+      provider: null,
+      external_ref: "",
+      starts_at: "2026-11-20T00:00:00Z",
+      ends_at: null,
+      etr: null,
+      recurrence: "weekly",
+      recurrence_weekdays: [5, 6],
+      recurrence_start_time: "21:55",
+      recurrence_duration: 545,
+      timezone: "Europe/Copenhagen",
+      recurrence_summary: "Every Sat, Sun 21:55-07:00",
+      impacts: [],
+    } as unknown as MaintenanceEvent
+    const { onSaved, form } = renderForm({ event })
+    expect(screen.getByText("Valid from")).toBeTruthy()
+    expect(screen.getByText("Until")).toBeTruthy()
+    fireEvent.submit(form)
+    await waitFor(() => expect(onSaved).toHaveBeenCalled())
+    const { body } = sent()
+    expect(body.recurrence).toBe("weekly")
+    expect(body.recurrence_weekdays).toEqual([5, 6])
+    expect(body.recurrence_start_time).toBe("21:55")
+    expect(body.recurrence_duration).toBe(545)
+    expect(body.timezone).toBe("Europe/Copenhagen")
+    expect(body.ends_at).toBeNull()
+  })
+
+  it("sends no rule for a one-off", async () => {
+    const { onSaved, form } = renderForm({ initialName: "Once" })
+    fireEvent.submit(form)
+    await waitFor(() => expect(onSaved).toHaveBeenCalled())
+    expect(sent().body.recurrence).toBe("")
+    expect(sent().body.recurrence_duration).toBeNull()
   })
 })

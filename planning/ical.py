@@ -159,9 +159,13 @@ def calendar_ics(request):
         )
     for e in data["events"]:
         kind = "Outage" if e["kind"] == "outage" else "Maintenance"
+        # An occurrence of a repeating event is its own entry.
+        uid = e["id"] if not e.get("recurrence_summary") else (
+            f"{e['id']}-{_stamp(e['starts_at'])}"
+        )
         lines += [
             "BEGIN:VEVENT",
-            f"UID:event-{e['id']}@danbyte",
+            f"UID:event-{uid}@danbyte",
             f"DTSTART:{_stamp(e['starts_at'])}",
             f"DTEND:{_stamp(e['ends_at'] or e['etr'] or e['starts_at'])}",
             f"SUMMARY:{_escape(f'{kind}: {e['name']}')}",

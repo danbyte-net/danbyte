@@ -11946,6 +11946,8 @@ export interface MaintenanceEventImpact {
   created_at: string
 }
 
+export type MaintenanceRecurrence = "" | "daily" | "weekly"
+
 export interface MaintenanceEvent {
   id: string
   kind: MaintenanceEventKind
@@ -11959,6 +11961,18 @@ export interface MaintenanceEvent {
   starts_at: string
   ends_at: string | null
   etr: string | null
+  /** Maintenance only: "" (one-off), "daily" or "weekly". A repeating
+   *  event's starts_at / ends_at are the span it is valid in. */
+  recurrence: MaintenanceRecurrence
+  /** 0 = Monday ... 6 = Sunday; weekly only. */
+  recurrence_weekdays: number[]
+  /** "HH:MM", wall-clock time in `timezone`. */
+  recurrence_start_time: string | null
+  /** Minutes. */
+  recurrence_duration: number | null
+  timezone: string
+  /** "Every day 21:55-07:00 until 27 Nov"; "" for a one-off. */
+  recurrence_summary: string
   raw_email: string
   impacts: MaintenanceEventImpact[]
   is_open: boolean
@@ -12015,6 +12029,9 @@ export interface PlanningCalendarEvent {
   etr: string | null
   is_open: boolean
   impact_count: number
+  /** Unique per entry: a repeating event has one entry per occurrence. */
+  key: string
+  recurrence_summary: string
 }
 
 export interface PlanningCalendarChange {

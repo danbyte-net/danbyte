@@ -19,7 +19,7 @@ show you what the board would have.
 """
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 
 from django.db.models import Q
 from rest_framework import permissions
@@ -193,21 +193,36 @@ def _event_entries(request, start: date, end: date) -> list[dict]:
         Q(starts_at__date__lte=end)
         & (Q(ends_at__date__gte=start) | Q(ends_at__isnull=True))
     )
+    # A recurring event is one row; the calendar shows each occurrence in
+    # the window (a day either side, so a night that crosses an edge shows).
+    lo = datetime.combine(start - timedelta(days=1), time(0), tzinfo=UTC)
+    hi = datetime.combine(end + timedelta(days=2), time(0), tzinfo=UTC)
     out = []
     for e in events:
-        out.append(
-            {
-                "id": str(e.id),
-                "kind": e.kind,
-                "status_name": e.status.name,
-                "status_color": e.status.color,
-                "name": e.name,
-                "provider_name": e.provider.name if e.provider_id else "",
+        base = {
+            "id": str(e.id),
+            "kind": e.kind,
+            "status_name": e.status.name,
+            "status_color": e.status.color,
+            "name": e.name,
+            "provider_name": e.provider.name if e.provider_id else "",
+            "etr": e.etr.isoformat() if e.etr else None,
+            "is_open": e.is_open,
+            "impact_count": e.impacts.count(),
+            "recurrence_summary": "",
+        }
+        rule = e.rule
+        if rule is None:
+            out.append({
+                **base, "key": str(e.id),
                 "starts_at": e.starts_at.isoformat(),
                 "ends_at": e.ends_at.isoformat() if e.ends_at else None,
-                "etr": e.etr.isoformat() if e.etr else None,
-                "is_open": e.is_open,
-                "impact_count": e.impacts.count(),
-            }
-        )
+            })
+            continue
+        base["recurrence_summary"] = rule.summary()
+        for s, t in rule.between(lo, hi):
+            out.append({
+                **base, "key": f"{e.id}:{s.isoformat()}",
+                "starts_at": s.isoformat(), "ends_at": t.isoformat(),
+            })
     return out

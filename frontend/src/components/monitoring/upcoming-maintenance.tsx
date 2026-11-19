@@ -54,8 +54,12 @@ export function UpcomingMaintenancePanel({
             </Link>
             <StatusBadge status={e.status} />
             <span className="num text-[11px] whitespace-nowrap text-muted-foreground">
-              {formatDateTime(e.starts_at)}
-              {e.ends_at ? ` → ${formatDateTime(e.ends_at)}` : ""}
+              {e.recurrence_summary || (
+                <>
+                  {formatDateTime(e.starts_at)}
+                  {e.ends_at ? ` → ${formatDateTime(e.ends_at)}` : ""}
+                </>
+              )}
             </span>
           </li>
         ))}

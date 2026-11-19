@@ -24,6 +24,7 @@ kinds share the same record:
 | **Provider** | The carrier it came from; empty for internal work. |
 | **Provider reference** | The provider's own ticket id (`MAINT-77031`). It is the dedup key for ingestion: re-delivering a revised notification updates the event instead of duplicating it. |
 | **Starts / Ends** | The window. Maintenance always has an end; an outage may be open-ended. |
+| **Repeat** | Maintenance only: **None**, **Daily** or **Weekly** on chosen days - see [Repeating windows](#repeating-windows). |
 | **ETR** | Outages only: the estimated time to restore, while the real end is unknown. |
 | **Raw email** | The original notification, kept verbatim next to what was parsed out of it. |
 
@@ -94,6 +95,42 @@ In the API a create takes the same `impacts` list `ingest` takes - what
 `affected/` or a device's `impact/` answers - and writes them in the same
 transaction: an object you may not view refuses the whole create.
 
+## Repeating windows
+
+Part of an estate that powers off every night, or a weekly patch window, is
+one event with a rule rather than an event per night. Set **Repeat** to
+**Daily**, or **Weekly** and pick the **Days**, then:
+
+| Field | Meaning |
+|---|---|
+| **From / To** | The time of day each occurrence starts and ends. A **To** at or before **From** is the next morning: 21:55 to 07:00 runs overnight. At most 24 hours, at least 5 minutes. |
+| **Time zone** | The zone those times are read in. Blank takes the tenant's display time zone at save, and the event keeps it. |
+| **Valid from / Until** | The span the rule runs in. **Until** may stay empty: the window repeats until somebody changes it. An occurrence already running when the span starts, or still running when it ends, is cut there. |
+
+The event reads *Every day 21:55-07:00 until 27 Nov* in the list, on its
+page and on the object panels. Times are wall-clock times: 21:55 stays 21:55
+when the clocks change, and the duration is elapsed time, so the night the
+clocks go back ends an hour early on the clock. A start that falls in the
+hour the clocks skip runs just after it.
+
+Danbyte stores the rule, never a row per occurrence, and every reader asks
+the same occurrence generator:
+
+- **Alert suppression** - the event's silence is the occurrence open now or
+  the next one, and moves on to the next a minute after one ends; once the
+  rule has run out the silence is retired.
+- **SLA** - only the occurrences are excused, never the hours between them.
+- **Calendar** and the **iCal feed** - each occurrence is its own entry.
+- `active_at=` on the API - an event counts only inside an occurrence.
+- **Zabbix** - one maintenance period with a daily (`timeperiod_type` 2) or
+  weekly (3, `dayofweek` bits) time period, active from **Valid from** to
+  **Until**. Zabbix reads the start time in the Zabbix server's own time
+  zone, so give the event that zone. See
+  [Zabbix maintenance windows](../monitoring/zabbix.md#maintenance-windows).
+- **PRTG** - each occurrence pauses the devices, as a one-off window does.
+
+An outage never repeats. Turning **Repeat** back to **None** drops the rule.
+
 ## Alert suppression
 
 Danbyte already has the "expected downtime" primitive -
@@ -107,6 +144,8 @@ it **owns a silence**:
   delivered.
 - An open-ended outage keeps a rolling one-day silence that each update pushes
   forward; an ETR bounds it when known.
+- A [repeating window](#repeating-windows)'s silence covers one occurrence at
+  a time.
 - Closing the event (or removing all device impacts) retires the silence.
   No device impacts ever means no silence - a blanket mute is never implied.
 
@@ -182,7 +221,7 @@ a systemd timer; unparsed mail is left unread for the next pass.
 
 | Endpoint | Purpose |
 |---|---|
-| `GET/POST /api/monitoring/maintenance-events/` | List and create - a create may carry `impacts`, as `ingest` does. Filters: `kind`, `status` (id or slug), `provider`, `open=1`, `active_at=<iso>`, `object_type=&object_id=` (events touching that object) |
+| `GET/POST /api/monitoring/maintenance-events/` | List and create - a create may carry `impacts`, as `ingest` does. A repeating window sets `recurrence` (`""`, `daily`, `weekly`), `recurrence_weekdays` (0 = Monday), `recurrence_start_time` (`HH:MM`), `recurrence_duration` (minutes) and `timezone`; `recurrence_summary` is read-only. Filters: `kind`, `status` (id or slug), `provider`, `open=1`, `active_at=<iso>`, `object_type=&object_id=` (events touching that object) |
 | `PATCH/DELETE …/{id}/` | Update (resyncs the silence) / delete (retires it) |
 | `POST …/ingest/` | Upsert from an external parser (above) |
 | `POST …/bulk-update/` | `maintenanceevent.change`; `{ids, fields}` with `status_id`, `description` (resyncs each silence) |

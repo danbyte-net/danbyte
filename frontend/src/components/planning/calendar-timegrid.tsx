@@ -326,7 +326,7 @@ export function CalendarTimeGrid({
                   />
                 ))}
                 {segs.map((s) => (
-                  <EventBlock key={`${s.event.id}-${d}`} seg={s} />
+                  <EventBlock key={`${s.event.key}-${d}`} seg={s} />
                 ))}
                 {timedTasks
                   .filter((t) => (t.due_date ?? t.start_date) === d)

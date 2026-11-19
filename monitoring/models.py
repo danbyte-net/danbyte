@@ -3950,6 +3950,24 @@ class MaintenanceEvent(TimestampedModel):
     #: Estimated time to restore - outages only.
     etr = models.DateTimeField(null=True, blank=True)
 
+    # ── Recurrence (maintenance only). A recurring event repeats every day,
+    # or on ``recurrence_weekdays``, from ``recurrence_start_time`` for
+    # ``recurrence_duration`` minutes, in ``timezone``; ``starts_at`` and
+    # ``ends_at`` are then the span it is valid in (no end = until changed).
+    # One row, never a row per occurrence: monitoring.recurrence answers
+    # "which occurrences" for everything that reads the window.
+    RECURRENCE_CHOICES = [("", "None"), ("daily", "Daily"), ("weekly", "Weekly")]
+    recurrence = models.CharField(
+        max_length=8, choices=RECURRENCE_CHOICES, blank=True, default="", db_default="",
+    )
+    #: 0 = Monday ... 6 = Sunday.
+    recurrence_weekdays = models.JSONField(default=list, blank=True, db_default=[])
+    recurrence_start_time = models.TimeField(null=True, blank=True)
+    #: Minutes.
+    recurrence_duration = models.PositiveIntegerField(null=True, blank=True)
+    #: IANA zone the start time is read in.
+    timezone = models.CharField(max_length=64, blank=True, default="", db_default="")
+
     #: The suppression this event drives while its window is open.
     silence = models.OneToOneField(
         Silence,
@@ -3993,7 +4011,39 @@ class MaintenanceEvent(TimestampedModel):
     def is_open(self) -> bool:
         return not self.status.is_closed
 
-    def sync_silence(self) -> None:
+    @property
+    def rule(self):
+        """The recurrence, or None for a one-off window."""
+        from .recurrence import Recurrence
+
+        return Recurrence.of(self)
+
+    def window_at(self, now=None):
+        """``(start, end)`` of the silence this event wants now: the window
+        itself, or for a recurring event the occurrence open now or next
+        (None once it has run out)."""
+        from datetime import timedelta
+
+        now = now or timezone.now()
+        rule = self.rule
+        if rule is not None:
+            return rule.next_window(now)
+        # An open-ended outage still needs a bounded silence row (ends_at is
+        # NOT NULL by design); ETR when known, else a rolling day that each
+        # resync pushes forward while the outage stays open.
+        return self.starts_at, self.ends_at or self.etr or (now + timedelta(days=1))
+
+    def occurrences(self, start, end) -> list:
+        """The event's windows overlapping ``[start, end)``: its occurrences,
+        or the one window. An open-ended outage runs to ``end``."""
+        rule = self.rule
+        if rule is not None:
+            return rule.between(start, end)
+        if self.starts_at >= end or (self.ends_at is not None and self.ends_at <= start):
+            return []
+        return [(self.starts_at, self.ends_at or end)]
+
+    def sync_silence(self, now=None) -> None:
         """Create, update or retire the Silence this event drives.
 
         The silence mirrors the event's window and matches the devices its
@@ -4014,7 +4064,8 @@ class MaintenanceEvent(TimestampedModel):
             and bool(device_ids)
             and self.starts_at is not None
         )
-        if not wants:
+        window = self.window_at(now) if wants else None
+        if window is None:
             if self.silence_id:
                 silence, self.silence = self.silence, None
                 type(self).objects.filter(pk=self.pk).update(silence=None)
@@ -4022,23 +4073,21 @@ class MaintenanceEvent(TimestampedModel):
             _window_changed(self)
             return
 
-        from datetime import timedelta
-
-        # An open-ended outage still needs a bounded silence row (ends_at is
-        # NOT NULL by design); ETR when known, else a rolling day that each
-        # resync pushes forward while the outage stays open.
-        ends = self.ends_at or self.etr or (timezone.now() + timedelta(days=1))
+        # A recurring event's silence is its current or next occurrence, moved
+        # on by the alert-maintenance tick once that one ends.
+        starts, ends = window
         label = f"{self.get_kind_display()}: {self.name}"
         if self.silence_id:
             Silence.objects.filter(pk=self.silence_id).update(
-                reason=label[:255], starts_at=self.starts_at, ends_at=ends
+                reason=label[:255], starts_at=starts, ends_at=ends
             )
             silence = self.silence
+            silence.starts_at, silence.ends_at = starts, ends
         else:
             silence = Silence.objects.create(
                 tenant=self.tenant,
                 reason=label[:255],
-                starts_at=self.starts_at,
+                starts_at=starts,
                 ends_at=ends,
                 created_by=self.created_by,
             )

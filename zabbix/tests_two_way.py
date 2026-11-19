@@ -740,3 +740,69 @@ class SyncActionTests(_Base):
         sess["current_tenant_id"] = str(other.id)
         sess.save()
         self.assertEqual(self.client.post(self.url()).status_code, 404)
+
+
+class RecurringTests(_Base):
+    """A repeating Danbyte window is one repeating Zabbix period."""
+
+    def recurring(self, dev, freq="daily", weekdays=()):
+        from datetime import time as dtime
+
+        ev = MaintenanceEvent.objects.create(
+            tenant=self.tenant, status=self.status("confirmed"), name="Nightly",
+            starts_at=T0, ends_at=T0 + timedelta(days=7),
+            recurrence=freq, recurrence_weekdays=list(weekdays),
+            recurrence_start_time=dtime(21, 55), recurrence_duration=545,
+            timezone="Europe/Copenhagen",
+        )
+        EventImpact.objects.create(
+            tenant=self.tenant, event=ev, object_type="api.device", object_id=dev.id
+        )
+        ev.sync_silence()
+        return ev
+
+    def test_daily_is_a_type_2_period_over_the_validity(self):
+        self.recurring(self.device(hostid="5"))
+        c = self.fake()
+        self.assertEqual(maintenance.reconcile(self.conn, client=c)["created"], 1)
+        payload = c.create_maintenance.call_args.args[0]
+        self.assertEqual(payload["timeperiods"], [{
+            "timeperiod_type": 2, "every": 1, "start_time": 21 * 3600 + 55 * 60,
+            "period": 545 * 60,
+        }])
+        self.assertEqual(payload["active_since"], int(T0.timestamp()))
+        self.assertEqual(payload["active_till"], int((T0 + timedelta(days=7)).timestamp()))
+
+    def test_weekly_carries_the_day_bits(self):
+        self.recurring(self.device(hostid="5"), freq="weekly", weekdays=[0, 6])
+        c = self.fake()
+        maintenance.reconcile(self.conn, client=c)
+        tp = c.create_maintenance.call_args.args[0]["timeperiods"][0]
+        self.assertEqual((tp["timeperiod_type"], tp["dayofweek"]), (3, 1 | 64))
+
+    def test_the_moving_silence_writes_nothing_more(self):
+        ev = self.recurring(self.device(hostid="5"))
+        maintenance.reconcile(self.conn, client=self.fake())
+        # The next occurrence: the silence moves, the Zabbix period does not.
+        ev.sync_silence(now=ev.silence.ends_at + timedelta(minutes=1))
+        c = self.fake(existing=["77"])
+        counts = maintenance.reconcile(self.conn, client=c)
+        self.assertEqual(counts["updated"], 0)
+        c.update_maintenance.assert_not_called()
+        # A changed rule is written.
+        ev.recurrence_duration = 600
+        ev.save(update_fields=["recurrence_duration"])
+        c = self.fake(existing=["77"])
+        self.assertEqual(maintenance.reconcile(self.conn, client=c)["updated"], 1)
+        self.assertEqual(c.update_maintenance.call_args.args[1]["timeperiods"][0]["period"],
+                         600 * 60)
+
+    def test_no_end_runs_to_the_last_zabbix_date(self):
+        ev = self.recurring(self.device(hostid="5"))
+        ev.ends_at = None
+        ev.save(update_fields=["ends_at"])
+        ev.sync_silence()
+        c = self.fake()
+        maintenance.reconcile(self.conn, client=c)
+        self.assertEqual(c.create_maintenance.call_args.args[0]["active_till"],
+                         int(maintenance.OPEN_END.timestamp()))

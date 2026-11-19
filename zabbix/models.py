@@ -470,6 +470,8 @@ class ZabbixMaintenance(TimestampedModel):
     ends_at = models.DateTimeField()
     #: Host ids the period covers, as last written.
     hostids = models.JSONField(default=list, blank=True)
+    #: The repeating ``timeperiods`` as last written; empty for a one-off.
+    timeperiods = models.JSONField(default=list, blank=True, db_default=[])
     synced_at = models.DateTimeField(null=True, blank=True)
     last_error = models.TextField(blank=True, default="")
 

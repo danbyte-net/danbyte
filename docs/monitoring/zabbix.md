@@ -452,6 +452,12 @@ somebody adjusted by hand in Zabbix stands until the Danbyte window changes.
 One deleted by hand is noticed and written again, because the window still
 wants it. And Danbyte removes only periods it created - never one it found.
 
+A [repeating window](../features/maintenance.md#repeating-windows) is one
+period with a daily or weekly time period at its start time, active over the
+window's validity, so Zabbix repeats it itself and Danbyte writes it once.
+Zabbix applies the time of day in the Zabbix server's time zone: give the
+event that zone. A one-off window stays a one-time period.
+
 A period's name is the event's name plus the first eight characters of its id
 (`Splice · 3f2a9c1e`), and Zabbix keeps names unique. That name is how a pass
 recognises its own period when the id never reached Danbyte - a lost

@@ -191,7 +191,10 @@ export function CalendarMonth({
       const from = e.starts_at.slice(0, 10)
       const to = (e.ends_at ?? e.etr ?? e.starts_at).slice(0, 10)
       for (let d = from; d <= to; d = nextDay(d)) {
-        events.set(d, [...(events.get(d) ?? []), e])
+        // A repeating event shows once a day, however many of its
+        // occurrences touch it.
+        const day = events.get(d) ?? []
+        if (!day.some((x) => x.id === e.id)) events.set(d, [...day, e])
       }
     }
     return { milestones, changes, events }
@@ -265,7 +268,7 @@ export function CalendarMonth({
                       <span aria-hidden style={{ height: lanes * 22 }} />
                       <span className="mt-0.5 w-full space-y-0.5">
                         {(byDay.events.get(key) ?? []).map((e) => (
-                          <Tooltip key={e.id}>
+                          <Tooltip key={e.key}>
                             <TooltipTrigger asChild>
                               <span
                                 className={cn(
@@ -394,12 +397,13 @@ export function CalendarMonth({
 
 function EventTip({ event }: { event: PlanningCalendarEvent }) {
   const when =
+    event.recurrence_summary ||
     event.starts_at.slice(0, 16).replace("T", " ") +
-    (event.ends_at
-      ? ` → ${event.ends_at.slice(0, 16).replace("T", " ")}`
-      : event.etr
-        ? ` · ETR ${event.etr.slice(0, 16).replace("T", " ")}`
-        : " · open-ended")
+      (event.ends_at
+        ? ` → ${event.ends_at.slice(0, 16).replace("T", " ")}`
+        : event.etr
+          ? ` · ETR ${event.etr.slice(0, 16).replace("T", " ")}`
+          : " · open-ended")
   return (
     <>
       <p className="font-medium">

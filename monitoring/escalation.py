@@ -28,6 +28,25 @@ from .models import Alert, AlertSeverity, AlertStatus, CheckState, MonitoringSet
 log = logging.getLogger("monitoring.escalation")
 
 
+def advance_recurring_windows(now=None) -> int:
+    """Move each recurring event's silence on to its next occurrence once the
+    current one has ended (or retire it when the rule has run out). Runs
+    every minute; the silence is always the occurrence open now or next, so
+    suppression, the Silences page and PRTG's pause all read one window."""
+    from .models import MaintenanceEvent
+
+    now = now or timezone.now()
+    moved = 0
+    for event in (
+        MaintenanceEvent.objects.exclude(recurrence="")
+        .filter(silence__ends_at__lte=now, status__is_closed=False)
+        .select_related("status", "silence", "tenant")
+    ):
+        event.sync_silence(now)
+        moved += 1
+    return moved
+
+
 def run_alert_maintenance(now=None) -> dict:
     """Sweep firing alerts and apply renotify / escalation / flap policy.
 
@@ -48,6 +67,10 @@ def run_alert_maintenance(now=None) -> dict:
         release_due(now=now)
     except Exception:  # noqa: BLE001 - never sinks the rest of the sweep
         log.exception("root cause release failed")
+    try:
+        advance_recurring_windows(now)
+    except Exception:  # noqa: BLE001 - never sinks the rest of the sweep
+        log.exception("advancing recurring maintenance windows failed")
     firing = list(
         Alert.objects.filter(status=AlertStatus.FIRING).select_related(
             "target_ip", "template"

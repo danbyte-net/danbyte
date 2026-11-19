@@ -136,6 +136,12 @@ export function buildMaintenanceColumns<
       header: "Window",
       cell: ({ row }) => {
         const e = row.original
+        if (e.recurrence_summary)
+          return (
+            <span className="num text-[12px] whitespace-nowrap">
+              {e.recurrence_summary}
+            </span>
+          )
         return (
           <span className="num text-[12px] whitespace-nowrap">
             {fmt(e.starts_at)}

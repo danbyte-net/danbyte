@@ -8,6 +8,7 @@ import { apiAll } from "@/lib/api-all"
 import type {
   MaintenanceEvent,
   MaintenanceEventKind,
+  MaintenanceRecurrence,
   Paginated,
   ProviderOption,
   Status,
@@ -26,6 +27,9 @@ import {
 } from "@/components/forms"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { TimePicker } from "@/components/ui/time-picker"
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
+import { useTimezoneOptions } from "@/lib/use-timezones"
 import { useSaveObject } from "@/lib/save-object"
 import { LEVELS, levelTone } from "@/components/monitoring/impact-levels"
 
@@ -80,6 +84,24 @@ function fromLocalInput(v: string): string | null {
   return v ? new Date(v).toISOString() : null
 }
 
+const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+
+const minutesOf = (hhmm: string) =>
+  Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5))
+
+/** "HH:MM" a duration after a start, wrapping past midnight. */
+export function endTime(start: string, minutes: number): string {
+  const t = (minutesOf(start) + minutes) % (24 * 60)
+  return `${String(Math.floor(t / 60)).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`
+}
+
+/** Minutes from a start to an end time; an end at or before the start is the
+ *  next day (21:55 to 07:00 is 545), the same time a full day. */
+export function durationBetween(start: string, end: string): number {
+  const d = minutesOf(end) - minutesOf(start)
+  return d > 0 ? d : d + 24 * 60
+}
+
 export function MaintenanceEventForm({
   event,
   onSaved,
@@ -120,6 +142,23 @@ export function MaintenanceEventForm({
   )
   const [endsAt, setEndsAt] = useState(toLocalInput(event?.ends_at ?? null))
   const [etr, setEtr] = useState(toLocalInput(event?.etr ?? null))
+  const [repeat, setRepeat] = useState<MaintenanceRecurrence>(
+    event?.recurrence ?? ""
+  )
+  const [weekdays, setWeekdays] = useState<string[]>(
+    (event?.recurrence_weekdays ?? []).map(String)
+  )
+  const [fromTime, setFromTime] = useState<string | null>(
+    event?.recurrence_start_time ?? "22:00"
+  )
+  const [toTime, setToTime] = useState<string | null>(
+    event?.recurrence_start_time && event.recurrence_duration
+      ? endTime(event.recurrence_start_time, event.recurrence_duration)
+      : "06:00"
+  )
+  const [zone, setZone] = useState(event?.timezone ?? "")
+  const timezones = useTimezoneOptions()
+  const repeats = kind === "maintenance" && repeat !== ""
 
   const providers = useQuery({
     queryKey: ["providers", "picker"],
@@ -164,6 +203,15 @@ export function MaintenanceEventForm({
           starts_at: fromLocalInput(startsAt),
           ends_at: fromLocalInput(endsAt),
           etr: kind === "outage" ? fromLocalInput(etr) : null,
+          recurrence: repeats ? repeat : "",
+          recurrence_weekdays:
+            repeats && repeat === "weekly" ? weekdays.map(Number) : [],
+          recurrence_start_time: repeats ? fromTime : null,
+          recurrence_duration:
+            repeats && fromTime && toTime
+              ? durationBetween(fromTime, toTime)
+              : null,
+          timezone: repeats ? zone : (event?.timezone ?? ""),
           ...(!isEdit && impacts.length ? { impacts } : {}),
         },
       })
@@ -244,8 +292,85 @@ export function MaintenanceEventForm({
 
         <FormColumn>
           <FormSection title="Schedule" card>
+            {kind === "maintenance" && (
+              <div className="grid gap-3 @md:grid-cols-2">
+                <FormSelect
+                  label="Repeat"
+                  value={repeat || "none"}
+                  onChange={(v) =>
+                    setRepeat(v === "none" ? "" : (v as MaintenanceRecurrence))
+                  }
+                  options={[
+                    { value: "none", label: "None" },
+                    { value: "daily", label: "Daily" },
+                    { value: "weekly", label: "Weekly" },
+                  ]}
+                  error={fieldErrors.recurrence}
+                />
+                {repeats && (
+                  <FormCombobox
+                    label="Time zone"
+                    value={zone || null}
+                    onChange={(v) => setZone(v ?? "")}
+                    options={timezones}
+                    noneLabel="Tenant default"
+                    placeholder="Tenant default"
+                    searchPlaceholder="Search time zones…"
+                    info="The window times are read in this zone. Zabbix reads them in its server's zone, so match that when Zabbix sync is on."
+                    error={fieldErrors.timezone}
+                  />
+                )}
+              </div>
+            )}
+            {repeats && repeat === "weekly" && (
+              <Field
+                label="Days"
+                required
+                group
+                error={fieldErrors.recurrence_weekdays}
+              >
+                <ToggleGroup
+                  type="multiple"
+                  variant="outline"
+                  size="sm"
+                  value={weekdays}
+                  onValueChange={setWeekdays}
+                  className="flex-wrap"
+                  aria-label="Days"
+                >
+                  {WEEKDAYS.map((d, i) => (
+                    <ToggleGroupItem key={d} value={String(i)} className="px-3">
+                      {d}
+                    </ToggleGroupItem>
+                  ))}
+                </ToggleGroup>
+              </Field>
+            )}
+            {repeats && (
+              <div className="grid gap-3 @md:grid-cols-2">
+                <Field
+                  label="From"
+                  required
+                  error={fieldErrors.recurrence_start_time}
+                >
+                  <TimePicker value={fromTime} onChange={setFromTime} />
+                </Field>
+                <Field
+                  label="To"
+                  required
+                  error={fieldErrors.recurrence_duration}
+                  info="At or before From means the next morning."
+                >
+                  <TimePicker value={toTime} onChange={setToTime} />
+                </Field>
+              </div>
+            )}
             <div className="grid gap-3 @md:grid-cols-2">
-              <Field label="Starts" required error={fieldErrors.starts_at}>
+              <Field
+                label={repeats ? "Valid from" : "Starts"}
+                required
+                error={fieldErrors.starts_at}
+              >
                 <Input
                   type="datetime-local"
                   value={startsAt}
@@ -254,12 +379,16 @@ export function MaintenanceEventForm({
                 />
               </Field>
               {kind === "maintenance" ? (
-                <Field label="Ends" required error={fieldErrors.ends_at}>
+                <Field
+                  label={repeats ? "Until" : "Ends"}
+                  required={!repeats}
+                  error={fieldErrors.ends_at}
+                >
                   <Input
                     type="datetime-local"
                     value={endsAt}
                     onChange={(e) => setEndsAt(e.target.value)}
-                    required
+                    required={!repeats}
                   />
                 </Field>
               ) : (

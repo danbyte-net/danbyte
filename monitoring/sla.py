@@ -603,15 +603,28 @@ def _maintenance(agreement, start, end, members, objects) -> dict:
     for otype, ids in by_type.items():
         q |= Q(object_type=otype, object_id__in=ids)
     windows = defaultdict(list)
-    for otype, oid, s, e in (
+    recurring = defaultdict(list)
+    for otype, oid, s, e, event_id, rec in (
         EventImpact.objects.filter(q, tenant_id=agreement.tenant_id,
                                    event__kind="maintenance", event__starts_at__lt=end)
         .exclude(level="no_impact")
         .exclude(event__status__slug__in=_NOT_MAINTENANCE)
         .filter(Q(event__ends_at__isnull=True) | Q(event__ends_at__gt=start))
-        .values_list("object_type", "object_id", "event__starts_at", "event__ends_at")
+        .values_list("object_type", "object_id", "event__starts_at", "event__ends_at",
+                     "event_id", "event__recurrence")
     ):
-        windows[(otype, oid)].append((s, e or end))
+        if rec:
+            recurring[event_id].append((otype, oid))
+        else:
+            windows[(otype, oid)].append((s, e or end))
+    if recurring:
+        # A recurring event excuses its occurrences, not its validity span.
+        from .models import MaintenanceEvent
+
+        for event in MaintenanceEvent.objects.filter(pk__in=recurring):
+            spans = event.occurrences(start, end)
+            for key in recurring[event.pk]:
+                windows[key].extend(spans)
     out = {}
     for key, targets in target_of.items():
         spans = [w for t in targets for w in windows.get(t, [])]
