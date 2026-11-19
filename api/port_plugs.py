@@ -454,6 +454,9 @@ def apply_accessory(tenant, path: str, data, files, *, dry_run: bool = False,
         obj.cable = None
     obj.pack_import = {"pack": {"name": pack_name, "version": pack_version},
                        "file": fields["file"], "triangles": tri}
+    from .model_pack_update import keep_meta
+
+    notes += keep_meta(obj, data, "accessory types")
     notes.append(f"{fields['kind']}, {fields['u_height']}U." if fields["u_height"] else
                  f"{fields['kind']}, fits {', '.join(fields['fits'])}.")
     if fields["parts"]:

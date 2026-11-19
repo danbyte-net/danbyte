@@ -233,7 +233,8 @@ class PackTests(_Base):
             "modules: [PWR-C1-715WAC-P, my-own-psu]"))
         result = self._import()
         self.assertEqual(result.types[0].action, "matched")
-        self.assertIn("module bays: suggested modules added to 1 bay.", result.types[0].notes)
+        self.assertIn("updated 1 module bay, modules +PWR-C1-715WAC-P: PS-B",
+                      result.types[0].notes)
         t.refresh_from_db()
         self.assertEqual(t.suggested_modules, ["MY-OWN-PSU", "PWR-C1-715WAC-P"])
 

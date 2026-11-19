@@ -522,7 +522,7 @@ model3d:
         self.assertEqual(dt.module_bay_templates.count(), 2)
         entries = ChangeLogEntry.objects.exclude(id__in=before)
         self.assertTrue(entries.filter(object_id=str(mine.id)).exists())
-        self.assertTrue(all(e.cause.startswith("manage.py import_model_pack Acme test 0.1.0")
+        self.assertTrue(all(e.cause.startswith("Pack import: Acme test 0.1.0")
                             for e in entries.filter(object_id__in=[str(mine.id), str(dt.id)])))
 
     def test_command_reads_a_zip(self):

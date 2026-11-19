@@ -348,6 +348,9 @@ def apply_kit(tenant, path: str, data, files, *, dry_run: bool = False,
     obj.pack_import = {"pack": {"name": pack_name, "version": pack_version},
                        "file": fields["file"], "far": fields["far"], "triangles": tri,
                        "far_triangles": far_tri}
+    from .model_pack_update import keep_meta
+
+    notes += keep_meta(obj, data, "rack kits")
     notes.append(f"{fields['frame']} kit.")
     if dry_run:
         return action, name, "", notes

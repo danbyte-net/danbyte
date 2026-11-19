@@ -1,0 +1,286 @@
+---
+manufacturer: Cisco
+model: Catalyst 9300-48P
+part_number: C9300-48P
+slug: cisco-c9300-48p
+u_height: 1
+is_full_depth: true
+weight: 7.59
+weight_unit: kg
+airflow: front-to-rear
+front_image: true
+rear_image: true
+comments: '[Cisco Catalyst 9300 Series Switches Data Sheet](https://www.cisco.com/c/en/us/products/collateral/switches/catalyst-9300-series-switches/nb-06-cat9300-ser-data-sheet-cte-en.html)'
+console-ports:
+  - name: con 0
+    type: rj-45
+  - name: usb
+    type: usb-mini-b
+power-ports:
+  - name: StackPower1/A
+    type: cisco-stackpower
+  - name: StackPower1/B
+    type: cisco-stackpower
+interfaces:
+  - name: GigabitEthernet1/0/1
+    type: 1000base-t
+    poe_mode: pse
+    poe_type: type2-ieee802.3at
+  - name: GigabitEthernet1/0/2
+    type: 1000base-t
+    poe_mode: pse
+    poe_type: type2-ieee802.3at
+  - name: GigabitEthernet1/0/3
+    type: 1000base-t
+    poe_mode: pse
+    poe_type: type2-ieee802.3at
+  - name: GigabitEthernet1/0/4
+    type: 1000base-t
+    poe_mode: pse
+    poe_type: type2-ieee802.3at
+  - name: GigabitEthernet1/0/5
+    type: 1000base-t
+    poe_mode: pse
+    poe_type: type2-ieee802.3at
+  - name: GigabitEthernet1/0/6
+    type: 1000base-t
+    poe_mode: pse
+    poe_type: type2-ieee802.3at
+  - name: GigabitEthernet1/0/7
+    type: 1000base-t
+    poe_mode: pse
+    poe_type: type2-ieee802.3at
+  - name: GigabitEthernet1/0/8
+    type: 1000base-t
+    poe_mode: pse
+    poe_type: type2-ieee802.3at
+  - name: GigabitEthernet1/0/9
+    type: 1000base-t
+    poe_mode: pse
+    poe_type: type2-ieee802.3at
+  - name: GigabitEthernet1/0/10
+    type: 1000base-t
+    poe_mode: pse
+    poe_type: type2-ieee802.3at
+  - name: GigabitEthernet1/0/11
+    type: 1000base-t
+    poe_mode: pse
+    poe_type: type2-ieee802.3at
+  - name: GigabitEthernet1/0/12
+    type: 1000base-t
+    poe_mode: pse
+    poe_type: type2-ieee802.3at
+  - name: GigabitEthernet1/0/13
+    type: 1000base-t
+    poe_mode: pse
+    poe_type: type2-ieee802.3at
+  - name: GigabitEthernet1/0/14
+    type: 1000base-t
+    poe_mode: pse
+    poe_type: type2-ieee802.3at
+  - name: GigabitEthernet1/0/15
+    type: 1000base-t
+    poe_mode: pse
+    poe_type: type2-ieee802.3at
+  - name: GigabitEthernet1/0/16
+    type: 1000base-t
+    poe_mode: pse
+    poe_type: type2-ieee802.3at
+  - name: GigabitEthernet1/0/17
+    type: 1000base-t
+    poe_mode: pse
+    poe_type: type2-ieee802.3at
+  - name: GigabitEthernet1/0/18
+    type: 1000base-t
+    poe_mode: pse
+    poe_type: type2-ieee802.3at
+  - name: GigabitEthernet1/0/19
+    type: 1000base-t
+    poe_mode: pse
+    poe_type: type2-ieee802.3at
+  - name: GigabitEthernet1/0/20
+    type: 1000base-t
+    poe_mode: pse
+    poe_type: type2-ieee802.3at
+  - name: GigabitEthernet1/0/21
+    type: 1000base-t
+    poe_mode: pse
+    poe_type: type2-ieee802.3at
+  - name: GigabitEthernet1/0/22
+    type: 1000base-t
+    poe_mode: pse
+    poe_type: type2-ieee802.3at
+  - name: GigabitEthernet1/0/23
+    type: 1000base-t
+    poe_mode: pse
+    poe_type: type2-ieee802.3at
+  - name: GigabitEthernet1/0/24
+    type: 1000base-t
+    poe_mode: pse
+    poe_type: type2-ieee802.3at
+  - name: GigabitEthernet1/0/25
+    type: 1000base-t
+    poe_mode: pse
+    poe_type: type2-ieee802.3at
+  - name: GigabitEthernet1/0/26
+    type: 1000base-t
+    poe_mode: pse
+    poe_type: type2-ieee802.3at
+  - name: GigabitEthernet1/0/27
+    type: 1000base-t
+    poe_mode: pse
+    poe_type: type2-ieee802.3at
+  - name: GigabitEthernet1/0/28
+    type: 1000base-t
+    poe_mode: pse
+    poe_type: type2-ieee802.3at
+  - name: GigabitEthernet1/0/29
+    type: 1000base-t
+    poe_mode: pse
+    poe_type: type2-ieee802.3at
+  - name: GigabitEthernet1/0/30
+    type: 1000base-t
+    poe_mode: pse
+    poe_type: type2-ieee802.3at
+  - name: GigabitEthernet1/0/31
+    type: 1000base-t
+    poe_mode: pse
+    poe_type: type2-ieee802.3at
+  - name: GigabitEthernet1/0/32
+    type: 1000base-t
+    poe_mode: pse
+    poe_type: type2-ieee802.3at
+  - name: GigabitEthernet1/0/33
+    type: 1000base-t
+    poe_mode: pse
+    poe_type: type2-ieee802.3at
+  - name: GigabitEthernet1/0/34
+    type: 1000base-t
+    poe_mode: pse
+    poe_type: type2-ieee802.3at
+  - name: GigabitEthernet1/0/35
+    type: 1000base-t
+    poe_mode: pse
+    poe_type: type2-ieee802.3at
+  - name: GigabitEthernet1/0/36
+    type: 1000base-t
+    poe_mode: pse
+    poe_type: type2-ieee802.3at
+  - name: GigabitEthernet1/0/37
+    type: 1000base-t
+    poe_mode: pse
+    poe_type: type2-ieee802.3at
+  - name: GigabitEthernet1/0/38
+    type: 1000base-t
+    poe_mode: pse
+    poe_type: type2-ieee802.3at
+  - name: GigabitEthernet1/0/39
+    type: 1000base-t
+    poe_mode: pse
+    poe_type: type2-ieee802.3at
+  - name: GigabitEthernet1/0/40
+    type: 1000base-t
+    poe_mode: pse
+    poe_type: type2-ieee802.3at
+  - name: GigabitEthernet1/0/41
+    type: 1000base-t
+    poe_mode: pse
+    poe_type: type2-ieee802.3at
+  - name: GigabitEthernet1/0/42
+    type: 1000base-t
+    poe_mode: pse
+    poe_type: type2-ieee802.3at
+  - name: GigabitEthernet1/0/43
+    type: 1000base-t
+    poe_mode: pse
+    poe_type: type2-ieee802.3at
+  - name: GigabitEthernet1/0/44
+    type: 1000base-t
+    poe_mode: pse
+    poe_type: type2-ieee802.3at
+  - name: GigabitEthernet1/0/45
+    type: 1000base-t
+    poe_mode: pse
+    poe_type: type2-ieee802.3at
+  - name: GigabitEthernet1/0/46
+    type: 1000base-t
+    poe_mode: pse
+    poe_type: type2-ieee802.3at
+  - name: GigabitEthernet1/0/47
+    type: 1000base-t
+    poe_mode: pse
+    poe_type: type2-ieee802.3at
+  - name: GigabitEthernet1/0/48
+    type: 1000base-t
+    poe_mode: pse
+    poe_type: type2-ieee802.3at
+  - name: StackPort1/1
+    type: cisco-stackwise-480
+  - name: StackPort1/2
+    type: cisco-stackwise-480
+  - name: GigabitEthernet0/0
+    type: 1000base-t
+    mgmt_only: true
+module-bays:
+  - name: Network Module
+    position: '1'
+    modules: [C9300-NM-4G, C9300-NM-4M, C9300-NM-8X, C9300-NM-2Q, C9300-NM-2Y]
+  - name: PS-A
+    position: A
+    modules: [PWR-C1-350WAC-P, PWR-C1-715WAC-P, PWR-C1-1100WAC-P]
+  - name: PS-B
+    position: B
+    modules: [PWR-C1-350WAC-P, PWR-C1-715WAC-P, PWR-C1-1100WAC-P]
+  - name: FAN 1
+    position: '1'
+    modules: [FAN-T2]
+  - name: FAN 2
+    position: '2'
+    modules: [FAN-T2]
+  - name: FAN 3
+    position: '3'
+    modules: [FAN-T2]
+
+rack_mount:
+  # danbyte: rack mounting (spec 1.11 section 8) from Cisco's install guide; mid = Cisco's mid-mount figure (bracket turned round on the front holes), ~98 mm from our bracket model; Cisco's rear mount turns the switch round (see REPORT)
+  ears: true
+  positions:
+    front: 0
+    mid: 98
+    # danbyte: reversed (spec 1.15): Cisco C9300 HIG figure 18, switch turned round, ears flush with the rear panel
+    reversed: 0
+  default: front
+  rails: none
+# danbyte: meta (spec 1.14 section 8): only what the listed sources state
+meta:
+  category: switch
+  roles: [access, poe, campus, stacking]
+  family: "Catalyst 9300"
+  summary: "48-port PoE+ access switch with a modular uplink slot, StackWise-480 and StackPower."
+  links:
+    - { kind: product-page, title: "Cisco Catalyst 9300 Series Switches", url: "https://www.cisco.com/c/en/us/products/switches/catalyst-9300-series-switches/index.html" }
+    - { kind: datasheet, title: "Cisco Catalyst 9300 Series Switches Data Sheet", url: "https://www.cisco.com/c/en/us/products/collateral/switches/catalyst-9300-series-switches/nb-06-cat9300-ser-data-sheet-cte-en.html" }
+    - { kind: install-guide, title: "Cisco Catalyst 9300 Series Switches Hardware Installation Guide", url: "https://www.cisco.com/c/en/us/td/docs/switches/lan/catalyst9300/hardware/install/b_c9300_hig.html" }
+    - { kind: support, title: "Cisco Catalyst 9300 Series Switches - Support", url: "https://www.cisco.com/c/en/us/support/switches/catalyst-9300-series-switches/series.html" }
+    - { kind: eol-listing, title: "Cisco Catalyst 9300 Series Switches - End-of-Life and End-of-Sale Notices", url: "https://www.cisco.com/c/en/us/products/switches/catalyst-9300-series-switches/eos-eol-notice-listing.html" }
+model3d:
+  file: models/Cisco/C9300-48P.glb
+  far: models/Cisco/C9300-48P.far.glb
+  empty: filler
+  leds:
+    SYS:      { source: device.status }
+    BEACON:   { source: device.locate }
+    STACK:    { source: none }
+    "port:*": { source: interface.oper_status }
+  renders:
+    front: models/Cisco/C9300-48P.front.webp
+    rear:  models/Cisco/C9300-48P.rear.webp
+    iso:   models/Cisco/C9300-48P.iso.webp
+    model_sha256: 4e4267cf50c1f097f85fc23f2670b65bc6f3add7c2f8e3191445ad3405adfed3
+    modules:
+      Network Module: C9300-NM-8X
+      PS-A:  PWR-C1-350WAC-P
+      PS-B:  PWR-C1-350WAC-P
+      FAN 1: FAN-T2
+      FAN 2: FAN-T2
+      FAN 3: FAN-T2

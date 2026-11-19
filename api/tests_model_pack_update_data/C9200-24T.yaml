@@ -1,0 +1,136 @@
+---
+manufacturer: Cisco
+model: Catalyst 9200-24T
+part_number: C9200-24T
+slug: cisco-c9200-24t
+u_height: 1
+is_full_depth: false
+front_image: true
+rear_image: true
+comments: '[Cisco Catalyst 9200 Series Switches Data Sheet](https://www.cisco.com/c/en/us/products/collateral/switches/catalyst-9200-series-switches/nb-06-cat9200-ser-data-sheet-cte-en.html)'
+weight: 5.0
+weight_unit: kg
+airflow: front-to-rear
+console-ports:
+  - name: Console
+    type: rj-45
+  - name: usb
+    type: usb-mini-b
+interfaces:
+  - name: GigabitEthernet1/0/1
+    type: 1000base-t
+  - name: GigabitEthernet1/0/2
+    type: 1000base-t
+  - name: GigabitEthernet1/0/3
+    type: 1000base-t
+  - name: GigabitEthernet1/0/4
+    type: 1000base-t
+  - name: GigabitEthernet1/0/5
+    type: 1000base-t
+  - name: GigabitEthernet1/0/6
+    type: 1000base-t
+  - name: GigabitEthernet1/0/7
+    type: 1000base-t
+  - name: GigabitEthernet1/0/8
+    type: 1000base-t
+  - name: GigabitEthernet1/0/9
+    type: 1000base-t
+  - name: GigabitEthernet1/0/10
+    type: 1000base-t
+  - name: GigabitEthernet1/0/11
+    type: 1000base-t
+  - name: GigabitEthernet1/0/12
+    type: 1000base-t
+  - name: GigabitEthernet1/0/13
+    type: 1000base-t
+  - name: GigabitEthernet1/0/14
+    type: 1000base-t
+  - name: GigabitEthernet1/0/15
+    type: 1000base-t
+  - name: GigabitEthernet1/0/16
+    type: 1000base-t
+  - name: GigabitEthernet1/0/17
+    type: 1000base-t
+  - name: GigabitEthernet1/0/18
+    type: 1000base-t
+  - name: GigabitEthernet1/0/19
+    type: 1000base-t
+  - name: GigabitEthernet1/0/20
+    type: 1000base-t
+  - name: GigabitEthernet1/0/21
+    type: 1000base-t
+  - name: GigabitEthernet1/0/22
+    type: 1000base-t
+  - name: GigabitEthernet1/0/23
+    type: 1000base-t
+  - name: GigabitEthernet1/0/24
+    type: 1000base-t
+  # danbyte: StackPort1/1 and StackPort1/2 moved to C9200-STACK-KIT module bays (REVIEW-10 / REVIEW-12), as on the C9200-24P / -48P
+  - name: GigabitEthernet0/0
+    type: 1000base-t
+    mgmt_only: true
+module-bays:
+  - name: Network Module
+    position: '1'
+    modules: [C9200-NM-4G, C9200-NM-4X, C9200-NM-BLANK]
+  # danbyte: stack adapter bays (Cisco C9200 HIG: a StackWise adapter must be installed in the stacking port)
+  - name: StackPort1/1
+    position: 1/1
+    modules: [C9200-STACK-KIT]
+  # danbyte: stack adapter bays (Cisco C9200 HIG: a StackWise adapter must be installed in the stacking port)
+  - name: StackPort1/2
+    position: 1/2
+    modules: [C9200-STACK-KIT]
+  - name: PS-0
+    position: '0'
+    modules: [PWR-C6-125WAC, PWR-C6-600WAC, PWR-C6-1KWAC]
+  - name: PS-1
+    position: '1'
+    modules: [PWR-C6-125WAC, PWR-C6-600WAC, PWR-C6-1KWAC]
+  # danbyte: bay added (field-replaceable part missing in the library)
+  - name: FAN 1
+    position: '1'
+    modules: [FAN-T2]
+  # danbyte: bay added (field-replaceable part missing in the library)
+  - name: FAN 2
+    position: '2'
+    modules: [FAN-T2]
+
+rack_mount:
+  # danbyte: rack mounting (spec 1.11 section 8) from Cisco's install guide; mid = Cisco's 'rear-mount' figure (bracket turned round on the front holes), ~98 mm from our bracket model
+  ears: true
+  positions:
+    front: 0
+    mid: 98
+  default: front
+  rails: none
+# danbyte: meta (spec 1.14 section 8): only what the listed sources state
+meta:
+  category: switch
+  roles: [access, campus]
+  family: "Catalyst 9200"
+  summary: "24-port Gigabit data (non-PoE) access switch with a modular uplink slot."
+  links:
+    - { kind: datasheet, title: "Cisco Catalyst 9200 Series Switches Data Sheet", url: "https://www.cisco.com/c/en/us/products/collateral/switches/catalyst-9200-series-switches/nb-06-cat9200-ser-data-sheet-cte-en.html" }
+    - { kind: install-guide, title: "Cisco Catalyst 9200 Series Switches Hardware Installation Guide", url: "https://www.cisco.com/c/en/us/td/docs/switches/lan/catalyst9200/hardware/install/b-c9200-hig.html" }
+    - { kind: product-page, title: "Catalyst 9200 Switches Overview", url: "https://www.cisco.com/c/en/us/products/switches/catalyst-9200-series-switches/index.html" }
+model3d:
+  file: models/Cisco/C9200-24T.glb
+  far: models/Cisco/C9200-24T.far.glb
+  empty: filler
+  leds:
+    SYS: { source: device.status }
+    BEACON: { source: device.locate }
+    STACK: { source: none }
+    "port:*": { source: interface.oper_status }
+  renders:
+    front: models/Cisco/C9200-24T.front.webp
+    rear:  models/Cisco/C9200-24T.rear.webp
+    iso:   models/Cisco/C9200-24T.iso.webp
+    model_sha256: ae51f739fdbc27aeb41ccbe3f5f2089cf274e6225c34ec7f6377d2beb3d30cb9
+    modules:
+      Network Module: C9200-NM-4X
+      PS-0: PWR-C6-125WAC
+      PS-1: PWR-C6-125WAC
+      FAN 1: FAN-T2
+      FAN 2: FAN-T2

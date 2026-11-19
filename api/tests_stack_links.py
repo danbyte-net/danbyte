@@ -790,7 +790,7 @@ power-ports:
                 files.close()
             [row] = result.types
             self.assertEqual(row.action, "matched")
-            self.assertIn("power-ports: added 2.", row.notes)
+            self.assertIn("added 2 power ports: StackPower1/A, StackPower1/B", row.notes)
             self.assertEqual(dt.power_port_templates.filter(type=SPWR).count(), 2)
             # Again: nothing more to add.
             files = PackFiles(root)
@@ -798,7 +798,7 @@ power-ports:
                 again = import_pack(self.tenant, files, dry_run=False)
             finally:
                 files.close()
-            self.assertFalse([n for n in again.types[0].notes if n.startswith("power-ports")])
+            self.assertFalse([n for n in again.types[0].notes if n.startswith("added")])
         finally:
             shutil.rmtree(root, ignore_errors=True)
 
@@ -840,9 +840,9 @@ power-ports:
             finally:
                 files.close()
             self.assertEqual(row.action, "matched")
-            self.assertIn("GigabitEthernet1/0/1: type 1000base-x-sfp here, 1000base-t in the "
-                          "pack - set the template's type and sync the type to update.",
-                          row.notes)
+            # A library type has no pack record: reported, not changed.
+            self.assertIn("kept 1 interface, type 1000base-x-sfp (the pack has 1000base-t): "
+                          "GigabitEthernet1/0/1", row.notes)
         finally:
             shutil.rmtree(root, ignore_errors=True)
 

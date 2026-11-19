@@ -705,6 +705,9 @@ class TypeResult:
     action: str = ""    # "matched" | "created" | "error"
     notes: list[str] = field(default_factory=list)
     id: str = ""        # the matched or created type (applied runs)
+    # Device and module types: {added, updated, removed, kept}
+    # (api.model_pack_update).
+    changes: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -746,37 +749,6 @@ def _match(model_cls, tenant, data):
     return (hits[0] if hits else None), None
 
 
-def apply_bay_modules(dt, data: dict) -> list[str]:
-    """Add a matched device type's ``module-bays: - modules: [...]`` to its
-    bay templates (api.module_suggestions). The pack's part numbers join
-    the bay's own - one added by hand is never dropped. A created type got
-    them from api.devicetype_import already."""
-    from .devicetype_import import bay_modules, positionize
-
-    rows = data.get("module-bays")
-    rows = [r for r in rows if isinstance(r, dict)] if isinstance(rows, list) else []
-    notes: list[str] = []
-    bays = {b.name: b for b in dt.module_bay_templates.all()}
-    added = 0
-    for r in rows:
-        parts = bay_modules(r, notes)
-        name = str(r.get("name") or "").strip()
-        bay = bays.get(name) or bays.get(positionize(name))
-        if not parts or bay is None:
-            continue
-        have = list(bay.suggested_modules or [])
-        known = {p.lower() for p in have}
-        new = [p for p in parts if p.lower() not in known]
-        if new:
-            bay.suggested_modules = have + new
-            bay.save(update_fields=["suggested_modules", "updated_at"])
-            added += 1
-    if added:
-        notes.append(f"module bays: suggested modules added to {added} "
-                     f"bay{'s' if added != 1 else ''}.")
-    return notes
-
-
 def apply_rack_mount(dt, data: dict) -> list[str]:
     """Set a matched device type's ``rack_mount`` from its YAML's block
     (api.rack_mount); a type the pack doesn't describe keeps its own."""
@@ -797,26 +769,23 @@ def apply_rack_mount(dt, data: dict) -> list[str]:
 
 
 def import_pack(tenant, files: PackFiles, *, dry_run: bool = True,
-                replace_photos: bool = False, label: str = "",
+                replace_photos: bool = False, overwrite: bool = False, label: str = "",
                 progress=None) -> PackResult:
     """Import every device type, module type, accessory type, rack kit and rack type YAML in the
     pack with its models and renders. Inside one transaction, rolled back on ``dry_run``
     (which also stores no file). Audited as ordinary saves, with ``label``
-    (default: the command and the pack) as the cause. ``replace_photos``
-    lets renders replace faces uploaded by hand. ``progress(done, total)``
-    is called after each YAML."""
+    (default: ``Pack import: <name> <version>``) as the cause. ``replace_photos``
+    lets renders replace faces uploaded by hand. A matched device or module
+    type's templates, bay module lists, lifecycle and links follow the YAML
+    (api.model_pack_update); ``overwrite`` lets the YAML replace what was
+    changed here too. ``progress(done, total)`` is called after each YAML."""
     from django.db import transaction
 
     from audit.context import cause
 
-    from .devicetype_import import (
-        add_device_power_ports,
-        add_module_power_ports,
-        import_devicetype_yaml,
-        import_moduletype_yaml,
-        interface_type_notes,
-    )
-    from .models import DeviceType, ModuleType
+    from .devicetype_import import import_devicetype_yaml, import_moduletype_yaml
+    from .model_pack_update import update_rack_type, update_type
+    from .models import DeviceType, ModuleType, RackType
     from .port_plugs import ACCESSORY_DIR, apply_accessory
     from .rack_kits import KIT_DIR, RACK_TYPE_DIR, apply_kit, apply_rack_type, is_kit_yaml
 
@@ -843,9 +812,10 @@ def import_pack(tenant, files: PackFiles, *, dry_run: bool = True,
                                    len(order)), n))
     referenced: set[str] = set()
     if not label:
-        label = f"manage.py import_model_pack {result.name or files.source.name}"
+        label = f"Pack import: {result.name or files.source.name}"
         if result.version:
             label += f" {result.version}"
+    pack = {"name": result.name, "version": result.version}
     with cause(label), transaction.atomic():
         for done, path in enumerate(yamls):
             if progress is not None:
@@ -877,6 +847,10 @@ def import_pack(tenant, files: PackFiles, *, dry_run: bool = True,
                 with transaction.atomic():
                     tr.action, tr.name, tr.id, tr.notes = apply_rack_type(
                         tenant, path, text, data, dry_run=dry_run)
+                    rt = (RackType.objects.filter(tenant=tenant, name=tr.name).first()
+                          if tr.action != "error" else None)
+                    if rt is not None:
+                        tr.notes += update_rack_type(rt, data, pack=pack)
                 continue
             if not isinstance(data, dict) or not data.get("manufacturer") or not data.get(
                     "model"):
@@ -909,20 +883,13 @@ def import_pack(tenant, files: PackFiles, *, dry_run: bool = True,
                 else:
                     tr.action = "matched"
                     tr.name = obj.name
-                    # A PSU type imported before module types carried power
-                    # ports gains the inlets its YAML names.
-                    if kind == "module-type" and (n := add_module_power_ports(obj, data)):
-                        tr.notes.append(f"power-ports: added {n}.")
-                    # A chassis gains the power ports its YAML names since
-                    # (a C9300's StackPower ports).
-                    if kind == "device-type" and (n := add_device_power_ports(obj, data)):
-                        tr.notes.append(f"power-ports: added {n}.")
-                    # Reported, not changed: the type's own ports win.
-                    tr.notes += interface_type_notes(obj, data,
-                                                     module=kind == "module-type")
                     if kind == "device-type":
-                        tr.notes += apply_bay_modules(obj, data)
                         tr.notes += apply_rack_mount(obj, data)
+                # Templates, bay module lists, lifecycle and links follow the
+                # YAML; what was changed here stays (api.model_pack_update).
+                upd = update_type(obj, data, kind=kind, pack=pack, overwrite=overwrite)
+                tr.notes += upd.notes
+                tr.changes = upd.changes
                 if not dry_run:
                     tr.id = str(obj.pk)
                 tr.notes += apply_model3d(obj, block, files, dry_run=dry_run) or [

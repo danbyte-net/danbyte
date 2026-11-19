@@ -3,7 +3,7 @@ blocks, accessory types (plugs seated in cabled ports, api.port_plugs), and
 the ``.glb`` files they name (api.model_pack, docs/dcim/model-packs.md).
 
     manage.py import_model_pack <folder|zip> --tenant <slug or id> [--apply]
-                                [--replace-photos]
+                                [--replace-photos] [--overwrite]
 
 Each YAML is matched to an existing type by manufacturer and part number;
 a type that isn't there yet is created from the YAML. The matched or created
@@ -12,9 +12,15 @@ device type the pack's Blender renders as its face photos. A face uploaded
 by hand stays unless ``--replace-photos`` is given. An accessory type is
 matched by its folder (vendor) and name, and created or updated.
 
+A matched device or module type's templates, bay module lists, lifecycle
+and links follow the YAML; what was changed in Danbyte since the last
+import is kept and reported, unless ``--overwrite`` is given
+(api.model_pack_update).
+
 A dry run by default: everything is read, checked and scanned, the report
 printed, and nothing kept. ``--apply`` keeps it; the changes land in the
-change log as system writes, with the pack named as their cause.
+change log as system writes, with *Pack import: <name> <version>* as their
+cause.
 """
 from __future__ import annotations
 
@@ -35,8 +41,12 @@ class Command(BaseCommand):
         parser.add_argument("--replace-photos", action="store_true",
                             help="Let the pack's renders replace face photos and port "
                                  "markers uploaded by hand.")
+        parser.add_argument("--overwrite", action="store_true",
+                            help="Update from pack: let the YAML replace templates, bay "
+                                 "module lists and lifecycle dates changed here.")
 
-    def handle(self, *args, pack, tenant, apply=False, replace_photos=False, **opts):
+    def handle(self, *args, pack, tenant, apply=False, replace_photos=False, overwrite=False,
+               **opts):
         from api.model_pack import PackFiles, PackRefused, import_pack
         from core.models import Tenant
 
@@ -54,7 +64,8 @@ class Command(BaseCommand):
         except (FileNotFoundError, OSError, zipfile.BadZipFile) as exc:
             raise CommandError(f"Can't open the pack: {exc}") from exc
         try:
-            result = import_pack(t, files, dry_run=not apply, replace_photos=replace_photos)
+            result = import_pack(t, files, dry_run=not apply, replace_photos=replace_photos,
+                                 overwrite=overwrite)
         finally:
             files.close()
         head = result.name or pack

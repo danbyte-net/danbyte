@@ -658,6 +658,13 @@ class DeviceType(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin,
                    "reference: {bay: module type id}, images: {model_sha256, "
                    "model_version, frame_mm, modules: {bay: part number}, stale, note}}."),
     )
+    # What the last model-pack import said (api.model_pack_update): its
+    # templates by name, lifecycle, links and meta block. A field that still
+    # equals it is the pack's to update; one that differs was edited here.
+    pack_state = models.JSONField(
+        null=True, blank=True, default=None, editable=False,
+        help_text="The last model-pack import's templates, lifecycle, links and meta.",
+    )
     is_full_depth = models.BooleanField(
         default=True,
         help_text=("Occupies both the front and rear rack faces. Full-depth "
@@ -1188,6 +1195,11 @@ class ModuleType(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin,
         max_length=16, choices=COOLING_METHOD_CHOICES, blank=True,
         default="", db_default="",
         help_text="How this module is cooled.",
+    )
+    # As DeviceType.pack_state (api.model_pack_update).
+    pack_state = models.JSONField(
+        null=True, blank=True, default=None, editable=False,
+        help_text="The last model-pack import's templates and meta.",
     )
 
     class Meta:
@@ -6267,6 +6279,9 @@ class ModelPack(TimestampedModel):
     #: The install: {"created": n, "matched": n, "errors": n, "types": [...]}.
     result = models.JSONField(default=dict, blank=True)
     replace_photos = models.BooleanField(default=False)
+    #: Update from pack: the pack's templates and lifecycle replace what was
+    #: changed here (api.model_pack_update).
+    overwrite = models.BooleanField(default=False, db_default=False)
     error = models.TextField(blank=True, default="")
     created_by = models.ForeignKey(
         "auth.User", on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
@@ -6659,6 +6674,9 @@ class RackType(NumIdMixin, TimestampedModel, TaggableMixin):
         help_text="Draw blanking panels in empty units (3D only, never counted).",
     )
     description = models.TextField(blank=True)
+    # The last model-pack import's meta block and the description it set
+    # (api.model_pack_update).
+    pack_state = models.JSONField(null=True, blank=True, default=None, editable=False)
 
     class Meta:
         ordering = ["name"]
