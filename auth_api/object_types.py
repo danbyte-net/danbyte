@@ -248,6 +248,7 @@ _ENTRIES: list[tuple[str, str, str]] = [
     ("api.RackRole", "Rack roles", "DCIM"),
     ("api.RackType", "Rack types", "DCIM"),
     ("api.RackTypeAccessory", "Rack type accessories", "DCIM"),
+    ("api.RackPathway", "Rack pathways", "DCIM"),
     ("api.Cabinet", "Cabinets", "DCIM"),
     ("api.CabinetRole", "Cabinet roles", "DCIM"),
     ("api.CabinetType", "Cabinet types", "DCIM"),

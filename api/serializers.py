@@ -71,7 +71,7 @@ from .models import (
     PowerFeed, PowerOutlet,
     PowerOutletTemplate, PowerPanel, PowerPort, PowerPortTemplate,
     Prefix, Provider, ProviderNetwork, Rack, RackRole, RackType, Room,
-    RackTypeAccessory, RearPort,
+    RackPathway, RackTypeAccessory, RearPort,
     RearPortTemplate, Region, RIR, RouteTarget, Service, ServiceTemplate,
     SiteMarker,
     DeviceTypeService, Site,
@@ -3539,7 +3539,7 @@ class DeviceSerializer(TableSerializerMixin, StatusSerializerMixin, ObjectPermsS
         "model_3d", "model_3d_fit", "model_3d_up", "model_3d_front", "model_3d_effective",
         "model_ports", "model_3d_far", "model_3d_scan", "local_context_data",
         "fov_direction", "fov_deg", "fov_distance_m", "fov_ptz",
-        "mount_offset_mm", "mount_span_u",
+        "mount_offset_mm", "mount_span_u", "mount_pathway",
         # Placement in the rack: the 3D room reads it (api.rack_mount).
         "rack_mount",
         # Its own column, Next end of life (device-columns.tsx).
@@ -3672,6 +3672,13 @@ class DeviceSerializer(TableSerializerMixin, StatusSerializerMixin, ObjectPermsS
     )
     rack_id = TenantScopedPrimaryKeyRelatedField(
         source="rack", queryset=Rack.objects.all(),
+        write_only=True, required=False, allow_null=True,
+    )
+    # The rack's 0U channel a side-mounted device sits in (api.rack_pathways).
+    mount_pathway = serializers.UUIDField(source="mount_pathway_id", read_only=True,
+                                          allow_null=True)
+    mount_pathway_id = TenantScopedPrimaryKeyRelatedField(
+        source="mount_pathway", queryset=RackPathway.objects.all(),
         write_only=True, required=False, allow_null=True,
     )
     cabinet = serializers.SerializerMethodField()
@@ -4106,6 +4113,8 @@ class DeviceSerializer(TableSerializerMixin, StatusSerializerMixin, ObjectPermsS
                     {"mount": "Set a mount side before offset/span."}
                 )
 
+        self._validate_mount_pathway(attrs, rack, mount, face, changed)
+
         if rack is None or position is None or not placement_changed:
             return attrs
         if width == "half" and not side:
@@ -4184,6 +4193,39 @@ class DeviceSerializer(TableSerializerMixin, StatusSerializerMixin, ObjectPermsS
 
     def validate_local_context_data(self, value):
         return _local_context_data(value)
+
+    def _validate_mount_pathway(self, attrs, rack, mount, face, changed) -> None:
+        """A side-mounted device's 0U channel (api.rack_pathways): one of its
+        rack's channels, on its rail's side and, with a face, at that face.
+        One left behind - the device moved to another rack, or no longer
+        side-mounts - is cleared rather than refused."""
+        inst = self.instance
+        given = "mount_pathway" in attrs
+        pw = attrs.get("mount_pathway") if given else (
+            inst.mount_pathway if inst is not None and inst.mount_pathway_id else None)
+        if pw is None:
+            return
+        if not mount or rack is None or pw.rack_id != rack.pk:
+            if given:
+                raise serializers.ValidationError({"mount_pathway_id": (
+                    "Not a 0U channel of this device's rack." if mount and rack is not None
+                    else "Side-mount the device first.")})
+            attrs["mount_pathway"] = None
+            return
+        if not (given or changed("mount", "face")):
+            return
+        from .rack_pathways import resolve_rack
+
+        item = next((i for i in resolve_rack(rack) if i["id"] == str(pw.pk)), None)
+        if item is None or item["kind"] != "channel":
+            raise serializers.ValidationError(
+                {"mount_pathway_id": "Not a 0U channel of this rack."})
+        if item["side"] and f"side_{item['side']}" != mount:
+            raise serializers.ValidationError({"mount_pathway_id": (
+                f"That channel is on the {item['side']}; mount the device on that rail.")})
+        if face and item["face"] and item["face"] != face:
+            raise serializers.ValidationError({"mount_pathway_id": (
+                f"That channel is at the {item['face']}; the device faces {face}.")})
 
     def _validate_cabinet(self, attrs) -> None:
         """A device in a DIN-rail cabinet (#277): never in a rack as well, at
@@ -4380,7 +4422,8 @@ class DeviceSerializer(TableSerializerMixin, StatusSerializerMixin, ObjectPermsS
                   "role", "role_id", "platform", "platform_id",
                   "effective_platform",
                   "rack", "rack_id", "position", "face", "rack_side",
-                  "mount", "mount_offset_mm", "mount_span_u", "ear_position", "rack_mount",
+                  "mount", "mount_offset_mm", "mount_span_u", "mount_pathway",
+                  "mount_pathway_id", "ear_position", "rack_mount",
                   "u_height", "rack_width",
                   "cabinet", "cabinet_id", "din_rail", "din_rail_id", "din_offset_mm",
                   "location", "location_id", "room", "room_id", "cluster", "cluster_id",

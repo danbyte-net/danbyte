@@ -329,6 +329,93 @@ rails in turn in 3D, by name - the first on the left, the next on the
 right - so it stands in its rack instead of not at all. **0U gear never counts against used units** - including 0U types
 parked at a U position, which previously (and wrongly) charged a full unit.
 
+A side-mounted device can also name the **0U channel** it sits in, one of
+the rack's [pathways](#pathways) (`mount_pathway_id` on the device, a row
+of `/api/rack-pathways/`; `pin/` makes the row for an inherited channel).
+The channel must be on the device's rail side and, when the device has a
+face, at that face. Moving the device to another rack or taking away its
+side mount clears it. Without one the device is placed exactly as above.
+
+## Pathways {#pathways}
+
+The rack page's **Pathways** tab lists where cables run in the rack: its
+vertical cable managers and corner channels, horizontal managers, cable
+**entries** (roof cut-outs, brush grommets, floor and side-panel openings)
+and **0U channels** (where vertical PDUs mount). It is the groundwork for
+documenting each cable's way through the rack, its fill and its length;
+nothing is drawn from it yet.
+
+| Kind | Where | Size |
+|---|---|---|
+| Vertical | side (left, right), face (front, rear, full depth), units | inner width × depth, mm |
+| Horizontal | face, units (or its device in the units) | inner width × depth, mm |
+| Entry | roof, floor or side panel; across from the centre and back from the front, mm | opening width × height, mm |
+| 0U channel | side, face (front, rear), units, offset above the first unit and depth behind the front rail, mm | |
+
+Each has a type (finger, D-ring, channel, lacing bar for managers; open,
+brush, gland, sealed for entries), a fill limit (the usable share of its
+cross-section, 40 % unless set) and optionally a name, a description and
+the cable manager model it is.
+
+**Where they come from.** Each row's **Source**:
+
+- **Kit**: the rack's [kit](model-packs.md#rack-kits) names them, fitted to
+  the rack: vertical ones run its full height, a full-depth manager grows
+  with its depth, a 0U channel keeps the units it leaves free at the top,
+  and an entry keeps its place as a share of the roof or base. Entries come
+  with the roof and base the [Look](#look) uses (none for Top *None*). Of a
+  side's vertical managers the kit installs one, rear first, then full
+  depth, then front; the others are **add-ons**, hidden until shown.
+- **Default**: a rack without a kit, or with a kit imported before 0.21,
+  gets its frame's: a cabinet two rear corner channels, a roof and a floor
+  entry and two rear 0U channels; a wall cabinet a roof and a floor entry;
+  a 2-post a vertical finger manager each side; an open 4-post none.
+- **Type**: added on the rack type's **Pathways** tab, for every rack of
+  the type.
+- **Manual**: added on this rack.
+
+**Inheritance.** The rack type's tab changes its kit's or frame's pathways
+for all its racks, and the rack's tab changes them, or the type's, for this
+rack, like the Look: **Edit** an inherited pathway and only what you change
+is kept on the rack (*Changed*), the rest keeps following the kit, so a
+pack re-import that resizes a kit's channel resizes it on every rack that
+didn't. **Hide** takes one away (and **Show** brings back an add-on),
+**Reset** undoes the changes. A pathway the kit no longer has stays listed
+as *Not in kit* while the rack still has changes on it; delete them there.
+Kit, default and type pathways are only stored for a rack once changed or
+pointed at; the list is worked out each time.
+
+**Checks.** A vertical or 0U channel needs its side and face, an entry its
+surface; a 0U channel is at the front or the rear; a 2-post frame's
+managers are full depth; an open frame has no entries; a side-panel entry
+needs side panels. Units stay inside the rack's, and a shown pathway may not
+overlap another of its kind on the same side and face (full depth meets both
+faces; 0U channels at different depths may share units). A vertical
+manager's model is a 0U [cable manager](model-packs.md#rack-accessories);
+its type and size come from the model unless set.
+
+**Permissions.** Pathways are the *Rack pathways* object type, scoped by the
+rack's site. A rack type's rows have no site: readable to all who may view
+them, written only by users not bound to sites, and they need change on rack
+types too. Every row is audited.
+
+**API.** `GET /api/rack-pathways/resolved/?rack=<id>` (or
+`?rack_type=<id>`) is the merged list: `frame`, `kit`, `units`,
+`fill_limit_pct` (the default) and `items`, each with its `key`, `source`
+(`kit`, `default`, `type`, `manual`), `id` (this level's row, or null),
+`kind`, `subkind`, `side`, `face`, `surface`, `u_from`, `u_to`,
+`offset_mm`, `depth_mm`, `x_mm`, `y_mm`, `inner_w_mm`, `inner_d_mm`,
+`fill_limit_pct`, `label`, `hidden`, `addon`, `orphan`, `overridden` (the
+fields changed), `accessory_type`, `device` and, for a 0U channel,
+`devices`. `/api/rack-pathways/` holds the rows (`?rack=`, `?rack_type=`):
+`rack_id` or `rack_type_id`, and `key` for one that changes an inherited
+pathway (`path:vertical:left:rear`, `entry:top:roof`,
+`channel:0u:right:rear`, `type:<id>`), else `kind` for one of its own. On
+a row with a `key` a blank or null field inherits and `hidden` is true,
+false or null (inherit). The owner and key never change.
+`POST /api/rack-pathways/pin/` with `{rack_id, key}` returns the rack's row
+for that pathway, making it (201) when there is none.
+
 ## Rack elevations
 
 The rack's **Overview** puts the rack's facts on the left - the **Rack** and

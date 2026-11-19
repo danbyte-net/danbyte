@@ -24,6 +24,8 @@ SITE_PATHS: dict[str, str] = {
     # site on the address wins (first set alternative, see site_in_q).
     "ipaddress": "site|prefix__site",
     "rack": "site",
+    # A rack's pathways are its site's; a rack type's (rack NULL) are shared.
+    "rackpathway": "rack__site",
     "cabinet": "site",
     "cluster": "site",
     "virtualmachine": "site",

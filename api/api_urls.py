@@ -235,6 +235,7 @@ from .topology_views import (
 from .model_pack_views import ModelPackViewSet
 from .accessory_type_views import AccessoryTypeViewSet
 from .rack_kit_views import RackKitViewSet
+from .rack_pathway_views import RackPathwayViewSet
 from .viewsets import (
     AggregateViewSet,
     AntennaTemplateViewSet,
@@ -540,6 +541,7 @@ router.register(r"module-types", ModuleTypeViewSet, basename="module-type")
 router.register(r"model-packs", ModelPackViewSet, basename="model-pack")
 router.register(r"accessory-types", AccessoryTypeViewSet, basename="accessory-type")
 router.register(r"rack-kits", RackKitViewSet, basename="rack-kit")
+router.register(r"rack-pathways", RackPathwayViewSet, basename="rack-pathway")
 router.register(r"topology-views", TopologyViewViewSet, basename="topology-view")
 router.register(r"floor-tile-types", FloorTileTypeViewSet, basename="floor-tile-type")
 router.register(r"floor-plans", FloorPlanViewSet, basename="floor-plan")

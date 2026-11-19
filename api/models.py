@@ -46,6 +46,11 @@ from .rack_look import (
     BASE_CHOICES, DOOR_CHOICES, FRAME_CHOICES, HINGE_CHOICES, TOP_CHOICES,
     validate_rack_colour,
 )
+from .rack_pathways import FACE_CHOICES as PATHWAY_FACE_CHOICES
+from .rack_pathways import KIND_CHOICES as PATHWAY_KIND_CHOICES
+from .rack_pathways import SIDE_CHOICES as PATHWAY_SIDE_CHOICES
+from .rack_pathways import SUBKIND_CHOICES as PATHWAY_SUBKIND_CHOICES
+from .rack_pathways import SURFACE_CHOICES as PATHWAY_SURFACE_CHOICES
 from core.models import (
     CustomFieldsMixin,
     Organization,
@@ -2618,6 +2623,13 @@ class Device(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin, Mod
         validators=[MinValueValidator(1), MaxValueValidator(60)],
         help_text=("Vertical extent of the side-mounted strip, in U. Blank "
                    "draws ~three quarters of the rack."),
+    )
+    # The rack's 0U channel it sits in (api.rack_pathways); null: placed by
+    # ``mount`` and ``face`` alone.
+    mount_pathway = models.ForeignKey(
+        "RackPathway", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="mounted_devices",
+        help_text="The rack's 0U channel a side-mounted device sits in.",
     )
     # Which of its type's ear positions it is fitted at (api.rack_mount);
     # blank takes the type's default.
@@ -6350,6 +6362,10 @@ class AccessoryType(TimestampedModel):
     u_height = models.PositiveSmallIntegerField(
         null=True, blank=True, validators=[MinValueValidator(1), MaxValueValidator(10)],
     )
+    # A cable manager's inner channel ({kind, inner_w_mm, inner_d_mm}) from
+    # its model's ``path`` empty (api.rack_pathways.manager_pathway); a 0U
+    # one (no ``u_height``) is a vertical manager a rack's pathway can be.
+    pathway = models.JSONField(null=True, blank=True, default=None)
     model_3d = models.FileField(
         upload_to=device_model_path, blank=True, null=True, max_length=255,
         help_text="The part's 3D model (binary glTF, .glb).",
@@ -6423,6 +6439,9 @@ class RackKit(TimestampedModel):
     colours = models.JSONField(default=dict, blank=True)
     # What the kit's model holds, read at import: {name: {stretch, ref_mm}}.
     parts = models.JSONField(default=dict, blank=True)
+    # Its pathways, entries and 0U channels (api.rack_pathways.scan_pathways),
+    # read at import; null for a kit imported before Danbyte read them.
+    pathways = models.JSONField(null=True, blank=True, default=None)
     model_3d = models.FileField(
         upload_to=device_model_path, blank=True, null=True, max_length=255,
         help_text="Every part of the kit, as named objects (.glb).",
@@ -6743,6 +6762,109 @@ class RackTypeAccessory(TimestampedModel):
             return self.rack_type.tenant_id
         except ObjectDoesNotExist:
             return None
+
+
+class RackPathway(TimestampedModel):
+    """A cable pathway of a rack or a rack type (api.rack_pathways,
+    docs/dcim/racks.md → Pathways): a vertical manager or channel, a
+    horizontal manager, a cable entry or a 0U channel.
+
+    With a ``key`` it overlays the pathway of that key the rack inherits
+    (from its kit, its frame's defaults or its type): its set fields replace
+    the inherited ones, blank and null inherit, and ``hidden`` hides or
+    shows it. Without one it is a pathway of its own. Exactly one of
+    ``rack`` and ``rack_type`` is set."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name="rack_pathways")
+    rack = models.ForeignKey(
+        "Rack", on_delete=models.CASCADE, null=True, blank=True, related_name="pathways",
+    )
+    rack_type = models.ForeignKey(
+        RackType, on_delete=models.CASCADE, null=True, blank=True, related_name="pathways",
+    )
+    key = models.CharField(
+        max_length=100, blank=True, default="",
+        help_text="The inherited pathway this row changes; blank for one of its own.",
+    )
+    kind = models.CharField(max_length=12, choices=PATHWAY_KIND_CHOICES, blank=True, default="")
+    subkind = models.CharField(max_length=8, choices=PATHWAY_SUBKIND_CHOICES, blank=True,
+                               default="")
+    side = models.CharField(max_length=5, choices=PATHWAY_SIDE_CHOICES, blank=True, default="")
+    face = models.CharField(max_length=5, choices=PATHWAY_FACE_CHOICES, blank=True, default="")
+    surface = models.CharField(max_length=6, choices=PATHWAY_SURFACE_CHOICES, blank=True,
+                               default="", help_text="Where an entry is.")
+    u_from = models.PositiveSmallIntegerField(null=True, blank=True)
+    u_to = models.PositiveSmallIntegerField(null=True, blank=True)
+    offset_mm = models.PositiveSmallIntegerField(
+        null=True, blank=True, validators=[MaxValueValidator(500)],
+        help_text="A 0U channel's lower end above its first unit.",
+    )
+    depth_mm = models.PositiveSmallIntegerField(
+        null=True, blank=True, validators=[MaxValueValidator(3000)],
+        help_text="A 0U channel's distance behind the front rail.",
+    )
+    x_mm = models.SmallIntegerField(
+        null=True, blank=True, validators=[MinValueValidator(-1500), MaxValueValidator(1500)],
+        help_text="An entry's centre right of the rack's centre, seen from the front.",
+    )
+    y_mm = models.PositiveSmallIntegerField(
+        null=True, blank=True, validators=[MaxValueValidator(3000)],
+        help_text="An entry's centre behind the rack's front.",
+    )
+    inner_w_mm = models.PositiveSmallIntegerField(
+        null=True, blank=True, validators=[MinValueValidator(1), MaxValueValidator(2000)],
+        help_text="Inner width, or an entry's opening width.",
+    )
+    inner_d_mm = models.PositiveSmallIntegerField(
+        null=True, blank=True, validators=[MinValueValidator(1), MaxValueValidator(2000)],
+        help_text="Inner depth, or an entry's opening height.",
+    )
+    fill_limit_pct = models.PositiveSmallIntegerField(
+        null=True, blank=True, validators=[MinValueValidator(1), MaxValueValidator(100)],
+        help_text="The usable share of the cross-section. Blank: 40 %.",
+    )
+    accessory_type = models.ForeignKey(
+        AccessoryType, on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
+        help_text="The cable manager model it is.",
+    )
+    device = models.ForeignKey(
+        "Device", on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
+        help_text="A horizontal manager's device in its units.",
+    )
+    name = models.CharField(max_length=64, blank=True, default="")
+    description = models.TextField(blank=True, default="")
+    hidden = models.BooleanField(
+        null=True, blank=True,
+        help_text="Hide (true) or show (false) the inherited pathway; null inherits.",
+    )
+
+    class Meta:
+        ordering = ["created_at", "id"]
+        constraints = [
+            models.CheckConstraint(
+                condition=(models.Q(rack__isnull=False, rack_type__isnull=True)
+                           | models.Q(rack__isnull=True, rack_type__isnull=False)),
+                name="rackpathway_one_owner",
+            ),
+            models.UniqueConstraint(
+                fields=["rack", "key"], condition=~models.Q(key=""),
+                name="rackpathway_rack_key",
+            ),
+            models.UniqueConstraint(
+                fields=["rack_type", "key"], condition=~models.Q(key=""),
+                name="rackpathway_type_key",
+            ),
+            models.CheckConstraint(
+                condition=(models.Q(u_from__isnull=True) | models.Q(u_to__isnull=True)
+                           | models.Q(u_to__gte=models.F("u_from"))),
+                name="rackpathway_units_order",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        owner = self.rack if self.rack_id else self.rack_type
+        return f"{owner}: {self.name or self.key or self.kind}"
 
 
 # ─── Cabinets (DIN-rail enclosures, #277) ────────────────────────────────────

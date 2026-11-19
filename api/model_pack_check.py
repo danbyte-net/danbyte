@@ -408,6 +408,12 @@ class _Checker:
             errs = set(kit_errors(scan_notes))
             for n in scan_notes:
                 self.add("error" if n in errs else "warning", rel, n, row)
+            from .rack_pathways import scan_pathways
+
+            seg = parts.get("post:segment") or {}
+            _, path_notes = scan_pathways(doc, seg.get("fit"), *_ref_size(fields))
+            for n in path_notes:
+                self.add("warning", rel, n, row)
 
     def rack_type(self, path: str, data):
         from .rack_kits import find_kit, read_look
@@ -755,3 +761,8 @@ def check_source(source, *, tenant=None) -> CheckReport:
         return check_pack(files, tenant=tenant)
     finally:
         files.close()
+
+
+def _ref_size(fields: dict) -> tuple[int, int]:
+    """A kit's reference width and depth (its first listed sizes, mm)."""
+    return ((fields.get("widths_mm") or [600])[0], (fields.get("depths_mm") or [1000])[0])

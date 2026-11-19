@@ -205,8 +205,15 @@ def read_accessory(path: str, data) -> tuple[dict | None, list[str]]:
     u_height = None
     if kind in RACK_KINDS:
         u_height = data.get("u_height")
-        if isinstance(u_height, bool) or not isinstance(u_height, int) or not (
+        if kind == "cable-manager" and u_height == 0 and not isinstance(u_height, bool):
+            # A 0U manager is a vertical one (spec §14 CM-VERT-2POST): no
+            # units, a pathway a rack or rack type takes (api.rack_pathways).
+            u_height = None
+        elif isinstance(u_height, bool) or not isinstance(u_height, int) or not (
                 1 <= u_height <= 10):
+            if kind == "cable-manager":
+                return None, ["u_height: a cable-manager needs its height, 1 to 10 U, "
+                              "or 0 for a vertical one."]
             return None, [f"u_height: a {kind} needs its height, 1 to 10 U."]
         if data.get("fits"):
             notes.append("fits: a rack part plugs into no port - ignored.")
@@ -444,6 +451,15 @@ def apply_accessory(tenant, path: str, data, files, *, dry_run: bool = False,
     kept = [f for f in HAND_FIELDS if f in (obj.hand_edited or [])]
     obj.kind, obj.connector = fields["kind"], fields["connector"]
     obj.u_height = fields["u_height"]
+    if fields["kind"] == "cable-manager":
+        from .rack_pathways import manager_pathway
+
+        obj.pathway = manager_pathway(doc)
+        if obj.pathway is None:
+            notes.append("model: no path empty; its inner size is unknown.")
+        elif obj.pathway.get("inner_w_mm") and obj.pathway.get("inner_d_mm"):
+            notes.append(f"pathway: {obj.pathway['kind']}, inner "
+                         f"{obj.pathway['inner_w_mm']} x {obj.pathway['inner_d_mm']} mm.")
     for f in ("fits", "parts", "standard", "wavelength_nm", "cable"):
         if f in kept:
             if getattr(obj, f) != fields[f]:
@@ -457,8 +473,11 @@ def apply_accessory(tenant, path: str, data, files, *, dry_run: bool = False,
     from .model_pack_update import keep_meta
 
     notes += keep_meta(obj, data, "accessory types")
-    notes.append(f"{fields['kind']}, {fields['u_height']}U." if fields["u_height"] else
-                 f"{fields['kind']}, fits {', '.join(fields['fits'])}.")
+    if fields["kind"] in RACK_KINDS:
+        notes.append(f"{fields['kind']}, {fields['u_height']}U." if fields["u_height"] else
+                     f"{fields['kind']}, 0U (vertical).")
+    else:
+        notes.append(f"{fields['kind']}, fits {', '.join(fields['fits'])}.")
     if fields["parts"]:
         notes.append(f"parts: {', '.join(fields['parts'])}.")
     if fields["cable"]:

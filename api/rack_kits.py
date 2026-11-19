@@ -70,7 +70,8 @@ PARTS = (
 #: the room seats a rack's side-mounted 0U devices.
 CHANNEL = re.compile(r"^channel:0u:(left|right):(front|rear)$")
 #: Names the spec defines that the room does not draw yet (pathways, cable
-#: entries, brush strips): known, so not noted as unknown.
+#: entries, brush strips; api.rack_pathways reads the pathways and entries):
+#: known, so not noted as unknown.
 KNOWN_PREFIXES = ("path:", "entry:", "brush:", "channel:0u:")
 REQUIRED = ("post:segment",)
 DOORS = ("door:perforated", "door:glass", "door:solid")
@@ -331,6 +332,14 @@ def apply_kit(tenant, path: str, data, files, *, dry_run: bool = False,
     if kit_errors(scan_notes):
         return "error", name, "", [*notes, *scan_notes]
     notes += [f"model: {n}" for n in scan_notes]
+    from .rack_pathways import kit_summary, scan_pathways
+
+    seg = parts.get("post:segment") or {}
+    pathways, path_notes = scan_pathways(
+        blobs["file"][1], seg.get("fit"), (fields["widths_mm"] or [600])[0],
+        (fields["depths_mm"] or [1000])[0])
+    notes += [f"model: {n}" for n in path_notes]
+    notes.append(kit_summary(pathways))
     tri = triangles(blobs["file"][1])
     notes.append(f"model: {tri} triangles, {len(parts)} parts.")
     if tri > KIT_TRIANGLES:
@@ -345,6 +354,9 @@ def apply_kit(tenant, path: str, data, files, *, dry_run: bool = False,
     for f in ("frame", "widths_mm", "depths_mm", "colours"):
         setattr(obj, f, fields[f])
     obj.parts = parts
+    # A re-import replaces them: the racks' pathways from the kit follow,
+    # and what a rack changed on one stays (api.rack_pathways).
+    obj.pathways = pathways
     obj.pack_import = {"pack": {"name": pack_name, "version": pack_version},
                        "file": fields["file"], "far": fields["far"], "triangles": tri,
                        "far_triangles": far_tri}

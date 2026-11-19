@@ -32,7 +32,7 @@ class RackKitSerializer(serializers.ModelSerializer):
     class Meta:
         model = RackKit
         fields = ["id", "vendor", "name", "frame", "widths_mm", "depths_mm", "colours",
-                  "parts", "model_url", "far_url", "pack_import", "rack_type_count",
+                  "parts", "pathways", "model_url", "far_url", "pack_import", "rack_type_count",
                   "created_at", "updated_at"]
         read_only_fields = fields
 

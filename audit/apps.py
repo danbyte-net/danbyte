@@ -117,6 +117,7 @@ AUDITED_MODELS = [
     "api.RackRole",
     "api.RackType",
     "api.RackTypeAccessory",
+    "api.RackPathway",
     "api.Rack",
     "api.CabinetRole",
     "api.CabinetType",

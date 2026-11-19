@@ -535,8 +535,8 @@ render's module part number may then be a module type the tenant has.
 |---|---|---|
 | Archive | A refusal from [the limits above](#security-limits). | |
 | `pack.yaml` | Missing; no `name`, `id`, `version` or `license`; `types` lists a part with no YAML. | No `types`; a YAML it doesn't list. |
-| Accessory types | No `name`; a `kind` other than `plug`, `transceiver`, `cord`, `blanking`, `cable-manager` or `shelf`; no usable `fits` (a rack part: no `u_height` of 1 to 10); `model3d.file` missing, outside the pack or not a valid `.glb`. | A `fits` entry that isn't a type slug; `parts` not a list, or an entry that isn't a part number; a `wavelength_nm` that isn't a whole number of nm; a `cable:` block that isn't usable (unknown `profile`, no `jacket_mm`, a size that isn't a positive number of mm, a ribbon without a `count` of 2-8 or a `pitch_mm` at least its jacket, a key Danbyte doesn't read), a `min_bend_by_part` entry that isn't a positive size or names a part the accessory doesn't list, or one on a transceiver; a part number two accessory types list; over the triangle budget (a transceiver 1,500, a cord or plug 2,000); a transceiver with a connector but no `port:<connector>` empty; a cord with a `cable:` block but no `cable` empty; a part `types: accessory:` doesn't list. |
-| Rack kits | No `name`; a `frame` other than `cabinet`, `4-post`, `2-post` or `wall-cabinet`; `model3d.file` or `far` missing from the pack or not a valid `.glb`; no `post:segment` in the model. | No far box; over the budget (the kit 20,000 triangles, its far box 2,000); a stretched part without `danbyte_ref_mm`, or a `danbyte_stretch` that isn't `x`, `y`, `z` or a mix; a door without its `hinge` empty; a part name Danbyte doesn't read; a `colours` entry that isn't a hex colour; a kit `types: rack-kit:` doesn't list. |
+| Accessory types | No `name`; a `kind` other than `plug`, `transceiver`, `cord`, `blanking`, `cable-manager` or `shelf`; no usable `fits` (a rack part: no `u_height` of 1 to 10, or 0 for a cable manager); `model3d.file` missing, outside the pack or not a valid `.glb`. | A `fits` entry that isn't a type slug; `parts` not a list, or an entry that isn't a part number; a `wavelength_nm` that isn't a whole number of nm; a `cable:` block that isn't usable (unknown `profile`, no `jacket_mm`, a size that isn't a positive number of mm, a ribbon without a `count` of 2-8 or a `pitch_mm` at least its jacket, a key Danbyte doesn't read), a `min_bend_by_part` entry that isn't a positive size or names a part the accessory doesn't list, or one on a transceiver; a part number two accessory types list; over the triangle budget (a transceiver 1,500, a cord or plug 2,000); a transceiver with a connector but no `port:<connector>` empty; a cord with a `cable:` block but no `cable` empty; a part `types: accessory:` doesn't list. |
+| Rack kits | No `name`; a `frame` other than `cabinet`, `4-post`, `2-post` or `wall-cabinet`; `model3d.file` or `far` missing from the pack or not a valid `.glb`; no `post:segment` in the model. | No far box; over the budget (the kit 20,000 triangles, its far box 2,000); a stretched part without `danbyte_ref_mm`, or a `danbyte_stretch` that isn't `x`, `y`, `z` or a mix; a door without its `hinge` empty; a pathway without its sizes; a part name Danbyte doesn't read; a `colours` entry that isn't a hex colour; a kit `types: rack-kit:` doesn't list. |
 | Rack types | No `manufacturer` or `model`; a `look.kit` that is no kit in the pack (or the tenant). | A `look:` value Danbyte doesn't know; a rack type `types: rack-type:` doesn't list. |
 | Models | Not a valid `.glb`; over the triangle budget (chassis 150,000, far 15,000; module 30,000, far 3,000) or the size budget (8 MB, far 1 MB). | A model no YAML names; no far copy on a chassis or on a module of 5,000 triangles or more. |
 | Names | `bay:` with no module bay in the YAML; `bay:` in a module; `empty:` without its `bay:`; `port:` with no interface or other port (console, power, aux, front or rear port) in the YAML, `led:port:` with no interface (module names with `{module}`, as written); a name twice; an LED not on the `LED` material; the far copy missing a `bay:`, `empty:` or `led:` of the full model. | A module bay without a `bay:`; interfaces without a `port:`. |
@@ -913,10 +913,20 @@ The kit's model holds every part as a named object, modelled in place for a
 | `channel:0u:<left\|right>:<front\|rear>` | An empty: a 0U channel. A side-mounted 0U device (a vertical PDU) is seated on it - its back on the empty, facing the empty's +Z - in place of where Danbyte puts it without a kit. |
 | `pdu:bracket` | A child of a `channel:0u:` empty: the bar a seated 0U device hangs on, drawn behind each one, as long as it. |
 
-Danbyte also knows the pathway names - `path:*`, `entry:*` and `brush:*`
-(the spec's vertical managers, cable entries and brush strips) - and reads
-no warning for them, but doesn't draw them yet; any other name with a `:`
-is noted on import.
+The import also reads the kit's [pathways](racks.md#pathways) (spec §14
+v1.13), stored with the kit (`pathways` on `/api/rack-kits/`) and given to
+every rack built from it:
+
+| Part | What Danbyte records |
+|---|---|
+| `path:vertical:<left\|right>:<front\|rear\|full>` | A vertical manager or channel on that side and face, the rack's full height. Its child empty `path` gives `danbyte_inner_w` / `danbyte_inner_d` (mm) and `danbyte_kind` (`finger`, `d-ring`, `channel`, `lacing`). Per side the rear one is installed, else full depth, else front; the others are add-ons a rack can show. |
+| `entry:<top\|bottom\|side>:<name>` | A cable entry: `danbyte_w` / `danbyte_h` (mm) and `danbyte_kind` (`open`, `brush`, `gland`, `sealed`), with its place across and back as a share of the roof or base it is a child of. A rack takes the entries of the roof and base its Look draws. |
+| `channel:0u:<left\|right>:<front\|rear>` | A 0U channel: `danbyte_depth` (mm behind the front rail), `danbyte_len_u` (its length at the reference height; a taller rack keeps the units it leaves free) and its lower end above unit 1. |
+
+A `path` without its sizes, or an entry without `danbyte_w` / `danbyte_h`,
+is noted on import and by the checker. The 3D view doesn't draw pathways
+yet; `brush:*` meshes are known and not noted. Any other name with a `:` is
+noted on import.
 
 **How a kit fits a rack.** The import reads the kit's reference rack from
 its `post:segment` (stored as its *fit*): unit 1's height above the floor,
@@ -970,7 +980,8 @@ rack loads it through the rack (`/api/racks/{id}/kit-model/`).
 Rack kits are a tenant's own, like accessory types, under the rack type
 grant: view to list and read them, delete to delete one (its rack types
 and racks then draw Danbyte's rack). There is nothing to edit by hand: a
-re-import replaces them. `GET /api/rack-kits/` lists them (`frame`,
+re-import replaces them, pathways included - a rack's changes to a kit
+pathway stay, the rest follows the new kit. `GET /api/rack-kits/` lists them (`frame`,
 `search`), `GET /api/rack-kits/{id}/model/` serves the parts and
 `?far=1` the far box.
 
@@ -1025,7 +1036,22 @@ Their origin is a device's: the front of the ears. A rack's
 put in from the front: the ears' back on the front rail's face, two empty
 units taking a `BLANK-2U`.
 Cable managers and shelves are imported and listed on the Pluggables page;
-the 3D view doesn't place them yet.
+the 3D view doesn't place them yet. A cable manager's model may carry a
+`path` empty (`danbyte_inner_w`, `danbyte_inner_d`, `danbyte_kind`): its
+inner channel is recorded with it (`pathway` on `/api/accessory-types/`).
+
+A **vertical** cable manager such as `CM-VERT-2POST` is `kind:
+cable-manager` with `u_height: 0`: it takes no units. It is a model a
+rack's or rack type's vertical [pathway](racks.md#pathways) can be (its
+**Model**), which then takes its type and inner size from it.
+
+```yaml
+name: CM-VERT-2POST
+kind: cable-manager
+u_height: 0
+model3d:
+  file: models/Generic/CM-VERT-2POST.glb
+```
 
 ## Importing a pack
 
