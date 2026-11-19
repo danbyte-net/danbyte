@@ -387,11 +387,12 @@ def dashboard_view(request):
         # ── IPAM
         "ip_by_status": lambda: _by(ips, "status_id", "status__name", "status__color"),
         "ip_by_role": lambda: _by(ips, "role_id", "role__name", "role__color"),
-        "ip_by_scope": lambda: _ip_by_scope(ips),
+        "ip_by_scope": lambda: _cached("ip-scope", tenant, ips, lambda: _ip_by_scope(ips)),
         "prefix_by_family": lambda: _prefix_by_family(prefixes),
         "prefix_by_status": lambda: _by(
             prefixes, "status_id", "status__name", "status__color"),
-        "top_prefixes": lambda: _top_prefixes(prefixes),
+        "top_prefixes": lambda: _cached(
+            "top-prefixes", tenant, prefixes, lambda: _top_prefixes(prefixes)),
         # ── DCIM
         "device_by_status": lambda: _by(
             devices, "status_id", "status__name", "status__color"),
@@ -435,23 +436,96 @@ def _prefix_by_family(prefixes) -> list:
 
 
 def _top_prefixes(prefixes) -> list:
-    """The busiest 8 by utilisation, their address counts and statuses read
-    with them (#299), the CIDR breaking ties so the widget keeps its order."""
-    busiest = list(
-        prefixes.select_related("status")
-        .annotate(ipc=Count("ip_addresses"))
-        .order_by("-ipc", "cidr")[:8]
+    """The busiest 8 by address count, their statuses read with them (#299),
+    the CIDR breaking ties so the widget keeps its order.
+
+    Counted from the addresses' side - one pass over the prefix column of
+    the tenant's IPs - instead of every prefix joined to its addresses and
+    grouped with all its columns (#535)."""
+    counts = (
+        IPAddress.objects.filter(prefix__in=prefixes.order_by().values("pk"))
+        .order_by()
+        .values("prefix_id")
+        .annotate(n=Count("id"))
+        .values_list("prefix_id", "n")
     )
+    ranked = sorted(counts, key=lambda r: -r[1])
+    if not ranked:
+        return []
+    # Every prefix tied with the eighth, so the CIDR decides among them.
+    floor = ranked[min(7, len(ranked) - 1)][1]
+    n_of = {pk: n for pk, n in ranked if n >= floor}
+    busiest = sorted(
+        Prefix.objects.filter(pk__in=n_of).select_related("status"),
+        key=lambda p: (-n_of[p.pk], p.cidr),
+    )[:8]
     return [
         {
             "id": str(p.id),
             "cidr": p.cidr,
-            "ip_count": p.ipc,
-            "utilisation_pct": p.utilisation_with(p.ipc),
+            "ip_count": n_of[p.pk],
+            "utilisation_pct": p.utilisation_with(n_of[p.pk]),
         }
         for p in busiest
-        if p.ipc
     ]
+
+
+#: How long the tenant-wide IPAM figures (busiest prefixes, IP scopes) are
+#: kept (#535). A save or delete of a prefix or an address in the tenant
+#: starts them over at once (``api.signals``); a bulk write that skips the
+#: model's signals shows within this many seconds.
+SUMMARY_TTL = 300
+
+
+def _summary_gen_key(tenant_id) -> str:
+    return f"dashboard:summary-gen:{tenant_id}"
+
+
+def bump_summary(tenant_id) -> None:
+    """Start the tenant's cached dashboard figures over."""
+    from django.core.cache import cache
+
+    if tenant_id is None:
+        return
+    key = _summary_gen_key(tenant_id)
+    try:
+        try:
+            cache.incr(key)
+        except ValueError:
+            cache.set(key, 1, None)
+    except Exception:  # noqa: BLE001 - a cache outage must not fail a save
+        pass
+
+
+def _cached(name: str, tenant, qs, compute):
+    """``compute()``, kept ``SUMMARY_TTL`` seconds per tenant and per
+    queryset: the key digests ``qs``'s SQL, which carries the reader's view
+    filter and the dashboard scope, so two readers with different grants
+    never share a figure."""
+    import hashlib
+
+    from django.core.cache import cache
+    from django.core.exceptions import EmptyResultSet
+
+    try:
+        sql, params = qs.query.sql_with_params()
+    except EmptyResultSet:
+        return compute()
+    try:
+        gen = cache.get(_summary_gen_key(tenant.pk), 0)
+        digest = hashlib.sha256(f"{sql}|{params!r}".encode()).hexdigest()
+        key = f"dashboard:{name}:{tenant.pk}:{gen}:{digest}"
+        hit = cache.get(key)
+    except Exception:  # noqa: BLE001 - no cache: compute
+        return compute()
+    if hit is not None:
+        return hit
+    value = compute()
+    try:
+        cache.set(key, value, SUMMARY_TTL)
+    except Exception:  # noqa: BLE001
+        pass
+    return value
 
 
 def _default_widgets(tenant):

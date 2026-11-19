@@ -18,6 +18,12 @@ The page is a mosaic of tiles:
   prefixes by utilization. The **donut legends and bars are clickable** - click a
   slice or bar to jump to that object's list (e.g. a *Devices by type* bar → the
   Devices list).
+
+  *Top prefixes* and *IPs by scope* count every address in the tenant, so
+  the server keeps them for up to **5 minutes** per tenant and per reader's
+  access and scope. Adding, editing or deleting a prefix or an address
+  shows at once; an import or bulk change that writes addresses directly
+  can take up to those 5 minutes to show.
 - **Map widgets** - a live **OSM map** of your sites/devices/cables, and a
   **Floor plan** widget that renders one of your floor plans read-only with live
   tile status (monitoring rings + rack utilisation), each linking to its full

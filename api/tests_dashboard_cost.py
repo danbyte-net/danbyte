@@ -145,3 +145,87 @@ class DashboardCostTests(APITestCase):
         r = self.client.get("/api/dashboard/?include=recent_ips,nope")
         self.assertEqual(r.status_code, 400)
         self.assertIn("nope", str(r.json()["include"]))
+
+
+class DashboardSummaryTests(APITestCase):
+    """The busiest prefixes are counted from the addresses' side, and the
+    tenant-wide IPAM figures are kept a few minutes per tenant and per
+    reader's scope, started over by any prefix or address write (#535)."""
+
+    URL = "/api/dashboard/?include=top_prefixes,ip_by_scope"
+
+    def setUp(self):
+        org = Organization.objects.create(name="Acme", slug="acme")
+        self.tenant = Tenant.objects.create(org=org, name="Acme", slug="acme")
+        self.other = Tenant.objects.create(org=org, name="Other", slug="other")
+        self.site_a = Site.objects.create(tenant=self.tenant, name="A")
+        self.site_b = Site.objects.create(tenant=self.tenant, name="B")
+        for i, n in enumerate([5, 3, 3, 3, 3, 3, 3, 3, 3, 1, 0]):
+            p = Prefix.objects.create(
+                tenant=self.tenant, cidr=f"10.{20 - i}.0.0/24",
+                site=self.site_a if i % 2 else self.site_b)
+            for h in range(n):
+                IPAddress.objects.create(
+                    tenant=self.tenant, ip_address=f"10.{20 - i}.0.{h + 1}", prefix=p,
+                    site=p.site)
+        theirs = Prefix.objects.create(tenant=self.other, cidr="10.99.0.0/24")
+        for h in range(9):
+            IPAddress.objects.create(tenant=self.other, ip_address=f"10.99.0.{h + 1}",
+                                     prefix=theirs)
+        self.admin = User.objects.create_superuser("admin", "a@example.com", "x")
+        self._login(self.admin)
+
+    def _login(self, user):
+        self.client.force_login(user)
+        s = self.client.session
+        s["current_tenant_id"] = str(self.tenant.id)
+        s.save()
+
+    def _body(self):
+        r = self.client.get(self.URL)
+        self.assertEqual(r.status_code, 200, r.content)
+        return r.json()
+
+    def test_top_prefixes_match_the_joined_count(self):
+        from django.db.models import Count
+
+        want = [
+            {"cidr": p.cidr, "ip_count": p.ipc}
+            for p in Prefix.objects.filter(tenant=self.tenant)
+            .annotate(ipc=Count("ip_addresses")).order_by("-ipc", "cidr")[:8] if p.ipc
+        ]
+        got = [{"cidr": r["cidr"], "ip_count": r["ip_count"]}
+               for r in self._body()["top_prefixes"]]
+        self.assertEqual(got, want)
+        self.assertEqual(got[0], {"cidr": "10.20.0.0/24", "ip_count": 5})
+
+    def test_figures_are_kept_and_start_over_on_a_write(self):
+        first = self._body()
+        with CaptureQueriesContext(connection) as ctx:
+            self.assertEqual(self._body()["top_prefixes"], first["top_prefixes"])
+        self.assertFalse([q for q in ctx.captured_queries
+                          if 'GROUP BY "api_ipaddress"."prefix_id"' in q["sql"]])
+        p = Prefix.objects.get(tenant=self.tenant, cidr="10.11.0.0/24")
+        for h in range(7):
+            IPAddress.objects.create(
+                tenant=self.tenant, ip_address=f"10.11.0.{h + 10}", prefix=p)
+        top = self._body()["top_prefixes"][0]
+        self.assertEqual((top["cidr"], top["ip_count"]), ("10.11.0.0/24", 8))
+
+    def test_a_site_reader_never_gets_the_tenant_figures(self):
+        from auth_api.api import assemble_site_role
+        from auth_api.models import UserProfile
+
+        admin_view = self._body()
+        user = User.objects.create_user("viewer", password="x")
+        UserProfile.objects.create(user=user).tenants.add(self.tenant)
+        assemble_site_role(self.tenant, "viewer", [self.site_a], user_ids=[user.id])
+        self._login(user)
+        mine = self._body()
+        self.assertNotEqual(mine["top_prefixes"], admin_view["top_prefixes"])
+        cidrs = {r["cidr"] for r in mine["top_prefixes"]}
+        site_a = set(Prefix.objects.filter(site=self.site_a).values_list("cidr", flat=True))
+        self.assertTrue(cidrs)
+        self.assertLessEqual(cidrs, site_a)
+        total = sum(r["count"] for r in mine["ip_by_scope"])
+        self.assertEqual(total, IPAddress.objects.filter(site=self.site_a).count())

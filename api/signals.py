@@ -2,12 +2,13 @@
 
 Nothing here implements product behaviour - each receiver exists because a
 constraint the schema deliberately enforces would otherwise make an ordinary
-operation impossible.
+operation impossible - and the one cache the dashboard keeps (#535) is
+started over when what it counts changes.
 """
 
 import logging
 
-from django.db.models.signals import post_delete, pre_delete
+from django.db.models.signals import post_delete, post_save, pre_delete
 from django.dispatch import receiver
 
 log = logging.getLogger(__name__)
@@ -143,3 +144,15 @@ def delete_base_map_file(sender, instance, **kwargs):
             pass
 
     transaction.on_commit(go)
+
+
+@receiver(post_save, sender="api.Prefix", dispatch_uid="api.dashboard_prefix_saved")
+@receiver(post_delete, sender="api.Prefix", dispatch_uid="api.dashboard_prefix_deleted")
+@receiver(post_save, sender="api.IPAddress", dispatch_uid="api.dashboard_ip_saved")
+@receiver(post_delete, sender="api.IPAddress", dispatch_uid="api.dashboard_ip_deleted")
+def _dashboard_figures_stale(sender, instance, **kwargs):
+    """A prefix or address changed: the tenant's cached dashboard figures
+    start over (#535)."""
+    from .dashboard_views import bump_summary
+
+    bump_summary(getattr(instance, "tenant_id", None))
