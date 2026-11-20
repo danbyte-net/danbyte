@@ -36,9 +36,10 @@ ones it made are tracked in the snapshot by URL),
 ``summary`` becomes an empty description, and the whole block is kept in
 the snapshot. The Markdown links in ``comments`` (api.description_links)
 join ``meta.links`` as link Documents, and a description still holding
-those comments word for word becomes their plain text. Devices are never
-changed: the report counts the devices that are out of step, which the
-type's Sync devices brings in line.
+those comments word for word becomes their plain text. Devices are not
+changed, except where a removed port became a module bay
+(api.model_pack_bays): the report counts the devices that are out of step,
+which the type's Sync devices brings in line.
 
 Everything here writes through ordinary saves, so the change log records
 it with the import's cause; a dry run is the same work rolled back.
@@ -207,6 +208,8 @@ class Report:
     removed: int = 0
     kept: int = 0
     _groups: dict = field(default_factory=dict)
+    #: The templates removed, ``{kind key: {name: values}}`` (api.model_pack_bays).
+    removed_rows: dict = field(default_factory=dict)
 
     def add(self, op: str, noun: str, name: str, detail: str = ""):
         """``op``: added, updated, removed, or one of the ways a thing is
@@ -495,6 +498,9 @@ def sync_templates(owner, data: dict, state, *, module: bool, overwrite: bool,
             report.add("used", kind.noun, t.name)
     for kind, t in candidates:
         if t.pk in leaving:
+            report.removed_rows.setdefault(kind.key, {})[t.name] = {
+                **{a: _current(t, kind, a) for a in kind.fields},
+                "description": t.description or ""}
             t.delete()
             report.add("removed", kind.noun, t.name)
             ever.get(kind.key, set()).discard(t.name)
@@ -597,6 +603,7 @@ LINK_KINDS = {
     "eol-listing": ("EoL listing", "End-of-life notices"),
     "support": ("Support", "Support"),
     "software": ("Software", "Software"),
+    "white-paper": ("White paper", "White paper"),
     "other": ("Other", "Link"),
 }
 MAX_LINKS = 32
@@ -885,6 +892,11 @@ def update_type(obj, data: dict, *, kind: str, pack: dict, overwrite: bool = Fal
                                     else None, module=module, overwrite=overwrite,
                                     report=report, ever=ever)
     notes += bad
+    if not module and report.removed_rows:
+        # A port that became a module bay: its devices follow it.
+        from .model_pack_bays import convert
+
+        notes += convert(obj, report.removed_rows, pack=pack)
     built = devices_notes(obj, module=module, report=report)
     meta = meta_block(data) or {}
     record = {"pack": pack, "templates": templates}

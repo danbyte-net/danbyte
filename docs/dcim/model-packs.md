@@ -1280,11 +1280,73 @@ record at all, Update from pack updates values and adds what is missing,
 removes nothing, and says so (*no earlier pack record: nothing removed*).
 Documents added or edited here are still left alone.
 
-The import never changes a device. The report counts the devices of a type
+The import doesn't change a device, with one exception: a port that becomes
+a module bay (next section). The report counts the devices of a type
 whose components no longer match its templates (*devices: 3 of 5 out of
 step*); the type's **Sync devices** adds and removes their components.
 Existing components keep the values they were made with, and an installed
 module keeps the ports it was stamped with.
+
+### A port that becomes a module bay {#port-to-module-bay}
+
+A pack can move a fixed port into a module: a C9300L's `StackPort1/1` and
+`StackPort1/2` interfaces become two bays of those names that take
+`C9300L-STACK-KIT` or `C9300L-STACK-KIT2`, whose `StackPort{module}`
+renders to the same name in the bay at position `1/1`. The C9200 already
+works this way with `C9200-STACK-KIT`. When a re-import removes an
+interface or power port template **and** the type has a bay whose module
+list names a module type of the tenant (by part number) that, installed in
+that bay, makes a port of exactly that name, the import carries the type's
+devices over, in the same transaction:
+
+- **The bay.** Every device of the type gets the bay, when it has none of
+  that name, as a new device of the type would.
+- **A port in use moves onto a module.** A module of a matching type is
+  installed in the bay and the device's existing port becomes that
+  module's port: the same row, so its cables, stack links, IP addresses,
+  history and monitoring stay. No second port is made. A field that still
+  holds what the removed template gave takes the module template's value
+  (`cisco-stackwise` becomes `cisco-stackwise-320`); a field changed here
+  keeps its value. The module's description says the pack update added it.
+- **A port not in use stays.** Nothing is installed that the switch may not
+  have, and nothing is deleted. The report lists them (*kept 4 interfaces
+  StackPort1/1, StackPort1/2 on 2 devices, not in use - install a module in
+  the bay or delete them*). Installing a kit in the bay can
+  [adopt](device-catalog.md#adopting-existing-components) a port of the
+  kit's type; **Sync devices** removes it.
+- A bay that already holds a module, or whose module would clash with
+  another port of the device, is left alone and reported.
+
+A port is **in use** when it has a cable (recorded, auto-connected by its
+stack, or marked connected); when its device is a member of a stack and the
+port is a stack port (the [derived ring](virtual-chassis.md#in-3d) runs
+through it); when anything points at it (an IP or MAC address, a LAG,
+bridge or sub-interface member, a transceiver, a reservation, a power
+outlet, a routing or monitoring record); when it has its own VLAN, VRF, LAG,
+bridge, parent or MACsec setting, or tags; or when it was edited here (a
+label, a custom field value, a description other than its template's).
+
+**Which module.** A bay that takes several module types gets the first in
+its list whose port has the port's own type, else the type of the port at
+the cable's other end, else a type of its stacking family
+(`cisco-stackwise` covers `cisco-stackwise-480`, `-320`, `-80`, …), else
+the first in the list. The two C9300L kits have the same port, so a
+C9300L gets `C9300L-STACK-KIT`.
+
+The dry run reports it per type:
+
+```text
+- devices: added module bays StackPort1/1, StackPort1/2 to 4 devices: …
+- devices: installed 4 C9200L-STACK-KIT modules in StackPort1/1, StackPort1/2
+  on 2 devices, each holding the existing port it replaces: …
+- devices: moved 4 interfaces onto the modules - cables, stack links and history stay
+- devices: kept 4 interfaces StackPort1/1, StackPort1/2 on 2 devices, not in use - …
+```
+
+Every change is an ordinary save in the change log with the pack as its
+cause, in the importing tenant only. A second import removes no template
+and does nothing here. A type whose template was removed by an earlier
+import is not revisited: install the kit by hand and adopt the port.
 
 The dry run (the app's check, or the command without `--apply`) shows each
 type's changes in its notes, grouped: *added 2 power ports: StackPower1/A,
@@ -1340,7 +1402,8 @@ links only there; its next import creates the documents.
 - **Links.** One link document per URL, named by its `title` (or by its
   kind: *Data sheet*, *Installation guide*, …), in a category by its kind:
   *Datasheet*, *Install guide*, *Config guide*, *Product page*, *EoL
-  notice*, *EoL listing*, *Support*, *Software*, *Other*. A category is
+  notice*, *EoL listing*, *Support*, *Software*, *White paper*
+  (`white-paper`), *Other*. A category is
   created in the tenant the first time a link needs it, or one of yours of
   the same name is used; it is an ordinary, editable category. A
   re-import renames a document it made when the title changes and removes
