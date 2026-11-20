@@ -201,6 +201,7 @@ from .io_views import (
 )
 from .lifecycle_list import LifecycleViewSet
 from .inventory_list import InventoryViewSet
+from .reports.kinds.inventory import inventory_report_file_view, inventory_report_view
 from .list_fields import list_fields_view
 from .mac_bulk import mac_bulk_remove_view, mac_object_bulk_delete_view
 from .mac_views import MacListViewSet, mac_detail_view
@@ -697,6 +698,9 @@ urlpatterns = [
          name="inventory-table-ids"),
     path("inventory/counts/", InventoryViewSet.as_view({"get": "counts"}),
          name="inventory-counts"),
+    path("inventory/report/", inventory_report_view, name="inventory-report"),
+    path("inventory/report/<str:token>/", inventory_report_file_view,
+         name="inventory-report-file"),
     # The Counts view's rail: the same rows, so the same facets.
     path("inventory/counts/facets/", InventoryViewSet.as_view({"get": "table_facets"}),
          name="inventory-counts-facets"),

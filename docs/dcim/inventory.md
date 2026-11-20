@@ -14,6 +14,12 @@ cores). A part can sit under another part, one level deep.
 Add one with **Add → Inventory part** on the device page. A `[1-5]` range in
 the name adds one part per number, as on the other component dialogs.
 
+A part need not be on a device: it can be **in stock** at a site and
+location, with a status such as In Stock, RMA or Scrapped, and move between
+devices and stock keeping its serial and history. See
+[Inventory & stock](stock.md), which also covers the **Inventory** page and
+the inventory report.
+
 ## Transceivers
 
 An inventory item of kind **Transceiver** can record the port it sits in:
@@ -54,16 +60,21 @@ another type or bay keeps its interfaces, and with them their transceivers.
 On an interface of a pluggable type, the Overview's **Interface** card has a
 **Transceiver** row: the part ID, serial and standard of the optic in it.
 
-- **Set** opens a dialog that either picks one of the device's spare
-  transceivers (**From inventory**) or creates one in place (**New**: name,
-  part ID, serial, standard, connector, wavelength, reach). It opens on
-  **New** when the device has no spare ones. In **New**, **Pluggable** picks
+- **Set** opens a dialog that picks one of the device's spare transceivers
+  (**On this device**), one from the stock pool that fits the port (**From
+  stock**, the device's site first - see [Installing from
+  stock](stock.md#installing-from-stock)), or creates one in place (**New**:
+  name, part ID, serial, standard, connector, wavelength, reach). With no
+  spare ones on the device it opens on **From stock**, or on **New** when
+  stock has none either. In **New**, **Pluggable** picks
   a transceiver from [Pluggables](pluggables.md) - those that fit the port
   first - and fills in its part number, standard, connector, wavelength and
   reach, so only the serial is left to type.
 - **Change** does the same for a port that has one; the old one comes out
   and stays in the inventory.
-- **Remove** takes it out of the port. The item stays on the device.
+- **Remove** asks where it goes: **Move to stock** (the default, at a site
+  and location), **Keep on device** as a spare, or **Scrap / RMA**. See
+  [Removing a part](stock.md#removing-a-part).
 
 The device's inventory form shows **Port**, **Standard**, **Connector**,
 **Wavelength** and **Reach** for a transceiver, so a part can be seated from
@@ -99,11 +110,13 @@ written as `interface_id`), `standard`, `wavelength_nm`, `reach_m`,
 `connector`, and `accessory_type` (`{id, vendor, name}`, written as
 `accessory_type_id`). Read only: `pluggable` (`{id, vendor, name}`, a
 transceiver's part - set by hand, else matched by part ID - or null) and
-`site` (the device's, `{id, name}`); in the list, `interface` also carries
+`site` (the device's, else the stock site, `{id, name}`), `home` (`port`,
+`device` or `stock`), `location` and `module_type`; in the list, `interface` also carries
 `cabled` (a cable ends on the port, or it is marked connected). The list
 takes `kind=transceiver`, `in_port=true|false`, `site`, `part` (part ID
 contains), `standard` (exact, any case) and `cabled=true|false` beside
-`device`; `search` also matches the serial, part ID and asset tag. Bulk edit sets `standard`,
+`device`, and the stock pool's `home`, `location`, `status`, `fits` and
+`near_site` ([API](stock.md#api)); `search` also matches the serial, part ID and asset tag. Bulk edit sets `standard`,
 `connector`, `wavelength_nm` and `reach_m`. An interface's read carries
 `transceiver`: `{id, name, part_id, serial_number, standard}`, or null - also
 null for a reader who may not view the item.
@@ -111,7 +124,8 @@ null for a reader who may not view the item.
 ## Transceivers list
 
 **DCIM → Transceivers** lists every inventory item of kind transceiver in
-the tenant, in a port or spare: part ID, serial, standard, device, port,
+the tenant, in a port, spare on a device, or in stock (its Device reads *In
+stock*): part ID, serial, standard, device, port,
 whether the port is cabled, site and name. It answers "where is serial
 FNS…", "how many SFP-10G-LR are in use" and "which optics are spare".
 

@@ -31,6 +31,7 @@ Manufacturer  →  Device type  →  Device  →  Interfaces  →  Cables
 | See sites and links on a world map | **Maps → Site map** | [Site map](../features/site-map.md) |
 | See what connects to what | **Maps → Topology** | [Topology](../features/topology.md) |
 | Track hardware end-of-life dates | **Lifecycle** | [Hardware lifecycle](../features/lifecycle.md) |
+| Keep spare parts in stock and count them | **Inventory** | [Inventory & stock](stock.md) |
 
 ## How the pieces fit together
 

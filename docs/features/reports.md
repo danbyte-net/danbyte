@@ -20,6 +20,7 @@ adds the topology diagram to the tables of what is on it.
 | The same lists, rows selected | **Export ▸ PDF report…** in the bulk bar | The selected rows |
 | The topology map | **Export ▸ PDF report…** | The view on the map - see [Topology report](#topology-report) |
 | **Topology**, views selected | **PDF report…** in the bulk bar | Each selected saved view |
+| **DCIM → Inventory** | **PDF report…** | The parts the page's filters show - see [Inventory report](../dcim/stock.md#inventory-report) |
 
 **Print** opens the PDF in a new tab for the browser to print;
 **Download** saves it. A large report renders in the background: the button
@@ -269,7 +270,7 @@ share their look and their limits:
 | `divider.py` | [Chapter](#chapters-and-contents) divider pages and banners, in the cover's background |
 | `toc.py` | The [contents page](#contents-page) and the PDF bookmarks |
 | `marking.py` | The [marking](#markings) every page band, the cover and the dividers show |
-| `registry.py` | Report **kinds** (the device, prefix, IP address and topology reports) and their **sections** as plug-ins: each section registers its key, label, the object types it needs view on, its columns and how it is built |
+| `registry.py` | Report **kinds** (the device, prefix, IP address, topology and inventory reports) and their **sections** as plug-ins: each section registers its key, label, the object types it needs view on, its columns and how it is built |
 
 Sections read their rows only through the list endpoints, as you, so a
 report never shows more than the lists do. The floor plan report, cable

@@ -1131,7 +1131,10 @@ The workflow:
    modules already seated.
 3. On the device page's **Hardware** tab, **Install…** a module type into an
    empty bay - its interfaces and power ports appear on the device (and its
-   faceplate) instantly. **Remove** takes exactly those away again.
+   faceplate) instantly. **Remove** takes exactly those away again, and asks
+   where the module goes: to stock, kept on the device as a part, out as
+   scrap or RMA, or deleted. **Install…** can also take a module **From
+   stock**. See [Inventory & stock](stock.md).
 
 A module **owns** the interfaces and power ports it creates (`module_id` on
 each interface and power port in the API; null for the device's own ports).
@@ -1143,7 +1146,8 @@ module does. Power ports follow every rule below exactly as interfaces do:
   [adopt them](#adopting-existing-components). The refusal names them and
   says which can be adopted.
 - **Remove** deletes the module's own interfaces and power ports and nothing
-  else, with the usual delete rules: a cable left with no port on that end
+  else - whether the module itself goes to [stock](stock.md#removing-a-part)
+  with its serial or is deleted - with the usual delete rules: a cable left with no port on that end
   is removed (see [Cabling](cabling.md)) and IP addresses stay, unassigned.
 - **Deleting a module bay** removes its module the same way, as does deleting
   the device.

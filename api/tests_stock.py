@@ -480,3 +480,76 @@ class SiteScopeTests(_Base):
                                {"site_id": str(self.ams.id)}, format="json")
         self.assertEqual(res.status_code, 403)
         self.assertTrue(Module.objects.filter(pk=module.pk).exists())
+
+
+# ── the inventory report ────────────────────────────────────────────────────
+
+class InventoryReportTests(_Base):
+    URL = "/api/inventory/report/"
+
+    def setUp(self):
+        super().setUp()
+        self._optic(None, site=self.ams, location=self.box, name="a",
+                    serial_number="SER-A", status=self._status("in_stock"))
+        self._optic(None, site=self.ams, location=self.box, name="b",
+                    serial_number="SER-B", status=self._status("in_stock"))
+        self._optic(self.sw2, name="c", serial_number="SER-C")
+
+    def _build(self, **body):
+        from types import SimpleNamespace
+
+        from .reports.kinds import inventory as inv
+
+        ser = inv.InventoryReportRequestSerializer(data=body)
+        ser.is_valid(raise_exception=True)
+        data = dict(ser.validated_data)
+        data["options"] = dict(data["options"])
+        request = SimpleNamespace(user=self.su, query_params={})
+        report = inv.build(request, data, self.tenant)
+        return report, inv.page_html(request, data, self.tenant, report)
+
+    def test_describe_and_estimate(self):
+        res = self.client.get(self.URL)
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual([s["key"] for s in res.json()["sections"]],
+                         ["totals", "counts", "items"])
+        res = self.client.post(f"{self.URL}?estimate=1", {"filters": {"f_home": "stock"}},
+                               format="json")
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual((res.json()["rows"], res.json()["mode"]), (2, "now"))
+
+    def test_scope_counts_and_appendix(self):
+        report, html = self._build(filters={"f_site": str(self.ams.id)})
+        self.assertEqual(report["total"], 2)
+        self.assertIn("SER-A", html)
+        self.assertNotIn("SER-C", html)
+        self.assertIn("In Stock", html)
+        self.assertIn("Counts per part", html)
+        # The header names the filter, not its id.
+        self.assertIn("AMS", html)
+        self.assertNotIn(str(self.ams.id), html)
+        _report, html = self._build(filters={}, sections=["totals"])
+        self.assertNotIn("SER-A", html)
+
+    def test_unknown_filter_is_400(self):
+        res = self.client.post(f"{self.URL}?estimate=1", {"filters": {"device": "x"}},
+                               format="json")
+        self.assertEqual(res.status_code, 400)
+
+    def test_reader_scope(self):
+        user = User.objects.create_user("r", password="x")
+        self._login(user)
+        self.assertEqual(self.client.get(self.URL).status_code, 403)
+        p = ObjectPermission.objects.create(name="v", object_types=["inventoryitem"],
+                                            actions=["view"])
+        p.users.add(user)
+        p.tenants.add(self.tenant)
+        p.sites.set([self.lon])
+        res = self.client.post(f"{self.URL}?estimate=1", {}, format="json")
+        self.assertEqual(res.json()["rows"], 1)
+
+    def test_pdf(self):
+        res = self.client.post(self.URL, {"options": {"cover": True}}, format="json")
+        self.assertEqual(res.status_code, 200, getattr(res, "data", res.content[:200]))
+        self.assertEqual(res["Content-Type"], "application/pdf")
+        self.assertTrue(res.content.startswith(b"%PDF"))

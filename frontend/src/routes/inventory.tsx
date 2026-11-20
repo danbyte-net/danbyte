@@ -9,6 +9,7 @@ import { DataTable } from "@/components/data-table"
 import { ListPageShell } from "@/components/list-page-shell"
 import { SegmentedTabs } from "@/components/segmented-tabs"
 import { wireFacetColumns } from "@/components/table-filters"
+import { InventoryReportButton } from "@/components/inventory-report-dialog"
 import {
   buildInventoryColumns,
   buildInventoryCountColumns,
@@ -92,7 +93,12 @@ function InventoryItems({
         onChange: setSearch,
         placeholder: "Filter by serial, part, device…",
       }}
-      actions={viewSwitch}
+      actions={
+        <>
+          {viewSwitch}
+          <InventoryReportButton params={list.filterParams} />
+        </>
+      }
       query={list.query}
     >
       <DataTable
@@ -139,7 +145,12 @@ function InventoryCounts({ viewSwitch }: { viewSwitch: ReactNode }) {
         onChange: setSearch,
         placeholder: "Filter by serial, part, device…",
       }}
-      actions={viewSwitch}
+      actions={
+        <>
+          {viewSwitch}
+          <InventoryReportButton params={list.filterParams} />
+        </>
+      }
       query={list.query}
     >
       <DataTable
