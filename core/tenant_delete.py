@@ -32,6 +32,49 @@ logger = logging.getLogger("danbyte.tenant")
 _MAX_PASSES = 500
 
 
+def _null_colliders():
+    """Models whose rows can collide while a tenant is torn down: the tenant
+    owns them, and a unique constraint includes a foreign key that is set to
+    NULL when its target goes. Two VLANs with the same id in two sites both
+    become site-less when the sites are deleted first, and the constraint
+    (NULLs not distinct) then refuses the teardown."""
+    from django.apps import apps
+    from django.db import models
+
+    out = []
+    for model in apps.get_models():
+        fields = {f.name: f for f in model._meta.concrete_fields}
+        owner = fields.get("tenant")
+        if owner is None or not owner.is_relation:
+            continue
+        nulled = {
+            name for name, f in fields.items()
+            if f.is_relation and f.remote_field.on_delete is models.SET_NULL
+        }
+        if not nulled:
+            continue
+        unique = [set(c.fields) for c in model._meta.constraints
+                  if isinstance(c, models.UniqueConstraint)]
+        unique += [set(group) for group in model._meta.unique_together]
+        if any(group & nulled for group in unique):
+            out.append(model)
+    return out
+
+
+def _delete_null_colliders(tenant) -> int:
+    """Delete the tenant's rows of those models before anything they point
+    at. What is still protected stays for the passes below."""
+    total = 0
+    for model in _null_colliders():
+        try:
+            with transaction.atomic():
+                deleted, _ = model._default_manager.filter(tenant=tenant).delete()
+            total += deleted
+        except ProtectedError:
+            continue
+    return total
+
+
 def force_delete_tenant(tenant) -> int:
     """Delete ``tenant`` and all of its data, cascading through PROTECT.
 
@@ -45,6 +88,7 @@ def force_delete_tenant(tenant) -> int:
     # same transaction removes - the deferred foreign key then fails at COMMIT
     # and the whole deletion rolls back (#37).
     with audit_suspended(), transaction.atomic():
+        total += _delete_null_colliders(tenant)
         for _ in range(_MAX_PASSES):
             try:
                 deleted, _ = tenant.delete()

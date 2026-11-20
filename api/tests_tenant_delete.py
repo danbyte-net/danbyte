@@ -56,6 +56,26 @@ class TenantForceDeleteTests(APITestCase):
             VirtualizationSource.objects.filter(tenant_id=self.tenant.id).exists()
         )
 
+    def test_the_same_vlan_id_in_two_sites(self):
+        """Deleting the sites first set both VLANs' site to NULL, and the
+        (tenant, site, id) constraint - NULLs not distinct - refused the
+        whole teardown with a 409."""
+        from api.models import VLAN, Site
+
+        a = Site.objects.create(tenant=self.tenant, name="A")
+        b = Site.objects.create(tenant=self.tenant, name="B")
+        VLAN.objects.create(tenant=self.tenant, site=a, vlan_id=100, name="users-a")
+        VLAN.objects.create(tenant=self.tenant, site=b, vlan_id=100, name="users-b")
+        other = Tenant.objects.create(org=self.org, name="Kept", slug="kept")
+        kept = VLAN.objects.create(tenant=other, vlan_id=100, name="users")
+
+        r = self.client.delete(f"/api/tenants/{self.tenant.id}/")
+
+        self.assertEqual(r.status_code, 204, r.content)
+        self.assertFalse(Tenant.objects.filter(pk=self.tenant.pk).exists())
+        self.assertFalse(VLAN.objects.filter(tenant_id=self.tenant.id).exists())
+        self.assertTrue(VLAN.objects.filter(pk=kept.pk).exists())
+
     def test_audit_logging_resumes_after_a_tenant_delete(self):
         """The suspension is scoped - an ordinary edit is still recorded."""
         from audit.models import ChangeLogEntry
