@@ -1,6 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { rackMountSummary } from "@/lib/rack-mount"
 import { useUrlTab } from "@/lib/use-url-tab"
+import { plainDescription } from "@/lib/description-links"
 import { useQuery } from "@tanstack/react-query"
 import { useCallback, useState } from "react"
 
@@ -178,7 +179,7 @@ function Body({ deviceType: d }: { deviceType: DeviceType }) {
               <TagList tags={d.tags} listTo="/device-types" />
             )
           }
-          description={d.description}
+          description={plainDescription(d.description)}
         />
       }
       tabs={[

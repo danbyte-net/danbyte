@@ -6,6 +6,7 @@ import { toast } from "sonner"
 
 import { api, type ModuleType } from "@/lib/api"
 import { apiAll } from "@/lib/api-all"
+import { plainDescription } from "@/lib/description-links"
 import { Button } from "@/components/ui/button"
 import {
   AlertDialog,
@@ -191,7 +192,7 @@ function buildColumns({
       header: "Description",
       cell: ({ row }) => (
         <span className="line-clamp-1 block text-muted-foreground">
-          {row.original.description || "-"}
+          {plainDescription(row.original.description) || "-"}
         </span>
       ),
     },

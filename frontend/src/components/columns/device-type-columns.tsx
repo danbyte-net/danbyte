@@ -3,6 +3,7 @@ import { Link } from "@tanstack/react-router"
 
 import type { DeviceType } from "@/lib/api"
 import { deviceTypeLabel } from "@/lib/device-type-label"
+import { plainDescription } from "@/lib/description-links"
 import { Badge } from "@/components/ui/badge"
 import { SortHeader, selectionColumn } from "@/components/data-table"
 import { LocalityBadge } from "@/components/locality-badge"
@@ -288,7 +289,7 @@ export function buildDeviceTypeColumns<T extends DeviceType = DeviceType>(
       header: "Description",
       cell: ({ row }) => (
         <span className="line-clamp-1 block text-muted-foreground">
-          {row.original.description || "-"}
+          {plainDescription(row.original.description) || "-"}
         </span>
       ),
     }),

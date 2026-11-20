@@ -1,6 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { CustomFieldValues } from "@/components/custom-field-display"
 import { useUrlTab } from "@/lib/use-url-tab"
+import { plainDescription } from "@/lib/description-links"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Pencil, Plus, Trash2 } from "lucide-react"
 import { useCallback, useEffect, useState } from "react"
@@ -124,7 +125,12 @@ function Body({ moduleType: m }: { moduleType: ModuleType }) {
           <DeleteButton onClick={() => setDeleting(m)} />
         )
       }
-      hero={<DetailHero title={m.name} description={m.description} />}
+      hero={
+        <DetailHero
+          title={m.name}
+          description={plainDescription(m.description)}
+        />
+      }
       tabs={[
         {
           value: "overview",
