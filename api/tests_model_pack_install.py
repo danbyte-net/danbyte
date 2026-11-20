@@ -344,6 +344,15 @@ class CheckerTests(SimpleTestCase):
         self.p.write(".DS_Store", b"x")
         self.assertTrue(self.check().ok)
 
+    def test_the_working_folders_extras_are_ignored(self):
+        self.p.write("release/sources/Acme/X.blend", b"x")
+        self.p.write("release/models/Acme/X.hq.glb", b"x")
+        self.p.write("report/overview.png", b"x")
+        rep = self.check()
+        self.assertTrue(rep.ok)
+        self.assertNotIn("release/", str(rep.findings))
+        self.assertNotIn("report/", str(rep.findings))
+
 
 class CheckCommandTests(SimpleTestCase):
     def setUp(self):
@@ -403,6 +412,9 @@ class ZipRefusalTests(SimpleTestCase):
         self.assertRefused([("p/run.py", "x")], "not a file a pack holds")
         self.assertRefused([("p/models/inner.zip", "x")], "not a file a pack holds")
         self.assertEqual(self.refusals([("__MACOSX/._x.glb", "x"), ("p/.DS_Store", "x")]), [])
+        self.assertEqual(self.refusals([("p/release/sources/x.blend", "x"),
+                                        ("release/sources/x.blend", "x"),
+                                        ("p/report/notes.txt", "x")]), [])
 
     def test_duplicates_and_encryption(self):
         with warnings.catch_warnings():

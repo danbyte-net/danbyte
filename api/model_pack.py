@@ -83,6 +83,9 @@ MAX_RATIO = 200
 MAX_MD_BYTES = 1024 * 1024
 #: Junk an archiver or a file manager adds; never read, so not refused.
 _JUNK = ("__MACOSX/",)
+#: A working folder's own extras beside the pack: website and source files
+#: (``release/``) and the author's report (``report/``). Not part of a pack.
+_EXTRAS = ("release/", "report/")
 
 
 class PackRefused(ValidationError):
@@ -91,8 +94,10 @@ class PackRefused(ValidationError):
 
 def _ignored(rel: str) -> bool:
     """A hidden file or folder (``.DS_Store``, ``.git/``) or archiver junk:
-    never read, so neither listed nor refused."""
-    return rel.startswith(_JUNK) or any(part.startswith(".") for part in rel.split("/"))
+    never read, so neither listed nor refused. So are the working folder's
+    ``release/`` and ``report/``."""
+    return (rel.startswith(_JUNK) or rel.startswith(_EXTRAS)
+            or any(part.startswith(".") for part in rel.split("/")))
 
 
 def member_cap(rel: str) -> int:
@@ -141,7 +146,8 @@ def zip_refusals(zf: zipfile.ZipFile) -> list[str]:
         if rel is None or rel != raw or "//" in name:
             out.append(f"{name}: the path leaves the pack.")
             continue
-        if info.is_dir() or _ignored(rel):
+        # In an archive the pack may sit in one top folder.
+        if info.is_dir() or _ignored(rel) or rel.partition("/")[2].startswith(_EXTRAS):
             continue
         if info.flag_bits & 0x1:
             out.append(f"{name}: encrypted.")

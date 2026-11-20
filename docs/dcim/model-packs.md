@@ -598,7 +598,7 @@ as an upload. The archive is refused as a whole when:
 - an entry is a symbolic link or another non-regular file, is encrypted, or
   is in the archive twice;
 - a file isn't one a pack holds: `.yaml`, `.yml`, `.glb`, `.webp`, `.png`
-  or `.md` (hidden files and `__MACOSX/` are ignored, never read);
+  or `.md` (hidden files, `__MACOSX/` and a working folder's `release/` and `report/` are ignored, never read);
 - a file is over its cap: a model over
   [`DEVICE_MODEL_MAX_BYTES`](../reference/settings.md#device-3d-models-device_model_max_bytes),
   an image over 8 MB, a YAML over 2 MB, a Markdown file over 1 MB;

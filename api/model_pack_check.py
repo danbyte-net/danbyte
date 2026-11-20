@@ -599,8 +599,10 @@ class _Checker:
             _fmt, size, img_bytes = got
             if face != "iso":
                 if expect is None:
-                    self.add("error", rel, "The type has no rack units or height to frame "
-                                           "the face against.", row)
+                    # The import skips such a face with a note; it is no
+                    # reason to refuse the pack.
+                    self.add("warning", rel, "The type has no rack units or height to frame "
+                                             "the face against: not imported.", row)
                 elif size != tuple(expect):
                     self.add("error", rel, f"{size[0]} × {size[1]} px; the type's face frame "
                                            f"({frame[0]} × {frame[1]} mm) needs "
