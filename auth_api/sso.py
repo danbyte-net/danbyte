@@ -136,12 +136,26 @@ ID_TOKEN_ALGORITHMS = (
 ID_TOKEN_LEEWAY = 60
 
 
-def _signing_key(jwks: dict, header: dict):
+def _key_type(alg) -> str | None:
+    """The JWK ``kty`` an algorithm signs with."""
+    alg = str(alg or "")
+    if alg.startswith(("RS", "PS")):
+        return "RSA"
+    if alg.startswith("ES"):
+        return "EC"
+    return "OKP" if alg == "EdDSA" else None
+
+
+def _signing_key(jwks, header: dict):
     """The JWKS key that signed the token: by ``kid``, or the only signing
-    key of the token's type when the token names none."""
+    key of the token's type when the token names none. A key of another type
+    than the token's algorithm is never a match, whatever its ``kid``."""
+    if not isinstance(jwks, dict):
+        raise SsoError("The provider's JWKS is not a JSON object.")
+    kty = _key_type(header.get("alg"))
     keys = [
         k for k in jwt.PyJWKSet.from_dict(jwks).keys
-        if k.public_key_use in (None, "sig")
+        if k.public_key_use in (None, "sig") and k.key_type == kty
     ]
     kid = header.get("kid")
     if kid:
@@ -171,7 +185,11 @@ def _validate_id_token(id_token, provider, doc, nonce) -> dict:
             leeway=ID_TOKEN_LEEWAY,
             options={"verify_aud": False, "verify_iss": False, "require": ["exp", "iat"]},
         )
-    except (requests.RequestException, jwt.PyJWTError, ValueError, KeyError) as exc:
+    except (requests.RequestException, jwt.PyJWTError, ValueError, KeyError,
+            TypeError, AttributeError) as exc:
+        # TypeError / AttributeError: a provider answer of the wrong shape
+        # (PyJWT raises them for a key or JWKS it cannot use) is a failed
+        # login, not a server error (#539).
         raise SsoError(f"ID token validation failed: {exc}") from exc
 
     if claims.get("iss") != doc.get("issuer"):

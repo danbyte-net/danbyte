@@ -214,6 +214,9 @@ LDAP, so AD accounts sign in via Keycloak:
 - The OIDC flow uses `state`, `nonce` and PKCE with S256 (RFC 7636), so an
   IdP client that requires PKCE works, and validates the ID token against the
   provider's JWKS (issuer, audience, `azp` when multi-audience, nonce, expiry).
+  A token or JWKS Danbyte cannot use (a key of another type than the token's
+  algorithm, a JWKS that is not a JSON object) ends in the SSO error on the
+  login page. Without a `kid`, the one signing key of the token's type is used.
 - **SAML is SP-initiated and replay-safe:** every login is started from Danbyte,
   and each response must carry an `InResponseTo` for a request Danbyte issued and
   hasn't already consumed (tracked in the database, since the IdP's cross-site

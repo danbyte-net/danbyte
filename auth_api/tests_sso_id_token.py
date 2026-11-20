@@ -73,6 +73,30 @@ class IdTokenTests(SimpleTestCase):
         token = self._token(key=key, alg="ES256", kid="e1")
         self.assertEqual(self._validate(token, jwks=jwks)["sub"], "u1")
 
+    def test_key_of_another_type_is_refused(self):
+        # RS256 token whose kid names an EC key: a failed login, not a crash.
+        ec_key = ec.generate_private_key(ec.SECP256R1())
+        jwks = {"keys": [_jwk(ec_key, "e1", "ES256")]}
+        with self.assertRaises(SsoError):
+            self._validate(self._token(kid="e1"), jwks=jwks)
+
+    def test_jwks_that_is_not_an_object_is_refused(self):
+        for bad in (["x"], "x", 7, {"keys": "x"}, {"keys": [7]}, {"keys": [{"kty": "RSA"}]}):
+            with self.subTest(jwks=bad), self.assertRaises(SsoError):
+                self._validate(self._token(), jwks=bad)
+
+    def test_no_kid_picks_the_key_of_the_tokens_type(self):
+        ec_key = ec.generate_private_key(ec.SECP256R1())
+        jwks = {"keys": [_jwk(ec_key, "e1", "ES256"), _jwk(self.key, "k1")]}
+        self.assertEqual(self._validate(self._token(kid=None), jwks=jwks)["sub"], "u1")
+        token = self._token(key=ec_key, alg="ES256", kid=None)
+        self.assertEqual(self._validate(token, jwks=jwks)["sub"], "u1")
+
+    def test_no_kid_with_two_keys_of_the_type_is_refused(self):
+        jwks = {"keys": [_jwk(_rsa(), "k0"), _jwk(self.key, "k1")]}
+        with self.assertRaises(SsoError):
+            self._validate(self._token(kid=None), jwks=jwks)
+
     def test_wrong_signature(self):
         with self.assertRaises(SsoError):
             self._validate(self._token(key=_rsa()))
