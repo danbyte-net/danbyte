@@ -141,31 +141,42 @@ class MigrationSafetyTests(SimpleTestCase):
         self.assertNotIn("0184", joined)
 
 
-#: Each app's leaf when the Lifecycle view (#535, api 0298) was added: every
-#: migration after these runs with the view in place, so a column the view
-#: reads is altered only with the view dropped around it.
-VIEW_BASELINE = {
-    "api": "0298_port_stats_lifecycle", "compliance": "0010_vulnerabilities_rule",
-}
+#: The database views, each with its module (``READS``, ``DROP_SQL``), its
+#: name and every app's leaf when it was added: every migration after these
+#: runs with the view in place, so a column the view reads is altered only
+#: with the view dropped around it.
+VIEWS = [
+    ("api.lifecycle_view", "api_lifecycle_entry",
+     {"api": "0298_port_stats_lifecycle", "compliance": "0010_vulnerabilities_rule"}),
+    ("api.inventory_view", "api_inventory_entry", {"api": "0299_stock_pool"}),
+]
 
 
 def view_problems(loader: MigrationLoader | None = None) -> list[str]:
-    """Migrations after the view's that alter, rename or remove a column
-    ``api.lifecycle_view`` reads without dropping the view in the same
-    migration - PostgreSQL refuses them half-way through an upgrade."""
-    from api.lifecycle_view import DROP_SQL, READS
+    """Migrations after a view's that alter, rename or remove a column the
+    view reads without dropping the view in the same migration -
+    PostgreSQL refuses them half-way through an upgrade."""
+    import importlib
 
     loader = loader or MigrationLoader(None, ignore_no_migrations=True)
+    found = []
+    for module, view, baseline in VIEWS:
+        mod = importlib.import_module(module)
+        found += _view_problems(loader, view, baseline, mod.READS, mod.DROP_SQL)
+    return found
+
+
+def _view_problems(loader, view, baseline, reads_by_table, drop_sql) -> list[str]:
     before: set = set()
-    for app, name in VIEW_BASELINE.items():
+    for app, name in baseline.items():
         if (app, name) in loader.graph.nodes:
             before.update(loader.graph.forwards_plan((app, name)))
     found = []
     for key in sorted(loader.graph.nodes):
-        if key in before or key[0] not in VIEW_BASELINE:
+        if key in before or key[0] not in baseline:
             continue
         migration = loader.graph.nodes[key]
-        drops = any(isinstance(op, ops.RunSQL) and DROP_SQL in str(op.sql)
+        drops = any(isinstance(op, ops.RunSQL) and drop_sql in str(op.sql)
                     for op in migration.operations)
         for op in migration.operations:
             if not isinstance(op, (ops.AlterField, ops.RemoveField, ops.RenameField)):
@@ -174,7 +185,7 @@ def view_problems(loader: MigrationLoader | None = None) -> list[str]:
                 model = apps.get_model(key[0], op.model_name)
             except LookupError:
                 continue
-            reads = READS.get(model._meta.db_table, set())
+            reads = reads_by_table.get(model._meta.db_table, set())
             name = getattr(op, "old_name", None) or op.name
             try:
                 column = model._meta.get_field(name).column
@@ -182,7 +193,7 @@ def view_problems(loader: MigrationLoader | None = None) -> list[str]:
                 column = name
             if (column in reads or f"{name}_id" in reads) and not drops:
                 found.append(f"{key[0]}.{key[1]}: {op.model_name}.{name} is read by "
-                             "api_lifecycle_entry - drop the view before and create it after")
+                             f"{view} - drop the view before and create it after")
     return found
 
 

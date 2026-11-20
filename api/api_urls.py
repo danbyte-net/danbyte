@@ -200,6 +200,7 @@ from .io_views import (
     io_types_view,
 )
 from .lifecycle_list import LifecycleViewSet
+from .inventory_list import InventoryViewSet
 from .list_fields import list_fields_view
 from .mac_bulk import mac_bulk_remove_view, mac_object_bulk_delete_view
 from .mac_views import MacListViewSet, mac_detail_view
@@ -688,6 +689,14 @@ urlpatterns = [
     path("inventory/ansible/", ansible_inventory, name="inventory-ansible"),
     path("sbom/", sbom, name="sbom"),
     # The Lifecycle page (#436): end dates per device and VM, soonest first.
+    # The Inventory page (docs/dcim/stock.md): items and installed modules.
+    path("inventory/", InventoryViewSet.as_view({"get": "list"}), name="inventory-list"),
+    path("inventory/facets/", InventoryViewSet.as_view({"get": "table_facets"}),
+         name="inventory-facets"),
+    path("inventory/table-ids/", InventoryViewSet.as_view({"get": "table_ids"}),
+         name="inventory-table-ids"),
+    path("inventory/counts/", InventoryViewSet.as_view({"get": "counts"}),
+         name="inventory-counts"),
     path("lifecycle/", LifecycleViewSet.as_view({"get": "list"}), name="lifecycle-overview"),
     path("lifecycle/facets/", LifecycleViewSet.as_view({"get": "table_facets"}),
          name="lifecycle-facets"),

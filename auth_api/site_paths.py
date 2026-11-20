@@ -56,7 +56,9 @@ SITE_PATHS: dict[str, str] = {
     "antenna": "device__site",
     # Denormalized on the row (its port could be any of nine kinds).
     "portreservation": "site",
-    "inventoryitem": "device__site",
+    # A part on a device is its device's site's; a part in stock is its
+    # stock site's (docs/dcim/stock.md) - it has one or the other.
+    "inventoryitem": "device__site|site",
     "devicebay": "device__site",
     "modulebay": "device__site",
     "module": "device__site",

@@ -97,6 +97,11 @@ BUILTIN_STATUS_COLORS = {
     "container": "#a1a1aa",
     "disabled": "#a1a1aa",
     "spare": "#a1a1aa",
+    # Inventory parts off a device (docs/dcim/stock.md): kept, sent back to
+    # the vendor, or written off.
+    "in_stock": "#a1a1aa",
+    "rma": "#f59e0b",
+    "scrapped": "#71717a",
     "empty": "#71717a",
     "not_connected": "#71717a",
     "decommissioned": "#71717a",
@@ -191,7 +196,10 @@ STATUS_MODEL_VALUES = {
     "room": ["active", "planned", "decommissioning", "retired"],
     # Hardware parts: health/lifecycle - "failed" lights the faceplate red,
     # "empty" is a bay a chassis template stamped that holds nothing.
-    "inventoryitem": ["active", "planned", "failed", "spare", "empty"],
+    # "in_stock", "rma" and "scrapped" are where a part off a device stands
+    # (docs/dcim/stock.md); "active" is a part in service on its device.
+    "inventoryitem": ["active", "planned", "failed", "spare", "empty",
+                      "in_stock", "rma", "scrapped"],
     # Installed modules (PSUs, fans, line cards): the unit's lifecycle and
     # health; the colour drives its status LEDs (api.led_state).
     "module": ["active", "planned", "staged", "offline", "failed", "decommissioning"],
@@ -206,6 +214,9 @@ STATUS_MODEL_VALUES = {
         "monitoring", "resolved",
     ],
 }
+
+# A built-in whose name is not its slug in title case.
+BUILTIN_STATUS_NAMES = {"rma": "RMA"}
 
 # Semantic flags stamped onto seeded rows so renaming a status never loses
 # its machine meaning (mirrors ``is_available`` for IPs). Applied on create
@@ -283,7 +294,7 @@ def seed_builtin_statuses(tenant, *, Status=None):
                 }
                 s = Status.objects.create(
                     tenant=tenant,
-                    name=value.replace("_", " ").title(),
+                    name=BUILTIN_STATUS_NAMES.get(value) or value.replace("_", " ").title(),
                     slug=value,
                     color=BUILTIN_STATUS_COLORS.get(value, ""),
                     available_to=[],

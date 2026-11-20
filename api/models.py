@@ -1122,6 +1122,9 @@ INVENTORY_ITEM_KINDS = [
     ("gpu", "GPU"),
     ("controller", "Controller"),
     ("transceiver", "Transceiver"),
+    # A module (line card, PSU sled, fan tray) taken out of its bay and kept
+    # in inventory; ``module_type`` remembers what it is (api.stock).
+    ("module", "Module"),
 ]
 
 # Storage media/protocol for kind=disk ("" for non-disks).
@@ -4821,17 +4824,40 @@ class ConsoleServerPort(TimestampedModel, CustomFieldsMixin, TaggableMixin):
 
 
 class InventoryItem(TimestampedModel, CustomFieldsMixin, TaggableMixin):
-    """A serial-tracked physical part on a device - disk, CPU, RAM, PSU, fan,
-    discrete SFP. Self-nesting (a card can contain sub-parts). Roles are tags,
-    per the zero-pre-filled-data rule. Tenant scope inherited via device.
+    """A serial-tracked physical part - disk, CPU, RAM, PSU, fan, discrete
+    SFP, a module out of its bay. Self-nesting (a card can contain
+    sub-parts). Roles are tags, per the zero-pre-filled-data rule.
+
+    It has exactly one home (docs/dcim/stock.md): a ``device`` (seated in one
+    of its ports or loose on it), or a stock place - a ``site`` and,
+    optionally, a ``location`` there. Tenant scope is the device's, else the
+    site's; so is the site that scopes RBAC (``device__site|site``).
 
     ``kind``/``media``/``capacity_bytes``/``speed`` describe the hardware;
     ``status`` carries its lifecycle/health (active / planned / failed /
-    spare - user-extensible via the Status catalog)."""
+    spare / in stock / RMA / scrapped - user-extensible via the Status
+    catalog)."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     device = models.ForeignKey(
-        Device, on_delete=models.CASCADE, related_name="inventory_items"
+        Device, on_delete=models.CASCADE, related_name="inventory_items",
+        null=True, blank=True,
+    )
+    # The stock place, for an item that is on no device. Deleting the site
+    # takes its stock with it, as deleting a device takes its parts.
+    site = models.ForeignKey(
+        "Site", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="stock_items",
+    )
+    location = models.ForeignKey(
+        "Location", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="stock_items",
+    )
+    # What a module kept in inventory is, so installing it from stock makes
+    # the same module again (api.stock). PROTECT, as on Module.
+    module_type = models.ForeignKey(
+        "ModuleType", on_delete=models.PROTECT, null=True, blank=True,
+        related_name="stock_items",
     )
     parent = models.ForeignKey(
         "self", on_delete=models.CASCADE, null=True, blank=True,
@@ -4900,17 +4926,69 @@ class InventoryItem(TimestampedModel, CustomFieldsMixin, TaggableMixin):
     class Meta:
         unique_together = ("device", "name")
         ordering = [natural("name")]
+        constraints = [
+            # Exactly one home: a device, or a stock place (a site, maybe a
+            # location there) - never both, never neither.
+            models.CheckConstraint(
+                condition=(
+                    models.Q(device__isnull=False, site__isnull=True,
+                             location__isnull=True)
+                    | models.Q(device__isnull=True, site__isnull=False)
+                ),
+                name="inventoryitem_one_home",
+            ),
+        ]
 
     def __str__(self) -> str:
-        return f"{self.device.name}:{self.name}"
+        if self.device_id:
+            return f"{self.device.name}:{self.name}"
+        if self.site_id:
+            return f"{self.site.name}:{self.name}"
+        return self.name
+
+    @property
+    def owner_tenant_id(self):
+        """The tenant the item belongs to: its device's, else its site's."""
+        if self.device_id:
+            return self.device.tenant_id
+        if self.site_id:
+            return self.site.tenant_id
+        return None
+
+    @property
+    def in_stock(self) -> bool:
+        return self.device_id is None
 
     def clean(self):
         from django.core.exceptions import ValidationError
 
         super().clean()
-        errors = transceiver_link_errors(self)
+        errors = home_errors(self)
+        errors.update(transceiver_link_errors(self))
         if errors:
             raise ValidationError(errors)
+
+
+def home_errors(item) -> dict[str, str]:
+    """Why ``item`` has no valid home (``{field: message}``, empty when it
+    has one): a device, or a site with maybe a location of that site."""
+    errors: dict[str, str] = {}
+    if item.device_id and (item.site_id or item.location_id):
+        errors["site"] = "An item on a device has no stock place."
+    elif not item.device_id and not item.site_id:
+        errors["site"] = "Pick a device, or a site to keep it in stock."
+    elif item.location_id and item.location.site_id != item.site_id:
+        errors["location"] = "Pick a location at this site."
+    if not item.device_id and item.interface_id:
+        errors["interface"] = "An item in stock sits in no port."
+    if item.parent_id:
+        parent = item.parent
+        same = (parent.device_id == item.device_id if item.device_id
+                else parent.device_id is None and parent.site_id == item.site_id
+                and parent.location_id == item.location_id)
+        if not same:
+            errors["parent"] = "Pick a part in the same place."
+    return errors
 
 
 def transceiver_link_errors(item) -> dict[str, str]:
@@ -4935,7 +5013,7 @@ def transceiver_link_errors(item) -> dict[str, str]:
                 errors["interface"] = f"{other.name} already sits in this port."
     if item.accessory_type_id:
         acc = item.accessory_type
-        tenant_id = item.device.tenant_id if item.device_id else None
+        tenant_id = item.owner_tenant_id
         if acc.tenant_id != tenant_id:
             errors["accessory_type"] = "Pick a part in the current tenant."
     return errors
@@ -12248,3 +12326,48 @@ class LifecycleEntry(models.Model):
 
     def __str__(self) -> str:
         return self.id
+
+
+class InventoryEntry(models.Model):
+    """One row of the Inventory page (docs/dcim/stock.md): an inventory item
+    (in a port, loose on a device, or in stock) or an installed module. A
+    database view (``api_inventory_entry``, ``api.inventory_view``) over the
+    two tables - never stale, nothing to keep up. A module and the stock
+    item it becomes share one id (``api.stock``), so a unit is one row."""
+
+    id = models.UUIDField(primary_key=True)
+    #: ``item`` (an InventoryItem) or ``module`` (an installed Module).
+    source = models.CharField(max_length=16)
+    tenant = models.ForeignKey(Tenant, on_delete=models.DO_NOTHING, related_name="+")
+    #: ``port``, ``bay``, ``device`` or ``stock``.
+    home = models.CharField(max_length=16)
+    device = models.ForeignKey("Device", on_delete=models.DO_NOTHING, null=True,
+                               related_name="+")
+    site = models.ForeignKey("Site", on_delete=models.DO_NOTHING, null=True, related_name="+")
+    location = models.ForeignKey("Location", on_delete=models.DO_NOTHING, null=True,
+                                 related_name="+")
+    interface = models.ForeignKey("Interface", on_delete=models.DO_NOTHING, null=True,
+                                  related_name="+")
+    module_bay = models.ForeignKey("ModuleBay", on_delete=models.DO_NOTHING, null=True,
+                                   related_name="+")
+    module_type = models.ForeignKey("ModuleType", on_delete=models.DO_NOTHING, null=True,
+                                    related_name="+")
+    name = models.CharField(max_length=255)
+    kind = models.CharField(max_length=16)
+    manufacturer = models.ForeignKey("Manufacturer", on_delete=models.DO_NOTHING, null=True,
+                                     related_name="+")
+    part_id = models.CharField(max_length=128)
+    serial_number = models.CharField(max_length=255)
+    asset_tag = models.CharField(max_length=128)
+    status = models.ForeignKey("Status", on_delete=models.DO_NOTHING, null=True,
+                               related_name="+")
+    description = models.CharField(max_length=255)
+    created_at = models.DateTimeField()
+    updated_at = models.DateTimeField()
+
+    class Meta:
+        managed = False
+        db_table = "api_inventory_entry"
+
+    def __str__(self) -> str:
+        return self.name

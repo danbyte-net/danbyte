@@ -51,6 +51,7 @@ from .bulk_update import (  # noqa: F401
 from .bulk_validation import clean_bulk_updates
 from . import listed
 from .list_table import TableListMixin
+from .stock_views import InventoryMoveMixin, ModuleRemoveMixin
 from .filters import apply_tag_filter
 from .floor_plan_from_map import FromMapRequestSerializer
 from .natural import natural, natural_key
@@ -6929,14 +6930,17 @@ class InventoryItemTemplateViewSet(_ComponentTemplateViewSet):
     serializer_class = InventoryItemTemplateSerializer
 
 
-class InventoryItemViewSet(_DevicePortViewSet):
+class InventoryItemViewSet(InventoryMoveMixin, _DevicePortViewSet):
     queryset = (
         InventoryItem.objects
         .select_related("device", "device__site", "manufacturer", "parent", "interface",
-                        "accessory_type", "status")
+                        "accessory_type", "status", "site", "location", "module_type")
         .prefetch_related(TAGS)
-        .order_by(natural("device__name"), NATURAL_NAME)
+        .order_by(natural("device__name"), natural("site__name"), NATURAL_NAME)
     )
+    # Moving a part (docs/dcim/stock.md) changes it; installing a module
+    # from stock changes the item and needs add on modules where it lands.
+    rbac_action_map = {"move": "change", "install_module": "change"}
     serializer_class = InventoryItemSerializer
     # InventoryItem has no `type` column - its own allowlist. kind/media are
     # choice-backed CharFields (validated against the model choices); status
@@ -6957,18 +6961,36 @@ class InventoryItemViewSet(_DevicePortViewSet):
         # ``kind=transceiver`` and ``in_port=false``: the set-transceiver
         # dialog's free optics on one device.
         # The Transceivers list (docs/dcim/inventory.md → Transceivers list)
-        # adds ``site``, ``part``, ``standard`` and ``cabled``.
-        qs = super().get_queryset()
+        # adds ``site``, ``part``, ``standard`` and ``cabled``. The stock
+        # pool (docs/dcim/stock.md) adds ``home``, ``location``, ``status``,
+        # ``fits`` and ``near_site``.
+        tenant = _get_active_tenant(self.request)
+        if tenant is None:
+            return self.queryset.none()
+        # A part on a device is its device's tenant's; one in stock its
+        # site's.
+        qs = self.queryset.filter(Q(device__tenant=tenant)
+                                  | Q(device__isnull=True, site__tenant=tenant))
         if not self.request:
-            return qs
+            return restrict_for_view(self, qs)
         p = self.request.query_params
+        s = p.get("search", "").strip()
+        if s:
+            hit = Q(name__icontains=s) | Q(device__name__icontains=s)
+            for f in self.search_extra:
+                hit |= Q(**{f"{f}__icontains": s})
+            qs = qs.filter(hit) | qs.filter(cf_text_q(qs.model, s))
+        if device_id := p.get("device"):
+            qs = qs.filter(device_id=device_id)
+        qs = restrict_for_view(self, qs)
         if kind := p.get("kind"):
             qs = qs.filter(kind=kind)
         in_port = p.get("in_port")
         if in_port in ("true", "false"):
             qs = qs.filter(interface__isnull=in_port == "false")
         if site := p.get("site"):
-            qs = qs.filter(device__site_id=site)
+            qs = qs.filter(Q(device__site_id=site) | Q(device__isnull=True, site_id=site))
+        qs = self._stock_filters(qs, p)
         if part := p.get("part", "").strip():
             qs = qs.filter(part_id__icontains=part)
         if standard := p.get("standard", "").strip():
@@ -6981,6 +7003,31 @@ class InventoryItemViewSet(_DevicePortViewSet):
         if p.get("cabled") in ("true", "false"):
             qs = qs.filter(_iface_cabled=p.get("cabled") == "true")
         return qs
+
+    def _stock_filters(self, qs, p):
+        from .stock_filters import stock_filters
+
+        return stock_filters(qs, p, _get_active_tenant(self.request))
+
+    def _check(self, serializer):
+        # A part in stock has no device to check; its site is the tenant's
+        # (the serializer's scoped field) and names repeat freely there.
+        device = serializer.validated_data.get("device", (
+            serializer.instance.device if serializer.instance else None))
+        if device is None:
+            self._tenant_or_403()
+            return
+        super()._check(serializer)
+
+    def perform_update(self, serializer):
+        before = (serializer.instance.device_id, serializer.instance.site_id,
+                  serializer.instance.location_id)
+        super().perform_update(serializer)
+        item = serializer.instance
+        if (item.device_id, item.site_id, item.location_id) != before:
+            from .stock import _follow
+
+            _follow(item)
 
     def check_bulk_rows(self, rows, updates):
         # Only a transceiver sits in a port, in bulk as one by one.
@@ -7282,7 +7329,7 @@ class ModuleBayViewSet(_DevicePortViewSet):
     serializer_class = ModuleBaySerializer
 
 
-class ModuleViewSet(TenantScopedViewSet):
+class ModuleViewSet(ModuleRemoveMixin, TenantScopedViewSet):
     """Installed modules. Creating one stamps the module type's interfaces
     onto the host device, owned by the module; changing its type, bay or
     device re-stamps them; deleting it (or its bay) removes exactly those."""
@@ -7297,6 +7344,9 @@ class ModuleViewSet(TenantScopedViewSet):
     serializer_class = ModuleSerializer
     pagination_class = StandardPagination
     tenant_field = None
+    # Taking a module out (into stock or onto its device as a loose part)
+    # removes its interfaces, as deleting it does (api.stock_views).
+    rbac_action_map = {"remove": "delete"}
 
     def get_queryset(self):
         tenant = _get_active_tenant(self.request)

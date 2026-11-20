@@ -391,6 +391,9 @@ _PARENT_TENANT_PATH = {
     "AuxPort": "device__tenant",
     "DinRail": "cabinet__tenant",
     "FloorPlanArea": "floor_plan__tenant",
+    "ModuleBay": "device__tenant",
+    "Module": "device__tenant",
+    "InventoryItem": "device__tenant",
 }
 
 # Models whose ownership is not one lookup path: the Q a row of the tenant
@@ -400,9 +403,15 @@ def _bimodal_tenant_q(tenant):
     return Q(connection__tenant=tenant) | Q(connection__isnull=True, tenant=tenant)
 
 
+def _inventory_tenant_q(tenant):
+    # A part on a device is its device's; a part in stock its site's.
+    return Q(device__tenant=tenant) | Q(device__isnull=True, site__tenant=tenant)
+
+
 _TENANT_Q = {
     "DhcpScope": _bimodal_tenant_q,
     "DnsZone": _bimodal_tenant_q,
+    "InventoryItem": _inventory_tenant_q,
 }
 
 
@@ -6123,16 +6132,34 @@ class InventoryItemSerializer(
     CustomFieldsSerializerMixin, StatusSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer
 ):
     device = DeviceMiniSerializer(read_only=True)
+    # One home (docs/dcim/stock.md): a device, or a stock site and location.
+    # Giving one clears the other.
     device_id = TenantScopedPrimaryKeyRelatedField(
         source="device", queryset=Device.objects.all(), write_only=True,
+        required=False, allow_null=True,
     )
+    site_id = TenantScopedPrimaryKeyRelatedField(
+        source="site", queryset=Site.objects.all(), write_only=True,
+        required=False, allow_null=True,
+    )
+    location = serializers.SerializerMethodField()
+    location_id = TenantScopedPrimaryKeyRelatedField(
+        source="location", queryset=Location.objects.all(), write_only=True,
+        required=False, allow_null=True,
+    )
+    module_type = ModuleTypeMiniSerializer(read_only=True)
+    module_type_id = TenantScopedPrimaryKeyRelatedField(
+        source="module_type", queryset=ModuleType.objects.all(), write_only=True,
+        required=False, allow_null=True,
+    )
+    home = serializers.SerializerMethodField()
     manufacturer = ManufacturerMiniSerializer(read_only=True)
     manufacturer_id = TenantScopedPrimaryKeyRelatedField(
         source="manufacturer", queryset=Manufacturer.objects.all(),
         write_only=True, required=False, allow_null=True,
     )
     parent = serializers.SerializerMethodField()
-    parent_id = serializers.PrimaryKeyRelatedField(
+    parent_id = TenantScopedPrimaryKeyRelatedField(
         source="parent", queryset=InventoryItem.objects.all(),
         write_only=True, required=False, allow_null=True,
     )
@@ -6184,15 +6211,29 @@ class InventoryItemSerializer(
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_site(self, obj):
-        site = obj.device.site if obj.device_id else None
+        """The device's site for a part on a device, else its stock site."""
+        site = obj.device.site if obj.device_id else obj.site
         return {"id": str(site.pk), "name": site.name} if site is not None else None
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_location(self, obj):
+        """The stock location (a part on a device has none of its own)."""
+        loc = obj.location if obj.location_id else None
+        return {"id": str(loc.pk), "name": loc.name} if loc is not None else None
+
+    @extend_schema_field(OpenApiTypes.STR)
+    def get_home(self, obj) -> str:
+        """``port``, ``device`` or ``stock``."""
+        if obj.device_id is None:
+            return "stock"
+        return "port" if obj.interface_id else "device"
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_pluggable(self, obj):
         """A transceiver's part on the Pluggables page: the one set by hand,
         else the one whose ``parts`` lists its part ID (api.port_plugs) -
         the tenant's parts read once per response."""
-        if obj.kind != "transceiver" or not obj.device_id:
+        if obj.kind != "transceiver":
             return None
         if obj.accessory_type_id:
             acc = obj.accessory_type
@@ -6202,7 +6243,7 @@ class InventoryItemSerializer(
             from .port_plugs import part_key, part_maps
 
             cache = self.context.setdefault("_part_maps", {})
-            tid = obj.device.tenant_id
+            tid = obj.owner_tenant_id
             if tid not in cache:
                 cache[tid] = part_maps(list(AccessoryType.objects.filter(tenant_id=tid)
                                             .only("id", "vendor", "name", "kind", "parts")))[1]
@@ -6212,13 +6253,35 @@ class InventoryItemSerializer(
         return {"id": str(acc.pk), "vendor": acc.vendor, "name": acc.name}
 
     def validate(self, attrs):
-        from .models import transceiver_link_errors
+        from .models import home_errors, transceiver_link_errors
 
         attrs = super().validate(attrs)
+        inst = self.instance
+        # One home: naming a device moves the item off its stock place, and
+        # naming a site moves it off its device (out of its port, away from
+        # its parent there).
+        if attrs.get("device") is not None and "site" not in attrs:
+            attrs["site"] = None
+            attrs["location"] = None
+        if attrs.get("site") is not None and "device" not in attrs:
+            attrs["device"] = None
+            attrs.setdefault("interface", None)
+            attrs.setdefault("parent", None)
+        if inst is None and attrs.get("device") is None and attrs.get("site") is None:
+            raise serializers.ValidationError(
+                {"device_id": "Pick a device, or a site to keep it in stock."})
+        if {"device", "site", "location", "parent", "interface"} & attrs.keys():
+            def now(f):
+                return attrs[f] if f in attrs else (getattr(inst, f) if inst else None)
+
+            probe = InventoryItem(pk=inst.pk if inst else None, device=now("device"),
+                                  site=now("site"), location=now("location"),
+                                  parent=now("parent"), interface=now("interface"))
+            errors = home_errors(probe)
+            if errors:
+                raise serializers.ValidationError({f"{k}_id": v for k, v in errors.items()})
         parent = attrs.get("parent")
-        device = attrs.get("device") or (
-            self.instance.device if self.instance else None
-        )
+        device = attrs["device"] if "device" in attrs else (inst.device if inst else None)
         if parent is not None and device is not None:
             if parent.device_id != device.id:
                 raise serializers.ValidationError(
@@ -6229,10 +6292,11 @@ class InventoryItemSerializer(
                     {"parent_id": "A part can't contain itself."}
                 )
         # The port and the 3D part, checked on the item as it will be.
-        if {"interface", "accessory_type", "kind", "device"} & attrs.keys():
+        if {"interface", "accessory_type", "kind", "device", "site"} & attrs.keys():
             probe = InventoryItem(
                 pk=self.instance.pk if self.instance else None,
                 device=device,
+                site=attrs["site"] if "site" in attrs else (inst.site if inst else None),
                 kind=attrs.get("kind", self.instance.kind if self.instance else "other"),
                 interface=attrs.get("interface", self.instance.interface
                                     if self.instance else None),
@@ -6249,7 +6313,9 @@ class InventoryItemSerializer(
 
     class Meta:
         model = InventoryItem
-        fields = ["id", "device", "device_id", "parent", "parent_id", "name",
+        fields = ["id", "device", "device_id", "site_id", "location", "location_id", "home",
+                  "module_type", "module_type_id",
+                  "parent", "parent_id", "name",
                   "manufacturer", "manufacturer_id", "part_id",
                   "serial_number", "asset_tag", "description",
                   "kind", "media", "capacity_bytes", "speed", "slot", "cores",
@@ -6260,6 +6326,10 @@ class InventoryItemSerializer(
                   "tags", "tag_ids", "custom_fields",
                   "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]
+        # The (device, name) unique-together validator would make device_id
+        # required; a part in stock has none. The viewset checks the name on
+        # a device (``_check``), the database the rest.
+        validators: list = []
 
 
 class DeviceBaySerializer(CustomFieldsSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer):
