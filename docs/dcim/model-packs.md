@@ -1349,8 +1349,19 @@ links only there; its next import creates the documents.
   `http(s)` URL; Danbyte doesn't fetch it at import (the
   [dead-link check](../features/documents.md#dead-link-checking) does,
   through the outbound-request guards).
+- **Links in `comments`.** The Markdown links in the YAML's `comments`
+  (`[… Data Sheet](https://…)`, as the community device type library writes
+  them) join `links` as link documents, after them: a URL in `links` wins,
+  and the category comes from the link text (*Datasheet*, *Install guide*,
+  *Config guide*, *EoL notice*, else *Other*). They are tracked in the
+  record like the others, so a re-import keeps your removal or edit. A new
+  type's description is the plain text of `comments` (empty when they are
+  nothing but links); on a matched type whose description still holds the
+  YAML's `comments` word for word, the description becomes that plain text.
+  See [Vendor links in comments](device-catalog.md#importing-from-the-netbox-devicetype-library).
 - **Summary.** Becomes the description only while that is empty; a type
-  created from a pack already has the YAML's `comments` there.
+  created from a pack already has the plain text of the YAML's `comments`
+  there, so the summary fills it when those were only links.
 
 ## API
 

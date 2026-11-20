@@ -608,6 +608,7 @@ class MetaTests(_Base):
             *new["meta"]["links"][2:],
         ]
         new["meta"]["links"].append({"kind": "other", "url": "https://wiki.example.com/c9300"})
+        new.pop("comments")  # the data sheet is in them too
         row = self.row(self.run_pack({"C9300-48P": new}, version="2.0.0"), "C9300-48P")
         self.assertIn("updated 1 document: Catalyst 9300", row.notes)
         self.assertIn("added 3 documents: Cisco Catalyst 9300 Series Switches - End-of-Life "
@@ -678,12 +679,15 @@ class RealPackDryRunTests(_Base):
         got = {t.name: t for t in result.types}
         self.assertEqual(set(got), {"Catalyst 9200-24T", "Catalyst 9300-48P",
                                     "Catalyst 9500-40X"})
+        # 1.6.0 had the data sheets in their comments only: those documents
+        # are there already, and the description its links left empty takes the
+        # summary.
         self.assertEqual(got["Catalyst 9200-24T"].changes,
-                         {"added": 5, "updated": 1, "removed": 2, "kept": 0})
+                         {"added": 4, "updated": 2, "removed": 2, "kept": 0})
         self.assertEqual(got["Catalyst 9300-48P"].changes,
                          {"added": 5, "updated": 4, "removed": 0, "kept": 0})
         c9500 = got["Catalyst 9500-40X"]
-        self.assertEqual(c9500.changes, {"added": 4, "updated": 4, "removed": 0, "kept": 0})
+        self.assertEqual(c9500.changes, {"added": 3, "updated": 5, "removed": 0, "kept": 0})
         self.assertIn("updated 1 lifecycle field, none → 2024-04-30: end of sale", c9500.notes)
         self.assertIn("updated 1 lifecycle field, none → https://www.cisco.com/c/en/us/products/"
                       "collateral/switches/catalyst-9500-series-switches/"

@@ -34,8 +34,11 @@ lifecycle fields with the same rule (a module type has none: kept in the
 snapshot), ``links`` become link Documents on a device or module type (the
 ones it made are tracked in the snapshot by URL),
 ``summary`` becomes an empty description, and the whole block is kept in
-the snapshot. Devices are never changed: the report counts the devices that
-are out of step, which the type's Sync devices brings in line.
+the snapshot. The Markdown links in ``comments`` (api.description_links)
+join ``meta.links`` as link Documents, and a description still holding
+those comments word for word becomes their plain text. Devices are never
+changed: the report counts the devices that are out of step, which the
+type's Sync devices brings in line.
 
 Everything here writes through ordinary saves, so the change log records
 it with the import's cause; a dry run is the same work rolled back.
@@ -732,6 +735,25 @@ def apply_summary(obj, meta: dict, prev, report: Report) -> tuple[str | None, li
     return None, []
 
 
+def apply_comments(obj, data: dict, report: Report) -> tuple[list[dict], list[str]]:
+    """The YAML's ``comments``: its Markdown links (api.description_links) as
+    extra ``apply_links`` rows, and a description that still holds those
+    comments word for word (what the device library import stored) turned
+    into their plain text. Returns the rows and the fields set."""
+    from .description_links import link_rows, split
+
+    raw = data.get("comments")
+    raw = str(raw).strip() if isinstance(raw, (str, int, float)) else ""
+    plain, links = split(raw)
+    if not links:
+        return [], []
+    if (obj.description or "") == raw and plain != raw:
+        obj.description = plain
+        report.add("updated", "field", "description", "links moved to documents")
+        return link_rows(links), ["description"]
+    return link_rows(links), []
+
+
 def _category(tenant, kind: str, made: list[str]):
     from .models import DocumentCategory
 
@@ -744,8 +766,10 @@ def _category(tenant, kind: str, made: list[str]):
 
 
 def apply_links(dt, meta: dict, prev: dict, *, overwrite: bool, report: Report,
-                notes: list[str]) -> dict:
+                notes: list[str], extra: list[dict] | None = None) -> dict:
     """``meta.links`` as link Documents on a device or module type, one per URL.
+    ``extra`` rows (the links of the YAML's ``comments``, api.description_links)
+    follow them, a URL ``meta.links`` has taking precedence.
     Returns the new snapshot ``{url: {id, name, category}}``. A document a
     user added (the same URL) or edited is never touched."""
     from audit.api import _object_site_id
@@ -753,11 +777,12 @@ def apply_links(dt, meta: dict, prev: dict, *, overwrite: bool, report: Report,
     from .models import Document
 
     raw = meta.get("links")
-    if raw is None and not prev:
+    if raw is None and not prev and not extra:
         return {}
     rows = [r for r in raw if isinstance(r, dict)] if isinstance(raw, list) else []
     if raw is not None and not isinstance(raw, list):
         notes.append("meta.links: not a list - ignored.")
+    rows += extra or []
     label = dt._meta.label_lower
     docs = {d.pk: d for d in Document.objects.filter(
         tenant_id=dt.tenant_id, object_type=label, object_id=dt.pk)}
@@ -862,7 +887,6 @@ def update_type(obj, data: dict, *, kind: str, pack: dict, overwrite: bool = Fal
     notes += bad
     built = devices_notes(obj, module=module, report=report)
     meta = meta_block(data) or {}
-    changed: list[str] = []
     record = {"pack": pack, "templates": templates}
     names = {k: sorted(v) for k, v in ever.items() if v}
     if names:
@@ -870,6 +894,8 @@ def update_type(obj, data: dict, *, kind: str, pack: dict, overwrite: bool = Fal
     if meta:
         record["meta"] = meta
     prev = state or {}
+    # The comments first: a description they leave empty takes the summary.
+    comment_links, changed = apply_comments(obj, data, report)
     summary, fields = apply_summary(obj, meta, prev.get("description"), report)
     changed += fields
     if summary is not None:
@@ -890,7 +916,7 @@ def update_type(obj, data: dict, *, kind: str, pack: dict, overwrite: bool = Fal
     # are created now.
     prev_links = prev.get("links") if isinstance(prev.get("links"), dict) else {}
     links = apply_links(obj, meta, prev_links, overwrite=overwrite, report=report,
-                        notes=notes)
+                        notes=notes, extra=comment_links)
     if links:
         record["links"] = links
     obj.pack_state = record

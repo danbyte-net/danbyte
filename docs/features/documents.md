@@ -39,6 +39,10 @@ A [model pack](../dcim/model-packs.md#meta) that links vendor documents to a
 device or module type creates the categories those links need (*Datasheet*, *Install
 guide*, *EoL notice*, …) the first time one is needed, or uses yours of the
 same name. They are ordinary categories: rename or delete them as you like.
+The same goes for the vendor links a device-type library file carries in its
+`comments`: importing a device or module type turns them into link documents
+([Vendor links in comments](../dcim/device-catalog.md#importing-from-the-netbox-devicetype-library)),
+and `manage.py description_links` does it for types imported before.
 
 ## Versioning
 

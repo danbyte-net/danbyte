@@ -910,7 +910,10 @@ def import_pack(tenant, files: PackFiles, *, dry_run: bool = True,
                 if obj is None:
                     importer = (import_moduletype_yaml if kind == "module-type"
                                 else import_devicetype_yaml)
-                    kwargs = {} if kind == "module-type" else {"image_inventory": set()}
+                    # The comments' links are update_type's: tracked by URL.
+                    kwargs = {"comment_links": False}
+                    if kind == "device-type":
+                        kwargs["image_inventory"] = set()
                     rep = importer(tenant, text, files=None, **kwargs)
                     if not rep.get("ok"):
                         tr.action, tr.notes = "error", [rep.get("error") or "Not imported."]

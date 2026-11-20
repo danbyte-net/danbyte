@@ -262,9 +262,13 @@ def _get_or_create_manufacturer(tenant, name: str, owning_site=None):
 
 def import_devicetype_yaml(
     tenant, text: str, *, stack_positions: bool = False, owning_site=None,
-    image_inventory: set[str] | None = None, files=None,
+    image_inventory: set[str] | None = None, files=None, comment_links: bool = True,
 ) -> dict:
     """Create a DeviceType (+ templates) from one devicetype-library YAML doc.
+
+    ``comments`` becomes the description as plain text; its Markdown links
+    become link Documents on the type (:func:`_comment_links` - the model
+    pack import passes ``comment_links=False`` and tracks them itself).
 
     Returns ``{"ok", "name", "created", "skipped", "error"}`` - ``created`` is
     a per-kind count dict, ``skipped`` a list of human-readable notes. Never
@@ -336,8 +340,10 @@ def import_devicetype_yaml(
         weight_unit=weight_unit if weight is not None else "",
         subdevice_role=subdevice_role,
         exclude_from_utilization=bool(data.get("exclude_from_utilization", False)),
-        description=str(data.get("comments") or "").strip(),
+        description=plain_comments(data),
     )
+    if comment_links:
+        skipped += _comment_links(dt, data)
 
     # Best-effort elevation images - the library stores them per manufacturer
     # + slug. Fetch failures degrade to a report note, never an error.
@@ -563,6 +569,41 @@ def import_yaml_auto(
     }
 
 
+def _comments(data: dict) -> str:
+    raw = data.get("comments")
+    return str(raw).strip() if isinstance(raw, (str, int, float)) else ""
+
+
+def plain_comments(data: dict) -> str:
+    """The YAML's ``comments`` as a description: its Markdown links taken
+    out (api.description_links), the plain text left."""
+    from .description_links import split
+
+    return split(_comments(data))[0]
+
+
+def _comment_links(obj, data: dict) -> list[str]:
+    """The Markdown links in ``comments`` as link Documents on the new type,
+    through the model pack's link machinery (one per URL, same categories,
+    a URL already attached left alone). The type is new, so nothing to
+    duplicate; an existing type is never re-imported here."""
+    from .description_links import link_rows, split
+    from .model_pack_update import Report, apply_links
+
+    links = split(_comments(data))[1]
+    if not links:
+        return []
+    notes: list[str] = []
+    report = Report()
+    apply_links(obj, {}, {}, overwrite=False, report=report, notes=notes,
+                extra=link_rows(links))
+    added = report.counts().get("added", 0)
+    if added:
+        notes.insert(0, f"comments: {added} link{'s' if added != 1 else ''} added "
+                     "as documents")
+    return notes
+
+
 def _model3d(obj, data: dict, files) -> list[str]:
     """The notes of setting a type's 3D model from its ``model3d:`` block."""
     from .model_pack import apply_model3d
@@ -661,11 +702,13 @@ def add_module_power_ports(mt, data: dict) -> int:
     return len(made)
 
 
-def import_moduletype_yaml(tenant, text: str, *, owning_site=None, files=None) -> dict:
+def import_moduletype_yaml(tenant, text: str, *, owning_site=None, files=None,
+                           comment_links: bool = True) -> dict:
     """Create a ModuleType (+ interface and power port templates) from a
     module-types YAML doc. Port names keep their ``{module}`` token - it
     resolves to the bay position at install time. Same report shape as the
-    device-type importer; a ``model3d:`` block is handled as there."""
+    device-type importer; a ``model3d:`` block and ``comments`` links are
+    handled as there."""
     try:
         data = yaml.safe_load(text)
     except yaml.YAMLError as exc:
@@ -689,8 +732,9 @@ def import_moduletype_yaml(tenant, text: str, *, owning_site=None, files=None) -
         name=model,
         manufacturer=manufacturer,
         part_number=str(data.get("part_number") or "").strip(),
-        description=str(data.get("comments") or "").strip(),
+        description=plain_comments(data),
     )
+    comment_notes = _comment_links(mt, data) if comment_links else []
 
     ifaces = data.get("interfaces")
     ifaces = [r for r in ifaces if isinstance(r, dict)] if isinstance(ifaces, list) else []
@@ -716,6 +760,7 @@ def import_moduletype_yaml(tenant, text: str, *, owning_site=None, files=None) -
                     "module-bays")
         if data.get(key)
     ]
+    skipped += comment_notes
     skipped += _model3d(mt, data, files)
     return {
         "ok": True,

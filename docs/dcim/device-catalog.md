@@ -197,6 +197,34 @@ device types, a module-type file on module types, a rack-type file on rack
 types. A file you can't add is reported as refused and the rest of the batch
 goes on. A folder import checks the same when it runs in the background.
 
+**Vendor links in `comments`.** Library files put a type's vendor links in
+`comments` as Markdown - `[… Data Sheet](https://…)`. A device or module
+type imports them as link documents on its **Documents** tab, one per URL,
+in a category picked from the link text (*Datasheet* for a data sheet,
+*Install guide*, *Config guide*, *EoL notice*, otherwise *Other*; created
+the first time one is needed, as [a model pack's links](model-packs.md#meta)
+are). The description keeps the plain text: each link becomes its label,
+and `comments` that are nothing but links leave it empty. Only public
+`http(s)` URLs are taken; anything else (an image, a `mailto:`, an internal
+host) stays in the description as written. A rack type has no documents:
+its `comments` are its description unchanged.
+
+Types imported before this carry the Markdown in their description. The
+pages show its plain text either way; to move the links to the documents,
+run
+
+```bash
+.venv/bin/python manage.py description_links [--tenant <slug>]   # dry run: lists the types
+.venv/bin/python manage.py description_links [--tenant <slug>] --apply
+```
+
+It converts every device and module type (of the tenant, or all) whose
+description holds a Markdown link: the link documents are added (a URL
+already attached is left alone), the description becomes the plain text,
+and on a type from a model pack the documents join its pack record and an
+emptied description takes the pack's summary. The change log records it
+with *Description links* as the cause. A second run finds nothing to do.
+
 **Stackable switches:** the upstream library has no stack-position concept, so
 its port names are literal (`GigabitEthernet1/0/1`).
 Tick **Stackable** during import and Danbyte rewrites the leading slot digit
