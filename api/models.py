@@ -4987,7 +4987,8 @@ def home_errors(item) -> dict[str, str]:
                 else parent.device_id is None and parent.site_id == item.site_id
                 and parent.location_id == item.location_id)
         if not same:
-            errors["parent"] = "Pick a part in the same place."
+            errors["parent"] = ("Pick a part on the same device." if item.device_id
+                                else "Pick a part in the same place.")
     return errors
 
 
