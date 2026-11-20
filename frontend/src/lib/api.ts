@@ -4824,6 +4824,41 @@ export interface InventoryItemRow {
   tags: Tag[]
 }
 
+/** One row of the Inventory page (docs/dcim/stock.md) - `/api/inventory/`:
+ * an inventory item or an installed module, with where it is. */
+export interface InventoryEntryRow {
+  id: string
+  source: "item" | "module"
+  home: "port" | "bay" | "device" | "stock"
+  name: string
+  kind: InventoryItemKind
+  part_id: string
+  serial_number: string
+  asset_tag: string
+  description: string
+  status: StatusMini | null
+  manufacturer: { id: string; name: string } | null
+  site: { id: string; name: string } | null
+  location: { id: string; name: string } | null
+  device: { id: string; name: string } | null
+  interface: { id: string; name: string } | null
+  module_bay: { id: string; name: string } | null
+  module_type: { id: string; name: string } | null
+  created_at: string | null
+  updated_at: string | null
+}
+
+/** `/api/inventory/counts/`: how many of a part there are in one place. */
+export interface InventoryCountRow {
+  id: string
+  part: string
+  kind: InventoryItemKind
+  manufacturer: { id: string; name: string } | null
+  site: { id: string; name: string } | null
+  location: { id: string; name: string } | null
+  count: number
+}
+
 /** A pluggable part (docs/dcim/pluggables.md): a transceiver, plug or
  * cord a model pack brings - `/api/accessory-types/`. */
 export type AccessoryKind =

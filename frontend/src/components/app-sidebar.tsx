@@ -705,6 +705,12 @@ export const sections: NavSection[] = [
             icon: CableIcon,
             objectType: "inventoryitem",
           },
+          {
+            title: "Inventory",
+            url: "/inventory",
+            icon: Boxes,
+            anyOf: ["inventoryitem", "module"],
+          },
         ],
       },
       {

@@ -346,12 +346,18 @@ class InventoryListTests(_Base):
         facets = self.client.get(f"{INV}facets/").json()["facets"]
         self.assertEqual({b["value"]: b["count"] for b in facets["home"]},
                          {"bay": 1, "port": 1, "device": 1, "stock": 2})
-        counts = self.client.get(f"{INV}counts/", {"f_home": "stock"}).json()
+        counts = self.client.get(f"{INV}counts/", {"f_home": "stock", "view": "table",
+                                                   "ordering": "-count"}).json()
+        for r in counts["results"]:
+            r.pop("id")
         self.assertEqual(counts["results"], [{
             "part": "SFP-10G-SR", "kind": "transceiver", "manufacturer": None,
             "site": {"id": str(self.ams.id), "name": "AMS"},
             "location": {"id": str(self.box.id), "name": "Box"}, "count": 2}])
         self.assertEqual(self.client.get(INV, {"ordering": "nope"}).status_code, 400)
+        self.assertEqual(self.client.get(f"{INV}counts/", {"ordering": "x"}).status_code, 400)
+        counts_rail = self.client.get(f"{INV}counts/facets/").json()["facets"]
+        self.assertIn("status", counts_rail)
         self.assertEqual(self.client.get(INV, {"f_nope": "x"}).status_code, 400)
 
     def test_search(self):

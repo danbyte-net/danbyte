@@ -697,6 +697,9 @@ urlpatterns = [
          name="inventory-table-ids"),
     path("inventory/counts/", InventoryViewSet.as_view({"get": "counts"}),
          name="inventory-counts"),
+    # The Counts view's rail: the same rows, so the same facets.
+    path("inventory/counts/facets/", InventoryViewSet.as_view({"get": "table_facets"}),
+         name="inventory-counts-facets"),
     path("lifecycle/", LifecycleViewSet.as_view({"get": "list"}), name="lifecycle-overview"),
     path("lifecycle/facets/", LifecycleViewSet.as_view({"get": "table_facets"}),
          name="lifecycle-facets"),

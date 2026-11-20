@@ -23,7 +23,7 @@ from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema
 from rest_framework import serializers, viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import IsAuthenticated
 
 from auth_api import rbac
@@ -192,22 +192,52 @@ class InventoryViewSet(TableListMixin, viewsets.GenericViewSet):
                    responses={200: OpenApiTypes.OBJECT})
     @action(detail=False, methods=["get"], url_path="counts")
     def counts(self, request):
+        """The rows the list's filters leave, grouped: ``ordering`` by
+        ``part``, ``kind``, ``manufacturer``, ``site``, ``location`` or
+        ``count``. The table's ``view``/``include`` are read and ignored:
+        a count row has one shape."""
+        params = request.query_params
+        params.get("view"), params.get("include")
+        raw = (params.get("ordering") or "").strip()
+        desc = raw.startswith("-")
+        column = raw.lstrip("-")
+        if column and column not in COUNT_SORTS:
+            raise ValidationError({"ordering": f"This list can't sort by {column}."})
+        keys = COUNT_SORTS.get(column, ())
+        order = [
+            (F(k) if isinstance(k, str) else k).desc(nulls_last=True) if desc
+            else (F(k) if isinstance(k, str) else k).asc(nulls_last=True)
+            for k in keys
+        ]
         qs = self.apply_table_filters(self.get_queryset())
         grouped = (_part(qs).order_by()
                    .values("inv_part", "kind", "manufacturer_id", "manufacturer__name",
                            "site_id", "site__name", "location_id", "location__name")
                    .annotate(count=Count("pk"))
-                   .order_by(natural("inv_part"), natural("site__name"),
+                   .order_by(*order, natural("inv_part"), natural("site__name"),
                              natural("location__name"), "kind", "manufacturer_id",
                              "site_id", "location_id"))
         page = self.paginate_queryset(grouped)
+        return self.get_paginated_response([count_row(r) for r in page or []])
 
-        def ref(r, f):
-            return ({"id": str(r[f"{f}_id"]), "name": r[f"{f}__name"]}
-                    if r[f"{f}_id"] else None)
 
-        return self.get_paginated_response([
-            {"part": r["inv_part"], "kind": r["kind"], "manufacturer": ref(r, "manufacturer"),
-             "site": ref(r, "site"), "location": ref(r, "location"), "count": r["count"]}
-            for r in page or []
-        ])
+#: How the counts sort, by column.
+COUNT_SORTS = {
+    "part": (natural("inv_part"),),
+    "kind": ("kind",),
+    "manufacturer": (natural("manufacturer__name"),),
+    "site": (natural("site__name"),),
+    "location": (natural("location__name"),),
+    "count": ("count",),
+}
+
+
+def count_row(r) -> dict:
+    def ref(f):
+        return {"id": str(r[f"{f}_id"]), "name": r[f"{f}__name"]} if r[f"{f}_id"] else None
+
+    key = "|".join(str(r[k] or "") for k in ("inv_part", "kind", "manufacturer_id", "site_id",
+                                             "location_id"))
+    return {"id": key, "part": r["inv_part"], "kind": r["kind"],
+            "manufacturer": ref("manufacturer"), "site": ref("site"),
+            "location": ref("location"), "count": r["count"]}

@@ -57,6 +57,7 @@ export const DOCS_LINKS: Record<string, string> = {
   "/module-types": "dcim/device-catalog/",
   "/pluggables": "dcim/pluggables/",
   "/transceivers": "dcim/inventory/#transceivers-list",
+  "/inventory": "dcim/stock/",
   "/manufacturers": "dcim/device-catalog/",
   "/device-roles": "dcim/device-catalog/",
   "/platforms": "dcim/device-catalog/",
