@@ -722,8 +722,10 @@ function ULabels({
   const s0 = strips[0]
   const pitch = mm(PANEL_MM.uPitch)
   const texture = useMemo(() => {
-    const W = 32
-    const rowPx = 48
+    // Sharp enough to read close up: a unit is 44.45 mm, the strip a few
+    // millimetres wide.
+    const W = 96
+    const rowPx = Math.max(48, Math.min(192, Math.floor(8192 / units)))
     const canvas = document.createElement("canvas")
     canvas.width = W
     canvas.height = units * rowPx
@@ -746,7 +748,7 @@ function ULabels({
       ctx.fillStyle = "#18181b"
       ctx.textAlign = "center"
       ctx.textBaseline = "middle"
-      const size = Math.min(26, (W * 0.9) / (text.length * 0.62))
+      const size = Math.min(W * 0.8, (W * 0.9) / (text.length * 0.62))
       ctx.font = `700 ${size}px ui-monospace, monospace`
       ctx.fillText(text, 0, 0)
       ctx.restore()
@@ -770,7 +772,14 @@ function ULabels({
           raycast={() => null}
         >
           <planeGeometry args={[s.w, h]} />
-          <meshBasicMaterial map={texture} alphaTest={0.5} />
+          {/* Lit like the rail it sits on: an unlit strip glares in a
+              dim room. */}
+          <meshStandardMaterial
+            map={texture}
+            alphaTest={0.5}
+            roughness={0.85}
+            metalness={0}
+          />
         </mesh>
       ))}
     </group>
