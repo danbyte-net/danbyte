@@ -236,6 +236,15 @@ function lineText(
   return ""
 }
 
+function bareKeys(
+  labels: Readonly<Record<string, string>> | undefined
+): Record<string, string> | undefined {
+  if (!labels) return undefined
+  return Object.fromEntries(
+    Object.entries(labels).map(([k, v]) => [k.replace(/^cf_/, ""), v])
+  )
+}
+
 /**
  * A device's card: its name, the lines its field list resolves to (empty
  * values skipped, at most `CARD_MAX_LINES`), and its pill.
@@ -251,12 +260,15 @@ export function cardContent(
   opts: CardContentOptions = {}
 ): CardContent {
   const fields = opts.fields ?? data.card?.fields ?? []
+  // A custom field's label comes with the card (keyed `cf_<key>`); a caller
+  // may still pass its own (keyed by the bare key).
+  const cfLabels = opts.cfLabels ?? bareKeys(data.card?.labels)
   const lines: CardLine[] = []
   for (const key of fields) {
     if (CARD_PILL_KEYS.has(key)) continue
-    const text = lineText(key, data, opts.cfLabels).trim()
+    const text = lineText(key, data, cfLabels).trim()
     if (!text) continue
-    lines.push({ key, label: cardFieldLabel(key, opts.cfLabels), text })
+    lines.push({ key, label: cardFieldLabel(key, cfLabels), text })
     if (lines.length === CARD_MAX_LINES) break
   }
 

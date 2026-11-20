@@ -5448,6 +5448,9 @@ export interface TopoCard {
   fields: string[]
   source: TopoCardSource
   values: TopoCardValues
+  /** The label of each custom-field line listed (`cf_<key>` → label);
+   * absent when the card lists none. */
+  labels?: Record<string, string>
 }
 
 /** A photo marker resolved to one of this node's cabled ports. `x y w h`

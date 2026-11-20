@@ -305,6 +305,8 @@ class CardPayloadTests(_Base):
         self.assertEqual(cards["sw-1"]["fields"], ["serial", "cf_owner"])
         self.assertEqual(cards["sw-1"]["values"], {"serial": "", "cf_owner": "netops"})
         self.assertEqual(cards["sw-2"]["values"], {"serial": "", "cf_owner": None})
+        # The field's label comes with the card, for the line's text.
+        self.assertEqual(cards["sw-1"]["labels"], {"cf_owner": "Owner"})
 
     def test_cost_is_flat_in_the_node_count(self):
         CustomField.objects.create(

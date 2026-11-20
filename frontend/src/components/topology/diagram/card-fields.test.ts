@@ -226,6 +226,18 @@ describe("card lines", () => {
     ])
   })
 
+  it("takes a custom field's label from the card", () => {
+    const n = node(["cf_owner_team", "cf_other"], {
+      cf_owner_team: "netops",
+      cf_other: "x",
+    })
+    n.card = { ...n.card!, labels: { cf_owner_team: "Team" } }
+    expect(cardContent(n).lines.map((l) => l.text)).toEqual([
+      "Team: netops",
+      "Other: x",
+    ])
+  })
+
   it("caps the lines", () => {
     const c = cardContent(
       node(

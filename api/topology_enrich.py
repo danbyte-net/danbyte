@@ -140,6 +140,10 @@ def enrich_card(ctx: EnrichContext) -> None:
             else:
                 values[key] = _CARD_VALUE[key](d)
         data["card"] = {"fields": fields, "source": source, "values": values}
+        labels = {k: visible_cf[k[3:]] for k in fields if k.startswith("cf_")}
+        if labels:
+            # What a custom-field line is called: the field's label.
+            data["card"]["labels"] = labels
 
     ctx.meta["card"] = {
         "fields": list(eff["fields"]),
@@ -214,18 +218,19 @@ def _card_ips(ctx, cards, wanted):
     return ips, loopbacks
 
 
-def _visible_device_cf_keys(tenant, wanted) -> set:
-    """The keys of the tenant's device custom fields a card may show (not
-    hidden) - queried only when some card lists a ``cf_`` line."""
+def _visible_device_cf_keys(tenant, wanted) -> dict:
+    """The tenant's device custom fields a card may show (not hidden), key
+    to label - queried only when some card lists a ``cf_`` line."""
     if not any(k.startswith("cf_") for k in wanted):
-        return set()
+        return {}
     from customization.models import CustomField
 
-    return set(
-        CustomField.objects.filter(
+    return {
+        key: label or key
+        for key, label in CustomField.objects.filter(
             tenant=tenant, hidden=False, applies_to__contains=["device"]
-        ).values_list("key", flat=True)
-    )
+        ).values_list("key", "label")
+    }
 
 
 def _card_shows(ctx, wanted) -> dict:

@@ -2404,6 +2404,8 @@ apply as on the map, and without `include` their payload is unchanged.
   device field is hidden.
 - `cf_<key>` is the custom field's raw value. A key for a hidden custom field,
   or one that isn't a device custom field, is dropped from `fields`.
+  A card that lists one also carries `labels`, `{cf_<key>: label}`: the
+  field's label, which the line prints (`Owner: netops`).
 - `meta.card` is `{fields, source, uses_monitor}`: the effective global list
   (before role, view and device lists) and whether any node shows the
   monitoring pill, which is when the page fetches check states.
