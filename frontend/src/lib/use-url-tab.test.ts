@@ -65,6 +65,22 @@ describe("useUrlTab", () => {
     )
     expect(written()).toEqual({ tab: undefined })
   })
+
+  it("lands a retired tab value on the tab that took it over", () => {
+    search = { tab: "images" }
+    const { result } = renderHook(() =>
+      useUrlTab("overview", "tab", TABS, { images: "history" })
+    )
+    expect(result.current[0]).toBe("history")
+  })
+
+  it("ignores inherited keys in the alias map", () => {
+    search = { tab: "constructor" }
+    const { result } = renderHook(() =>
+      useUrlTab("overview", "tab", TABS, { images: "history" })
+    )
+    expect(result.current[0]).toBe("overview")
+  })
 })
 
 describe("useUrlSubTab", () => {

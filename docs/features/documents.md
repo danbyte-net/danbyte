@@ -9,6 +9,11 @@ record. A document is either an **uploaded file** (a datasheet, a runbook, a
 warranty PDF) or an **external link** (a wiki page, a vendor portal). Both live
 together on the object's **Documents** tab.
 
+On a **device**, the Documents tab also holds the device's
+[images](../dcim/devices.md#images), in their own section above the documents;
+the tab's count covers both. Racks, cabinets, rooms, sites and locations keep
+their image gallery on the Overview.
+
 ## Adding a document
 
 On an object's detail page, open the **Documents** tab:

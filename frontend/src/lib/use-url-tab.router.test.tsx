@@ -29,7 +29,9 @@ type Tab = (typeof TABS)[number]
 type Sub = (typeof SUBS)[number]
 
 function Detail() {
-  const [tab, setTab] = useUrlTab<Tab>("overview", "tab", TABS)
+  const [tab, setTab] = useUrlTab<Tab>("overview", "tab", TABS, {
+    parts: "components",
+  })
   const [sub, setSub] = useUrlSubTab<Sub>("interfaces", SUBS)
   return (
     <div>
@@ -149,5 +151,16 @@ describe("with a pinned default tab", () => {
     click("go-tab-components")
     await settled({ tab: "components", sub: "interfaces" })
     expect(router.state.location.searchStr).not.toContain("tab=")
+  })
+
+  it("follows an old link on a retired tab to the tab that took it over", async () => {
+    await mount("/devices/1?tab=parts")
+    await settled({ tab: "components", sub: "interfaces" })
+  })
+
+  it("follows a pin on a retired tab to the tab that took it over", async () => {
+    pin("parts")
+    await mount("/devices/1")
+    await settled({ tab: "components", sub: "interfaces" })
   })
 })

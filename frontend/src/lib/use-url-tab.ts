@@ -59,15 +59,23 @@ function usePageKey(tabKey: string): string | null {
  * Pass `valid` to allow-list the accepted values, so a hand-typed or stale
  * param outside the list reads back as `defaultTab` instead of selecting a tab
  * that doesn't exist. Omit it and any string is taken as-is.
+ *
+ * `aliases` maps a retired tab value to the tab that took it over, so an old
+ * link or a pinned default naming it still lands on its content.
  */
 export function useUrlTab<T extends string = string>(
   defaultTab: T,
   key = "tab",
-  valid?: readonly T[]
+  valid?: readonly T[],
+  aliases?: Readonly<Record<string, T>>
 ): [T, (value: string) => void] {
   const navigate = useNavigate()
   const search = useSearch({ strict: false }) as Record<string, unknown>
-  const raw = search[key]
+  const rawParam = search[key]
+  const raw =
+    typeof rawParam === "string" && aliases && Object.hasOwn(aliases, rawParam)
+      ? aliases[rawParam]
+      : rawParam
   const known = typeof raw === "string" && (!valid || valid.includes(raw as T))
   // No explicit ?tab= → honour the user's pinned default for this page, if any
   // and still valid; otherwise the caller's hard-coded default.
@@ -81,7 +89,10 @@ export function useUrlTab<T extends string = string>(
   useEffect(() => {
     // Re-read on every tab change too, so a pin set moments ago applies to
     // the next write.
-    setStored(readStoredDefault(pageKey))
+    const pin = readStoredDefault(pageKey)
+    setStored(
+      pin && aliases && Object.hasOwn(aliases, pin) ? aliases[pin] : pin
+    )
   }, [known, pageKey])
   const preferred =
     stored && (!valid || valid.includes(stored as T))

@@ -327,8 +327,10 @@ highlighted the same way. It's hidden for a device in neither. If the device's
 
 ### Images
 
-Uploaded photos and diagrams live on their own **Images** tab (rack shots,
-labels, cabling pictures, faceplate close-ups). Click **Add image** to upload;
+Uploaded photos and diagrams (rack shots, labels, cabling pictures, faceplate
+close-ups) sit at the top of the **Documents** tab, above the device's
+[documents](../features/documents.md); the tab's count covers both. An old
+`?tab=images` link opens the Documents tab. Click **Add image** to upload;
 hover an image and click the trash icon to remove it - a confirmation asks
 first - or click an image to open the full-size original in a new tab.
 

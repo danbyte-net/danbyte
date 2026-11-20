@@ -237,7 +237,6 @@ const DEVICE_TABS = [
   "overview",
   "ips",
   "components",
-  "images",
   "photo-ports",
   "monitoring",
   "sensors",
@@ -258,6 +257,12 @@ const DEVICE_TABS = [
   "history",
 ] as const
 type DeviceTab = (typeof DEVICE_TABS)[number]
+
+// Retired tab values and the tab that holds their content now, so old links
+// and pinned defaults keep landing on it. Images moved into Documents.
+const DEVICE_TAB_ALIASES: Readonly<Record<string, DeviceTab>> = {
+  images: "documents",
+}
 
 // The sub-tab strip inside the Components tab. Declared here (not just where
 // the strip renders) so the route can validate `?sub=` and a typed `Link`
@@ -291,7 +296,9 @@ export const Route = createFileRoute("/devices/$id")({
     ...vulnTabSearch(s),
     ...(typeof s.tab === "string" && DEVICE_TABS.includes(s.tab as DeviceTab)
       ? { tab: s.tab as DeviceTab }
-      : {}),
+      : typeof s.tab === "string" && Object.hasOwn(DEVICE_TAB_ALIASES, s.tab)
+        ? { tab: DEVICE_TAB_ALIASES[s.tab] }
+        : {}),
     ...(typeof s.sub === "string" &&
     DEVICE_COMPONENT_SUBS.includes(s.sub as DeviceComponentSub)
       ? { sub: s.sub as DeviceComponentSub }
@@ -346,7 +353,12 @@ function Body({ device: d }: { device: Device }) {
   const report = useObjectReportItem("device", d.id, d.name)
   // The hook reads `?tab=` itself; seeding the *default* from the URL made
   // re-clicking the active tab clear the param and bounce you to Overview.
-  const [tab, setTab] = useUrlTab<DeviceTab>("overview", "tab", DEVICE_TABS)
+  const [tab, setTab] = useUrlTab<DeviceTab>(
+    "overview",
+    "tab",
+    DEVICE_TABS,
+    DEVICE_TAB_ALIASES
+  )
   // The device's Change log also holds its dependencies' (#450).
   const dependencyIds = useDeviceDependencyIds(
     d.id,
@@ -513,7 +525,6 @@ function Body({ device: d }: { device: Device }) {
               (d.front_port_count || 0) +
               (d.rear_port_count || 0) || undefined,
         },
-        { value: "images", label: "Images", count: d.image_count || undefined },
         // Only when the type has a rack-face photo to place markers on.
         ...(d.device_type?.front_image || d.device_type?.rear_image
           ? [{ value: "photo-ports", label: "Photo ports" }]
@@ -575,7 +586,8 @@ function Body({ device: d }: { device: Device }) {
         {
           value: "documents",
           label: "Documents",
-          count: d.document_count || undefined,
+          // Images sit at the top of this tab.
+          count: (d.image_count || 0) + (d.document_count || 0) || undefined,
         },
         ...(pkgs.show
           ? [{ value: "packages", label: "Packages", count: pkgs.count }]
@@ -698,9 +710,6 @@ function Body({ device: d }: { device: Device }) {
           canAssignIp={canDo("ipaddress", "change")}
         />
       </DetailTab>
-      <DetailTab value="images">
-        <ObjectImages apiBase={`/api/devices/${d.id}`} objectType="device" />
-      </DetailTab>
       <DetailTab value="photo-ports">
         <DevicePhotoPortsTab device={d} />
       </DetailTab>
@@ -732,19 +741,22 @@ function Body({ device: d }: { device: Device }) {
         <ContactsPanel objectType="api.device" objectId={d.id} />
       </DetailTab>
       <DetailTab value="documents">
-        <ObjectDocuments
-          objectType="api.device"
-          objectId={d.id}
-          inheritedFrom={
-            d.device_type
-              ? {
-                  objectType: "api.devicetype",
-                  objectId: d.device_type.id,
-                  label: "From device type",
-                }
-              : undefined
-          }
-        />
+        <div className="space-y-6">
+          <ObjectImages apiBase={`/api/devices/${d.id}`} objectType="device" />
+          <ObjectDocuments
+            objectType="api.device"
+            objectId={d.id}
+            inheritedFrom={
+              d.device_type
+                ? {
+                    objectType: "api.devicetype",
+                    objectId: d.device_type.id,
+                    label: "From device type",
+                  }
+                : undefined
+            }
+          />
+        </div>
       </DetailTab>
       {pkgs.show && (
         <DetailTab value="packages">
