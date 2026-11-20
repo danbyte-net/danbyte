@@ -135,6 +135,10 @@ A rack's [3D view](racks.md#the-rack-in-3d) and the floor plan's
   [**Stack port**](interfaces.md) - the data ports a VSF or IRF stack runs
   over, their media type unchanged. A device type's interface templates
   carry the mark to each device; a pack's YAML sets it with `stack: true`.
+  A stack port a module brings - a stack kit such as `C9200-STACK-KIT` in
+  its bay, `StackPort{module}` - is drawn at the kit's own `port:` anchor,
+  in the bay; a port the chassis model has an anchor for is drawn there.
+  A port with neither anchor is not drawn.
 - **Recorded cables.** Any cable between two stack ports of members of the
   same stack is drawn between them. It is drawn once, by the stack, not
   again by the room's cable layer. [Auto-connect](#auto-connect) cables

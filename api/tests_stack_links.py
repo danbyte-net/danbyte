@@ -868,3 +868,67 @@ power-ports:
         warnings = mismatches({"ports": {"StackPower1/A": {}}}, None,
                               interface_matcher(self.dt, ["StackPort{position}/1"]))
         self.assertFalse([w for w in warnings if "StackPower" in w])
+
+
+class ModulePortTests(_Base):
+    """A stack port a module brings (a stack kit's ``StackPort{module}``,
+    drawn in its bay): the chassis has no ``port:`` anchor for it, the
+    module does."""
+
+    def setUp(self):
+        super().setUp()
+        from .models import Module, ModuleBay, ModuleInterfaceTemplate, ModuleType
+        from .tests_led_state import _anchors
+
+        anchors = {**self.dt.model_anchors, "ports": {}, "port_covers": {},
+                   "bays": {**self.dt.model_anchors.get("bays", {}),
+                            "Stack1": {"node": 60, "m": []}, "Stack2": {"node": 61, "m": []}}}
+        DeviceType.objects.filter(pk=self.dt.pk).update(model_anchors=anchors)
+        self.kit = ModuleType.objects.create(
+            tenant=self.tenant, name="KIT", manufacturer=self.dt.manufacturer,
+            model_anchors={**_anchors(), "ports": {"StackPort{module}": {"node": 1}}})
+        self.kit.model_3d.name = "device-models/kit.glb"
+        self.kit.save()
+        self.t = ModuleInterfaceTemplate.objects.create(
+            module_type=self.kit, name="StackPort{module}", type=STACK)
+        self.Module, self.ModuleBay = Module, ModuleBay
+
+    def _seat(self):
+        for m in self.members:
+            pos = m.vc_position
+            for p in (1, 2):
+                bay = self.ModuleBay.objects.create(device=m, name=f"Stack{p}",
+                                                    position=f"{pos}/{p}")
+                module = self.Module.objects.create(device=m, module_bay=bay,
+                                                    module_type=self.kit)
+                Interface.objects.filter(device=m, name=f"StackPort{pos}/{p}").update(
+                    module=module, module_template=self.t)
+
+    def test_no_anchor_on_the_chassis_no_link(self):
+        self.assertEqual(self._links(), [])
+
+    def test_a_module_port_is_drawn_in_its_bay(self):
+        self._seat()
+        self.assertEqual(self._links(), [
+            ("StackPort1/1", "StackPort2/2", True),
+            ("StackPort2/1", "StackPort3/2", True),
+            ("StackPort3/1", "StackPort1/2", True),
+        ])
+        out = self._payload()
+        two = out["devices"][str(self.members[1].id)]
+        self.assertEqual([(p["bay"], p["port"], p["name"]) for p in two["stack_plugs"]],
+                         [("Stack1", "StackPort2/1", "StackPort2/1"),
+                          ("Stack2", "StackPort2/2", "StackPort2/2")])
+
+    def test_a_recorded_cable_on_module_ports(self):
+        self._seat()
+        cable = self._cable("StackPort1/1", "StackPort2/2")
+        out = self._payload()
+        links = [lk for s in out["stacks"] for lk in s["links"] if not lk["derived"]]
+        self.assertEqual([(lk["a"]["name"], lk["b"]["name"], lk["cable"]) for lk in links],
+                         [("StackPort1/1", "StackPort2/2", str(cable.id))])
+        one = out["devices"][str(self.dev.id)]
+        # The cabled module port's part rides in stack_plugs only.
+        self.assertFalse([p for p in one["plugs"] if p["name"] == "StackPort1/1"])
+        self.assertIn(("Stack1", "StackPort1/1"),
+                      [(p["bay"], p["name"]) for p in one["stack_plugs"]])

@@ -267,13 +267,17 @@ def stacks(devices, owners: dict, user, tenant, accessories=()) -> tuple[list, d
 
     # Where each drawn member's stack ports sit on its model: interfaces
     # for data links, power ports for StackPower.
+    # An installed module's port (a stack kit's StackPort{module}) counts
+    # too, drawn in its bay; the chassis's own anchor wins a name both have.
     link_kind = {"interface": "data", "power-port": "power"}
     anchors: dict[str, dict] = {}
     for key, d in drawn.items():
         if d.virtual_chassis_id:
-            anchors[key] = {(link_kind[kind], comp): name for bay, name, kind, comp
-                            in _wanted(d, owners.get(d.id))
-                            if bay is None and kind in link_kind}
+            mine: dict = {}
+            for bay, name, kind, comp in _wanted(d, owners.get(d.id)):
+                if kind in link_kind:
+                    mine.setdefault((link_kind[kind], comp), (bay, name))
+            anchors[key] = mine
 
     by_vc: dict = {}
     for dev_id, name, pos, vc_id, vc_name, master_id, topology, vis in rows:
@@ -340,8 +344,8 @@ def stacks(devices, owners: dict, user, tenant, accessories=()) -> tuple[list, d
         if not any(m[0] in drawn for m in visible):
             continue
         link_docs = [{
-                "a": {"device": a[0], "port": a[1], "name": a[2], "id": a[4]},
-                "b": {"device": b[0], "port": b[1], "name": b[2], "id": b[4]},
+                "a": {"device": a[0], "port": a[1][1], "name": a[2], "id": a[4]},
+                "b": {"device": b[0], "port": b[1][1], "name": b[2], "id": b[4]},
                 "kind": kind,
                 "derived": derived,
                 "cable": str(cable) if cable else None,
@@ -364,7 +368,7 @@ def stacks(devices, owners: dict, user, tenant, accessories=()) -> tuple[list, d
                 }, "stack_plugs": [], "stack_ends": {}}
         for doc, (a, b, derived, _cable, color, ctype, label, kind, _m) in zip(
                 link_docs, links, strict=True):
-            for side, (dev, anchor, port, ptype, _pk) in (("a", a), ("b", b)):
+            for side, (dev, (bay, anchor), port, ptype, _pk) in (("a", a), ("b", b)):
                 if not derived:
                     side = sides.get((dev, kind, port), side)
                 module, head = (_heads(accessories, maps, ptype, ctype, label)
@@ -374,7 +378,7 @@ def stacks(devices, owners: dict, user, tenant, accessories=()) -> tuple[list, d
                 entry = per[dev]
                 entry["stack_ends"][port] = derived
                 entry["stack_plugs"].append({
-                    "port": anchor, "bay": None, "name": port, "port_type": ptype,
+                    "port": anchor, "bay": bay, "name": port, "port_type": ptype,
                     "cabled": not derived,
                     "color": color.lower() if _HEX.match(color or "") else None,
                     "cable_type": ctype or "", "transceiver": None,
@@ -386,5 +390,5 @@ def stacks(devices, owners: dict, user, tenant, accessories=()) -> tuple[list, d
                     "end": side,
                 })
     for entry in per.values():
-        entry["stack_plugs"].sort(key=lambda r: r["port"])
+        entry["stack_plugs"].sort(key=lambda r: (r["bay"] or "", r["port"]))
     return out_stacks, per

@@ -492,16 +492,18 @@ class LedStates:
                 ends = st["stack_ends"]
                 # A cabled data port keeps what it seats as any port does -
                 # its transceiver record's part too; only the list moves.
-                mine = {p["name"]: p for p in entry["plugs"]
-                        if p["bay"] is None and p["name"] in ends}
+                # By bay and name: a stack kit's port is drawn in its bay.
+                at = {(sp["bay"], sp["name"]) for sp in entry["stack_plugs"]}
+                mine = {(p["bay"], p["name"]): p for p in entry["plugs"]
+                        if (p["bay"], p["name"]) in at}
                 for sp in entry["stack_plugs"]:
-                    hit = mine.get(sp["name"])
+                    hit = mine.get((sp["bay"], sp["name"]))
                     if (hit is not None and sp["port_type"] not in STACK_INTERFACE_TYPES
                             and sp["port_type"] not in STACK_POWER_PORT_TYPES):
                         sp.update({k: hit[k] for k in ("transceiver", "transceiver_part",
                                                        "cord_part")})
                 entry["plugs"] = [p for p in entry["plugs"]
-                                  if p["bay"] is not None or p["name"] not in ends]
+                                  if (p["bay"], p["name"]) not in at]
                 entry["stack_covers"] = stack_covers(
                     d, owners[d.id], {i for i, derived in ends.items() if derived},
                     entry["covers"])
