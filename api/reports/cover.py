@@ -55,15 +55,6 @@ _WHITE_LOGO = (
     Path(settings.BASE_DIR) / "frontend" / "public" / "branding" / "logo-full-white.png",
 )
 
-_DATE_FORMATS = {
-    "YYYY-MM-DD": "%Y-%m-%d",
-    "DD.MM.YYYY": "%d.%m.%Y",
-    "DD/MM/YYYY": "%d/%m/%Y",
-    "MM/DD/YYYY": "%m/%d/%Y",
-    "DD MMM YYYY": "%d %b %Y",
-}
-
-
 class CoverImageRejected(ValueError):
     """An upload that can't be a cover image; the message says why."""
 
@@ -338,7 +329,7 @@ def author_of(user) -> str:
 def date_for(user, tenant, when=None) -> str:
     """``when`` (now by default) as a date in the reader's date format and
     timezone."""
-    from auth_api.user_prefs import datetime_prefs
+    from auth_api.user_prefs import DATE_STRFTIME, datetime_prefs
 
     when = when or timezone.now()
     try:
@@ -349,7 +340,7 @@ def date_for(user, tenant, when=None) -> str:
         when = when.astimezone(ZoneInfo(prefs.get("timezone") or "UTC"))
     except Exception:  # noqa: BLE001, S110
         pass
-    return when.strftime(_DATE_FORMATS.get(prefs.get("date_format"), "%Y-%m-%d"))
+    return when.strftime(DATE_STRFTIME.get(prefs.get("date_format"), "%Y-%m-%d"))
 
 
 def cover_for_request(

@@ -4,6 +4,7 @@ loopback IP scope and tenant isolation. Also: trace-map device nodes carry
 ``status_mini``."""
 from __future__ import annotations
 
+import datetime
 from unittest import mock
 
 from django.contrib.auth.models import User
@@ -13,19 +14,27 @@ from rest_framework.test import APITestCase
 
 from api import topology_enrich as te
 from api.models import (
+    Cabinet,
     Cable,
     CableTermination,
+    Cluster,
+    ClusterType,
     Device,
     DeviceRole,
     DeviceType,
+    DinRail,
     Interface,
     IPAddress,
     IPRole,
+    Location,
     Manufacturer,
     Platform,
     Prefix,
     Rack,
+    Region,
+    Room,
     Site,
+    VirtualChassis,
 )
 from api.test_utils import status_for
 from auth_api.models import ObjectPermission, UserProfile
@@ -347,6 +356,157 @@ class CardPayloadTests(_Base):
         self.assertTrue(all(
             n["data"]["card"]["values"]["loopback"] for n in g["nodes"]
         ))
+
+
+#: The lines #538 added.
+MORE = [
+    "description", "software_version", "warranty_end", "room", "cabinet",
+    "region", "cluster", "virtual_chassis",
+]
+
+
+class _MoreLines(_Base):
+    """A device with every #538 attribute set, and one with none."""
+
+    def setUp(self):
+        super().setUp()
+        self.region = Region.objects.create(tenant=self.tenant, name="Nordics", slug="nordics")
+        self.site.region = self.region
+        self.site.save()
+        loc = Location.objects.create(tenant=self.tenant, site=self.site, name="B1", slug="b1")
+        self.room = Room.objects.create(tenant=self.tenant, location=loc, name="MDF")
+        self.cabinet = Cabinet.objects.create(
+            tenant=self.tenant, site=self.site, name="C1",
+            inner_width_mm=600, inner_height_mm=800,
+        )
+        self.rail = DinRail.objects.create(
+            cabinet=self.cabinet, label="A", x_mm=10, y_mm=50, length_mm=500
+        )
+        ctype = ClusterType.objects.create(tenant=self.tenant, name="ESXi", slug="esxi")
+        self.cluster = Cluster.objects.create(tenant=self.tenant, name="prod", type=ctype)
+        self.vc = VirtualChassis.objects.create(tenant=self.tenant, name="core-1")
+        self.full = self._device(
+            "full", description="Core  switch\nhall B", software_version="17.9.4",
+            warranty_end=datetime.date(2027, 3, 1), location=loc, room=self.room,
+            cabinet=self.cabinet, din_rail=self.rail, din_offset_mm=0,
+            cluster=self.cluster, virtual_chassis=self.vc, vc_position=2,
+        )
+        self.bare = self._device("bare", site=None)
+
+    def _show_cluster(self):
+        self.dep.device_field_visibility = {"cluster": True}
+        self.dep.save()
+
+
+class MoreLinesTests(_MoreLines):
+    def setUp(self):
+        super().setUp()
+        self._login(self._superuser())
+
+    def test_values_and_empties(self):
+        self._show_cluster()
+        cards, _ = self._cards(card_fields=MORE)
+        self.assertEqual(cards["full"]["fields"], MORE)
+        self.assertEqual(cards["full"]["values"], {
+            "description": "Core  switch\nhall B",
+            "software_version": "17.9.4",
+            "warranty_end": {"date": "2027-03-01", "text": "2027-03-01"},
+            "room": {"id": str(self.room.id), "name": "MDF"},
+            "cabinet": {"id": str(self.cabinet.id), "name": "C1", "rail": "A"},
+            "region": {"id": str(self.region.id), "name": "Nordics"},
+            "cluster": {"id": str(self.cluster.id), "name": "prod"},
+            "virtual_chassis": {"id": str(self.vc.id), "name": "core-1", "position": 2},
+        })
+        self.assertEqual(cards["bare"]["values"], {
+            "description": "", "software_version": "", "warranty_end": None,
+            "room": None, "cabinet": None, "region": None, "cluster": None,
+            "virtual_chassis": None,
+        })
+
+    def test_cabinet_without_a_rail_and_stack_without_a_position(self):
+        self._device("loose", cabinet=self.cabinet, virtual_chassis=self.vc)
+        cards, _ = self._cards(card_fields=["cabinet", "virtual_chassis"])
+        v = cards["loose"]["values"]
+        self.assertIsNone(v["cabinet"]["rail"])
+        self.assertIsNone(v["virtual_chassis"]["position"])
+
+    def test_cluster_follows_the_device_field_visibility(self):
+        # Hidden by default (DEVICE_FIELD_VISIBILITY_DEFAULTS).
+        cards, _ = self._cards(card_fields=["cluster"])
+        self.assertEqual(cards["full"]["fields"], ["cluster"])
+        self.assertIsNone(cards["full"]["values"]["cluster"])
+        self._show_cluster()
+        cards, _ = self._cards(card_fields=["cluster"])
+        self.assertEqual(cards["full"]["values"]["cluster"]["name"], "prod")
+
+    def test_warranty_prints_in_the_readers_date_format(self):
+        self.dep.date_format = "DD.MM.YYYY"
+        self.dep.save()
+        cards, _ = self._cards(card_fields=["warranty_end"])
+        self.assertEqual(
+            cards["full"]["values"]["warranty_end"],
+            {"date": "2027-03-01", "text": "01.03.2027"},
+        )
+
+    def test_cost_is_flat_in_the_node_count(self):
+        self._show_cluster()
+
+        def measure():
+            counted = []
+            real = te.enrich_card
+
+            def spy(ctx):
+                with CaptureQueriesContext(connection) as q:
+                    real(ctx)
+                counted.append(len(q.captured_queries))
+
+            with mock.patch.object(te, "enrich_card", side_effect=spy):
+                g = self._graph(card_fields=MORE)
+            return counted[0], g
+
+        small, g = measure()
+        self.assertEqual(len(g["nodes"]), 2)
+        for i in range(20):
+            room = Room.objects.create(
+                tenant=self.tenant, location=self.room.location, name=f"R{i}", slug=f"r{i}"
+            )
+            self._device(
+                f"d{i}", room=room, cabinet=self.cabinet, din_rail=self.rail,
+                din_offset_mm=20 * (i + 1),
+                cluster=self.cluster, virtual_chassis=self.vc, vc_position=i + 3,
+                warranty_end=datetime.date(2028, 1, 1),
+            )
+        large, g = measure()
+        self.assertEqual(len(g["nodes"]), 22)
+        self.assertEqual(small, large)
+        self.assertLessEqual(large, 14)
+        self.assertTrue(all(
+            n["data"]["card"]["values"]["room"] for n in g["nodes"]
+            if n["data"]["name"] != "bare"
+        ))
+
+
+class MoreLinesScopeTests(_MoreLines):
+    """Room, cabinet, region, cluster and stack are device attributes, as the
+    rack is: a user who may view the device sees their names, as on the
+    device API, without a grant on the related object."""
+
+    def test_device_view_alone_prints_the_names(self):
+        self._show_cluster()
+        user = User.objects.create_user("m", password="x")
+        UserProfile.objects.create(user=user, role="custom").tenants.add(self.tenant)
+        perm = ObjectPermission.objects.create(
+            name="device-view", object_types=["device"], actions=["view"]
+        )
+        perm.users.add(user)
+        perm.tenants.add(self.tenant)
+        self._login(user)
+        cards, _ = self._cards(card_fields=MORE)
+        v = cards["full"]["values"]
+        self.assertEqual(
+            [v[k]["name"] for k in ("room", "cabinet", "region", "cluster", "virtual_chassis")],
+            ["MDF", "C1", "Nordics", "prod", "core-1"],
+        )
 
 
 class LoopbackScopeTests(_Base):

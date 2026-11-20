@@ -30,10 +30,18 @@ export const CARD_FIELD_LABELS: Readonly<Partial<Record<string, string>>> = {
   device_type: "Device type",
   manufacturer: "Manufacturer",
   platform: "Platform",
+  software_version: "Software version",
+  warranty_end: "Warranty",
   role: "Role",
+  description: "Description",
+  cluster: "Cluster",
+  virtual_chassis: "Virtual chassis",
+  region: "Region",
   site: "Site",
   location: "Location",
+  room: "Room",
   rack: "Rack",
+  cabinet: "Cabinet",
   tags: "Tags",
 }
 
@@ -190,6 +198,33 @@ function lineText(
       return r.position != null
         ? `Rack ${r.name} · U${r.position}`
         : `Rack ${r.name}`
+    }
+    case "cabinet": {
+      const c = v.cabinet
+      if (!c) return ""
+      return c.rail ? `Cabinet ${c.name} · ${c.rail}` : `Cabinet ${c.name}`
+    }
+    case "room":
+      return v.room?.name ?? ""
+    case "region":
+      return v.region?.name ?? ""
+    case "cluster":
+      return v.cluster ? `Cluster ${v.cluster.name}` : ""
+    case "virtual_chassis": {
+      const s = v.virtual_chassis
+      if (!s) return ""
+      return s.position != null
+        ? `Stack ${s.name} · ${s.position}`
+        : `Stack ${s.name}`
+    }
+    case "description":
+      // One line: a description's own line breaks would not fit a card.
+      return (v.description ?? "").replace(/\s+/g, " ")
+    case "software_version":
+      return v.software_version ?? ""
+    case "warranty_end": {
+      const w = v.warranty_end
+      return w ? `Warranty to ${w.text || w.date}` : ""
     }
     case "tags":
       return (v.tags ?? []).map((t) => t.name).join(", ")

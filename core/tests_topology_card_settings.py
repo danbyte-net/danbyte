@@ -89,6 +89,21 @@ class TopologyCardCleanerTests(APITestCase):
         self.assertIsNone(topology_card_list(["was_removed"]))
         self.assertEqual(topology_card_list(["serial", "bogus"]), ["serial"])
 
+    def test_more_card_lines_are_known(self):
+        # #538: more device attributes as lines; the defaults stay put.
+        more = [
+            "description", "room", "cabinet", "region", "cluster",
+            "virtual_chassis", "software_version", "warranty_end",
+        ]
+        self.assertEqual(validate_topology_card_list(more), more)
+        self.assertEqual(topology_card_list([*more, "comments"]), more)
+        for skipped in ("comments", "airflow", "label"):
+            with self.assertRaises(serializers.ValidationError):
+                validate_topology_card_list([skipped])
+        self.assertEqual(
+            TOPOLOGY_CARD_FIELD_DEFAULTS, ["monitor", "primary_ip", "loopback", "serial"]
+        )
+
     def test_write_validation_refuses_rather_than_drops(self):
         self.assertEqual(
             validate_topology_card_list(["serial", "serial", "cf_x"]),

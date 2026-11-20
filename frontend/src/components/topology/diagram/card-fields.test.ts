@@ -98,6 +98,81 @@ describe("card lines", () => {
     ])
   })
 
+  it("prints the #538 lines, prefixed where a bare name is ambiguous", () => {
+    const values: TopoCardValues = {
+      description: "  Core switch\n  hall B ",
+      software_version: "IOS-XE 17.9.4",
+      warranty_end: { date: "2027-03-01", text: "01.03.2027" },
+      region: { id: "rg", name: "Nordics" },
+      room: { id: "rm", name: "MDF" },
+      cabinet: { id: "cb", name: "C1", rail: "A" },
+      cluster: { id: "cl", name: "prod" },
+      virtual_chassis: { id: "vc", name: "core-1", position: 2 },
+    }
+    const first = cardContent(
+      node(
+        [
+          "description",
+          "software_version",
+          "warranty_end",
+          "region",
+          "room",
+          "cabinet",
+        ],
+        values
+      )
+    )
+    expect(first.lines).toEqual([
+      { key: "description", label: "Description", text: "Core switch hall B" },
+      {
+        key: "software_version",
+        label: "Software version",
+        text: "IOS-XE 17.9.4",
+      },
+      {
+        key: "warranty_end",
+        label: "Warranty",
+        text: "Warranty to 01.03.2027",
+      },
+      { key: "region", label: "Region", text: "Nordics" },
+      { key: "room", label: "Room", text: "MDF" },
+      { key: "cabinet", label: "Cabinet", text: "Cabinet C1 · A" },
+    ])
+    const rest = cardContent(node(["cluster", "virtual_chassis"], values))
+    expect(rest.lines).toEqual([
+      { key: "cluster", label: "Cluster", text: "Cluster prod" },
+      {
+        key: "virtual_chassis",
+        label: "Virtual chassis",
+        text: "Stack core-1 · 2",
+      },
+    ])
+  })
+
+  it("prints the #538 lines without their optional parts, or not at all", () => {
+    const c = cardContent(
+      node(["cabinet", "virtual_chassis", "warranty_end"], {
+        cabinet: { id: "cb", name: "C1", rail: null },
+        virtual_chassis: { id: "vc", name: "core-1", position: 0 },
+        warranty_end: { date: "2027-03-01", text: "" },
+      })
+    )
+    expect(c.lines.map((l) => l.text)).toEqual([
+      "Cabinet C1",
+      "Stack core-1 · 0",
+      "Warranty to 2027-03-01",
+    ])
+    const none = cardContent(
+      node(["description", "room", "cluster", "virtual_chassis"], {
+        description: "   ",
+        room: null,
+        cluster: null,
+        virtual_chassis: { id: "vc", name: "s", position: null },
+      })
+    )
+    expect(none.lines.map((l) => l.text)).toEqual(["Stack s"])
+  })
+
   it("counts extra loopbacks and lists tags", () => {
     const c = cardContent(
       node(["loopback", "tags", "rack"], {

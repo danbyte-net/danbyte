@@ -6,6 +6,7 @@ import { toast } from "sonner"
 import { api } from "@/lib/api"
 import type { Device, TopologyCardConfig } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
+import { useDeviceFieldVisibility } from "@/lib/list-fields"
 import { useSaveObject } from "@/lib/save-object"
 import { ColorBadge } from "@/components/cells/color-badge"
 import { Loading } from "@/components/loading"
@@ -30,6 +31,7 @@ import { InfoTip } from "@/components/ui/info-tip"
 import { Switch } from "@/components/ui/switch"
 import {
   cardLineOptions,
+  hiddenCardLines,
   inheritedCardLines,
   rolesWithOwnLines,
 } from "./card-lines"
@@ -80,6 +82,8 @@ export function CardLinesEditor({
 }) {
   // Hidden custom fields never reach a card, so they are not offered.
   const cfMeta = useCustomFieldMeta(CF_MODELS, { skipHidden: true })
+  // Nor are device fields Settings → Device fields hides.
+  const deviceFields = useDeviceFieldVisibility()
   // What a switch put aside, to give back when it is switched back: the
   // custom list before Inherit, the list before Name only.
   const stash = useRef<{ custom?: string[]; list?: string[] }>({})
@@ -87,7 +91,11 @@ export function CardLinesEditor({
 
   if (!config) return <Loading />
 
-  const opts = cardLineOptions(config.available, cfMeta)
+  const opts = cardLineOptions(
+    config.available,
+    cfMeta,
+    hiddenCardLines(deviceFields)
+  )
   const meta = compact
     ? (k: string): FieldMeta => ({ label: opts.meta(k).label, hint: "" })
     : opts.meta

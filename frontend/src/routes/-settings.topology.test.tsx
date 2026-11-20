@@ -19,6 +19,7 @@ import {
   vi,
 } from "vitest"
 
+import type * as Api from "@/lib/api"
 import type { TopologyCardSettings } from "@/lib/api"
 import { Route } from "./settings.topology"
 
@@ -32,7 +33,8 @@ const { apiMock, url } = vi.hoisted(() => {
     url: query,
   }
 })
-vi.mock("@/lib/api", async () => ({
+vi.mock("@/lib/api", async (orig) => ({
+  ...(await orig<typeof Api>()),
   api: (await import("@/lib/test-page-size")).stripPageSize(apiMock),
 }))
 vi.mock("@/lib/use-me", () => ({

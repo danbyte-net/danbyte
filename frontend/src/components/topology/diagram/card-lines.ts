@@ -1,4 +1,4 @@
-import type { TopologyCardConfig } from "@/lib/api"
+import type { DeviceFieldVisibility, TopologyCardConfig } from "@/lib/api"
 import type {
   FieldGroup,
   FieldMeta,
@@ -25,10 +25,18 @@ export const CARD_LINE_HINTS: Readonly<Partial<Record<string, string>>> = {
   device_type: "Model",
   manufacturer: "The type's manufacturer",
   platform: "Or the type's platform",
+  software_version: "Running version",
+  warranty_end: "Last day of the warranty",
   role: "Device role",
+  description: "Device description",
+  cluster: "Compute cluster",
+  virtual_chassis: "Stack and member position",
+  region: "The site's region",
   site: "Site name",
   location: "Location in the site",
+  room: "Room in the location",
   rack: "Rack and position",
+  cabinet: "DIN cabinet and rail",
   tags: "Tag names",
 }
 
@@ -41,11 +49,40 @@ export const CARD_LINE_GROUPS: readonly FieldGroup[] = [
   },
   {
     title: "Hardware",
-    keys: ["serial", "asset_tag", "device_type", "manufacturer", "platform"],
+    keys: [
+      "serial",
+      "asset_tag",
+      "device_type",
+      "manufacturer",
+      "platform",
+      "software_version",
+      "warranty_end",
+    ],
   },
-  { title: "Placement", keys: ["role", "site", "location", "rack"] },
-  { title: "Other", keys: ["tags"] },
+  {
+    title: "Placement",
+    keys: ["role", "region", "site", "location", "room", "rack", "cabinet"],
+  },
+  { title: "Membership", keys: ["virtual_chassis", "cluster"] },
+  { title: "Other", keys: ["description", "tags"] },
 ]
+
+/** Lines that print a device field Settings → Device fields can hide: not
+ * offered while it is hidden, and the server sends no value then. */
+const CARD_LINE_DEVICE_FIELDS: Readonly<
+  Partial<Record<string, keyof DeviceFieldVisibility>>
+> = { cluster: "cluster" }
+
+/** The card lines a device-field visibility map hides. */
+export function hiddenCardLines(
+  visibility: DeviceFieldVisibility | undefined
+): ReadonlySet<string> {
+  return new Set(
+    Object.entries(CARD_LINE_DEVICE_FIELDS)
+      .filter(([, field]) => field && visibility?.[field] === false)
+      .map(([key]) => key)
+  )
+}
 
 export interface CardLineOptions {
   meta: (key: string) => FieldMeta
@@ -56,11 +93,14 @@ export interface CardLineOptions {
 }
 
 /** What a `FieldListEditor` needs for card lines: the server's vocabulary
- * plus the tenant's device custom fields (`useCustomFieldMeta` output). */
+ * plus the tenant's device custom fields (`useCustomFieldMeta` output),
+ * less the lines `hidden` names (`hiddenCardLines`). */
 export function cardLineOptions(
-  vocabulary: readonly string[],
-  cfMeta: Readonly<Partial<Record<string, FieldMeta>>>
+  allKeys: readonly string[],
+  cfMeta: Readonly<Partial<Record<string, FieldMeta>>>,
+  hidden: ReadonlySet<string> = new Set()
 ): CardLineOptions {
+  const vocabulary = allKeys.filter((k) => !hidden.has(k))
   const cfKeys = Object.keys(cfMeta)
   const cfLabels = Object.fromEntries(
     cfKeys.map((k) => [k.slice(3), cfMeta[k]?.label ?? k])
@@ -75,9 +115,10 @@ export function cardLineOptions(
   const grouped = new Set(CARD_LINE_GROUPS.flatMap((g) => g.keys))
   const extra = vocabulary.filter((k) => !grouped.has(k))
   const groups: FieldGroup[] = [
-    ...CARD_LINE_GROUPS.map((g) =>
-      g.title === "Other" ? { ...g, keys: [...g.keys, ...extra] } : g
-    ),
+    ...CARD_LINE_GROUPS.map((g) => {
+      const keys = g.keys.filter((k) => !hidden.has(k))
+      return { ...g, keys: g.title === "Other" ? [...keys, ...extra] : keys }
+    }),
     ...(cfKeys.length ? [{ title: "Custom fields", keys: cfKeys }] : []),
   ]
   return { meta, groups, available: [...vocabulary, ...cfKeys] }
@@ -85,9 +126,7 @@ export function cardLineOptions(
 
 /** Where an inherited list comes from, most specific first. */
 export type CardLinesFrom =
-  | { level: "view" }
-  | { level: "role"; slug: string }
-  | { level: "all" }
+  { level: "view" } | { level: "role"; slug: string } | { level: "all" }
 
 /**
  * The lines a device (or a view) gets while it has none of its own: the

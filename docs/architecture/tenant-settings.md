@@ -69,8 +69,10 @@ image as its size and a short SHA-256, never the bytes.
 card on the topology Diagram shows under its name is an ordered list of keys
 from `core.deployment.TOPOLOGY_CARD_FIELDS` (`status`, `monitor`,
 `primary_ip`, `secondary_ip`, `oob_ip`, `loopback`, `serial`, `asset_tag`,
-`device_type`, `manufacturer`, `platform`, `role`, `site`, `location`, `rack`,
-`tags`, plus `cf_<key>` for device custom fields), at most 8. `status` and
+`device_type`, `manufacturer`, `platform`, `software_version`,
+`warranty_end`, `role`, `description`, `cluster`, `virtual_chassis`,
+`region`, `site`, `location`, `room`, `rack`, `cabinet`, `tags`, plus
+`cf_<key>` for device custom fields), at most 8. `status` and
 `monitor` draw the pill in the card's corner rather than a line.
 The global and per-role lists are edited under **Settings → Topology**
 (both tiers, the tenant one inheriting until its switch is on).

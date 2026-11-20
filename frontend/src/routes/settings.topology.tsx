@@ -7,6 +7,7 @@ import { api } from "@/lib/api"
 import { apiAll } from "@/lib/api-all"
 import type { DeviceRole, TopologyCardSettings } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
+import { useDeviceFieldVisibility } from "@/lib/list-fields"
 import { openingScope } from "@/lib/settings-catalog"
 import { useMe } from "@/lib/use-me"
 import { useUrlEnum, useUrlPatch, useUrlText } from "@/lib/use-url-state"
@@ -25,7 +26,10 @@ import {
   SettingsCard,
   SettingsHeader,
 } from "@/components/settings/settings-card"
-import { cardLineOptions } from "@/components/topology/diagram/card-lines"
+import {
+  cardLineOptions,
+  hiddenCardLines,
+} from "@/components/topology/diagram/card-lines"
 import { Button } from "@/components/ui/button"
 import { InfoTip } from "@/components/ui/info-tip"
 import { Switch } from "@/components/ui/switch"
@@ -157,6 +161,7 @@ function CardLines({ tier }: { tier: Tier }) {
   })
   // Hidden custom fields never reach a card, so they are not offered.
   const cfMeta = useCustomFieldMeta(CF_MODELS, { skipHidden: true })
+  const deviceFields = useDeviceFieldVisibility()
 
   const [role, setRole] = useUrlText("role", "", { replace: true })
   const [draft, setDraft] = useState<Draft | null>(null)
@@ -208,7 +213,11 @@ function CardLines({ tier }: { tier: Tier }) {
   const isGlobal = scope === GLOBAL
 
   // The picker the device form and the map's editors share.
-  const { meta, groups, available } = cardLineOptions(data.available, cfMeta)
+  const { meta, groups, available } = cardLineOptions(
+    data.available,
+    cfMeta,
+    hiddenCardLines(deviceFields)
+  )
 
   // While this tenant inherits, the card shows what it inherits instead.
   const inheriting = editingTenant && !cur.override

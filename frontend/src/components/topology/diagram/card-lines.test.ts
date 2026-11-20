@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest"
 
+import { DEFAULT_DEVICE_FIELD_VISIBILITY } from "@/lib/api"
+import { CARD_FIELD_LABELS } from "./card-fields"
 import {
   CARD_LINE_GROUPS,
+  CARD_LINE_HINTS,
   cardLineOptions,
+  hiddenCardLines,
   inheritedCardLines,
   rolesWithOwnLines,
 } from "./card-lines"
@@ -78,6 +82,7 @@ describe("cardLineOptions", () => {
   it("puts a key the picker does not know under Other", () => {
     const o = cardLineOptions(vocab, {})
     expect(o.groups.find((g) => g.title === "Other")?.keys).toEqual([
+      "description",
       "tags",
       "uptime",
     ])
@@ -102,5 +107,63 @@ describe("cardLineOptions", () => {
       hint: "Custom field",
     })
     expect(o.meta("uptime").hint).toBe("")
+  })
+})
+
+describe("more card lines (#538)", () => {
+  const MORE = [
+    "description",
+    "software_version",
+    "warranty_end",
+    "room",
+    "cabinet",
+    "region",
+    "cluster",
+    "virtual_chassis",
+  ]
+  const groupOf = (key: string) =>
+    CARD_LINE_GROUPS.find((g) => g.keys.includes(key))?.title
+
+  it("names, hints and groups every new line", () => {
+    for (const k of MORE) {
+      expect(CARD_FIELD_LABELS[k]).toBeTruthy()
+      expect(CARD_LINE_HINTS[k]).toBeTruthy()
+      expect(CARD_FIELD_LABELS[k]).not.toMatch(/[()]/)
+    }
+    expect(MORE.map(groupOf)).toEqual([
+      "Other",
+      "Hardware",
+      "Hardware",
+      "Placement",
+      "Placement",
+      "Placement",
+      "Membership",
+      "Membership",
+    ])
+  })
+
+  it("keeps the placement keys in containment order", () => {
+    expect(CARD_LINE_GROUPS.find((g) => g.title === "Placement")?.keys).toEqual(
+      ["role", "region", "site", "location", "room", "rack", "cabinet"]
+    )
+  })
+
+  it("does not offer a line whose device field is hidden", () => {
+    const vocab = ["serial", "cluster", "virtual_chassis"]
+    // Cluster is a hidden device field by default.
+    const hidden = hiddenCardLines(DEFAULT_DEVICE_FIELD_VISIBILITY)
+    expect([...hidden]).toEqual(["cluster"])
+    const o = cardLineOptions(vocab, {}, hidden)
+    expect(o.available).toEqual(["serial", "virtual_chassis"])
+    expect(o.groups.find((g) => g.title === "Membership")?.keys).toEqual([
+      "virtual_chassis",
+    ])
+    const shown = hiddenCardLines({
+      ...DEFAULT_DEVICE_FIELD_VISIBILITY,
+      cluster: true,
+    })
+    expect(cardLineOptions(vocab, {}, shown).available).toEqual(vocab)
+    // Unknown while it loads: nothing is hidden.
+    expect(hiddenCardLines(undefined).size).toBe(0)
   })
 })

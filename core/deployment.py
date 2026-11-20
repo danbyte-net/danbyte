@@ -671,10 +671,18 @@ TOPOLOGY_CARD_FIELDS = [
     "device_type",
     "manufacturer",
     "platform",
+    "software_version",
+    "warranty_end",
     "role",
+    "description",
+    "cluster",  # printed only while the cluster device field is shown
+    "virtual_chassis",  # the stack's name and the member's position
+    "region",  # the site's region
     "site",
     "location",
+    "room",
     "rack",
+    "cabinet",  # and the DIN rail
     "tags",
 ]
 TOPOLOGY_CARD_PILLS = ("status", "monitor")

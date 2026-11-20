@@ -250,6 +250,12 @@ than adding to them - the (i) beside the page title sums it up as
 and the card shows just the name, whatever the levels below say. Turning
 it off puts back the list you had.
 
+The picker groups the lines: **Pill**, **Addresses**, **Hardware** (with
+**Software version** and **Warranty**), **Placement** (role, region, site,
+location, room, rack, cabinet), **Membership** (virtual chassis, cluster),
+**Other** (description, tags) and **Custom fields**. A device has no label
+field of its own; a device custom field gives one, as a line like any other.
+
 A list holds up to 8 entries. **Monitoring** and **Status** are the card's
 pill rather than lines (at most one shows, monitoring first), so a card has
 at most six lines, and a line with no value for a device is skipped. Device
@@ -2388,14 +2394,22 @@ apply as on the map, and without `include` their payload is unchanged.
 - `serial` and `asset_tag` are strings; `platform` (the device's own, else
   its type's) and `manufacturer` are `{id, name}` or `null`; `rack` is
   `{id, name, position}` or `null`; `tags` is `[{name, slug, color}]`.
+- `description` and `software_version` are strings; `room`, `region` (the
+  site's) and `cluster` are `{id, name}` or `null`; `cabinet` is
+  `{id, name, rail}` (`rail` the DIN rail's label, or `null`);
+  `virtual_chassis` is `{id, name, position}`; `warranty_end` is
+  `{date, text}` - the ISO date and the same day in the caller's date
+  format - or `null`. Like the rack they are device attributes, shown to
+  anyone who can see the device. `cluster` is `null` while the cluster
+  device field is hidden.
 - `cf_<key>` is the custom field's raw value. A key for a hidden custom field,
   or one that isn't a device custom field, is dropped from `fields`.
 - `meta.card` is `{fields, source, uses_monitor}`: the effective global list
   (before role, view and device lists) and whether any node shows the
   monitoring pill, which is when the page fetches check states.
 
-The cost doesn't grow with the map: at most ten queries, each run only when
-some card shows a line that needs it.
+The cost doesn't grow with the map: a fixed number of queries, one per
+setting or relation some card's lines need, each run only then.
 
 **`include=link_ips`** adds each cable pair's addresses and the subnets its
 two ends share, and `subnets` to every cable edge:
@@ -2780,8 +2794,9 @@ The global and per-role lists are edited in
 
 Keys come from `status`, `monitor`, `primary_ip`, `secondary_ip`, `oob_ip`,
 `loopback`, `serial`, `asset_tag`, `device_type`, `manufacturer`, `platform`,
-`role`, `site`, `location`, `rack`, `tags` and `cf_<key>`, at most 8 per
-list; an unknown key is a 400. See
+`software_version`, `warranty_end`, `role`, `description`, `cluster`,
+`virtual_chassis`, `region`, `site`, `location`, `room`, `rack`, `cabinet`,
+`tags` and `cf_<key>`, at most 8 per list; an unknown key is a 400. See
 [Tenant settings](../architecture/tenant-settings.md) for the resolution
 rules.
 
@@ -2797,11 +2812,19 @@ value could be taken for another line:
 | `serial` | `SN FDO2231X0AB` |
 | `asset_tag` | `Asset A-00123` |
 | `rack` | `Rack R12 · U20` |
-| `device_type`, `manufacturer`, `platform`, `role`, `site`, `location` | the name |
+| `cabinet` | the DIN cabinet and its rail: `Cabinet C1 · A` |
+| `virtual_chassis` | the stack and the member's position: `Stack core-1 · 2` |
+| `cluster` | `Cluster prod-esx` |
+| `warranty_end` | the last covered day, in your date format: `Warranty to 2027-03-01` |
+| `description` | the description on one line: `Core switch, hall B` |
+| `software_version` | the version as stored: `IOS-XE 17.9.4` |
+| `device_type`, `manufacturer`, `platform`, `role`, `region`, `site`, `location`, `room` | the name; `region` is the site's |
 | `tags` | the tag names, comma separated |
 | `cf_<key>` | `Label: value` |
 
-Lines without a value are skipped, and at most six show. `status` and
+Lines without a value are skipped, and at most six show. `cluster` has no
+value while the device's cluster field is hidden (Settings → Device fields),
+and the picker does not offer it then. `status` and
 `monitor` are pills, not lines, and at most one shows, inside the card's
 top-left corner: `monitor` shows the monitoring pill while the device is
 down or degraded and wins over `status`, which shows the lifecycle status
@@ -2809,7 +2832,8 @@ pill whenever it is listed. A card keeps room for the pill whenever its
 list can show one, so a device going down never resizes it.
 
 A photo's caption shows the same values on one line after the name,
-joined by ` · ` (a rack line reads `Rack R12 U20` there), with the pill
+joined by ` · ` (a rack line reads `Rack R12 U20` there, a stack
+`Stack core-1 2`), with the pill
 after them - see [Photo nodes](#photo-nodes).
 
 ### PDF export API

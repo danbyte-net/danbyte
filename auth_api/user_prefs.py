@@ -139,6 +139,23 @@ def get_page_size(user, tenant=None) -> int:
     return value if value in PAGE_SIZE_CHOICES else DEFAULTS["page_size"]
 
 
+#: The strftime pattern of each ``DeploymentSettings.DATE_FORMAT_CHOICES``
+#: key - the server's twin of ``frontend/src/lib/datetime.ts``.
+DATE_STRFTIME = {
+    "YYYY-MM-DD": "%Y-%m-%d",
+    "DD.MM.YYYY": "%d.%m.%Y",
+    "DD/MM/YYYY": "%d/%m/%Y",
+    "MM/DD/YYYY": "%m/%d/%Y",
+    "DD MMM YYYY": "%d %b %Y",
+}
+
+
+def format_day(day, prefs) -> str:
+    """A calendar date in ``prefs["date_format"]`` (``datetime_prefs``), ISO
+    for an unknown one. A date has no instant, so no timezone applies."""
+    return day.strftime(DATE_STRFTIME.get((prefs or {}).get("date_format"), "%Y-%m-%d"))
+
+
 def datetime_prefs(user, tenant=None) -> dict:
     """The EFFECTIVE date/time display settings for this user + tenant:
     ``{"date_format", "time_style", "timezone"}``.

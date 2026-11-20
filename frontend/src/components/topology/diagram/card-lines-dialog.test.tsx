@@ -11,6 +11,7 @@ import {
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
+import type * as Api from "@/lib/api"
 import type { TopologyCardConfig } from "@/lib/api"
 import { Field } from "@/components/forms/field"
 import {
@@ -23,7 +24,10 @@ import type { CardLinesTarget } from "./card-lines-dialog"
 const { apiMock } = vi.hoisted(() => ({
   apiMock: vi.fn<(path: string, init?: RequestInit) => Promise<unknown>>(),
 }))
-vi.mock("@/lib/api", () => ({ api: apiMock }))
+vi.mock("@/lib/api", async (orig) => ({
+  ...(await orig<typeof Api>()),
+  api: apiMock,
+}))
 // The save goes through useSaveObject, which reads the location for plan
 // mode; outside a plan it is a plain PATCH.
 vi.mock("@tanstack/react-router", () => ({

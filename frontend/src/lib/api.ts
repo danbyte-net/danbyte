@@ -5422,6 +5422,22 @@ export interface TopoCardValues {
   platform?: { id: string; name: string } | null
   manufacturer?: { id: string; name: string } | null
   rack?: { id: string; name: string; position: number | null } | null
+  /** The DIN-rail cabinet and the rail's label. */
+  cabinet?: { id: string; name: string; rail: string | null } | null
+  room?: { id: string; name: string } | null
+  /** The site's region. */
+  region?: { id: string; name: string } | null
+  /** Null while the cluster device field is hidden. */
+  cluster?: { id: string; name: string } | null
+  virtual_chassis?: {
+    id: string
+    name: string
+    position: number | null
+  } | null
+  description?: string
+  software_version?: string
+  /** The ISO date and its text in the reader's date format. */
+  warranty_end?: { date: string; text: string } | null
   tags?: Pick<Tag, "name" | "slug" | "color">[]
   /** Visible device custom fields, raw values. */
   [cf: `cf_${string}`]: unknown

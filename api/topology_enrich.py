@@ -88,11 +88,13 @@ def enrich_card(ctx: EnrichContext) -> None:
     only that node's keys, and only those the node doesn't already carry:
     ``status``, ``monitor``, ``device_type``, ``role``, ``site`` and
     ``location`` have none. A ``cf_<key>`` for a hidden or undefined device
-    custom field is dropped from ``fields``.
+    custom field is dropped from ``fields``; ``cluster`` is null while the
+    cluster device field is hidden (Settings → Device fields).
 
     The cost is flat in the node count: the effective settings (two
-    queries), one IP query, one custom-field query and a prefetch per
-    relation - each only when some node shows a key that needs it.
+    queries), one IP query, one custom-field query, a prefetch per
+    relation and the device-field or date settings - each only when some
+    node shows a key that needs it.
     """
     from core.effective_settings import (
         effective_topology_card,
@@ -115,6 +117,7 @@ def enrich_card(ctx: EnrichContext) -> None:
     visible_cf = _visible_device_cf_keys(ctx.tenant, wanted)
     ips, loopbacks = _card_ips(ctx, cards, wanted)
     _prefetch_card_relations([d for _data, d, _f, _s in cards], wanted)
+    shows = _card_shows(ctx, wanted)
 
     for data, d, fields, source in cards:
         fields = [
@@ -130,6 +133,10 @@ def enrich_card(ctx: EnrichContext) -> None:
                 values[key] = [_card_ip(ip) for ip in loopbacks.get(d.id, ())]
             elif key.startswith("cf_"):
                 values[key] = (d.custom_fields or {}).get(key[3:])
+            elif key == "cluster":
+                values[key] = _card_cluster(d) if shows["cluster"] else None
+            elif key == "warranty_end":
+                values[key] = _card_day(d.warranty_end, shows["dates"])
             else:
                 values[key] = _CARD_VALUE[key](d)
         data["card"] = {"fields": fields, "source": source, "values": values}
@@ -221,19 +228,48 @@ def _visible_device_cf_keys(tenant, wanted) -> set:
     )
 
 
+def _card_shows(ctx, wanted) -> dict:
+    """What the lines that depend on a setting need, read only when some
+    card lists them: whether the cluster device field is shown, and the
+    reader's date settings (``datetime_prefs``) for a warranty date."""
+    shows = {"cluster": False, "dates": None}
+    if "cluster" in wanted:
+        from core.effective_settings import effective_device_fields
+
+        shows["cluster"] = effective_device_fields(ctx.tenant).get("cluster", False)
+    if "warranty_end" in wanted:
+        from auth_api.user_prefs import datetime_prefs
+
+        try:
+            shows["dates"] = datetime_prefs(ctx.user, ctx.tenant)
+        except Exception:  # noqa: BLE001 - a broken pref prints the ISO date
+            shows["dates"] = {}
+    return shows
+
+
+#: The relations each line reads, beyond what ``_devices_qs`` joins.
+_CARD_LOOKUPS = {
+    "platform": ("platform", "device_type__platform"),
+    "manufacturer": ("device_type__manufacturer",),
+    "rack": ("rack",),
+    "cabinet": ("cabinet", "din_rail"),
+    "room": ("room",),
+    "region": ("site__region",),
+    "cluster": ("cluster",),
+    "virtual_chassis": ("virtual_chassis",),
+    "tags": (TAGS,),
+}
+
+
 def _prefetch_card_relations(devices, wanted) -> None:
     """Load the relations the wanted lines read, once for every device."""
     from django.db.models import prefetch_related_objects
 
-    lookups = []
-    if "platform" in wanted:
-        lookups += ["platform", "device_type__platform"]
-    if "manufacturer" in wanted:
-        lookups.append("device_type__manufacturer")
-    if "rack" in wanted:
-        lookups.append("rack")
-    if "tags" in wanted:
-        lookups.append(TAGS)
+    lookups = [
+        lookup
+        for key, keys in _CARD_LOOKUPS.items() if key in wanted
+        for lookup in keys
+    ]
     if devices and lookups:
         prefetch_related_objects(devices, *lookups)
 
@@ -258,6 +294,42 @@ def _card_rack(d):
     return {"id": str(d.rack.id), "name": d.rack.name, "position": d.position}
 
 
+def _ref(obj):
+    return {"id": str(obj.id), "name": obj.name} if obj is not None else None
+
+
+def _card_cabinet(d):
+    if not d.cabinet_id:
+        return None
+    rail = d.din_rail.label if d.din_rail_id else None
+    return {"id": str(d.cabinet.id), "name": d.cabinet.name, "rail": rail}
+
+
+def _card_region(d):
+    site = d.site if d.site_id else None
+    return _ref(site.region) if site is not None and site.region_id else None
+
+
+def _card_cluster(d):
+    return _ref(d.cluster) if d.cluster_id else None
+
+
+def _card_virtual_chassis(d):
+    if not d.virtual_chassis_id:
+        return None
+    vc = d.virtual_chassis
+    return {"id": str(vc.id), "name": vc.name, "position": d.vc_position}
+
+
+def _card_day(day, prefs):
+    """``{date, text}``: the ISO date and the reader's printed form."""
+    if day is None:
+        return None
+    from auth_api.user_prefs import format_day
+
+    return {"date": day.isoformat(), "text": format_day(day, prefs)}
+
+
 def _card_tags(d):
     return [
         {"name": t.name, "slug": t.slug, "color": t.color} for t in tags_of(d)
@@ -272,6 +344,12 @@ _CARD_VALUE = {
     "platform": _card_platform,
     "manufacturer": _card_manufacturer,
     "rack": _card_rack,
+    "cabinet": _card_cabinet,
+    "room": lambda d: _ref(d.room) if d.room_id else None,
+    "region": _card_region,
+    "virtual_chassis": _card_virtual_chassis,
+    "description": lambda d: d.description,
+    "software_version": lambda d: d.software_version,
     "tags": _card_tags,
 }
 
