@@ -158,6 +158,14 @@ def triangles(doc: dict) -> int:
     return total
 
 
+def _stem(path: str) -> str:
+    """A pack file's name without folder or extension; a rack kit's folder
+    name (``rack-kits/Generic/CABINET/kit.yaml``)."""
+    parts = path.split("/")
+    name = parts[-1].rsplit(".", 1)[0]
+    return parts[-2] if name == "kit" and len(parts) > 1 else name
+
+
 def _frame_mm(data: dict) -> tuple[float, float | None]:
     """A YAML type's face frame (mm), as Danbyte computes it for a type
     imported from it (api.model_studio.frame_mm)."""
@@ -319,11 +327,16 @@ class _Checker:
                                 ("rack-type", self.rack_types, "model")):
             listed = types.get(key) or []
             listed = {str(x) for x in listed} if isinstance(listed, list) else set()
-            have = {str(d.get(attr) or "") for d in docs.values()} - {""}
-            for name in sorted(listed - have):
+            # Listed by its name, or by its file's (a rack type's model is a
+            # sentence: "Generic 42U 600x1000 cabinet").
+            names = {path: {str(d.get(attr) or ""), _stem(path)} - {""} for path, d in docs.items()}
+            known = set().union(*names.values()) if names else set()
+            for name in sorted(listed - known):
                 self.add("error", "pack.yaml", f"types.{key} lists {name}, which has no YAML.")
-            for name in sorted(have - listed):
-                self.add("warning", "pack.yaml", f"types.{key} doesn't list {name}.")
+            for path, own in sorted(names.items()):
+                if not own & listed:
+                    self.add("warning", "pack.yaml",
+                             f"types.{key} doesn't list {str(docs[path].get(attr) or _stem(path))}.")
 
     # an accessory -----------------------------------------------------
 
@@ -351,6 +364,7 @@ class _Checker:
             self.add("warning" if fields is not None else "error", path, n, row)
         if fields is None:
             return
+        self.catalog_photos(data.get("model3d") if isinstance(data, dict) else None)
         rel = fields["file"]
         self.referenced.add(rel)
         if rel not in self.names:
@@ -569,8 +583,20 @@ class _Checker:
 
         if kind == "device-type":
             self.renders(path, data, block, data_bytes, bays, bay_names, module_parts, row)
-        elif block.get("renders") not in (None, "", {}):
-            self.add("warning", path, "model3d.renders on a module type is ignored.", row)
+        else:
+            # A module type's photos are the library's (its website shows
+            # them); Danbyte doesn't import them and they aren't strays.
+            self.catalog_photos(block)
+
+    def catalog_photos(self, block) -> None:
+        """Photos a module or accessory type names: for the library only."""
+        renders = block.get("renders") if isinstance(block, dict) else None
+        if not isinstance(renders, dict):
+            return
+        for face in RENDER_FACES:
+            rel = _clean_path(renders.get(face)) if renders.get(face) else None
+            if rel:
+                self.referenced.add(rel)
 
     def renders(self, path, data, block, glb_bytes, bays, bay_names, module_parts, row):
         renders = block.get("renders")
