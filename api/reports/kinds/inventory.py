@@ -34,6 +34,8 @@ from html import escape
 from django.db.models import Count
 from django.http import QueryDict
 from django.urls import reverse
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import extend_schema
 from rest_framework import serializers
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.exceptions import PermissionDenied, ValidationError
@@ -344,6 +346,14 @@ def describe(request) -> Response:
     })
 
 
+@extend_schema(methods=["GET"], operation_id="inventory_report_describe",
+               summary="What an inventory report can hold", request=None,
+               responses={200: OpenApiTypes.OBJECT})
+@extend_schema(methods=["POST"], operation_id="inventory_report_create",
+               summary="Make the inventory report (PDF)",
+               request=InventoryReportRequestSerializer,
+               responses={(200, "application/pdf"): OpenApiTypes.BINARY,
+                          200: OpenApiTypes.OBJECT})
 @api_view(["GET", "POST"])
 @permission_classes([IsAuthenticated])
 def inventory_report_view(request):
@@ -388,6 +398,8 @@ def inventory_report_view(request):
     )
 
 
+@extend_schema(operation_id="inventory_report_file", summary="A kept inventory report PDF",
+               responses={(200, "application/pdf"): OpenApiTypes.BINARY})
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def inventory_report_file_view(request, token):
