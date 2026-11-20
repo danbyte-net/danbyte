@@ -209,7 +209,7 @@ export function ObjectImages({
       }
     >
       {images.length === 0 ? (
-        <div className="flex aspect-[4/1] w-full items-center justify-center rounded-lg border border-dashed border-border bg-muted">
+        <div className="flex aspect-[4/1] max-h-28 w-full items-center justify-center rounded-lg border border-dashed border-border bg-muted">
           <span className="text-[11px] text-muted-foreground">
             {all.length ? "No matches" : "No images yet"}
           </span>
