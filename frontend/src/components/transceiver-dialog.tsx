@@ -15,7 +15,6 @@ import type {
   TransceiverConnector,
 } from "@/lib/api"
 import { apiAll } from "@/lib/api-all"
-import { apiErrorToast } from "@/lib/api-toast"
 import { useMe } from "@/lib/use-me"
 import { Button } from "@/components/ui/button"
 import {
@@ -33,6 +32,11 @@ import {
 import { ObjectPicker } from "@/components/object-picker"
 import type { ObjectPickerSpec } from "@/components/object-picker"
 import { SegmentedTabs } from "@/components/segmented-tabs"
+import {
+  RemovePartDialog,
+  useDeviceSite,
+  useStockSpec,
+} from "@/components/stock-place"
 
 /**
  * Transceivers per port (docs/dcim/inventory.md → Transceivers): an
@@ -222,9 +226,11 @@ export function pluggableGroups(
 }
 
 /**
- * Set the transceiver in a port: one of the device's free transceivers, or
- * a new one created in place - from a pluggable, which fills in its part
- * number and facts. Opens on New when the device has no free ones.
+ * Set the transceiver in a port: one of the device's free transceivers, one
+ * from stock (docs/dcim/stock.md - those that fit the port, the device's
+ * site first), or a new one created in place - from a pluggable, which
+ * fills in its part number and facts. With nothing free on the device it
+ * opens on From stock, and on New when stock has none either.
  */
 export function TransceiverDialog({
   iface,
@@ -238,15 +244,35 @@ export function TransceiverDialog({
   const current = iface.transceiver ?? null
   const qc = useQueryClient()
   const { fieldErrors, handleApiError, reset } = useFieldErrors()
-  const [mode, setMode] = useState<"pick" | "new">("pick")
+  const [mode, setMode] = useState<"pick" | "stock" | "new">("pick")
   const [picked, setPicked] = useState<string | null>(null)
+  const [stockPick, setStockPick] = useState<string | null>(null)
   const [name, setName] = useState("")
   const [partId, setPartId] = useState("")
   const [serial, setSerial] = useState("")
   const [facts, setFacts] = useState<TransceiverFacts>(NO_FACTS)
   const [pluggable, setPluggable] = useState<string | null>(null)
   const spec = useFreeTransceiverSpec(iface.device.id)
+  const siteId = useDeviceSite(iface.device.id, open)
+  const stockSpec = useStockSpec({
+    kind: "transceiver",
+    fits: iface.type || undefined,
+    nearSite: siteId,
+  })
   const { canDo } = useMe()
+  const stock = useQuery({
+    queryKey: ["stock-items", "transceiver", iface.type, "count"],
+    queryFn: () =>
+      api<{ count: number }>(
+        `/api/inventory-items/?${new URLSearchParams({
+          home: "stock",
+          kind: "transceiver",
+          ...(iface.type ? { fits: iface.type } : {}),
+          page_size: "1",
+        }).toString()}`
+      ),
+    enabled: open,
+  })
   const free = useQuery({
     queryKey: ["free-transceivers", iface.device.id, "count"],
     queryFn: () =>
@@ -264,22 +290,25 @@ export function TransceiverDialog({
   })
   const partList = parts.data?.results ?? []
   const noneFree = free.data?.count === 0
+  const noStock = stock.data?.count === 0
 
   useEffect(() => {
     if (!open) return
     setMode("pick")
     setPluggable(null)
     setPicked(null)
+    setStockPick(null)
     setName(`${iface.name} optic`)
     setPartId("")
     setSerial("")
     setFacts(NO_FACTS)
     reset()
   }, [open, iface.name, reset])
-  // Nothing spare on the device: start on New.
+  // Nothing spare on the device: start on From stock, else on New.
   useEffect(() => {
-    if (open && noneFree) setMode("new")
-  }, [open, noneFree])
+    if (!open || !noneFree || stock.data === undefined) return
+    setMode(noStock ? "new" : "stock")
+  }, [open, noneFree, noStock, stock.data])
 
   const pickPluggable = (id: string | null) => {
     setPluggable(id)
@@ -298,6 +327,18 @@ export function TransceiverDialog({
           method: "PATCH",
           body: JSON.stringify({ interface_id: interfaceId }),
         })
+      if (mode === "stock") {
+        if (!stockPick) throw new Error("Pick a transceiver.")
+        // A port holds one: the one there now stays on the device.
+        if (current) await seat(current.id, null)
+        return api<InventoryItemRow>(
+          `/api/inventory-items/${stockPick}/move/`,
+          {
+            method: "POST",
+            body: JSON.stringify({ interface_id: iface.id }),
+          }
+        )
+      }
       let id = picked
       if (mode === "new") {
         // Created first, so a refused form changes nothing; seated at once
@@ -337,7 +378,8 @@ export function TransceiverDialog({
     onSettled: () => invalidateTransceiver(qc, iface),
   })
 
-  const ready = mode === "pick" ? !!picked : !!name.trim()
+  const ready =
+    mode === "pick" ? !!picked : mode === "stock" ? !!stockPick : !!name.trim()
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent size="xl">
@@ -354,7 +396,8 @@ export function TransceiverDialog({
           <SegmentedTabs
             label="Transceiver source"
             items={[
-              { value: "pick", label: "From inventory" },
+              { value: "pick", label: "On this device" },
+              { value: "stock", label: "From stock" },
               { value: "new", label: "New" },
             ]}
             value={mode}
@@ -368,6 +411,16 @@ export function TransceiverDialog({
               onChange={setPicked}
               placeholder="Select a transceiver…"
               emptyText="No spare transceivers on this device."
+              error={fieldErrors.interface_id}
+            />
+          ) : mode === "stock" ? (
+            <ObjectPicker
+              spec={stockSpec}
+              label="Transceiver"
+              value={stockPick}
+              onChange={setStockPick}
+              placeholder="Select a transceiver…"
+              emptyText="No transceivers in stock that fit."
               error={fieldErrors.interface_id}
             />
           ) : (
@@ -439,11 +492,13 @@ function invalidateTransceiver(
   qc.invalidateQueries({ queryKey: ["free-transceivers", iface.device.id] })
   qc.invalidateQueries({ queryKey: ["device-leds"] })
   qc.invalidateQueries({ queryKey: ["interface-parts", iface.id] })
+  qc.invalidateQueries({ queryKey: ["stock-items"] })
+  qc.invalidateQueries({ queryKey: ["inventory"] })
 }
 
 /** The Overview's Transceiver value: what the port holds, with Set and
- * Remove for an editor. Removing unlinks it; the item stays in the
- * device's inventory. */
+ * Remove for an editor. Removing asks where it goes: to stock (the
+ * default), kept on the device, or out as scrap or RMA. */
 export function TransceiverValue({
   iface,
   canEdit,
@@ -453,19 +508,9 @@ export function TransceiverValue({
 }) {
   const qc = useQueryClient()
   const [open, setOpen] = useState(false)
+  const [removing, setRemoving] = useState(false)
   const t = iface.transceiver ?? null
-  const remove = useMutation({
-    mutationFn: () =>
-      api<InventoryItemRow>(`/api/inventory-items/${t!.id}/`, {
-        method: "PATCH",
-        body: JSON.stringify({ interface_id: null }),
-      }),
-    onSuccess: () => {
-      invalidateTransceiver(qc, iface)
-      toast.success("Transceiver removed")
-    },
-    onError: (err) => apiErrorToast(err),
-  })
+  const siteId = useDeviceSite(iface.device.id, removing)
   return (
     <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
       {t ? (
@@ -488,13 +533,25 @@ export function TransceiverValue({
               type="button"
               size="xs"
               variant="ghost"
-              disabled={remove.isPending}
-              onClick={() => remove.mutate()}
+              onClick={() => setRemoving(true)}
             >
-              {remove.isPending ? "Removing…" : "Remove"}
+              Remove
             </Button>
           )}
           <TransceiverDialog iface={iface} open={open} onOpenChange={setOpen} />
+          {t && (
+            <RemovePartDialog
+              open={removing}
+              onOpenChange={setRemoving}
+              title={`Remove transceiver · ${iface.name}`}
+              target={{
+                moveEndpoint: `/api/inventory-items/${t.id}/move/`,
+                deviceId: iface.device.id,
+                siteId,
+              }}
+              onDone={() => invalidateTransceiver(qc, iface)}
+            />
+          )}
         </span>
       )}
     </span>

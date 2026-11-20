@@ -4619,6 +4619,7 @@ export type InventoryItemKind =
   | "gpu"
   | "controller"
   | "transceiver"
+  | "module"
 
 /** Storage media/protocol for kind=disk ("" for non-disks). */
 export type InventoryMedia = "" | "nvme" | "ssd" | "hdd" | "tape"
@@ -4638,6 +4639,7 @@ export const INVENTORY_KIND_OPTIONS: {
   { value: "gpu", label: "GPU" },
   { value: "controller", label: "Controller" },
   { value: "transceiver", label: "Transceiver" },
+  { value: "module", label: "Module" },
 ]
 
 export const INVENTORY_MEDIA_OPTIONS: {
@@ -4775,9 +4777,19 @@ export function unitToBytes(value: string, unit: StorageUnit): number | null {
   return Math.round(n * factor)
 }
 
+/** Where an inventory item is (docs/dcim/stock.md): seated in a port, loose
+ * on a device, or in stock at a site and location. */
+export type InventoryHome = "port" | "device" | "stock"
+
 export interface InventoryItemRow {
   id: string
-  device: { id: string; name: string }
+  /** Null for a part in stock. */
+  device: { id: string; name: string } | null
+  /** The stock place's location (a part on a device has none). */
+  location?: { id: string; name: string } | null
+  home?: InventoryHome
+  /** What a module kept in inventory is. */
+  module_type?: { id: string; name: string; part_number: string } | null
   parent: { id: string; name: string } | null
   name: string
   manufacturer: { id: string; name: string } | null
@@ -4807,7 +4819,7 @@ export interface InventoryItemRow {
   /** A transceiver's part on the Pluggables page: set by hand, else the one
    * whose part numbers list its part ID. */
   pluggable?: { id: string; vendor: string; name: string } | null
-  /** The device's site. */
+  /** The device's site, else the stock site. */
   site?: { id: string; name: string } | null
   tags: Tag[]
 }

@@ -6940,7 +6940,8 @@ class InventoryItemViewSet(InventoryMoveMixin, _DevicePortViewSet):
     )
     # Moving a part (docs/dcim/stock.md) changes it; installing a module
     # from stock changes the item and needs add on modules where it lands.
-    rbac_action_map = {"move": "change", "install_module": "change"}
+    rbac_action_map = {**_DevicePortViewSet.rbac_action_map,
+                       "move": "change", "install_module": "change"}
     serializer_class = InventoryItemSerializer
     # InventoryItem has no `type` column - its own allowlist. kind/media are
     # choice-backed CharFields (validated against the model choices); status

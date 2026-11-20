@@ -22,16 +22,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
-import {
   Table,
   TableBody,
   TableCell,
@@ -62,6 +52,13 @@ import { apiErrorToast } from "@/lib/api-toast"
 import { invalidatePortCounts } from "@/lib/port-utilization"
 import { useSaveObject } from "@/lib/save-object"
 import { moduleTypePicks } from "@/lib/module-suggestions"
+import {
+  RemovePartDialog,
+  useDeviceSite,
+  useStockSpec,
+} from "@/components/stock-place"
+import { ObjectPicker } from "@/components/object-picker"
+import { SegmentedTabs } from "@/components/segmented-tabs"
 
 /** The statuses a module may wear: the catalog's, offered to modules. */
 function useModuleStatuses(enabled = true) {
@@ -274,8 +271,10 @@ export function invalidateModuleCaches(qc: QueryClient, deviceId: string) {
   invalidatePortCounts(qc)
 }
 
-/** Remove the module in a bay, after a confirm. Shared by the Modules pane
- * and the 3D model viewer's bay menu: one write, one set of refreshes. */
+/** Remove the module in a bay (docs/dcim/stock.md): to stock, kept on the
+ * device as a part, out as scrap or RMA, or deleted as before. Shared by
+ * the Modules pane and the 3D model viewer's bay menu: one write, one set
+ * of refreshes. */
 export function RemoveModuleDialog({
   deviceId,
   target,
@@ -288,46 +287,24 @@ export function RemoveModuleDialog({
   onRemoved?: () => void
 }) {
   const qc = useQueryClient()
-  const remove = useMutation({
-    mutationFn: (moduleId: string) =>
-      api<void>(`/api/modules/${moduleId}/`, { method: "DELETE" }),
-    onSuccess: () => {
-      invalidateModuleCaches(qc, deviceId)
-      toast.success("Module removed - its interfaces are gone too")
-      onRemoved?.()
-      onOpenChange(false)
-    },
-    onError: (err) => apiErrorToast(err),
-  })
+  const siteId = useDeviceSite(deviceId, !!target)
   return (
-    <AlertDialog open={!!target} onOpenChange={onOpenChange}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>
-            Remove {target?.typeName} from {target?.bayName}?
-          </AlertDialogTitle>
-          <AlertDialogDescription>
-            The interfaces this module contributed to the device are removed
-            with it (matched by name).
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel disabled={remove.isPending}>
-            Cancel
-          </AlertDialogCancel>
-          <AlertDialogAction
-            variant="destructive"
-            disabled={remove.isPending}
-            onClick={(e) => {
-              e.preventDefault()
-              if (target) remove.mutate(target.moduleId)
-            }}
-          >
-            {remove.isPending ? "Removing…" : "Remove"}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+    <RemovePartDialog
+      open={!!target}
+      onOpenChange={onOpenChange}
+      title={`Remove ${target?.typeName ?? ""} from ${target?.bayName ?? ""}`}
+      target={{
+        moveEndpoint: `/api/modules/${target?.moduleId}/remove/`,
+        deleteEndpoint: `/api/modules/${target?.moduleId}/`,
+        deviceId,
+        siteId,
+      }}
+      onDone={() => {
+        invalidateModuleCaches(qc, deviceId)
+        qc.invalidateQueries({ queryKey: ["device-inventory", deviceId] })
+        onRemoved?.()
+      }}
+    />
   )
 }
 
@@ -392,6 +369,13 @@ export function InstallModuleDialog({
   const [adoptable, setAdoptable] = useState<string[]>([])
   const [adopt, setAdopt] = useState(false)
   const existing = mode === "install" ? null : seated
+  // A new module, or one kept in stock (docs/dcim/stock.md) - installed
+  // with its serial and history.
+  const [source, setSource] = useState<"new" | "stock">("new")
+  const [stockId, setStockId] = useState<string | null>(null)
+  const fromStock = mode === "install" && source === "stock"
+  const hostSite = useDeviceSite(deviceId, !!bay && mode === "install")
+  const stockSpec = useStockSpec({ kind: "module", nearSite: hostSite })
 
   useEffect(() => {
     if (!bay) return
@@ -401,6 +385,8 @@ export function InstallModuleDialog({
     setConfirmRemove(false)
     setAdoptable([])
     setAdopt(false)
+    setSource("new")
+    setStockId(null)
     reset()
     // Keyed on the module's id: a host building `seated` inline must not
     // wipe what is being typed on every render.
@@ -446,6 +432,19 @@ export function InstallModuleDialog({
 
   const install = useMutation({
     mutationFn: () => {
+      if (fromStock) {
+        return api<InstallResult>(
+          `/api/inventory-items/${stockId}/install-module/`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              module_bay_id: bay!.id,
+              status_id: pickedStatus,
+              adopt_components: adopt,
+            }),
+          }
+        )
+      }
       if (existing) {
         const body: Record<string, unknown> = {
           serial_number: serial.trim(),
@@ -480,6 +479,10 @@ export function InstallModuleDialog({
       // the Modules pane, the 2D faceplate, the 3D room and viewer -
       // refreshes the same way.
       invalidateModuleCaches(qc, deviceId)
+      if (fromStock) {
+        qc.invalidateQueries({ queryKey: ["stock-items"] })
+        qc.invalidateQueries({ queryKey: ["inventory"] })
+      }
       const adopted = r.adopted?.length ?? r.interfaces?.adopted?.length ?? 0
       const took = adopted ? ` - ${adopted} adopted` : ""
       if (mode === "install") {
@@ -544,11 +547,39 @@ export function InstallModuleDialog({
         <form
           onSubmit={(e) => {
             e.preventDefault()
-            if (moduleTypeId || mode === "edit") install.mutate()
+            if (fromStock ? stockId : moduleTypeId || mode === "edit")
+              install.mutate()
           }}
           className="grid gap-4"
         >
-          {mode !== "edit" && (
+          {mode === "install" && (
+            <SegmentedTabs
+              label="Module source"
+              items={[
+                { value: "new", label: "New" },
+                { value: "stock", label: "From stock" },
+              ]}
+              value={source}
+              onValueChange={(v) => {
+                setSource(v)
+                setAdoptable([])
+                setAdopt(false)
+                reset()
+              }}
+            />
+          )}
+          {fromStock && (
+            <ObjectPicker
+              spec={stockSpec}
+              label="Module"
+              value={stockId}
+              onChange={setStockId}
+              placeholder="Select a module…"
+              emptyText="No modules in stock."
+              error={fieldErrors.module_bay_id || fieldErrors.module_type_id}
+            />
+          )}
+          {mode !== "edit" && !fromStock && (
             <FormCombobox
               label="Module type"
               value={moduleTypeId}
@@ -571,14 +602,16 @@ export function InstallModuleDialog({
             options={statuses.data?.results ?? []}
             error={fieldErrors.status_id}
           />
-          <FormText
-            label="Serial number"
-            value={serial}
-            onChange={setSerial}
-            mono
-            hint="optional"
-            error={fieldErrors.serial_number}
-          />
+          {!fromStock && (
+            <FormText
+              label="Serial number"
+              value={serial}
+              onChange={setSerial}
+              mono
+              hint="optional"
+              error={fieldErrors.serial_number}
+            />
+          )}
           {adoptable.length > 0 && (
             <FormCheckbox
               label="Adopt existing components"
@@ -602,7 +635,10 @@ export function InstallModuleDialog({
             </Button>
             <Button
               type="submit"
-              disabled={(mode !== "edit" && !moduleTypeId) || install.isPending}
+              disabled={
+                (fromStock ? !stockId : mode !== "edit" && !moduleTypeId) ||
+                install.isPending
+              }
             >
               {install.isPending
                 ? mode === "install"

@@ -281,25 +281,30 @@ export function buildInventoryItemColumns({
     device: () => ({
       id: "device",
       header: "Device",
-      accessorFn: (r) => r.device.name,
-      cell: ({ row }) => (
-        <Link
-          to="/devices/$id"
-          params={{ id: row.original.device.id }}
-          className="link font-medium"
-        >
-          {row.original.device.name}
-        </Link>
-      ),
+      accessorFn: (r) => r.device?.name ?? "",
+      cell: ({ row }) => {
+        const d = row.original.device
+        return d ? (
+          <Link
+            to="/devices/$id"
+            params={{ id: d.id }}
+            className="link font-medium"
+          >
+            {d.name}
+          </Link>
+        ) : (
+          <span className="text-muted-foreground">In stock</span>
+        )
+      },
       ...(facets
         ? {
             meta: {
               facet: {
                 kind: "enum",
                 label: "Device",
-                get: (r: InventoryItemRow) => r.device.id,
-                formatValue: (_v: string, s: InventoryItemRow) => ({
-                  label: s.device.name,
+                get: (r: InventoryItemRow) => r.device?.id ?? "__none__",
+                formatValue: (v: string, s: InventoryItemRow) => ({
+                  label: v === "__none__" ? "In stock" : (s.device?.name ?? v),
                 }),
               },
             },
