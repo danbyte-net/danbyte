@@ -6467,7 +6467,7 @@ class ModuleSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Tagga
     device_id = TenantScopedPrimaryKeyRelatedField(
         source="device", queryset=Device.objects.all(), write_only=True,
     )
-    module_bay_id = serializers.PrimaryKeyRelatedField(
+    module_bay_id = TenantScopedPrimaryKeyRelatedField(
         source="module_bay", queryset=ModuleBay.objects.all(), write_only=True,
     )
     module_type_id = TenantScopedPrimaryKeyRelatedField(
