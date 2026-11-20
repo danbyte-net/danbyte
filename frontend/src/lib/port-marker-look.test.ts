@@ -8,6 +8,7 @@ import {
   lighten,
   markerLook,
   markerShape,
+  rimRoom,
   rimWidth,
   roundedRect,
   shapeKey,
@@ -201,5 +202,51 @@ describe("lighten", () => {
     expect(lighten("#000000", 0.5)).toBe("#808080")
     expect(lighten("#ffffff", 0.3)).toBe("#ffffff")
     expect(lighten("not-a-colour", 0.5)).toBe("not-a-colour")
+  })
+})
+
+describe("rimRoom", () => {
+  const shape = (w: number, h: number) => ({
+    w,
+    h,
+    r: 0,
+    u: [1, 0, 0] as [number, number, number],
+    v: [0, 1, 0] as [number, number, number],
+    n: [0, 0, 1] as [number, number, number],
+  })
+
+  it("gives each marker half the gap to its nearest neighbour", () => {
+    // SFP28 cages: 13.8 mm wide, 14.25 mm apart; rows 15.05 mm apart.
+    const s = shape(0.0138, 0.0083)
+    const room = rimRoom([
+      { at: [0, 0, 0], shape: s },
+      { at: [0.01425, 0, 0], shape: s },
+      { at: [0, -0.01505, 0], shape: s },
+    ])
+    expect(room[0]).toBeCloseTo(0.000225)
+    expect(room[1]).toBeCloseTo(0.000225)
+    expect(room[2]).toBeCloseTo(0.003375)
+  })
+
+  it("leaves a lone marker, or one on another face, unbounded", () => {
+    const s = shape(0.01, 0.01)
+    const rear = { ...s, n: [0, 0, -1] as [number, number, number] }
+    expect(rimRoom([{ at: [0, 0, 0], shape: s }])).toEqual([Infinity])
+    expect(
+      rimRoom([
+        { at: [0, 0, 0], shape: s },
+        { at: [0.011, 0, 0], shape: rear },
+      ])
+    ).toEqual([Infinity, Infinity])
+  })
+
+  it("is zero for markers that already touch or overlap", () => {
+    const s = shape(0.01, 0.01)
+    expect(
+      rimRoom([
+        { at: [0, 0, 0], shape: s },
+        { at: [0.009, 0, 0], shape: s },
+      ])
+    ).toEqual([0, 0])
   })
 })

@@ -21,6 +21,7 @@ import {
   MARKER_FILL_OPACITY_OVER_PART,
   markerLook,
   markerShape,
+  rimRoom,
   rimWidth,
   roundedRect,
   shapeKey,
@@ -299,19 +300,27 @@ function shapeOf(points: [number, number][]): THREE.Shape {
  * thin ring just outside it, so the port's own edge stays in view. */
 function openingGeometries(
   s: Pick<MarkerShape, "w" | "h" | "r">,
-  thick = false
+  thick = false,
+  /** How far the rim may reach outside the opening (rimRoom); what does
+   * not fit there is drawn inside it. */
+  room = Infinity
 ): {
   fill: THREE.BufferGeometry
   rim: THREE.BufferGeometry
 } {
   const rim = rimWidth(s.w, s.h, thick)
+  const out = Math.min(rim, Math.max(0, room))
+  // Never more than a third of the opening's short side inward.
+  const inn = Math.min(rim - out, Math.min(s.w, s.h) / 3)
   const inner = roundedRect(s.w, s.h, s.r)
   const ring = shapeOf(
-    roundedRect(s.w + 2 * rim, s.h + 2 * rim, s.r > 0 ? s.r + rim : 0)
+    roundedRect(s.w + 2 * out, s.h + 2 * out, s.r > 0 ? s.r + out : 0)
   )
-  ring.holes.push(
-    new THREE.Path(inner.map(([x, y]) => new THREE.Vector2(x, y)))
-  )
+  const hole =
+    inn > 0
+      ? roundedRect(s.w - 2 * inn, s.h - 2 * inn, Math.max(0, s.r - inn))
+      : inner
+  ring.holes.push(new THREE.Path(hole.map(([x, y]) => new THREE.Vector2(x, y))))
   return {
     fill: new THREE.ShapeGeometry(shapeOf(inner)),
     rim: new THREE.ShapeGeometry(ring),
@@ -405,6 +414,8 @@ function MarkerMesh<TPick extends Shaped>({
     hoverChange.current?.(hoverPick)
   }, [hoverPick])
 
+  // A rim stops halfway to the next port, so it never covers a neighbour.
+  const rooms = useMemo(() => rimRoom(placed), [placed])
   // One geometry pair per opening size; a 48-port row has one or two.
   const groups = useMemo(() => {
     const byKey = new Map<string, number[]>()
@@ -417,9 +428,13 @@ function MarkerMesh<TPick extends Shaped>({
     return [...byKey.entries()].map(([key, members]) => ({
       key,
       members,
-      geo: openingGeometries(placed[members[0]].shape, thickRim),
+      geo: openingGeometries(
+        placed[members[0]].shape,
+        thickRim,
+        Math.min(...members.map((i) => rooms[i]))
+      ),
     }))
-  }, [placed, thickRim])
+  }, [placed, thickRim, rooms])
   useEffect(
     () => () => {
       for (const g of groups) {
@@ -445,7 +460,7 @@ function MarkerMesh<TPick extends Shaped>({
     const hit = hitRef.current
     if (!hit) return
     placed.forEach((pk, i) => {
-      const rim = rimWidth(pk.shape.w, pk.shape.h, thickRim)
+      const rim = Math.min(rimWidth(pk.shape.w, pk.shape.h, thickRim), rooms[i])
       hit.setMatrixAt(
         i,
         pose(
@@ -461,7 +476,7 @@ function MarkerMesh<TPick extends Shaped>({
     hit.instanceMatrix.needsUpdate = true
     hit.computeBoundingSphere()
     invalidate()
-  }, [placed, thickRim, invalidate])
+  }, [placed, thickRim, rooms, invalidate])
 
   // The cursor is the page's: never leave it a pointer after unmount.
   useEffect(

@@ -171,6 +171,33 @@ export function rimWidth(w: number, h: number, thick = false): number {
     : Math.min(0.0012, Math.max(0.0004, e * 0.08))
 }
 
+/** How far each marker's rim may reach outside its opening (m) before it
+ * touches a neighbour's: half the clear gap to the nearest marker on the
+ * same face. `Infinity` for a marker with none. Ports that sit closer
+ * than a rim's width - SFP cages 14.25 mm apart, 13.8 mm wide - would
+ * otherwise have one port's rim drawn over the next port. */
+export function rimRoom(
+  markers: readonly { at: V3; shape: MarkerShape }[]
+): number[] {
+  const room = markers.map(() => Infinity)
+  for (let i = 0; i < markers.length; i++) {
+    const a = markers[i]
+    for (let j = i + 1; j < markers.length; j++) {
+      const b = markers[j]
+      // Another face of the device: no shared edge to run into.
+      if (dot(a.shape.n, b.shape.n) < 0.99) continue
+      const d: V3 = [b.at[0] - a.at[0], b.at[1] - a.at[1], b.at[2] - a.at[2]]
+      if (Math.abs(dot(d, a.shape.n)) > 0.005) continue
+      const dx = Math.abs(dot(d, a.shape.u)) - (a.shape.w + b.shape.w) / 2
+      const dy = Math.abs(dot(d, a.shape.v)) - (a.shape.h + b.shape.h) / 2
+      const gap = dx > 0 && dy > 0 ? Math.hypot(dx, dy) : Math.max(dx, dy, 0)
+      room[i] = Math.min(room[i], gap / 2)
+      room[j] = Math.min(room[j], gap / 2)
+    }
+  }
+  return room
+}
+
 /** Markers sharing one geometry: the same size and radius, to 0.01 mm. */
 export function shapeKey(s: Pick<MarkerShape, "w" | "h" | "r">): string {
   const q = (x: number) => Math.round(x * 1e5)
