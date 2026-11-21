@@ -220,6 +220,16 @@ class InventoryViewSet(TableListMixin, viewsets.GenericViewSet):
         page = self.paginate_queryset(grouped)
         return self.get_paginated_response([count_row(r) for r in page or []])
 
+    @extend_schema(summary="Facets and sortable columns of the inventory counts",
+                   responses={200: OpenApiTypes.OBJECT})
+    def counts_facets(self, request):
+        """The rail of the counts view: the list's facets, and the columns
+        the counts sort by (theirs, not the list's - without ``count`` here
+        the table never offered that sort)."""
+        response = self.table_facets(request)
+        response.data["sortable"] = list(COUNT_SORTS)
+        return response
+
 
 #: How the counts sort, by column.
 COUNT_SORTS = {

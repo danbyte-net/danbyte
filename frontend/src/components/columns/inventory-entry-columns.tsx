@@ -210,10 +210,15 @@ export function buildInventoryCountColumns(): ColumnDef<
       id: "part",
       accessorKey: "part",
       header: ({ column }) => <SortHeader column={column} label="Part" />,
+      // Every unit of the part, wherever it is.
       cell: ({ row }) => (
-        <span className="font-mono text-xs font-medium">
+        <Link
+          to="/inventory"
+          search={{ q: row.original.part }}
+          className="link font-mono text-xs font-medium"
+        >
           {row.original.part}
-        </span>
+        </Link>
       ),
     },
     kindColumn<InventoryCountRow>(),
@@ -224,9 +229,25 @@ export function buildInventoryCountColumns(): ColumnDef<
       id: "count",
       accessorKey: "count",
       header: ({ column }) => <SortHeader column={column} label="Count" />,
-      cell: ({ row }) => (
-        <span className="num font-mono text-xs">{row.original.count}</span>
-      ),
+      // The units this row counts: the part at this row's place.
+      cell: ({ row }) => {
+        const r = row.original
+        return (
+          <Link
+            to="/inventory"
+            search={{
+              q: r.part,
+              kind: r.kind,
+              ...(r.site ? { site: r.site.id } : {}),
+              ...(r.location ? { location: r.location.id } : {}),
+              ...(r.manufacturer ? { manufacturer: r.manufacturer.id } : {}),
+            }}
+            className="link num font-mono text-xs"
+          >
+            {r.count}
+          </Link>
+        )
+      },
     },
   ]
 }

@@ -356,8 +356,15 @@ class InventoryListTests(_Base):
             "location": {"id": str(self.box.id), "name": "Box"}, "count": 2}])
         self.assertEqual(self.client.get(INV, {"ordering": "nope"}).status_code, 400)
         self.assertEqual(self.client.get(f"{INV}counts/", {"ordering": "x"}).status_code, 400)
-        counts_rail = self.client.get(f"{INV}counts/facets/").json()["facets"]
-        self.assertIn("status", counts_rail)
+        rail = self.client.get(f"{INV}counts/facets/").json()
+        self.assertIn("status", rail["facets"])
+        # The counts' own sorts: the table only offers what is listed here.
+        self.assertEqual(set(rail["sortable"]),
+                         {"part", "kind", "manufacturer", "site", "location", "count"})
+        by_count = self.client.get(f"{INV}counts/", {"ordering": "-count", "view": "table"})
+        self.assertEqual(by_count.status_code, 200)
+        got = [r["count"] for r in by_count.json()["results"]]
+        self.assertEqual(got, sorted(got, reverse=True))
         self.assertEqual(self.client.get(INV, {"f_nope": "x"}).status_code, 400)
 
     def test_search(self):

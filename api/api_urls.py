@@ -702,7 +702,7 @@ urlpatterns = [
     path("inventory/report/<str:token>/", inventory_report_file_view,
          name="inventory-report-file"),
     # The Counts view's rail: the same rows, so the same facets.
-    path("inventory/counts/facets/", InventoryViewSet.as_view({"get": "table_facets"}),
+    path("inventory/counts/facets/", InventoryViewSet.as_view({"get": "counts_facets"}),
          name="inventory-counts-facets"),
     path("lifecycle/", LifecycleViewSet.as_view({"get": "list"}), name="lifecycle-overview"),
     path("lifecycle/facets/", LifecycleViewSet.as_view({"get": "table_facets"}),
