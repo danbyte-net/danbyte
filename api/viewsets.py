@@ -6182,7 +6182,8 @@ class CableViewSet(TableListMixin, TenantScopedViewSet):
         if self.request:
             s = self.request.query_params.get("search", "").strip()
             if s:
-                qs = (qs.filter(description__icontains=s)
+                qs = (qs.filter(label__icontains=s)
+                      | qs.filter(description__icontains=s)
                       | qs.filter(type__icontains=s)
                       | qs.filter(terminations__interface__name__icontains=s)
                       | qs.filter(terminations__interface__device__name__icontains=s)
