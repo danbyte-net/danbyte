@@ -20,7 +20,8 @@ What it checks:
   against the YAML's ``module-bays`` and ``interfaces`` (``{module}`` as
   written), LEDs on the ``LED`` material, the far LOD's names, ``leds:``
   keys against the model's ``led:`` nodes (equal on a module type), port
-  opening sizes (a warning when missing);
+  opening sizes (a warning when missing, or when an interface's openings are
+  clearly another connector's, OPENING_RANGES_MM);
 * accessory types (``accessory-types/``, api.port_plugs): name, kind,
   ``fits``, ``parts`` / ``standard`` / ``wavelength_nm``, a cord's
   ``cable:`` block and ``model3d.file``, the model valid and within its
@@ -199,6 +200,89 @@ def _names(data: dict, key: str) -> list[str]:
     if not isinstance(rows, list):
         return []
     return [str(r["name"]) for r in rows if isinstance(r, dict) and r.get("name") not in (None, "")]
+
+
+#: The openings a port's size can be told apart by: (long side, short side)
+#: ranges in mm, wide around the real mouths and the standard boxes
+#: (PORT_BOX_MM, frontend/src/lib/studio-projection.json) and with gaps
+#: between them, so a size in a gap is never called either.
+#:
+#: * RJ45: the jack mouth is 11.7 x 8.1 (IEC 60603-7 plug, 11.68 wide);
+#:   measured round the housing it comes to the standard box, 14 x 12.
+#: * SFP / SFP+ / SFP28: the cage mouth is 13.7 x 8.6 (SFF-8432); box 14 x 9.5.
+#: * QSFP+ / QSFP28 / QSFP-DD: 18.75 x 8.6 (SFF-8661 / SFF-8663); box 19 x 9.5.
+#: * OSFP: 22.6 x 13 (OSFP MSA); box 23 x 13.
+OPENING_RANGES_MM = {
+    "rj45": (((10.5, 12.8), (7.0, 11.0)), ((13.0, 15.5), (11.0, 14.0))),
+    "sfp": (((13.2, 15.0), (7.8, 10.2)),),
+    "qsfp": (((17.5, 22.0), (7.8, 10.5)),),
+    "osfp": (((22.0, 25.0), (11.5, 14.5)),),
+}
+OPENING_LABELS = {"rj45": "RJ45", "sfp": "SFP", "qsfp": "QSFP", "osfp": "OSFP"}
+#: Cages in port_box_kind's sfp family that are no SFP: XFP is QSFP-wide,
+#: X2, XENPAK and GBIC far larger.
+_ODD_CAGES = re.compile(r"xfp|x2|xenpak|gbic")
+
+
+def opening_kind(w_mm: float, h_mm: float) -> str | None:
+    """The connector an opening's size clearly is, or None."""
+    long_, short = max(w_mm, h_mm), min(w_mm, h_mm)
+    for kind, boxes in OPENING_RANGES_MM.items():
+        for (l0, l1), (s0, s1) in boxes:
+            if l0 <= long_ <= l1 and s0 <= short <= s1:
+                return kind
+    return None
+
+
+def port_type_kind(type_: str | None) -> str | None:
+    """The connector an interface type has, as port markers draw it
+    (api.model_projection.port_box_kind), where an opening tells it."""
+    from .model_projection import ProjectionUnavailable, port_box_kind
+
+    t = (type_ or "").lower()
+    if not t or _ODD_CAGES.search(t):
+        return None
+    try:
+        kind = port_box_kind("interface", t)
+    except ProjectionUnavailable:
+        return None
+    return kind if kind in OPENING_RANGES_MM else None
+
+
+def port_type_mismatches(data: dict, ports: dict) -> list[str]:
+    """One line per interface type whose sized ``port:`` openings are
+    clearly another connector's - an RJ45 type on SFP cages and the like."""
+    types = {
+        str(r["name"]): r.get("type") for r in data.get("interfaces") or []
+        if isinstance(r, dict) and r.get("name") not in (None, "")
+    }
+    hits: dict[tuple, list] = {}
+    for name, a in ports.items():
+        s = a.get("s") if isinstance(a, dict) else None
+        if name not in types or not (isinstance(s, list) and len(s) == 2):
+            continue
+        want = port_type_kind(types[name])
+        if want is None:
+            continue
+        try:
+            w, h = float(s[0]) * 1000, float(s[1]) * 1000
+        except (TypeError, ValueError):
+            continue
+        got = opening_kind(w, h)
+        if got is not None and got != want:
+            hits.setdefault((str(types[name]), want, got), []).append((name, w, h))
+    out = []
+    for (type_, want, got), rows in sorted(hits.items()):
+        name, w, h = rows[0]
+        n = len(rows)
+        label = OPENING_LABELS[got]
+        sized = (f"have {label}-sized openings" if n != 1 else
+                 f"has {'a' if label == 'QSFP' else 'an'} {label}-sized opening")
+        out.append(
+            f"{n} port{'s' if n != 1 else ''} typed {type_} ({OPENING_LABELS[want]}) "
+            f"{sized} (first: {name}, {max(w, h):.1f} x {min(w, h):.1f} mm)."
+        )
+    return out
 
 
 # ── the checker ─────────────────────────────────────────────────────────────
@@ -532,6 +616,8 @@ class _Checker:
             self.add("warning", rel, f"{len(unsized)} port{'s' if len(unsized) != 1 else ''} "
                                      "without danbyte_w / danbyte_h opening sizes "
                                      f"(first: {unsized[0]}).", row)
+        for m in port_type_mismatches(data, ports):
+            self.add("warning", path, m, row)
         for led in leds:
             if led.startswith("port:") and led[5:] not in iface_set:
                 self.add("error", rel, f"led:{led} matches no interface in the YAML.", row)

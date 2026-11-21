@@ -101,7 +101,7 @@ def module_nodes() -> list[dict]:
         {"name": "Body", "mesh": "Metal", "scale": [0.06, 0.04, 0.3],
          "translation": [0, 0.02, -0.15]},
         {"name": "port:Te1/{module}/1", "translation": [0.01, 0.02, 0], "rotation": OUT_FRONT,
-         "extras": {"danbyte_w": 0.019, "danbyte_h": 0.0095}},
+         "extras": {"danbyte_w": 0.0142, "danbyte_h": 0.0095}},
         {"name": "led:STATUS", "children": [3]},
         {"mesh": "LED", "scale": [0.002, 0.002, 0.001]},
     ]
@@ -278,6 +278,52 @@ class CheckerTests(SimpleTestCase):
         self.assertTrue(rep.ok)
         self.assertTrue(any("2 ports without danbyte_w" in m
                             for m in self.messages(rep, "warning")))
+
+    def _module(self, type_, w, h):
+        nodes = module_nodes()
+        nodes[1]["extras"] = {"danbyte_w": w, "danbyte_h": h}
+        self.p.write("models/Acme/NM-9.glb", model(nodes))
+        self.p.write("module-types/Acme/NM-9.yaml",
+                     MODULE.replace("type: 10gbase-x-sfpp", f"type: {type_}"))
+        rep = self.check()
+        self.assertTrue(rep.ok, self.messages(rep))
+        return [m for m in self.messages(rep, "warning") if "-sized opening" in m]
+
+    def test_a_copper_type_on_an_sfp_cage_warns(self):
+        self.assertEqual(self._module("10gbase-t", 0.014, 0.0086), [
+            "module-types/Acme/NM-9.yaml: 1 port typed 10gbase-t (RJ45) has an "
+            "SFP-sized opening (first: Te1/{module}/1, 14.0 x 8.6 mm)."
+        ])
+
+    def test_cage_mismatches_warn(self):
+        for type_, w, h, label in [
+            ("100gbase-x-qsfp28", 0.0142, 0.0095, "(QSFP) has an SFP-sized"),
+            ("10gbase-x-sfpp", 0.019, 0.0095, "(SFP) has a QSFP-sized"),
+            ("25gbase-x-sfp28", 0.0117, 0.0081, "(SFP) has an RJ45-sized"),
+            ("400gbase-x-osfp", 0.0195, 0.009, "(OSFP) has a QSFP-sized"),
+        ]:
+            with self.subTest(type=type_):
+                got = self._module(type_, w, h)
+                self.assertEqual(len(got), 1, got)
+                self.assertIn(label, got[0])
+
+    def test_matching_and_unclear_openings_stay_quiet(self):
+        for type_, w, h in [
+            ("1000base-t", 0.0117, 0.0081),     # an RJ45 mouth
+            ("1000base-t", 0.014, 0.012),       # an RJ45 housing
+            ("10gbase-t", 0.0081, 0.0117),      # turned on its side
+            ("10gbase-x-sfpp", 0.0138, 0.0083),
+            ("25gbase-x-sfp28", 0.014, 0.0086),
+            ("40gbase-x-qsfpp", 0.0195, 0.0089),
+            ("100gbase-x-qsfp28", 0.0209, 0.0092),
+            ("400gbase-x-osfp", 0.023, 0.013),
+            ("10gbase-x-xfp", 0.0184, 0.0085),  # XFP is QSFP-wide
+            ("10gbase-t", 0.013, 0.009),        # between RJ45 and SFP
+            ("cisco-stackwise-480", 0.014, 0.0086),
+            ("virtual", 0.014, 0.0086),
+        ]:
+            with self.subTest(type=type_, w=w, h=h):
+                self.assertEqual(self._module(type_, w, h), [])
 
     def test_the_far_lod_needs_the_same_names(self):
         nodes = chassis_nodes()

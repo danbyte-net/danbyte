@@ -175,6 +175,17 @@ for its port type instead. A module's ports keep their size through the
 bay's pose. Bay names must equal the type's module bay names and port names
 its interface or other port names, character for character.
 
+The size also shows when an interface's type is wrong. The
+[checker](#checking-a-pack) tells RJ45 jacks (about 11.7 × 8.1 mm at the
+mouth, up to 14 × 12 mm round the housing), SFP cages (about 13.7 × 8.6 mm),
+QSFP cages (about 18.75 × 8.6 mm) and OSFP cages (about 22.6 × 13 mm) apart
+by their long and short sides, with wide margins and gaps between them. It
+warns when an interface's openings are clearly another connector's than its
+type's, such as a `10gbase-t` type on SFP+ cages: Danbyte would draw RJ45
+plugs and copper cables in them. Fix the type in the YAML. A size in a gap,
+and types without one of those connectors (XFP, X2, GBIC, stacking), are
+not checked.
+
 ## What Danbyte does with them
 
 - **Scanning.** Every model saved - from a pack or uploaded on a type's
@@ -649,7 +660,7 @@ render's module part number may then be a module type the tenant has.
 | Models | Not a valid `.glb`; over the triangle budget (chassis 150,000, far 15,000; module 30,000, far 3,000) or the size budget (8 MB, far 1 MB). | A model no YAML names; no far copy on a chassis or on a module of 5,000 triangles or more. |
 | Names | `bay:` with no module bay in the YAML; `bay:` in a module; `empty:` without its `bay:`; `port:` with no interface or other port (console, power, aux, front or rear port) in the YAML, `led:port:` with no interface (module names with `{module}`, as written); a name twice; an LED not on the `LED` material; the far copy missing a `bay:`, `empty:` or `led:` of the full model. | A module bay without a `bay:`; interfaces without a `port:`. |
 | LEDs | A `leds:` entry that doesn't parse or names no `led:` in the model; on a module type, a `led:` without an entry. | On a chassis, a `led:` without an entry (it stays off); a glob matching nothing. |
-| Port sizes | | Ports without `danbyte_w` / `danbyte_h`. |
+| Port sizes | | Ports without `danbyte_w` / `danbyte_h`; an interface whose opening is clearly another connector's: an RJ45 (`*base-t`) type on an SFP-sized opening, an SFP type on a QSFP- or RJ45-sized one, a QSFP type on an SFP-sized one, and so on. |
 | Suggested modules | A `module-bays` entry's `modules` that isn't a list of part numbers. | A part number in neither the pack nor the tenant. |
 | Renders | A file missing, not a WebP or PNG, or without a transparent background; a front or rear not exactly the type's face frame at 2,000 px across; `model_sha256` missing or not the `.glb`'s; `modules` naming a bay the YAML or the model lacks, or a part number in neither the pack nor the tenant. | No front or rear render; renders on a module type. |
 
