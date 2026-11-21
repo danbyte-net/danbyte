@@ -622,9 +622,10 @@ the cables along their ways:
 - **Cable ways: Show / Ghost / Hide** (the rack view's toolbar; the room's
   View menu) - Ghost draws the cables see-through with the managers and
   entries solid. Kept in this browser, shared by both views.
-- **Fill** colours each manager by how full it is: the recorded cables'
-  cross-sections over its inside times its fill limit - green, amber from
-  70 %, red past the limit. Indicative only: it uses type diameters where a
+- **Fill** marks each manager with a narrow strip down its front, coloured
+  by how full it is: the recorded cables' cross-sections over its inside
+  times its fill limit - green, amber from 70 %, red past the limit. The
+  manager itself keeps its colour; a roof or floor entry takes the colour. Indicative only: it uses type diameters where a
   cable records none; the [Pathways](#pathways) tab's counts are the record.
 - **Trace.** Click a cable in a rack (or a run in the room) to pick it: its
   way lights through both racks and the trays, everything else ghosted; its

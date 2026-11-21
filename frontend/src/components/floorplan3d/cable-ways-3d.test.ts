@@ -89,6 +89,13 @@ describe("Danbyte's own managers", () => {
     const boxes = ownBoxes(new Map([[p.key, p]]), 1, null)
     // Three walls (the front is open) and two fingers per pitch.
     expect(boxes.length).toBe(3 + 2 * 2)
+    // The fill overlay never repaints a manager: it adds a strip instead.
+    const filled = ownBoxes(
+      new Map([[p.key, p]]),
+      1,
+      new Map([[p.key, "#16a34a"]])
+    )
+    expect(filled.map((x) => x.color)).toEqual(boxes.map((x) => x.color))
     for (const b of boxes) {
       expect(b.c[0]).toBeGreaterThan(0.29)
       expect(b.c[0]).toBeLessThan(0.46)

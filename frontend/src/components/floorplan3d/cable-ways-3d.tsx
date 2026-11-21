@@ -208,7 +208,7 @@ export function RackCableWays({
           skipKit={kitDrawn}
         />
       )}
-      {kitDrawn && tier === "detail" && fills && (
+      {tier === "detail" && fills && (
         <FillMarks pathways={pathways} depth={depth} fills={fills} />
       )}
       {mode !== "hide" &&
@@ -571,8 +571,12 @@ function OwnPathways({
   return <Boxes boxes={boxes} />
 }
 
-/** Over a kit's managers with the fill overlay on: a thin coloured strip
- * along each manager's open edge, so the kit's own model keeps its look. */
+/** How wide a manager's fill strip is (m). */
+const FILL_STRIP_M = 0.012
+
+/** Over every vertical manager with the fill overlay on: a narrow coloured
+ * strip down its front, so the manager - the kit's model or Danbyte's own -
+ * keeps its look. */
 function FillMarks({
   pathways,
   depth,
@@ -592,10 +596,13 @@ function FillMarks({
       const [x1, , z1] = rackLocal(depth, g.x1, g.y1, 0)
       const front = Math.min(z0, z1)
       out.push({
-        c: [(x0 + x1) / 2, (g.z0 + g.z1) / 2000, front - 0.004],
-        s: [Math.abs(x1 - x0), (g.z1 - g.z0) / 1000, 0.004],
+        c: [(x0 + x1) / 2, (g.z0 + g.z1) / 2000, front - 0.003],
+        s: [
+          Math.min(FILL_STRIP_M, Math.abs(x1 - x0)),
+          (g.z1 - g.z0) / 1000,
+          0.002,
+        ],
         color,
-        glow: true,
       })
     }
     return out
@@ -619,7 +626,11 @@ export function ownBoxes(
   const out: Box[] = []
   const T = 0.0015
   for (const p of pathways.values()) {
-    const color = fills?.get(p.key) ?? MANAGER_COLOR
+    // A manager keeps its own colour; its fill shows as a narrow strip
+    // (FillMarks). A whole channel painted green, amber or red hid the
+    // rack. An entry is small enough to take the colour itself.
+    const color =
+      p.kind === "entry" ? (fills?.get(p.key) ?? MANAGER_COLOR) : MANAGER_COLOR
     if (p.kind === "vertical" && isManager(p)) {
       const g = p.geo
       const [xa, , za] = rackLocal(depth, g.x0, g.y0, 0)

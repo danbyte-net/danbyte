@@ -863,8 +863,8 @@ ceiling, underfloor runs sit beneath the slab) and zones tint the floor.
   [Virtual chassis → In 3D](../dcim/virtual-chassis.md#in-3d).
 - **Cable ways** (View menu, 3D, under Stacks): **Show**, **Ghost** or
   **Hide** for the cables drawn along their [ways](../dcim/racks.md#cable-ways-3d)
-  inside each rack, and **Fill** colours the racks' managers by how full they
-  are (indicative). A cable with a way leaves its rack by its roof or floor
+  inside each rack, and **Fill** marks the racks' managers with a strip coloured by how
+  full they are (indicative). A cable with a way leaves its rack by its roof or floor
   entry, and its run in the room starts there, so rack → tray → rack reads as
   one cable; **Hide** starts runs at the port again. Picking a cable lights
   its way through both racks and its trays and ghosts the other cables.
