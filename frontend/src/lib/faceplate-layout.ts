@@ -365,8 +365,9 @@ export interface InstalledModuleFaceplate {
   module_bay: { name: string; position: string }
   module_type_faceplate: FaceplateDoc | null
   /** The module's concrete contributed interfaces (name + type), used to
-   * auto-lay the bay when the module type has no hand-built faceplate. */
-  module_interfaces?: { name: string; type?: string }[]
+   * auto-lay the bay when the module type has no hand-built faceplate, and
+   * the template each comes from, which a hand-built faceplate's slots name. */
+  module_interfaces?: { name: string; type?: string; template?: string }[]
 }
 
 /**
@@ -398,6 +399,15 @@ export function composeModuleFaceplates(
     const fp = m.module_type_faceplate
     if (fp) {
       const pos = m.module_bay.position
+      // A slot naming a template takes the interface it was stamped as -
+      // on a stack member that is the member's own (TenGigabitEthernet2/1/1).
+      const stamped = new Map(
+        (m.module_interfaces ?? [])
+          .filter((p) => p.template)
+          .map((p) => [p.template as string, p.name])
+      )
+      const slotName = (name: string) =>
+        stamped.get(name) ?? renderModuleName(name, pos)
       return [...fp.front, ...fp.rear].map((g) => ({
         ...g,
         id: `mod:${m.id}:${g.id}`,
@@ -406,7 +416,7 @@ export function composeModuleFaceplates(
           ? `${m.module_bay.name} · ${g.label}`
           : m.module_bay.name,
         slots: g.slots.map((sl) =>
-          sl.t === "port" ? { ...sl, name: renderModuleName(sl.name, pos) } : sl
+          sl.t === "port" ? { ...sl, name: slotName(sl.name) } : sl
         ),
       }))
     }

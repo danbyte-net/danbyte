@@ -1310,6 +1310,76 @@ def render_module_name(name: str, module_position: str) -> str:
     return MODULE_TOKEN_RE.sub(module_position, name)
 
 
+def member_token(names) -> str | None:
+    """The stack-member token ``names`` lead with - ``{position}`` or
+    ``{position:N}`` as the name's first number (``Gi{position}/0/1``), the
+    most common one when they differ - or None when none does."""
+    from collections import Counter
+
+    from .anchor_names import LEADING_POSITION_RE
+
+    seen: Counter = Counter()
+    for n in names:
+        m = LEADING_POSITION_RE.match(n)
+        if m is not None:
+            seen["{position}" if m.group(2) is None else f"{{position:{m.group(2)}}}"] += 1
+    return seen.most_common(1)[0][0] if seen else None
+
+
+def positionize_member(name: str, token: str) -> str:
+    """``name`` with its leading member number written as ``token`` when
+    that is the token ``positionize`` gives it (``TenGigabitEthernet1/1/1``
+    → ``TenGigabitEthernet{position}/1/1``); else ``name`` as it is - a
+    ``Gi0/0`` management port under ``{position}`` stays."""
+    from .devicetype_import import positionize
+
+    new = positionize(name)
+    return new if new != name and member_token([new]) == token else name
+
+
+def device_member_token(device) -> str | None:
+    """The stack-member token of ``device``'s type (its interface
+    templates'), cached on the instance; None when the type names no
+    member number."""
+    cache = device.__dict__
+    if "_member_token" not in cache:
+        cache["_member_token"] = member_token(
+            InterfaceTemplate.objects.filter(
+                device_type_id=device.device_type_id, name__contains="{position"
+            ).values_list("name", flat=True)
+        ) if device.device_type_id else None
+    return cache["_member_token"]
+
+
+def prime_member_tokens(devices) -> None:
+    """:func:`device_member_token` for many devices in one query."""
+    devices = [d for d in devices if "_member_token" not in d.__dict__]
+    names: dict = {}
+    for dt_id, name in InterfaceTemplate.objects.filter(
+        device_type_id__in={d.device_type_id for d in devices if d.device_type_id},
+        name__contains="{position",
+    ).values_list("device_type_id", "name") if devices else ():
+        names.setdefault(dt_id, []).append(name)
+    for d in devices:
+        d.__dict__["_member_token"] = member_token(names.get(d.device_type_id, ()))
+
+
+def render_module_component(name: str, bay_position: str, vc_position,
+                            token: str | None = None) -> str:
+    """A module template's name as it lands on its device: ``{module}`` →
+    the bay's position; then, in a device whose type is a stack member
+    (``token``, :func:`device_member_token`), the leading member number the
+    device library writes as ``1`` becomes ``token`` - a module type is
+    authored for member 1 like everything else - and ``{position}`` → the
+    device's member number. Member 2's ``TenGigabitEthernet1/{module}/1``
+    in bay "1" is ``TenGigabitEthernet2/1/1``; its ``StackPort{module}``
+    in bay "1/1" is ``StackPort2/1``."""
+    name = render_module_name(name, bay_position)
+    if token and "{position" not in name:
+        name = positionize_member(name, token)
+    return render_component_name(name, vc_position)
+
+
 def sync_positional_interface_names(device, old_position, new_position) -> int:
     """Rename this device's interfaces after a stack-membership change.
 
@@ -1323,30 +1393,63 @@ def sync_positional_interface_names(device, old_position, new_position) -> int:
     dt = device.device_type
     if dt is None or old_position == new_position:
         return 0
-    by_name = {i.name: i for i in device.interfaces.all()}
-    renames: list[tuple[object, str]] = []
-    for t in dt.interface_templates.all():
-        if not POSITION_TOKEN_RE.search(t.name):
-            continue
-        old_name = render_component_name(t.name, old_position)
-        new_name = render_component_name(t.name, new_position)
-        if old_name == new_name:
-            continue
-        iface = by_name.get(old_name)
-        # Skip: nothing to rename, or the target name is already taken by a
-        # different interface (hand-made or conflicting) - never clobber.
-        if iface is None or (new_name in by_name and by_name[new_name] is not iface):
-            continue
-        renames.append((iface, new_name))
-    for iface, new_name in renames:
-        iface.name = new_name
-    if renames:
-        from django.db import transaction as _tx
+    token = device_member_token(device)
+    rows: dict = {Interface: [], PowerPort: []}
+    for model, rel in ((Interface, "interface_templates"), (PowerPort, "power_port_templates")):
+        for t in getattr(dt, rel).all():
+            if POSITION_TOKEN_RE.search(t.name):
+                rows[model].append((None, render_component_name(t.name, old_position),
+                                    render_component_name(t.name, new_position)))
+    # Installed modules' ports follow their device's member number too.
+    for module in device.modules.select_related("module_bay", "module_type"):
+        pos = module.module_bay.position
+        for kind in _module_kinds():
+            for t in getattr(module.module_type, kind.templates).all():
+                rows[kind.model].append((
+                    module.pk,
+                    render_module_component(t.name, pos, old_position, token),
+                    render_module_component(t.name, pos, new_position, token)))
+    from django.db import transaction as _tx
 
-        with _tx.atomic():
-            for iface, new_name in renames:
-                iface.save(update_fields=["name"])
-    return len(renames)
+    with _tx.atomic():
+        done = {model: rename_components(device, model, r)[0] for model, r in rows.items()}
+    return done[Interface]
+
+
+def rename_components(device, model, rows) -> tuple[int, list[str]]:
+    """Rename ``device``'s ``model`` components per ``rows`` - ``(owner,
+    old name, new name)``, ``owner`` None for the device's own component
+    (no module) or the module id that owns it. Per-row ``save()`` (change
+    log, search, stack cables). Never clobbers: a new name another
+    component holds is skipped. Returns ``(renamed, [skipped old names])``."""
+    comps = {c.name: c for c in model.objects.filter(device=device)}
+    pending: dict = {}
+    for owner, old, new in rows:
+        c = comps.get(old)
+        if old == new or c is None or c.module_id != owner or c.pk in pending:
+            continue
+        pending[c.pk] = (c, new)
+    held = set(comps)
+    keyed = any(f.name == "marker_key" for f in model._meta.concrete_fields)
+    done = 0
+    while pending:
+        # A rename frees the name it leaves for the next pass.
+        ready = [pk for pk, (_c, new) in pending.items() if new not in held]
+        if not ready:
+            break
+        for pk in ready:
+            c, new = pending.pop(pk)
+            fields = ["name", "updated_at"]
+            if keyed and c.marker_key == c.name:
+                # The frozen marker identity was the stamped name: it follows.
+                c.marker_key = new
+                fields.append("marker_key")
+            held.discard(c.name)
+            held.add(new)
+            c.name = new
+            c.save(update_fields=fields)
+            done += 1
+    return done, sorted(c.name for c, _new in pending.values())
 
 
 @transaction.atomic
@@ -1633,6 +1736,14 @@ def rename_marker_refs(device_type, kind: str, old: str, new: str) -> bool:
     (``image_ports``) and custom faceplate slots - both reference components
     by (kind, name), so a rename otherwise orphans the placed port. Returns
     True when anything was rewritten."""
+    return rename_marker_refs_many(device_type, kind, {old: new})
+
+
+def rename_marker_refs_many(device_type, kind: str, renames: dict,
+                            *, marker_keys: bool = True) -> bool:
+    """:func:`rename_marker_refs` for several renames ``{old: new}`` with
+    one save of the type. ``marker_keys`` False leaves the devices' frozen
+    marker identities to the caller."""
     fields = []
     ip = device_type.image_ports
     ip_changed = False
@@ -1642,9 +1753,9 @@ def rename_marker_refs(device_type, kind: str, old: str, new: str) -> bool:
                 if (
                     isinstance(marker, dict)
                     and marker.get("kind", "interface") == kind
-                    and marker.get("name") == old
+                    and marker.get("name") in renames
                 ):
-                    marker["name"] = new
+                    marker["name"] = renames[marker["name"]]
                     ip_changed = True
     if ip_changed:
         fields.append("image_ports")
@@ -1660,9 +1771,9 @@ def rename_marker_refs(device_type, kind: str, old: str, new: str) -> bool:
                         isinstance(slot, dict)
                         and slot.get("t") == "port"
                         and slot.get("kind", "interface") == kind
-                        and slot.get("name") == old
+                        and slot.get("name") in renames
                     ):
-                        slot["name"] = new
+                        slot["name"] = renames[slot["name"]]
                         fp_changed = True
     if fp_changed:
         fields.append("faceplate")
@@ -1677,10 +1788,11 @@ def rename_marker_refs(device_type, kind: str, old: str, new: str) -> bool:
         "rear-port": RearPort,
     }
     model = _KEY_MODELS.get(kind)
-    if model is not None:
-        model.objects.filter(
-            device__device_type=device_type, marker_key=old
-        ).update(marker_key=new)
+    if model is not None and marker_keys:
+        for old, new in renames.items():
+            model.objects.filter(
+                device__device_type=device_type, marker_key=old
+            ).update(marker_key=new)
     return bool(fields)
 
 
@@ -2060,8 +2172,9 @@ def sync_rack_from_type(rack, *, dims: bool = True, accessories: bool = True):
     }
 
 
-def _render_module_template(name: str, bay_position: str, vc_position) -> str:
-    return render_component_name(render_module_name(name, bay_position), vc_position)
+def _render_module_template(name: str, bay_position: str, vc_position,
+                            token: str | None = None) -> str:
+    return render_module_component(name, bay_position, vc_position, token)
 
 
 # ─── Installed-module components ─────────────────────────────────────────────
@@ -2113,8 +2226,9 @@ def _module_template_names(module, kind=None) -> dict:
     kind = kind or _module_kinds()[0]
     bay = module.module_bay
     pos = module.device.vc_position
+    token = device_member_token(module.device)
     return {
-        t: _render_module_template(t.name, bay.position, pos)
+        t: _render_module_template(t.name, bay.position, pos, token)
         for t in getattr(module.module_type, kind.templates).all()
     }
 
@@ -2309,11 +2423,12 @@ def _restamp_plan(module, before, kind, adopt) -> dict:
         old_bay = ModuleBay.objects.filter(pk=before["module_bay_id"]).first()
         old_pos = (old_bay or module.module_bay).position
         vc = module.device.vc_position
+        token = device_member_token(module.device)
         old_tmpls = list(
             kind.template_model.objects.filter(module_type_id=before["module_type_id"])
         )
         old_names = {
-            t.pk: _render_module_template(t.name, old_pos, vc) for t in old_tmpls
+            t.pk: _render_module_template(t.name, old_pos, vc, token) for t in old_tmpls
         }
         comp_of = {}
         for i in owned:

@@ -790,7 +790,8 @@ power-ports:
                 files.close()
             [row] = result.types
             self.assertEqual(row.action, "matched")
-            self.assertIn("added 2 power ports: StackPower1/A, StackPower1/B", row.notes)
+            self.assertIn("added 2 power ports: StackPower{position}/A, "
+                          "StackPower{position}/B", row.notes)
             self.assertEqual(dt.power_port_templates.filter(type=SPWR).count(), 2)
             # Again: nothing more to add.
             files = PackFiles(root)
@@ -842,7 +843,7 @@ power-ports:
             self.assertEqual(row.action, "matched")
             # A library type has no pack record: reported, not changed.
             self.assertIn("kept 1 interface, type 1000base-x-sfp (the pack has 1000base-t): "
-                          "GigabitEthernet1/0/1", row.notes)
+                          "GigabitEthernet{position}/0/1", row.notes)
         finally:
             shutil.rmtree(root, ignore_errors=True)
 

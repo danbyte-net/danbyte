@@ -54,11 +54,15 @@ class _Bay:
 def _plans(dt, removed: dict) -> list[_Bay]:
     """The type's bays whose listed module types make a removed template's
     name, with those module types in the bay's list order."""
-    from .models import ModuleType, render_module_name
+    from .models import ModuleType, member_token, positionize_member, render_module_name
 
     want = {(k, n) for k, rows in removed.items() if k in KINDS for n in rows}
     if not want:
         return []
+    # A stack member type's removed StackPort{position}/1 is what a kit's
+    # StackPort{module} makes in bay "1/1" (api.models.render_module_component).
+    token = member_token([*dt.interface_templates.values_list("name", flat=True),
+                          *removed.get("interfaces", {})])
     bays = [b for b in dt.module_bay_templates.all() if b.suggested_modules]
     parts = {str(p).strip().lower() for b in bays for p in b.suggested_modules}
     by_part: dict = {}
@@ -81,6 +85,8 @@ def _plans(dt, removed: dict) -> list[_Bay]:
                 rel = "interface_templates" if key == "interfaces" else "power_port_templates"
                 for t in getattr(mt, rel).all():
                     name = render_module_name(t.name, b.position)
+                    if token and "{position" not in name:
+                        name = positionize_member(name, token)
                     if (key, name) in want:
                         made[(key, name)] = t
             if made and all(mt.pk != o[0].pk for o in plan.options):

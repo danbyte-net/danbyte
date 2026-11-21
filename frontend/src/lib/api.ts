@@ -3892,7 +3892,7 @@ export interface RackPortModule {
   id: string
   module_bay: { id: string; name: string; position: string }
   module_type_faceplate: FaceplateDoc | null
-  module_interfaces: { name: string; type: string }[]
+  module_interfaces: { name: string; type: string; template?: string }[]
 }
 
 /** One device in a rack's port state. */

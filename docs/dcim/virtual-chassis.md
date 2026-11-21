@@ -82,6 +82,20 @@ another interface, that port is skipped and everything else still renames.
 The API reports the count (`vc_renamed_interfaces`) and the UI toasts it -
 "added to stack - 28 interfaces renamed to match".
 
+The rename covers the device's interface and power-port templates with the
+token and its **installed modules' ports**: on a stack member type a module
+type written for member 1 takes the device's member number, so member 2's
+network module ports are `TenGigabitEthernet2/1/1` and its stack adapters'
+ports `StackPort2/1` and `StackPort2/2`
+([module types on a stack member](model-packs.md#stack-members)).
+
+**Which types carry the token.** The manual device-library import's
+**Stack positions** option writes it. A [model pack](model-packs.md#stack-members)
+import writes it on every type Danbyte treats as a stack member - one with
+stack ports, StackPower ports or stack-adapter bays, or whose YAML says
+`meta.stackable: true` - and renames the ports of that type's devices
+already in a stack to their own member's names.
+
 **3D models follow too.** A [model pack](model-packs.md#stack-members) is
 authored as member 1 (`port:GigabitEthernet1/0/1`); on member 2 its ports,
 port lights and generated photo ports are `GigabitEthernet2/0/…`.

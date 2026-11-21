@@ -133,17 +133,20 @@ class NameMatcher:
 # ── the device's own names ──────────────────────────────────────────────────
 
 def interface_name(anchor: str, matcher: NameMatcher | None, vc_position,
-                   module_position: str | None = None) -> str:
+                   module_position: str | None = None, token: str | None = None) -> str:
     """The interface ``anchor`` stands for on a device at stack member
     ``vc_position`` (None standalone): the template it matches (else the
     anchor itself) with ``{module}`` → ``module_position``, then
     ``{position}`` → the member. Member 2's ``port:Gi1/0/1`` over the
-    template ``Gi{position}/0/1`` is ``Gi2/0/1``."""
-    from .models import render_component_name, render_module_name
+    template ``Gi{position}/0/1`` is ``Gi2/0/1``. A module's port renders
+    as its interface was stamped (api.models.render_module_component, the
+    host type's member ``token``): member 2's ``TenGigabitEthernet1/{module}/1``
+    in bay "1" is ``TenGigabitEthernet2/1/1``."""
+    from .models import render_component_name, render_module_component
 
     name = (matcher.resolve(anchor) if matcher is not None else None) or anchor
     if module_position is not None:
-        name = render_module_name(name, module_position)
+        return render_module_component(name, module_position, vc_position, token)
     return render_component_name(name, vc_position)
 
 
@@ -182,7 +185,12 @@ def prime(devices) -> None:
         for type_id, name in rows:
             names.setdefault((key, type_id), []).append(name)
     matchers = {k: NameMatcher(v) for k, v in names.items()}
+    from .models import member_token
+
+    tokens = {k[1]: member_token(v) for k, v in names.items() if k[0] == "dt"}
     for d in wanted:
+        # api.models.device_member_token, from the names already loaded.
+        d.__dict__.setdefault("_member_token", tokens.get(d.device_type_id))
         if d.device_type_id:
             d._anchor_matchers[("dt", d.device_type_id)] = matchers.get(
                 ("dt", d.device_type_id)) or NameMatcher(())
@@ -298,8 +306,11 @@ def chassis_port(device, anchor: str) -> tuple[str, str]:
 def module_port(device, module_type, anchor: str, bay_position: str) -> tuple[str, str]:
     """``(kind, name)`` for an installed module's ``port:`` anchor - a
     PSU's ``port:PSU{module}`` is its power port ``PSU1`` in bay "1"."""
+    from .models import device_member_token
+
     kind, m = _kind_of(device, "mt", module_type, anchor)
-    return kind, interface_name(anchor, m, device.vc_position, bay_position)
+    return kind, interface_name(anchor, m, device.vc_position, bay_position,
+                                device_member_token(device))
 
 
 def _matcher(device, key: str, type_obj) -> NameMatcher | None:
@@ -322,5 +333,7 @@ def chassis_interface(device, anchor: str) -> str:
 def module_interface(device, module_type, anchor: str, bay_position: str) -> str:
     """The device's interface for an installed module's ``port:`` anchor
     (``{module}`` kept, as authored) in the bay at ``bay_position``."""
+    from .models import device_member_token
+
     return interface_name(anchor, _matcher(device, "mt", module_type),
-                          device.vc_position, bay_position)
+                          device.vc_position, bay_position, device_member_token(device))

@@ -602,16 +602,19 @@ def faceplate_slot_kinds(doc) -> set[str]:
 def module_interfaces(module) -> list:
     """The interfaces ``module`` contributes to its device, named as they
     land there - ``{module}`` → the bay's position, ``{position}`` → the
-    device's stack position - with their type for cage sizing. Reads the
-    module's device, bay, type and the type's interface templates."""
-    from .models import render_component_name, render_module_name
+    device's stack position - with their type for cage sizing and the
+    ``template`` they come from, which a module faceplate's slots name. Reads
+    the module's device, bay, type and the type's interface templates."""
+    from .models import device_member_token, render_module_component
 
     pos = module.device.vc_position
     bay_pos = module.module_bay.position
+    token = device_member_token(module.device)
     return [
         {
-            "name": render_component_name(render_module_name(t.name, bay_pos), pos),
+            "name": render_module_component(t.name, bay_pos, pos, token),
             "type": t.type,
+            "template": t.name,
         }
         for t in module.module_type.interface_templates.all()
     ]
@@ -633,7 +636,7 @@ class FaceplateParts:
     def __init__(self, devices, user, tenant):
         from auth_api import rbac
 
-        from .models import Device, Module
+        from .models import Device, Module, prime_member_tokens
         from .natural import natural
 
         devices = list(devices)
@@ -647,6 +650,7 @@ class FaceplateParts:
             .order_by(natural("module_bay__name")),
             user, tenant, "module", "view",
         )) if ids else []
+        prime_member_tokens([m.device for m in loaded])
         kinds_of: dict = defaultdict(set)
         for module in loaded:
             self._modules[module.device_id].append({

@@ -71,6 +71,22 @@ describe("composeModuleFaceplates", () => {
     expect(composed.bay).toBeUndefined()
   })
 
+  it("names a slot as its template was stamped on a stack member", () => {
+    const out = composeModuleFaceplates(base(), [
+      {
+        ...moduleIn("Network Module", "1", moduleFp),
+        module_interfaces: [
+          {
+            name: "Te2/1/1",
+            type: "10gbase-x-sfpp",
+            template: "Te1/{module}/1",
+          },
+        ],
+      },
+    ])
+    expect(out.front[1].slots[0]).toEqual({ t: "port", name: "Te2/1/1" })
+  })
+
   it("keeps the placeholder for an empty bay", () => {
     const out = composeModuleFaceplates(base(), [
       moduleIn("Some Other Bay", "2", moduleFp),

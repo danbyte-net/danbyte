@@ -39,7 +39,7 @@ from .models import (
     Antenna, AntennaTemplate, Application,
     Aggregate, ASN, AuxPort, AuxPortTemplate,
     CABINET_SIZE_FIELDS, DIN_PROFILE_CHOICES, FLOOR_PLAN_MAX_GRID, Cabinet, CabinetRole, CabinetType, DinRail,
-    DinRailTemplate,
+    DinRailTemplate, device_member_token,
     Cable, CableRoute, CableTermination, Circuit, CircuitTermination,
     CircuitType, Cluster, ClusterGroup, ClusterType,
     VirtualMachineGroup,
@@ -6499,7 +6499,14 @@ class ModuleSerializer(StatusSerializerMixin, CustomFieldsSerializerMixin, Tagga
         # ({module} → bay position, {position} → stack member), with their type
         # for cage sizing. Lets the device faceplate auto-lay a module into its
         # bay placeholder even when the module type has no saved faceplate.
-        # The rack's port state (#248) gives the same list.
+        # The rack's port state (#248) gives the same list. The host type's
+        # stack-member token once per type, not per row.
+        tokens = self.context.setdefault("_member_tokens", {})
+        dt_id = obj.device.device_type_id
+        if dt_id in tokens:
+            obj.device.__dict__.setdefault("_member_token", tokens[dt_id])
+        else:
+            tokens[dt_id] = device_member_token(obj.device)
         return module_interfaces(obj)
 
     def validate(self, attrs):

@@ -617,7 +617,7 @@ class RackPortStateTests(_PortFixture):
         self.assertEqual(sw1["modules"], [{k: m[k] for k in keys} for m in listed])
         self.assertEqual(
             sw1["modules"][0]["module_interfaces"],
-            [{"name": "Te1/2/1", "type": "10gbase-x-sfpp"}],
+            [{"name": "Te1/2/1", "type": "10gbase-x-sfpp", "template": "Te1/{module}/1"}],
         )
         for kind, path in (("console-port", "console-ports"), ("aux-port", "aux-ports")):
             rows = self.client.get(f"/api/{path}/?device={self.sw1.id}").json()["results"]

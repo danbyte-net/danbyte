@@ -368,7 +368,8 @@ def sync_templates(owner, data: dict, state, *, module: bool, overwrite: bool,
         """The Danbyte name of a YAML name: the type's template it stands
         for (as written, its ``{position}`` spelling, or its family spelled
         short or long - api.anchor_names), else the name as a new template
-        takes it: ``{position}``-named like the type's interfaces."""
+        takes it: an interface or power port ``{position}``-named like the
+        type's interfaces (api.stack_members - bays keep the models' names)."""
         raw = raw[:64]
         have = have_of(key)
         if raw in have:
@@ -378,7 +379,7 @@ def sync_templates(owner, data: dict, state, *, module: bool, overwrite: bool,
         hit = matchers[key].resolve(raw)
         if hit is not None:
             return hit
-        if not stacked:
+        if not stacked or key not in ("interfaces", "power-ports"):
             return raw
         new = positionize(raw)[:64]
         # Only the token the type's own names use: a stack of Gi{position}/0/n
@@ -887,6 +888,12 @@ def update_type(obj, data: dict, *, kind: str, pack: dict, overwrite: bool = Fal
     state = obj.pack_state if isinstance(obj.pack_state, dict) else None
     report = Report()
     notes: list[str] = []
+    if not module:
+        # A stack member type takes the stack-member token first, so the
+        # YAML's member-1 names match it (api.stack_members).
+        from .stack_members import bring_in_line
+
+        notes += bring_in_line(obj, data, state)
     ever = pack_names(state)
     templates, bad = sync_templates(obj, data, (state or {}).get("templates") if state
                                     else None, module=module, overwrite=overwrite,

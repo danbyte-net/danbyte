@@ -83,7 +83,10 @@ class PortToBayTests(_Base):
         before = {d.name: (self.port(d).pk, self.port(d, "StackPort1/2").pk)
                   for d in (sw1, sw2, sw3)}
         row = self.upgrade()
-        self.assertIn("removed 2 interfaces: StackPort1/1, StackPort1/2", row.notes)
+        self.assertIn("removed 2 interfaces: StackPort{position}/1, StackPort{position}/2",
+                      row.notes)
+        # sw2, stacked without the rename, takes member 2's names first.
+        self.assertIn("stack members: 26 interfaces renamed on 1 stack member.", row.notes)
         self.assertIn("devices: added module bays StackPort1/1, StackPort1/2 to 3 devices: "
                       "sw1, sw2, sw3",
                       row.notes)
@@ -94,12 +97,12 @@ class PortToBayTests(_Base):
                       "and history stay", row.notes)
         self.assertIn("devices: kept 2 interfaces StackPort1/1, StackPort1/2 on 1 device, not "
                       "in use - install a module in the bay or delete them: sw3", row.notes)
-        for d in (sw1, sw2):
-            for i, name in enumerate(("StackPort1/1", "StackPort1/2")):
-                p = self.port(d, name)
+        for d, m in ((sw1, 1), (sw2, 2)):
+            for i, bay_name in enumerate(("StackPort1/1", "StackPort1/2")):
+                p = self.port(d, f"StackPort{m}/{i + 1}")
                 self.assertEqual(p.pk, before[d.name][i])
                 self.assertIsNotNone(p.module_id)
-                self.assertEqual(p.module.module_bay.name, name)
+                self.assertEqual(p.module.module_bay.name, bay_name)
                 self.assertEqual(p.module.module_type.part_number, "C9200-STACK-KIT")
                 self.assertEqual(p.module_template.name, "StackPort{module}")
                 # Untouched since its template made it: the kit's type.
@@ -197,7 +200,8 @@ class PortToBayTests(_Base):
         new = ChangeLogEntry.objects.exclude(id__in=before)
         self.assertEqual(new.filter(object_type="api.module", action="create").count(), 4)
         self.assertEqual(new.filter(object_type="api.modulebay", action="create").count(), 4)
-        self.assertEqual(new.filter(object_type="api.interface", action="update").count(), 4)
+        # Four ports moved onto kits, sw2's 26 renamed to member 2's names.
+        self.assertEqual(new.filter(object_type="api.interface", action="update").count(), 30)
         self.assertEqual({e.cause for e in new}, {"Pack import: Catalyst 2.0.0"})
 
     def test_a_bay_that_holds_a_module_is_left_alone(self):

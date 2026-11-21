@@ -139,30 +139,32 @@ class TemplateUpdateTests(_Base):
     def test_a_re_import_brings_the_templates_in_line(self):
         self.run_pack({"C9300-48P": old_c9300(), "C9200-24T": old_c9200()})
         c9300, c9200 = self.dt("C9300-48P"), self.dt("C9200-24T")
-        self.assertEqual(self.ifaces(c9300)["StackPort1/1"], "cisco-stackwise")
+        self.assertEqual(self.ifaces(c9300)["StackPort{position}/1"], "cisco-stackwise")
         self.assertFalse(c9300.power_port_templates.exists())
-        self.assertIn("StackPort1/1", self.ifaces(c9200))
+        self.assertIn("StackPort{position}/1", self.ifaces(c9200))
 
         result = self.run_pack({"C9300-48P": real("C9300-48P"), "C9200-24T": real("C9200-24T")},
                                version="2.0.0")
         row = self.row(result, "C9300-48P")
         self.assertEqual(row.action, "matched")
         self.assertIn("updated 2 interfaces, type cisco-stackwise → cisco-stackwise-480: "
-                      "StackPort1/1, StackPort1/2", row.notes)
-        self.assertIn("added 2 power ports: StackPower1/A, StackPower1/B", row.notes)
+                      "StackPort{position}/1, StackPort{position}/2", row.notes)
+        self.assertIn("added 2 power ports: StackPower{position}/A, StackPower{position}/B",
+                      row.notes)
         self.assertIn("updated 2 module bays, modules +PWR-C1-1100WAC-P: PS-A, PS-B", row.notes)
-        self.assertEqual(self.ifaces(c9300)["StackPort1/1"], "cisco-stackwise-480")
+        self.assertEqual(self.ifaces(c9300)["StackPort{position}/1"], "cisco-stackwise-480")
         self.assertEqual(sorted(c9300.power_port_templates.values_list("name", "type")),
-                         [("StackPower1/A", "cisco-stackpower"),
-                          ("StackPower1/B", "cisco-stackpower")])
+                         [("StackPower{position}/A", "cisco-stackpower"),
+                          ("StackPower{position}/B", "cisco-stackpower")])
         self.assertEqual(c9300.module_bay_templates.get(name="PS-A").suggested_modules,
                          ["PWR-C1-350WAC-P", "PWR-C1-715WAC-P", "PWR-C1-1100WAC-P"])
 
         # C9200-24T: the StackPort interfaces became stack adapter bays.
         row = self.row(result, "C9200-24T")
-        self.assertIn("removed 2 interfaces: StackPort1/1, StackPort1/2", row.notes)
+        self.assertIn("removed 2 interfaces: StackPort{position}/1, StackPort{position}/2",
+                      row.notes)
         self.assertIn("added 2 module bays: StackPort1/1, StackPort1/2", row.notes)
-        self.assertNotIn("StackPort1/1", self.ifaces(c9200))
+        self.assertNotIn("StackPort{position}/1", self.ifaces(c9200))
         self.assertEqual(c9200.module_bay_templates.get(name="StackPort1/2").suggested_modules,
                          ["C9200-STACK-KIT"])
         self.assertEqual(
@@ -173,18 +175,18 @@ class TemplateUpdateTests(_Base):
     def test_a_hand_edit_is_kept_and_reported(self):
         self.run_pack({"C9300-48P": real("C9300-48P")})
         dt = self.dt("C9300-48P")
-        InterfaceTemplate.objects.filter(device_type=dt, name="GigabitEthernet1/0/1").update(
+        InterfaceTemplate.objects.filter(device_type=dt, name="GigabitEthernet{position}/0/1").update(
             type="2.5gbase-t")
         new = real("C9300-48P")
         iface(new, "GigabitEthernet1/0/1")["type"] = "1000base-tx"
         iface(new, "GigabitEthernet1/0/2")["type"] = "1000base-tx"
         row = self.row(self.run_pack({"C9300-48P": new}, version="2.0.0"), "C9300-48P")
         self.assertIn("kept your edit on 1 interface, type 2.5gbase-t (the pack has "
-                      "1000base-tx): GigabitEthernet1/0/1", row.notes)
+                      "1000base-tx): GigabitEthernet{position}/0/1", row.notes)
         self.assertIn("updated 1 interface, type 1000base-t → 1000base-tx: "
-                      "GigabitEthernet1/0/2", row.notes)
+                      "GigabitEthernet{position}/0/2", row.notes)
         got = self.ifaces(dt)
-        self.assertEqual((got["GigabitEthernet1/0/1"], got["GigabitEthernet1/0/2"]),
+        self.assertEqual((got["GigabitEthernet{position}/0/1"], got["GigabitEthernet{position}/0/2"]),
                          ("2.5gbase-t", "1000base-tx"))
         self.assertEqual(row.changes["kept"], 1)
 
@@ -321,9 +323,10 @@ class TemplateUpdateTests(_Base):
         dt = self.dt("C9300-48P")
         row = self.row(self.run_pack({"C9300-48P": real("C9300-48P")}, dry_run=True),
                        "C9300-48P")
-        self.assertIn("added 2 power ports: StackPower1/A, StackPower1/B", row.notes)
+        self.assertIn("added 2 power ports: StackPower{position}/A, StackPower{position}/B",
+                      row.notes)
         self.assertFalse(dt.power_port_templates.exists())
-        self.assertEqual(self.ifaces(dt)["StackPort1/1"], "cisco-stackwise")
+        self.assertEqual(self.ifaces(dt)["StackPort{position}/1"], "cisco-stackwise")
         self.assertFalse(Document.objects.filter(object_id=dt.pk).count() > 2)
 
     def test_the_changes_are_audited_with_the_pack_as_cause(self):
@@ -350,7 +353,7 @@ class TemplateUpdateTests(_Base):
         mine, theirs = self.dt("C9300-48P"), self.dt("C9300-48P", self.other)
         self.assertEqual(mine.power_port_templates.count(), 2)
         self.assertFalse(theirs.power_port_templates.exists())
-        self.assertEqual(self.ifaces(theirs)["StackPort1/1"], "cisco-stackwise")
+        self.assertEqual(self.ifaces(theirs)["StackPort{position}/1"], "cisco-stackwise")
         self.assertEqual(Document.objects.filter(object_id=theirs.pk).count(), 2)
         self.assertEqual(Document.objects.filter(object_id=mine.pk).count(), 5)
         self.assertFalse(Document.objects.filter(object_id=mine.pk).exclude(
@@ -393,20 +396,22 @@ class NoRecordTests(_Base):
         result = self.run_pack({"C9300-48P": real("C9300-48P"), "C9200-24T": real("C9200-24T")})
         row = self.row(result, "C9300-48P")
         self.assertEqual(row.action, "matched")
-        self.assertIn("added 2 power ports: StackPower1/A, StackPower1/B", row.notes)
+        self.assertIn("added 2 power ports: StackPower{position}/A, StackPower{position}/B",
+                      row.notes)
         self.assertIn("kept 2 interfaces, type cisco-stackwise (the pack has "
-                      "cisco-stackwise-480): StackPort1/1, StackPort1/2", row.notes)
+                      "cisco-stackwise-480): StackPort{position}/1, StackPort{position}/2", row.notes)
         self.assertIn("no earlier pack record: differences kept - Update from pack "
                       "(--overwrite) applies them.", row.notes)
-        self.assertEqual(self.ifaces(self.dt("C9300-48P"))["StackPort1/1"], "cisco-stackwise")
+        self.assertEqual(self.ifaces(self.dt("C9300-48P"))["StackPort{position}/1"], "cisco-stackwise")
         row = self.row(result, "C9200-24T")
-        self.assertIn("kept 2 interfaces not in the pack: StackPort1/1, StackPort1/2", row.notes)
-        self.assertIn("StackPort1/1", self.ifaces(self.dt("C9200-24T")))
+        self.assertIn("kept 2 interfaces not in the pack: StackPort{position}/1, "
+                      "StackPort{position}/2", row.notes)
+        self.assertIn("StackPort{position}/1", self.ifaces(self.dt("C9200-24T")))
         self.assertIn("added 2 module bays: StackPort1/1, StackPort1/2", row.notes)
         # The record now exists: the differences read as edits from here on.
         row = self.row(self.run_pack({"C9300-48P": real("C9300-48P")}), "C9300-48P")
         self.assertIn("kept your edit on 2 interfaces, type cisco-stackwise (the pack has "
-                      "cisco-stackwise-480): StackPort1/1, StackPort1/2", row.notes)
+                      "cisco-stackwise-480): StackPort{position}/1, StackPort{position}/2", row.notes)
 
     def test_short_and_stacked_names_match_the_yaml(self):
         cisco = Manufacturer.objects.get(tenant=self.tenant, name="Cisco")
@@ -432,15 +437,16 @@ class NoRecordTests(_Base):
     def test_update_from_pack_takes_values_and_removes_nothing(self):
         result = self.run_pack({"C9300-48P": real("C9300-48P"), "C9200-24T": real("C9200-24T")},
                                overwrite=True)
-        self.assertEqual(self.ifaces(self.dt("C9300-48P"))["StackPort1/1"],
+        self.assertEqual(self.ifaces(self.dt("C9300-48P"))["StackPort{position}/1"],
                          "cisco-stackwise-480")
         row = self.row(result, "C9200-24T")
         # No pack ever added them: the library import's StackPorts stay.
-        self.assertIn("kept 2 interfaces not from a pack: StackPort1/1, StackPort1/2",
+        self.assertIn("kept 2 interfaces not from a pack: StackPort{position}/1, "
+                      "StackPort{position}/2",
                       row.notes)
         self.assertIn("no earlier pack record: nothing removed - templates not from a "
                       "pack stay.", row.notes)
-        self.assertIn("StackPort1/1", self.ifaces(self.dt("C9200-24T")))
+        self.assertIn("StackPort{position}/1", self.ifaces(self.dt("C9200-24T")))
         self.assertEqual(row.changes["removed"], 0)
         self.assertIn("added 2 module bays: StackPort1/1, StackPort1/2", row.notes)
 

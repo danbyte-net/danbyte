@@ -106,9 +106,56 @@ library's names, `port:GigabitEthernet1/0/1`. A type whose interface
 templates use the [stack-member token](virtual-chassis.md#position-aware-interface-names),
 `GigabitEthernet{position}/0/1`, matches them, and on each member they are
 that member's own ports: on member 2 the anchor is `GigabitEthernet2/0/1`.
-This holds for chassis ports, module ports (`{module}` and `{position}`
-together, `TenGigabitEthernet{position}/{module}/1`), port LEDs, port covers
-and the ports placed on generated photos.
+This holds for chassis ports, module ports, port LEDs, port covers and the
+ports placed on generated photos.
+
+The pack's YAML is written the same way, in the device library's spelling
+for member 1 (`GigabitEthernet1/0/1`, a module's
+`TenGigabitEthernet1/{module}/1`). Danbyte decides which types are stack
+members. A device type is **stackable** when:
+
+- its YAML's `meta.stackable` is `true` - for a switch that stacks over
+  ordinary ports, such as a Catalyst 9500 in StackWise Virtual; or, unless
+  `meta.stackable` is `false`,
+- it has a stacking port, in the YAML or on the type: an interface of a
+  stack type (`cisco-stackwise-480`, `juniper-vcp`, …) or marked
+  `stack: true`, or a StackPower port; or
+- it has a module bay whose listed module types carry a stacking interface:
+  a stack adapter's bay, such as a C9300L's `StackPort1/1` that takes
+  `C9300L-STACK-KIT`.
+
+On import, new or matched, a stackable type whose templates don't use the
+token yet takes it, as the manual import's **Stack positions** option names
+them: `GigabitEthernet1/0/1` becomes `GigabitEthernet{position}/0/1`.
+
+- Interface and power-port templates only, and only their leading member
+  number in the type's own spelling (the token most of its interfaces take):
+  `GigabitEthernet0/0`, the management port, stays as written. Module bays
+  keep their names, so the models' `bay:` anchors match on every member.
+- The type's photo markers and faceplate slots follow the rename, and so
+  does its pack record, so the YAML's names still match and nothing reads
+  as added or removed.
+- Then every device of the type in a stack gets its own member's names:
+  member 2's `GigabitEthernet1/0/1` becomes `GigabitEthernet2/0/1`, and its
+  installed modules' ports too. Same rows, so cables, IP addresses and
+  history stay. A name another port of the device already holds is never
+  taken: that port keeps member 1's name and the report lists it. The same
+  re-render runs on every import for a type that already uses the token, so
+  a member added without the rename catches up.
+- The report says what it did, the dry run too: *stack members: 52
+  templates take the stack-member token; 159 interfaces renamed on 3 stack
+  members.* A second import finds nothing to do. Every rename is an
+  ordinary, audited save with the import as the cause.
+
+A **module type** is not renamed: on a stackable device its ports take the
+device's member number when they are stamped. The leading member number its
+YAML writes as `1` becomes the device's, after `{module}` takes the bay's
+position, so member 2's `TenGigabitEthernet1/{module}/1` in the Network
+Module bay (position `1`) is `TenGigabitEthernet2/1/1`, and a stack kit's
+`StackPort{module}` in the bay at position `1/2` is `StackPort2/2`, the
+names the switch itself uses. On a type that is no stack member a module's
+ports read as written. They follow the device into, around and out of a
+stack like its own ports.
 
 - Only the leading member number counts: `{position}` must be the name's
   first number (`Gi{position}/0/1`, `ge-{position:0}/0/0`). A type that
@@ -1258,8 +1305,9 @@ the next import, field by field:
 
 Templates (interfaces, console and console-server ports, power ports and
 outlets, front and rear ports, module bays, device bays; a module type's
-interfaces and power ports), by name - `{position}`-named on a type whose
-interfaces are:
+interfaces and power ports), by name - a new interface or power port is
+`{position}`-named on a type whose interfaces are
+([Stack members](#stack-members)):
 
 - One the YAML has and the type lacks is **added**; one the last import
   added and someone removed since stays removed (*kept your removal*).
@@ -1291,8 +1339,10 @@ record at all, Update from pack updates values and adds what is missing,
 removes nothing, and says so (*no earlier pack record: nothing removed*).
 Documents added or edited here are still left alone.
 
-The import doesn't change a device, with one exception: a port that becomes
-a module bay (next section). The report counts the devices of a type
+The import doesn't change a device, with two exceptions: a stack member
+type's devices in a stack get their own member's port names
+([Stack members](#stack-members)), and a port that becomes a module bay
+(next section). The report counts the devices of a type
 whose components no longer match its templates (*devices: 3 of 5 out of
 step*); the type's **Sync devices** adds and removes their components.
 Existing components keep the values they were made with, and an installed
@@ -1378,6 +1428,7 @@ meta:
   roles: [core, aggregation, campus]
   family: "Catalyst 9500"
   summary: "40-port 1/10G SFP/SFP+ 1RU core/aggregation switch."
+  stackable: true                  # StackWise Virtual: a stack member type
   lifecycle:
     release_date: 2017-06          # YYYY-MM-DD, or YYYY-MM
     end_of_sale: "2024-04-30"
@@ -1397,6 +1448,7 @@ rule for changes made here as the templates:
 | `lifecycle.source` | the vendor notice URL | kept in the record | kept in the record | kept in the record |
 | `links` | link documents on the **Documents** tab | link documents on the **Documents** tab | kept in the record | kept in the record |
 | `summary` | the description, while it is empty | the description, while it is empty | the description, while it is empty | kept in the record |
+| `stackable` | `true` or `false`: whether the type is a [stack member](#stack-members), over what its ports say | kept in the record | kept in the record | kept in the record |
 | `category`, `family`, `roles`, `sources` | kept in the record | kept in the record | kept in the record | kept in the record |
 
 Only device types have lifecycle fields; device and module types have a
