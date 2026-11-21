@@ -1240,6 +1240,11 @@ A pack can also be imported with a management command, from a folder or a
   type's templates, bay module lists, lifecycle dates (device types) and
   links follow the YAML, keeping what was changed in Danbyte: see
   [What a re-import changes](#what-a-re-import-changes).
+- Front ports take their rear port from either library form - inline
+  `rear_port` / `rear_port_position` or the `port-mappings` list - and the
+  snapshot is the same for both, so a pack moving to `port-mappings` changes
+  nothing on re-import. A front port with several mappings keeps its first,
+  with a note ([device catalog](device-catalog.md#importing-from-the-netbox-devicetype-library)).
 - The matched or created type gets the pack's model and far model,
   replacing what it had, with the scan's report per type. A hand-made port
   mapping on the replaced model is cleared.

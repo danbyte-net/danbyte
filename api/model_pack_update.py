@@ -335,9 +335,12 @@ def sync_templates(owner, data: dict, state, *, module: bool, overwrite: bool,
     """Bring ``owner``'s templates in line with the YAML ``data``. Returns
     the new snapshot ``{kind key: {name: values}}`` and notes for rows the
     YAML gets wrong. ``ever`` (:func:`pack_names`) is updated in place:
-    the new snapshot's names join it, removed ones leave it."""
+    the new snapshot's names join it, removed ones leave it. Front ports
+    read both library forms (api.devicetype_import.with_port_mappings): the
+    snapshot holds the rear port either way, so a pack moving to
+    ``port-mappings`` changes nothing."""
     from .anchor_names import NameMatcher
-    from .devicetype_import import positionize
+    from .devicetype_import import no_mapping_note, positionize, with_port_mappings
 
     m = _models()
     kinds = MODULE_KINDS if module else DEVICE_KINDS
@@ -345,6 +348,8 @@ def sync_templates(owner, data: dict, state, *, module: bool, overwrite: bool,
     stacked = _stacked(owner, module)
     prev = state if isinstance(state, dict) else None
     notes: list[str] = []
+    if not module:
+        data, notes = with_port_mappings(data)
     snapshot: dict = {}
     have_by_kind: dict[str, dict] = {}
 
@@ -423,8 +428,10 @@ def sync_templates(owner, data: dict, state, *, module: bool, overwrite: bool,
                     else:
                         setattr(t, attr, v)
                 if not ok:
-                    notes.append(f"{kind.noun} {name}: unknown {FIELD_LABEL[next(iter(kind.refs))]}"
-                                 f" {want[next(iter(kind.refs))]!r} - skipped.")
+                    ref = next(iter(kind.refs))
+                    notes.append(no_mapping_note(name, "skipped") if not want[ref] else
+                                 f"{kind.noun} {name}: unknown {FIELD_LABEL[ref]}"
+                                 f" {want[ref]!r} - skipped.")
                     continue
                 t.save()
                 have[name] = t
@@ -452,7 +459,8 @@ def sync_templates(owner, data: dict, state, *, module: bool, overwrite: bool,
                 if overwrite or cur in (None, "") or (s is not _MISSING and cur == s):
                     if attr in kind.refs:
                         if not _set_ref(t, kind, attr, v, have_of):
-                            notes.append(f"{kind.noun} {name}: unknown "
+                            notes.append(no_mapping_note(name, "kept as it is") if not v
+                                         else f"{kind.noun} {name}: unknown "
                                          f"{FIELD_LABEL[attr]} {v!r} - kept.")
                             continue
                     else:

@@ -820,7 +820,11 @@ def import_pack(tenant, files: PackFiles, *, dry_run: bool = True,
 
     from audit.context import cause
 
-    from .devicetype_import import import_devicetype_yaml, import_moduletype_yaml
+    from .devicetype_import import (
+        import_devicetype_yaml,
+        import_moduletype_yaml,
+        with_port_mappings,
+    )
     from .model_pack_update import update_rack_type, update_type
     from .models import DeviceType, ModuleType, RackType
     from .port_plugs import ACCESSORY_DIR, apply_accessory
@@ -897,6 +901,9 @@ def import_pack(tenant, files: PackFiles, *, dry_run: bool = True,
                 tr.action, tr.notes = "error", ["Needs manufacturer and model."]
                 continue
             tr.name = str(data.get("model"))
+            if kind == "device-type":
+                # The library's newer port-mappings form, read once here.
+                data, tr.notes = with_port_mappings(data)
             block = data.get("model3d")
             for p in model3d_paths(block):
                 if (c := _clean_path(p)) is not None:
@@ -914,15 +921,18 @@ def import_pack(tenant, files: PackFiles, *, dry_run: bool = True,
                     kwargs = {"comment_links": False}
                     if kind == "device-type":
                         kwargs["image_inventory"] = set()
+                    if kind == "device-type":
+                        kwargs["data"] = data
                     rep = importer(tenant, text, files=None, **kwargs)
                     if not rep.get("ok"):
                         tr.action, tr.notes = "error", [rep.get("error") or "Not imported."]
                         continue
                     obj = model_cls.objects.get(pk=rep["id"])
                     tr.action = "created"
+                    # Front ports it left out, update_type reports again.
                     tr.notes += [n for n in rep.get("skipped") or []
                                  if not n.startswith(("model3d:", "front_image:",
-                                                      "rear_image:"))]
+                                                      "rear_image:", "front port "))]
                 else:
                     tr.action = "matched"
                     tr.name = obj.name

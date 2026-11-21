@@ -14,7 +14,8 @@ nearly 1:1:
     power-ports             → PowerPortTemplate (maximum/allocated draw)
     power-outlets           → PowerOutletTemplate (feeds via power_port name)
     rear-ports              → RearPortTemplate (positions)
-    front-ports             → FrontPortTemplate (rear_port name + position)
+    front-ports             → FrontPortTemplate (rear_port name + position,
+                              inline or from ``port-mappings``)
 
 Module-type files (``module-types/<Manufacturer>/*.yaml`` - line cards whose
 port names carry ``{module}``) are auto-detected (no ``u_height``/``slug``)
@@ -247,6 +248,92 @@ def bay_modules(row: dict, notes: list[str] | None = None) -> list[str]:
         return []
 
 
+def _position(value) -> int:
+    try:
+        n = int(value or 1)
+    except (TypeError, ValueError):
+        return 1
+    return n if n > 0 else 1
+
+
+def with_port_mappings(data):
+    """The document with its ``port-mappings`` folded into its front ports.
+
+    The library's newer schema keeps a front port's links to rear ports in a
+    top-level ``port-mappings`` list (``front_port``, ``front_port_position``,
+    ``rear_port``, ``rear_port_position``); the older one carries
+    ``rear_port`` / ``rear_port_position`` on the front port itself, which is
+    what Danbyte's importers read. Returns ``(data, notes)``: a shallow copy
+    in the inline form (``port-mappings`` gone), or ``data`` unchanged when
+    it has no mappings - so a second call is a no-op.
+
+    Danbyte links a front port to one rear port (from a start position, over
+    the port's ``positions``). A front port with several mappings keeps its
+    first by front position, with a note naming the ones left out; a front
+    port with no mapping keeps no rear port, so the importers note it and
+    leave it out. A front port that also has its own ``rear_port`` takes the
+    mapping's, with a note."""
+    if not isinstance(data, dict) or "port-mappings" not in data:
+        return data, []
+    raw = data.get("port-mappings")
+    out = {k: v for k, v in data.items() if k != "port-mappings"}
+    notes: list[str] = []
+    if not isinstance(raw, list):
+        if raw not in (None, "", []):
+            notes.append("port-mappings: not a list - ignored.")
+        return out, notes
+    by_front: dict[str, list[dict]] = {}
+    for m in raw:
+        if not isinstance(m, dict) or m.get("front_port") in (None, ""):
+            notes.append("port-mappings: an entry without a front_port - ignored.")
+            continue
+        by_front.setdefault(str(m["front_port"]).strip(), []).append(m)
+    fronts = data.get("front-ports")
+    fronts = fronts if isinstance(fronts, list) else []
+    rows, inline, seen = [], [], set()
+    for r in fronts:
+        if not isinstance(r, dict):
+            rows.append(r)
+            continue
+        name = str(r.get("name") or "").strip()
+        seen.add(name)
+        row = {k: v for k, v in r.items() if k not in ("rear_port", "rear_port_position")}
+        if "rear_port" in r:
+            inline.append(name)
+        maps = sorted(by_front.get(name, []),
+                      key=lambda m: _position(m.get("front_port_position")))
+        if maps:
+            first = maps[0]
+            row["rear_port"] = first.get("rear_port")
+            row["rear_port_position"] = _position(first.get("rear_port_position"))
+            if len(maps) > 1:
+                left = "; ".join(
+                    f"position {_position(m.get('front_port_position'))} → "
+                    f"{m.get('rear_port')} position {_position(m.get('rear_port_position'))}"
+                    for m in maps[1:])
+                notes.append(
+                    f"front port {name}: {len(maps)} port mappings - Danbyte links a front "
+                    f"port to one rear port; imported with {first.get('rear_port')} "
+                    f"position {row['rear_port_position']}, left out: {left}.")
+        rows.append(row)
+    if fronts:
+        out["front-ports"] = rows
+    if inline and by_front:
+        notes.append("port-mappings: used instead of the front ports' own rear_port "
+                     f"fields ({len(inline)} front port{'s' if len(inline) != 1 else ''}).")
+    unknown = [n for n in by_front if n not in seen]
+    if unknown:
+        notes.append(f"port-mappings: front port{'s' if len(unknown) != 1 else ''} "
+                     f"{', '.join(unknown)} not in front-ports - ignored.")
+    return out, notes
+
+
+def no_mapping_note(name, tail: str = "the type is imported without it") -> str:
+    """The note for a front port that names no rear port."""
+    return (f"front port {name}: no rear port mapped - left out (a front port needs its "
+            f"rear port); {tail}.")
+
+
 def _get_or_create_manufacturer(tenant, name: str, owning_site=None):
     m = Manufacturer.objects.filter(tenant=tenant, name__iexact=name).first()
     if m is not None:
@@ -263,6 +350,7 @@ def _get_or_create_manufacturer(tenant, name: str, owning_site=None):
 def import_devicetype_yaml(
     tenant, text: str, *, stack_positions: bool = False, owning_site=None,
     image_inventory: set[str] | None = None, files=None, comment_links: bool = True,
+    data: dict | None = None,
 ) -> dict:
     """Create a DeviceType (+ templates) from one devicetype-library YAML doc.
 
@@ -277,13 +365,18 @@ def import_devicetype_yaml(
     A ``model3d:`` block (a model pack's, api.model_pack) sets the type's 3D
     model from ``files`` (a ``PackFiles``); without them it is skipped with
     a note.
+
+    Front ports read both library forms (:func:`with_port_mappings`).
+    ``data`` is ``text`` already parsed, when the caller has it.
     """
-    try:
-        data = yaml.safe_load(text)
-    except yaml.YAMLError as exc:
-        return _err(f"Not valid YAML: {exc}")
+    if data is None:
+        try:
+            data = yaml.safe_load(text)
+        except yaml.YAMLError as exc:
+            return _err(f"Not valid YAML: {exc}")
     if not isinstance(data, dict):
         return _err("Expected a YAML mapping (one devicetype-library file).")
+    data, mapping_notes = with_port_mappings(data)
 
     manufacturer_name = str(data.get("manufacturer") or "").strip()
     model = str(data.get("model") or "").strip()
@@ -298,7 +391,7 @@ def import_devicetype_yaml(
     )
 
     # NetBox allows 0 / 0.5 / 1.5 U; Danbyte stores whole units.
-    skipped: list[str] = []
+    skipped: list[str] = list(mapping_notes)
     try:
         raw_u = float(data.get("u_height", 1) or 0)
     except (TypeError, ValueError):
@@ -440,6 +533,9 @@ def import_devicetype_yaml(
     fronts = []
     for r in rows("front-ports"):
         if not r.get("name"):
+            continue
+        if r.get("rear_port") in (None, ""):
+            skipped.append(no_mapping_note(r.get("name")))
             continue
         rear = rears.get(maybe_pos(str(r.get("rear_port") or "")))
         if rear is None:
@@ -757,7 +853,7 @@ def import_moduletype_yaml(tenant, text: str, *, owning_site=None, files=None,
         f"{key}: not modelled on module types - skipped"
         for key in ("console-ports", "console-server-ports",
                     "power-outlets", "front-ports", "rear-ports",
-                    "module-bays")
+                    "port-mappings", "module-bays")
         if data.get(key)
     ]
     skipped += comment_notes

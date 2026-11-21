@@ -192,6 +192,14 @@ dialog from the same **Import from library** button, right after
 **Every construct in the library schema now maps** - anything unrecognised in
 a file would still be reported, never silently dropped.
 
+**Front ports and their rear ports.** A front port's rear port is read from
+either library form: `rear_port` / `rear_port_position` on the front port
+(older files), or the top-level `port-mappings` list (newer ones; it wins
+when a file has both). A Danbyte front port links to one rear port, so a front
+port with several mappings keeps its first and the import notes the rest; one
+with no mapping is left out with a note. Module types don't carry front or
+rear ports, so a module-type file's are reported as skipped.
+
 Each file needs **add** on what it creates: a device-type file needs add on
 device types, a module-type file on module types, a rack-type file on rack
 types. A file you can't add is reported as refused and the rest of the batch
