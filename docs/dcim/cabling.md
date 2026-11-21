@@ -135,6 +135,15 @@ too: the check applies when an end's ports change, in any order.
 `manage.py check_dcim_integrity` lists cables with an empty end or with ends
 that don't match, and changes nothing.
 
+### Finding cables
+
+The **Cables** list's search matches a cable's label, description and type,
+its interface, front and rear port names and the devices on its interfaces
+(case-insensitive, any part). `GET /api/cables/?device=<id>` lists every
+cable with an end on that device, whatever the end's kind: interfaces,
+front and rear ports, console and console server ports, power ports and
+outlets (a PDU's cords, StackPower cables) and aux ports.
+
 ## Port reservations
 
 Sometimes you know a port will be needed before you know where its cable will

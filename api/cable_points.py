@@ -70,6 +70,24 @@ COMPATIBLE_ENDS = {
 COMPATIBLE_ENDS["rear_port"] = COMPATIBLE_ENDS["front_port"]
 
 
+# The points that sit on a device (a power feed hangs off a panel and a
+# circuit end off a circuit, so neither has a device).
+DEVICE_POINT_ATTRS = tuple(
+    a for a in POINT_ATTRS if a not in ("power_feed", "circuit_termination")
+)
+
+
+def on_device_q(device_ids):
+    """A CableTermination filter: the end sits on one of ``device_ids``,
+    whatever its kind (interface, panel, console, power, aux)."""
+    from django.db.models import Q
+
+    out = Q(pk__in=[])
+    for attr in DEVICE_POINT_ATTRS:
+        out |= Q(**{f"{attr}__device_id__in": device_ids})
+    return out
+
+
 def compatible_ends(a: str, b: str) -> bool:
     """Whether a cable may join a port of kind ``a`` to one of kind ``b``."""
     return b in COMPATIBLE_ENDS.get(a, ())

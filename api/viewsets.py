@@ -11,7 +11,7 @@ import uuid
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.db.models.functions import Coalesce
-from django.db.models import Count, OuterRef, Prefetch, Q, Subquery
+from django.db.models import Count, Exists, OuterRef, Prefetch, Q, Subquery
 from django.utils.text import slugify
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import (
@@ -6151,6 +6151,11 @@ class CableViewSet(TableListMixin, TenantScopedViewSet):
             "terminations__interface__device",
             "terminations__front_port__device",
             "terminations__rear_port__device",
+            "terminations__console_port__device",
+            "terminations__console_server_port__device",
+            "terminations__power_port__device",
+            "terminations__power_outlet__device",
+            "terminations__aux_port__device",
             # A power feed hangs off a panel, not a device - the read shape
             # names the panel, so prefetch it like the device-side kinds.
             "terminations__power_feed__power_panel",
@@ -6191,9 +6196,16 @@ class CableViewSet(TableListMixin, TenantScopedViewSet):
                       | qs.filter(terminations__rear_port__name__icontains=s)) | qs.filter(cf_text_q(qs.model, s))
             device_id = self.request.query_params.get("device")
             if device_id:
-                qs = (qs.filter(terminations__interface__device_id=device_id)
-                      | qs.filter(terminations__front_port__device_id=device_id)
-                      | qs.filter(terminations__rear_port__device_id=device_id))
+                # Every kind of end on the device - a PDU's power cords and
+                # StackPower cables too, not only interfaces and panel ports.
+                from .cable_points import on_device_q
+
+                try:
+                    device_id = str(uuid.UUID(device_id))
+                except ValueError as exc:
+                    raise ValidationError({"device": "Not an id."}) from exc
+                qs = qs.filter(Exists(CableTermination.objects.filter(
+                    on_device_q([device_id]), cable_id=OuterRef("pk"))))
             # "What lands on this feed" - the power feed detail page's
             # Terminations tab. Site-level power has no device to filter by.
             feed_id = self.request.query_params.get("power_feed")
