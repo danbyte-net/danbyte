@@ -361,7 +361,7 @@ class TemplateUpdateTests(_Base):
         self.assertEqual(Document.objects.filter(object_id=mine.pk).exclude(
             category__tenant=self.tenant).count(), 0)
 
-    def test_devices_out_of_step_are_counted_not_changed(self):
+    def test_devices_out_of_step_are_counted_their_ports_follow(self):
         self.run_pack({"C9300-48P": old_c9300()})
         dt = self.dt("C9300-48P")
         site = Site.objects.create(tenant=self.tenant, name="S")
@@ -375,10 +375,11 @@ class TemplateUpdateTests(_Base):
                        "C9300-48P")
         self.assertIn("devices: 2 of 2 out of step - Sync devices brings them in line.",
                       row.notes)
-        self.assertIn("devices: existing ports keep the values they were made with.",
-                      row.notes)
+        # Added templates wait for Sync devices; a changed field follows.
+        self.assertIn("devices: updated type on 4 interfaces of 2 devices (cisco-stackwise → "
+                      "cisco-stackwise-480)", row.notes)
         self.assertFalse(d1.power_ports.exists())
-        self.assertEqual(d1.interfaces.get(name="StackPort1/1").type, "cisco-stackwise")
+        self.assertEqual(d1.interfaces.get(name="StackPort1/1").type, "cisco-stackwise-480")
 
 
 class NoRecordTests(_Base):

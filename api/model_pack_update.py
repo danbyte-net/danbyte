@@ -38,8 +38,10 @@ the snapshot. The Markdown links in ``comments`` (api.description_links)
 join ``meta.links`` as link Documents, and a description still holding
 those comments word for word becomes their plain text. Devices are not
 changed, except where a removed port became a module bay
-(api.model_pack_bays): the report counts the devices that are out of step,
-which the type's Sync devices brings in line.
+(api.model_pack_bays) and where a changed template field reaches the
+components the template made (api.model_pack_components): the report counts
+the devices that are out of step, which the type's Sync devices brings in
+line.
 
 Everything here writes through ordinary saves, so the change log records
 it with the import's cause; a dry run is the same work rolled back.
@@ -210,6 +212,9 @@ class Report:
     _groups: dict = field(default_factory=dict)
     #: The templates removed, ``{kind key: {name: values}}`` (api.model_pack_bays).
     removed_rows: dict = field(default_factory=dict)
+    #: The template fields changed, ``{kind key: {name: {attr: (old, new)}}}``
+    #: (api.model_pack_components).
+    changed_rows: dict = field(default_factory=dict)
 
     def add(self, op: str, noun: str, name: str, detail: str = ""):
         """``op``: added, updated, removed, or one of the ways a thing is
@@ -467,6 +472,8 @@ def sync_templates(owner, data: dict, state, *, module: bool, overwrite: bool,
                         setattr(t, attr, v)
                     changed.append(kind.refs[attr][2] if attr in kind.refs else attr)
                     report.add("updated", kind.noun, name, f"{detail} → {_show(v)}")
+                    report.changed_rows.setdefault(kind.key, {}).setdefault(
+                        name, {})[attr] = (cur, v)
                 else:
                     op = "edit" if s is not _MISSING else "kept"
                     report.add(op, kind.noun, name, f"{detail} (the pack has {_show(v)})")
@@ -577,26 +584,25 @@ def out_of_step(dt) -> tuple[int, int]:
 
 
 def devices_notes(owner, *, module: bool, report: Report) -> list[str]:
-    """What the template changes mean for what was built from the type."""
+    """What the template changes mean for what was built from the type:
+    devices out of step, modules missing added or removed templates (a
+    changed field reaches them: api.model_pack_components)."""
     if not report.changed:
         return []
     if module:
+        if not (report.added or report.removed):
+            return []
         from .models import Module
 
-        n = Module.objects.filter(module_type=owner).count()
+        n = Module.objects.filter(module_type=owner, device__tenant_id=owner.tenant_id).count()
         if not n:
             return []
-        return [f"modules: {n} installed keep the ports they were made with."]
+        return [f"modules: {n} installed keep the ports they were made with - added and "
+                "removed templates don't reach them."]
     total, differ = out_of_step(owner)
-    if not total:
+    if not total or not differ:
         return []
-    notes = []
-    if differ:
-        notes.append(f"devices: {differ} of {total} out of step - Sync devices brings "
-                     "them in line.")
-    if report.updated:
-        notes.append("devices: existing ports keep the values they were made with.")
-    return notes
+    return [f"devices: {differ} of {total} out of step - Sync devices brings them in line."]
 
 
 # ── meta ────────────────────────────────────────────────────────────────────
@@ -912,7 +918,11 @@ def update_type(obj, data: dict, *, kind: str, pack: dict, overwrite: bool = Fal
         from .model_pack_bays import convert
 
         notes += convert(obj, report.removed_rows, pack=pack)
-    built = devices_notes(obj, module=module, report=report)
+    # A changed template field reaches what the template made, unless edited.
+    from .model_pack_components import carry
+
+    built = carry(obj, report.changed_rows, module=module)
+    built += devices_notes(obj, module=module, report=report)
     meta = meta_block(data) or {}
     record = {"pack": pack, "templates": templates}
     names = {k: sorted(v) for k, v in ever.items() if v}

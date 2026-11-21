@@ -1344,14 +1344,60 @@ record at all, Update from pack updates values and adds what is missing,
 removes nothing, and says so (*no earlier pack record: nothing removed*).
 Documents added or edited here are still left alone.
 
-The import doesn't change a device, with two exceptions: a stack member
+The import doesn't change a device, with three exceptions: a stack member
 type's devices in a stack get their own member's port names
-([Stack members](#stack-members)), and a port that becomes a module bay
-(next section). The report counts the devices of a type
+([Stack members](#stack-members)), a port that becomes a module bay
+([next section](#port-to-module-bay)), and a changed template field
+([below](#template-fields-reach-components)). Templates added or removed
+don't reach existing devices: the report counts the devices of a type
 whose components no longer match its templates (*devices: 3 of 5 out of
-step*); the type's **Sync devices** adds and removes their components.
-Existing components keep the values they were made with, and an installed
-module keeps the ports it was stamped with.
+step*), and the type's **Sync devices** adds and removes their components.
+An installed module keeps the ports it was stamped with (*modules: 6
+installed keep the ports they were made with*); re-installing it stamps the
+type's current ports.
+
+### A changed template field reaches its components {#template-fields-reach-components}
+
+When the import changes a field of a template - an interface's type, PoE
+mode or type, management only, enabled or description; a power port's type
+or draw; a console or console-server port's type; an outlet's type, feed
+leg or power port; a rear port's type, positions or splitter flag; a front
+port's type, rear port or rear position; a module bay's position - the
+components that template made take the new value, in the same transaction:
+
+- on every device of the device type (by name, `{position}` rendered for
+  each stack member), and
+- on every installed module of the module type (the ports it stamped, by
+  the template they record, else by the name the module renders).
+
+Only a component that **still holds the old template value** follows. One
+that differs was changed here: it keeps its value and the report lists it.
+Same rows, so cables, IPs and history stay; an interface's virtual flag
+follows its type. A rear position the rear port doesn't have, positions
+fewer than the front ports use, or a new position for a bay that holds a
+module is kept and reported. Names are not part of this: a renamed
+template is one removed and one added.
+
+```text
+- updated 4 interfaces, type 10gbase-t → 10gbase-x-sfpp: TenGigabitEthernet1/{module}/1, …
+- devices: updated type on 22 interfaces of 6 modules (10gbase-t → 10gbase-x-sfpp);
+  kept 2 edited by hand: sw2: TenGigabitEthernet1/1/2, sw5: TenGigabitEthernet1/1/4
+```
+
+Each change is an ordinary save in the change log with the pack as its
+cause, in the importing tenant only; the dry run reports it and changes
+nothing, and a second import changes no template, so it does nothing.
+
+**Catching up.** Before this rule, an import changed the template and left
+the components. `manage.py sync_type_components --tenant <slug> [--type
+<part number>] [--field type,poe_type] [--force] [--apply]` applies the
+rule against the current templates: a component whose field differs from
+its template and equals a value the template held before - read from the
+template's change log - takes the template's value; any other value was
+changed here and stays. Where the change log has no earlier value for that
+template field, the components are listed and only `--force` updates them.
+Descriptions, enabled and references are left alone. A dry run unless
+`--apply`; the changes carry *Sync type components* as their cause.
 
 ### A port that becomes a module bay {#port-to-module-bay}
 
