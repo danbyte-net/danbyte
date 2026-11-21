@@ -1595,10 +1595,15 @@ def materialize_device_components(device) -> dict[str, int]:
 
 def _ports_changed(device, *more_ids) -> None:
     """Components were stamped out in bulk (no save signals): the device's
-    stored port counts follow (#535)."""
+    stored port counts follow (#535), and so do the auto cables of the
+    stack it is in (api.stack_cables) - a stack kit's ports arrive here.
+    One reconcile per stack when the transaction commits."""
     from .port_stats import touch
+    from .stack_cables import schedule
 
     touch(device.tenant_id, [device.pk, *more_ids])
+    if device.virtual_chassis_id is not None:
+        schedule(vc_id=device.virtual_chassis_id)
 
 
 #: Marker/slot kind → the device relation it references, for the sync-from-type

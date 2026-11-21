@@ -380,8 +380,10 @@ real cables that Danbyte keeps in step with the stack:
   shortest part number (`STACK-T1-50CM`, `CAB-SPWR-30CM`) with that length,
   when the tenant has a head part; typed **Stack cable** or **StackPower cable**.
 - **Kept in step:** a member added, removed or renumbered, the stack's
-  topology changed, or a stack port added, removed or retyped, and the
-  stack's auto cables are brought in line when the change commits: a cable
+  topology changed, or a stack port added, removed or retyped - also the
+  ports a stack kit brings when it is installed (from stock too) or takes
+  away when it is removed, and the ports stamped from a device's type - and
+  the stack's auto cables are brought in line when the change commits: a cable
   whose link is gone is deleted, a missing one is made.
 - **Your cables win:** a port that already has a cable that is not auto is
   skipped, and no such cable is ever changed. Editing an auto cable in
