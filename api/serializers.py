@@ -3530,7 +3530,7 @@ class DeviceSerializer(TableSerializerMixin, StatusSerializerMixin, ObjectPermsS
     # anyone reads a device list for (see api.list_fields).
     list_columns_exclude = (
         "vc_renamed_interfaces", "image_ports", "port_labels", "topology_card",
-        "topology_photo_size",
+        "topology_photo_size", "topology_port_name",
         "model_3d", "model_3d_fit", "model_3d_up", "model_3d_front", "model_3d_effective",
         "model_ports", "model_3d_far", "model_3d_scan", "local_context_data",
         "fov_direction", "fov_deg", "fov_distance_m", "fov_ptz",
@@ -4461,7 +4461,8 @@ class DeviceSerializer(TableSerializerMixin, StatusSerializerMixin, ObjectPermsS
                   "cooling_method", "effective_cooling_method",
                   "width_mm", "height_mm", "depth_mm",
                   "effective_width_mm", "effective_height_mm", "effective_depth_mm",
-                  "port_labels", "topology_card", "topology_photo_size", "icon",
+                  "port_labels", "topology_card", "topology_photo_size",
+                  "topology_port_name", "icon",
                   "model_3d", "model_3d_fit", "model_3d_up", "model_3d_front",
                   "model_3d_effective", "model_ports", "model_3d_far", "model_3d_scan",
                   "latitude", "longitude",
@@ -5627,6 +5628,8 @@ class TopologyViewSerializer(NumIdModelSerializer):
     PHOTO_ANCHORS = ("ports", "edge")
     LINE_TYPES = ("straight", "elbow", "bendy", "cyclical")
     LINK_LABELS = ("subnet", "ip", "port")
+    #: The field the map prints a port by (#541).
+    PORT_NAMES = ("name", "label", "description")
     #: Per-link overrides, keyed by the sorted device pair.
     MAX_LINKS = 20_000
     #: Per-card overrides (face, anchor, line), keyed by device id.
@@ -5726,6 +5729,11 @@ class TopologyViewSerializer(NumIdModelSerializer):
         filters = v.get("filters")
         if isinstance(filters, dict) and "diagram" in filters:
             self._diagram_display(filters["diagram"])
+        # What the map prints a port by (#541): absent is the port's name.
+        if isinstance(filters, dict):
+            self._choice(
+                filters.get("portName"), self.PORT_NAMES, "filters.portName"
+            )
         if "links" in v:
             self._link_overrides(v["links"])
         if "nodes" in v:

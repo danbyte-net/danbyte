@@ -195,9 +195,11 @@ interface Item {
 
 const dirKey = (e: End) => `${Math.round(e.dir[0])},${Math.round(e.dir[1])}`
 
-/** The port name an end carries: a nub's, or a photo port's. */
+/** The port name an end carries: a nub's, or a photo port's - the text
+ * the port prints (#541), else its name. */
 const portOf = (a: Anchor | undefined) =>
-  (a?.k === "side" || a?.k === "point" ? a.port : undefined) || undefined
+  (a?.k === "side" || a?.k === "point" ? a.text || a.port : undefined) ||
+  undefined
 
 function items(input: PlanInput): Item[] {
   const out: Item[] = []

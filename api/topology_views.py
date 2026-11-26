@@ -189,11 +189,27 @@ def _status_mini(status, model):
     }
 
 
+def _port_texts(port, prefix="") -> dict:
+    """A port's label and description for the map's port names (#541), each
+    only when set - read off the port object the walk already holds."""
+    out = {}
+    label = (getattr(port, "label", "") or "").strip()
+    description = (getattr(port, "description", "") or "").strip()
+    if label:
+        out[f"{prefix}label"] = label
+    if description:
+        out[f"{prefix}description"] = description
+    return out
+
+
 def _device_node(d, ports, panel=False):
-    """``ports`` = ordered [{name, kind, pair?}] of this device's cabled ends
-    - ``pair`` names the rear port sharing the row (front ⇄ rear strand).
-    Reads only the relations ``_devices_qs`` joins - no per-node queries."""
-    return {
+    """``ports`` = ordered [{name, kind, pair?, label?, description?}] of
+    this device's cabled ends - ``pair`` names the rear port sharing the row
+    (front ⇄ rear strand), with its own ``pair_label``/``pair_description``.
+    ``port_name`` is the device's own choice of what the map prints a port
+    by (#541), present only when set. Reads only the relations
+    ``_devices_qs`` joins - no per-node queries."""
+    node = {
         "id": f"dev:{d.id}",
         "type": "device",
         "data": {
@@ -221,6 +237,9 @@ def _device_node(d, ports, panel=False):
             "ports": ports,
         },
     }
+    if getattr(d, "topology_port_name", ""):
+        node["data"]["port_name"] = d.topology_port_name
+    return node
 
 
 # ─── Cable endpoints ─────────────────────────────────────────────────────────
@@ -878,13 +897,17 @@ def _graph_from_links(tenant, links, device_filter_q=None, focus_id=None,
             rname = obj.rear_port.name if obj.rear_port_id else None
             if rname and rname in by_name and rname not in consumed_rears                     and by_name[rname][0] == "rear":
                 consumed_rears.add(rname)
-                ports.append({"name": name, "kind": kind, "pair": rname})
+                ports.append({
+                    "name": name, "kind": kind, "pair": rname,
+                    **_port_texts(obj),
+                    **_port_texts(by_name[rname][1], "pair_"),
+                })
             else:
-                ports.append({"name": name, "kind": kind})
+                ports.append({"name": name, "kind": kind, **_port_texts(obj)})
         for name, (kind, obj) in by_name.items():
             if kind == "front" or name in consumed_rears:
                 continue
-            ports.append({"name": name, "kind": kind})
+            ports.append({"name": name, "kind": kind, **_port_texts(obj)})
         nodes.append(_device_node(d, ports, panel=panel))
 
     if collect is not None:

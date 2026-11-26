@@ -143,6 +143,25 @@ describe("HierarchyNode", () => {
     )
   })
 
+  it("prints a chip's chosen text, the name and text on hover (#541)", () => {
+    renderCard(
+      hierData(base, { portText: { "Ethernet1/1": "Uplink to core" } })
+    )
+    const text = screen.getByText("Uplink to core")
+    // Cut by the chip's width, never wrapped.
+    expect(text.className).toMatch(/truncate/)
+    expect(screen.queryByText("Ethernet1/1")).toBeNull()
+    expect(text.parentElement!.getAttribute("data-tip")).toBe(
+      "Ethernet1/1 · Uplink to core"
+    )
+  })
+
+  it("prints the name with no chosen text", () => {
+    renderCard(hierData(base))
+    const chip = screen.getByText("Ethernet1/1").parentElement as HTMLElement
+    expect(chip.getAttribute("data-tip")).toBe("Ethernet1/1")
+  })
+
   it("outlines the selected card instead of a ring", () => {
     const { container } = renderCard(hierData(base), true)
     expect(card(container).className).toMatch(/outline-map-accent/)

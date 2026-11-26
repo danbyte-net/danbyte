@@ -339,6 +339,27 @@ describe("CardLinesDialog", () => {
     expect(within(dialog).queryByText("Loopback")).toBeNull()
   })
 
+  it("saves the device's port names with its lines (#541)", async () => {
+    // The select scrolls its picked option into view; jsdom has no layout.
+    Element.prototype.scrollIntoView = () => {}
+    const { onClose } = renderDialog()
+    const dialog = await screen.findByRole("dialog")
+    await within(dialog).findByText("Loopback")
+    fireEvent.click(
+      within(dialog).getByRole("combobox", { name: "Port names" })
+    )
+    fireEvent.click(await screen.findByRole("option", { name: "Description" }))
+    expect(save().hasAttribute("disabled")).toBe(false)
+    fireEvent.click(save())
+    await waitFor(() => expect(onClose).toHaveBeenCalled())
+    expect(patches()).toEqual([
+      [
+        "/api/devices/d1/",
+        { topology_card: null, topology_port_name: "description" },
+      ],
+    ])
+  })
+
   it("puts a device with its own list back on inherit with null", async () => {
     stored = ["serial"]
     const { onClose } = renderDialog()

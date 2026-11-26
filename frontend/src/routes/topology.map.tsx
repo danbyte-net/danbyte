@@ -124,6 +124,11 @@ import {
   legendRows,
   providerNetworkLegend,
 } from "@/components/topology/legend"
+import {
+  PORT_NAME_MODES,
+  portNameModeOf,
+} from "@/components/topology/port-names"
+import type { PortNameMode } from "@/components/topology/port-names"
 import { PartialMapChip } from "@/components/topology/partial-map-chip"
 import {
   ExportMenu,
@@ -398,6 +403,9 @@ export interface TopologySearch {
   labels?: string
   /** Fold link-aggregation member cables into one edge ("on" by default). */
   lag?: "on" | "off"
+  /** Diagram and Hierarchy: what a port prints by (#541), `name` by
+   * default. */
+  portname?: PortNameMode
   /** The Dependencies layer (#450): device dependencies as arrowed lines
    * ("off" by default). */
   deps?: "on" | "off"
@@ -477,6 +485,8 @@ export const Route = createFileRoute("/topology/map")({
     if (color) out.color = color
     const lag = oneOf(s.lag, LAG_MODES)
     if (lag) out.lag = lag
+    const portname = portNameModeOf(s.portname)
+    if (portname) out.portname = portname
     const deps = oneOf(s.deps, DEP_MODES)
     if (deps) out.deps = deps
     const clusters = oneOf(s.clusters, CLUSTER_MODES)
@@ -637,6 +647,8 @@ interface StoredDisplay {
   /** `groupBy` was chosen here. Older copies wrote the default `none` back
    * on every visit, so their `none` is not a choice. */
   groupChosen?: boolean
+  /** What a port prints by (#541). */
+  portName?: PortNameMode
 }
 
 /** No view opens grouped by site above this many devices (#343): the
@@ -737,6 +749,8 @@ type ViewFilters = Partial<
     deps: "on" | "off"
     /** Group clusters (#517). */
     clusters: "on" | "off"
+    /** What a port prints by (#541); absent is its name. */
+    portName: PortNameMode
     devices: string[]
     /** The virtual chassis placed on a hand-picked map. */
     chassis: string[]
@@ -1007,6 +1021,15 @@ function TopologyPage() {
     "lag",
     oneOf(vf.lag, LAG_MODES) ?? "on",
     LAG_MODES
+  )
+  // What a port prints by on the Diagram and the Hierarchy (#541): the
+  // view's, else this browser's, else its name. A device's own wins.
+  const [portName, setPortName] = useUrlEnum<PortNameMode>(
+    "portname",
+    portNameModeOf(vf.portName) ??
+      (viewId === "none" ? portNameModeOf(stored.portName) : undefined) ??
+      "name",
+    PORT_NAME_MODES
   )
   const [depsMode, setDepsMode] = useUrlEnum(
     "deps",
@@ -1681,6 +1704,7 @@ function TopologyPage() {
     if (viewId !== "none" || resolving) return
     writeStoredDisplay({
       colorMode,
+      portName,
       // A photo map's own Tree is not the card map's choice.
       direction: dirImplied ? stored.direction : direction,
       roleOrder,
@@ -1695,6 +1719,7 @@ function TopologyPage() {
     resolving,
     groupPicked,
     colorMode,
+    portName,
     direction,
     dirImplied,
     stored,
@@ -2369,6 +2394,7 @@ function TopologyPage() {
         lag: lagMode,
         deps: depsMode,
         clusters: clustersMode,
+        portName,
         ...(withDiagram ? { diagram: diagramDisplay } : {}),
         // The Routing tab's table, the URL's.
         ...(doc.doc.filters.routing !== undefined || routingVrf !== "all"
@@ -3025,6 +3051,7 @@ function TopologyPage() {
         lag: lagMode,
         deps: depsMode,
         clusters: clustersMode,
+        portName,
         diagram: diagramDisplay,
       },
       style: "diagram",
@@ -3664,6 +3691,29 @@ function TopologyPage() {
                         </div>
                       </PopoverField>
                     )}
+                    {/* The Diagram and the Hierarchy: the tabs this
+                        popover is for. */}
+                    {!grouped && (
+                      <PopoverField label="Port names">
+                        <Select
+                          value={portName}
+                          onValueChange={(v) =>
+                            setPortName(portNameModeOf(v) ?? "name")
+                          }
+                        >
+                          <SelectTrigger size="sm" className="w-full text-xs">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="name">Name</SelectItem>
+                            <SelectItem value="label">Label</SelectItem>
+                            <SelectItem value="description">
+                              Description
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </PopoverField>
+                    )}
                     <PopoverField label="Color by">
                       <Select
                         value={colorMode}
@@ -4196,6 +4246,7 @@ function TopologyPage() {
                 linkOverrides={doc.doc.links}
                 nodeLines={nodeLineMap}
                 diagramLabels={isDiagram ? diagramLabels : undefined}
+                portName={portName}
                 monitor={checks}
                 bundleLags={lagMode === "on"}
                 positions={positions}

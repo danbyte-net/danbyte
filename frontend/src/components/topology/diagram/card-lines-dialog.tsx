@@ -4,7 +4,7 @@ import { ChevronUp, Plus } from "lucide-react"
 import { toast } from "sonner"
 
 import { api } from "@/lib/api"
-import type { Device, TopologyCardConfig } from "@/lib/api"
+import type { Device, TopologyCardConfig, TopologyPortName } from "@/lib/api"
 import { apiErrorToast } from "@/lib/api-toast"
 import { useDeviceFieldVisibility } from "@/lib/list-fields"
 import { useSaveObject } from "@/lib/save-object"
@@ -29,6 +29,10 @@ import {
 import { NoFieldControl } from "@/components/ui/field-control"
 import { InfoTip } from "@/components/ui/info-tip"
 import { Switch } from "@/components/ui/switch"
+import {
+  TopologyPortNameSelect,
+  portNameOf,
+} from "@/components/topology-port-name-select"
 import {
   cardLineOptions,
   hiddenCardLines,
@@ -293,14 +297,27 @@ function DeviceCardLines({
   })
   // undefined = untouched: the device's saved list.
   const [draft, setDraft] = useState<string[] | null | undefined>(undefined)
+  // …and its port names (#541); null inherits the map's.
+  const [portDraft, setPortDraft] = useState<
+    TopologyPortName | null | undefined
+  >(undefined)
 
   const save = useMutation({
-    mutationFn: (topology_card: string[] | null) =>
+    mutationFn: (p: {
+      topology_card: string[] | null
+      /** Absent: its port names are unchanged. */
+      topology_port_name?: TopologyPortName | null
+    }) =>
       saveObject<Device>({
         objectType: "api.device",
         endpoint: "/api/devices/",
         id: target.id,
-        payload: { topology_card },
+        payload: {
+          topology_card: p.topology_card,
+          ...(p.topology_port_name !== undefined
+            ? { topology_port_name: p.topology_port_name ?? "" }
+            : {}),
+        },
       }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["topology"] })
@@ -312,8 +329,12 @@ function DeviceCardLines({
 
   const savedList = device.data?.topology_card ?? null
   const value = draft === undefined ? savedList : draft
+  const savedPort = portNameOf(device.data?.topology_port_name)
+  const port = portDraft === undefined ? savedPort : portDraft
   const dirty =
-    draft !== undefined && JSON.stringify(draft) !== JSON.stringify(savedList)
+    (draft !== undefined &&
+      JSON.stringify(draft) !== JSON.stringify(savedList)) ||
+    port !== savedPort
   const inh = config.data
     ? inheritedCardLines(config.data, target.role?.slug, viewFields)
     : null
@@ -336,14 +357,17 @@ function DeviceCardLines({
         ) : !device.data ? (
           <Loading />
         ) : (
-          <CardLinesEditor
-            value={value}
-            onChange={setDraft}
-            config={config.data}
-            inherited={inh?.fields ?? []}
-            from={from}
-            info="Saved on the device, so every map shows it."
-          />
+          <div className="grid gap-4">
+            <CardLinesEditor
+              value={value}
+              onChange={setDraft}
+              config={config.data}
+              inherited={inh?.fields ?? []}
+              from={from}
+              info="Saved on the device, so every map shows it."
+            />
+            <TopologyPortNameSelect value={port} onChange={setPortDraft} />
+          </div>
         )}
       </div>
       <DialogFooter>
@@ -353,7 +377,12 @@ function DeviceCardLines({
         <Button
           size="sm"
           disabled={!dirty || save.isPending || !device.data}
-          onClick={() => save.mutate(value)}
+          onClick={() =>
+            save.mutate({
+              topology_card: value,
+              ...(port !== savedPort ? { topology_port_name: port } : {}),
+            })
+          }
         >
           {save.isPending ? "Saving…" : "Save"}
         </Button>

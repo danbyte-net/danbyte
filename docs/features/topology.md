@@ -431,6 +431,34 @@ link's chip sits over its raised line. Which labels exist:
   left off (the nub's tooltip and the panel still name the port). With
   Ports off the cables carry no names.
 
+### Port names {#port-names}
+
+**Port names** in the Display popover picks what a port is printed by on
+the Diagram and the Hierarchy: its **Name** (the default), its **Label** or
+its **Description**. It changes the Hierarchy's port chips, the Diagram's
+port names on the cables (Detailed nubs and photo ports), and the same text
+in every export (SVG, PDF, PNG, draw.io) and the topology report. A port
+whose chosen field is empty prints its name, so a patch panel whose front
+ports carry a description ("Desk 12", "Uplink to core") reads by what is
+plugged in, and the ports without one keep their names.
+
+- **Per device.** A device can choose for itself: **Port names** on the
+  device's edit form (Topology card) or in the map's right-click **Card
+  lines…** dialog - **Inherit** (the default) follows the map, **Name**,
+  **Label** or **Description** wins over it on every map. The order is
+  *device, then the map's choice*; there is no tenant-wide default, so a
+  map with no choice prints names. Through the API it is the device's
+  `topology_port_name` (`name`, `label`, `description`, or blank to
+  inherit); a clone carries it.
+- **Long text** is cut with … - at the chip's width on the Hierarchy, and
+  at the same width on the Diagram's cables. Hover a port (a chip, a nub or
+  a photo port) for its name and the whole text, `Gi1/0/1 · Uplink to
+  core`.
+- The name stays what the map goes by: cables keep their ports, a hidden
+  line stays hidden, and a cable's hover and panel still name both ports.
+- The choice is part of the view (`filters.portName`), remembered by this
+  browser on *No view*, and part of the link (`portname=`).
+
 ### Photo nodes
 
 **Draw as ▸ Photo** in the Display popover draws each device as its device
@@ -1784,8 +1812,8 @@ the name and the people. Tick views for the bulk bar:
 
 Drag cards where you want them, then **Save as…** - a saved view stores,
 per tenant, the **filter set** (or a hand-picked map's device set), the **display
-settings** (Color by, layout direction, Levels, grouping, LAG
-bundling, and the Diagram's Simple/Detailed mode, line type and its own
+settings** (Color by, [port names](#port-names), layout direction, Levels,
+grouping, LAG bundling, and the Diagram's Simple/Detailed mode, line type and its own
 [card lines](#card-lines)),
 **every node position** per view style, the **zones**
 and the **hidden objects**. Load it from the **Views** select (*No view* is
@@ -1958,6 +1986,7 @@ back button and a reload all keep it.
 | `dir` | `lr` (default; `tb` on a Diagram showing photos), `tb` |
 | `color` | `cable` (default), `type`, `status`, `speed`, `none` |
 | `lag` | `on` (default) bundles aggregate members, `off` |
+| `portname` | Diagram and Hierarchy: what a port prints by - `name` (default), `label`, `description`; see [Port names](#port-names) |
 | `deps` | `on` draws the [dependencies](#dependencies), `off` (default) |
 | `clusters` | Diagram: `on` draws each cluster's hosts as one card - see [Grouped clusters](#grouped-clusters) - `off` (default) |
 | `levels` | the level order - see below |
@@ -2209,7 +2238,13 @@ of queries whatever the tenant's size, and the same counts the device graph
 gives.
 Nodes carry the cabled ports, role and IP the cards are drawn from; edges
 carry the cable id/type/label/length, every port pair, and the `via` panel
-list when collapsed.
+list when collapsed. Each port is `{name, kind, pair?, label?,
+description?, pair_label?, pair_description?}`: `label` and `description`
+only when set, `pair` the rear port sharing a pass-through row with its own
+`pair_label`/`pair_description` - read off the ports the graph already
+loads, no extra query. A device with its own [port names](#port-names)
+choice carries `port_name` (`name`, `label` or `description`); without one
+the key is absent.
 
 `POST /api/topology/` takes the same query as a JSON body and returns the same
 graph: `devices` (a list), `chassis` (a list), `device`, `depth`, `site`,
@@ -2770,6 +2805,7 @@ earlier versions load and save unchanged.
 |---|---|
 | `positions_by_style.diagram` | the Diagram tab's arrangement, like the other styles'; a stacked virtual chassis is kept as `vc:<id>`, the centre of its frame, and a grouped cluster as `cl:<id>`, the centre of its card or frame |
 | `zones_by_style.diagram[i]` | a zone, plus optional `kind` (`zone` or `band`), `orient` (`h` for a row, `v` for a side band), `rule` `{by: role\|device_type, ids}` (the band's layers: at most 100 ids, each kept once, in the order its sub-rows stack) and `layout` (`stack` or `row`: set once a band's layers were chosen by hand; absent on a band Arrange made), and on a row `exits` (`v`: its cables to other bands leave its cards' top or bottom, `h`: their left or right; absent is Auto), `per_row` (its [cards per row](#cards-per-row): a whole number from 1 to 200, 200 being *All on one line*; absent is Auto - anything else is a 400) and `align` (`left`, `center` or `right`: where its cards line up across its width; absent is Auto, centred - anything else is a 400) and `line` (`straight`, `elbow`, `bendy` or `cyclical`: the [line](#line-types) its cards' cables take; absent is Default - anything else is a 400). `color` is a `#rrggbb` color (the six swatches and Danbyte's presets are what the map offers), or `null` or `""` for a neutral band; any other color string saves as `null`. |
+| `filters.portName` | `name`, `label` or `description`: what the Diagram and the Hierarchy print a port by ([Port names](#port-names)); absent is `name`, anything else is a 400 |
 | `filters.diagram` | `{mode: simple\|detailed, face: card\|photo, photo_anchor: ports\|edge, line: straight\|elbow\|bendy\|cyclical, labels: [subnet, ip, port], fields, chassis: off\|v\|h}`, each optional. `fields` is the view's own card lines: absent or `null` inherits, `[]` is name only, keys as in [Card lines API](#card-lines-api). `chassis` is how virtual chassis are drawn: apart (`off`), or stacked top to bottom (`v`) or left to right (`h`). |
 | `positions_by_style.routing` | the [Routing tab](#routing-view)'s arrangement: each card's centre by node id (`dev:<id>`, `vm:<id>`, `pn:<id>`) |
 | `zones_by_style.routing[i]` | an AS box or zone of the Routing tab: `{id, label, x, y, w, h, color, asn}`. `kind` is absent or `zone` (no bands here); `x`, `y`, `w`, `h` are numbers (`w`, `h` not negative); `label` at most 200 characters; `asn` (an AS box) a number from 1 to 4294967295; `color` as on the Diagram. |

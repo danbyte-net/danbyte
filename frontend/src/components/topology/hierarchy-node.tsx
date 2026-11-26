@@ -10,6 +10,7 @@ import { hierCardBox } from "./hier-card"
 import type { HierCardData } from "./hier-card"
 import { hierHeight, hierarchyWidth, type HierPortPos } from "./layout"
 import { handleId } from "./port-handles"
+import { portTip } from "./port-names"
 import { IMPACT_RING } from "./what-if"
 import type { ImpactMark } from "./what-if"
 
@@ -30,6 +31,8 @@ export type HierData = TopoNode["data"] &
     impact?: ImpactMark
     portPos?: Record<string, HierPortPos>
     portSpan?: number
+    /** Port name → the text its chip prints, when not its name (#541). */
+    portText?: Record<string, string>
     /** The device's monitoring state, merged in by the canvas. */
     monitor?: CheckStatus | null
   }
@@ -125,6 +128,9 @@ export function HierarchyNode({ data, selected }: NodeProps) {
       {/* Port chips at their aligned offsets, riding the card's edges. */}
       {Object.entries(d.portPos ?? {}).map(([name, pos]) => {
         const id = handleId(name, pos.side)
+        // The chosen text (#541), cut by the chip's width; the hover has
+        // the name and the whole text.
+        const text = d.portText?.[name] ?? name
         return (
           <div
             key={name}
@@ -135,7 +141,7 @@ export function HierarchyNode({ data, selected }: NodeProps) {
               top: pos.off - 8,
               ...(pos.side === "L" ? { left: 5 } : { right: 5 }),
             }}
-            data-tip={name}
+            data-tip={portTip(name, text)}
           >
             <Handle
               type="target"
@@ -150,7 +156,7 @@ export function HierarchyNode({ data, selected }: NodeProps) {
               className={HANDLE}
             />
             <span className="topo-portname max-w-28 truncate font-mono text-[9px] leading-none">
-              {name}
+              {text}
             </span>
           </div>
         )

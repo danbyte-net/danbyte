@@ -356,10 +356,13 @@ def _ensure_port(node, port, kind) -> None:
     port's row with it."""
     from .topology_views import _KIND_OF
 
+    from .topology_views import _port_texts
+
     ports = node["data"].setdefault("ports", [])
     if any(port.name in (p.get("name"), p.get("pair")) for p in ports):
         return
-    ports.append({"name": port.name, "kind": _KIND_OF.get(kind, "interface")})
+    ports.append({"name": port.name, "kind": _KIND_OF.get(kind, "interface"),
+                  **_port_texts(port)})
 
 
 def _load(user, tenant, scope_q, collapse):

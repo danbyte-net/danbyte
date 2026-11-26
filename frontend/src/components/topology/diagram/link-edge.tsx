@@ -78,9 +78,11 @@ function boxOf(n: InternalNode | undefined): Rect | null {
 
 const r1 = (v: number) => Math.round(v * 10) / 10
 
-/** The port name an end shows: a card nub's or a photo port's. */
+/** The port name an end shows: a card nub's or a photo port's - the text
+ * the port prints (#541), else its name. */
 const portName = (a: Anchor | undefined) =>
-  (a?.k === "side" || a?.k === "point" ? a.port : undefined) || undefined
+  (a?.k === "side" || a?.k === "point" ? a.text || a.port : undefined) ||
+  undefined
 
 const width = (text: string) => endTextWidth(text, measureText)
 

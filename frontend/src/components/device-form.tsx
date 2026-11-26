@@ -54,6 +54,10 @@ import {
   TopologyPhotoSizeSelect,
 } from "@/components/topology-photo-size-select"
 import {
+  TopologyPortNameSelect,
+  portNameOf,
+} from "@/components/topology-port-name-select"
+import {
   BindingDraftsProvider,
   useBindingDraftsRoot,
 } from "@/lib/binding-drafts"
@@ -326,6 +330,9 @@ export function DeviceForm({
   const [photoSize, setPhotoSize] = useState(
     photoSizeOf(seed?.topology_photo_size)
   )
+  const [portName, setPortName] = useState(
+    portNameOf(seed?.topology_port_name)
+  )
   const [icon, setIcon] = useState(seed?.icon ?? "")
 
   useEffect(() => {
@@ -381,6 +388,7 @@ export function DeviceForm({
     setVcPriority(device.vc_priority != null ? String(device.vc_priority) : "")
     setTopologyCard(device.topology_card ?? null)
     setPhotoSize(photoSizeOf(device.topology_photo_size))
+    setPortName(portNameOf(device.topology_port_name))
     setIcon(device.icon ?? "")
     reset()
   }, [device, reset])
@@ -716,6 +724,7 @@ export function DeviceForm({
           vcId && vcPriority.trim() !== "" ? Number(vcPriority) : null,
         topology_card: topologyCard,
         topology_photo_size: photoSize ?? "",
+        topology_port_name: portName ?? "",
         icon,
         // Only while PRTG is on: the field is not shown otherwise.
         ...(prtgOn ? { prtg_sync: prtgSync, prtg_host: prtgHost.trim() } : {}),
@@ -995,6 +1004,11 @@ export function DeviceForm({
               value={photoSize}
               onChange={setPhotoSize}
               error={fieldErrors.topology_photo_size}
+            />
+            <TopologyPortNameSelect
+              value={portName}
+              onChange={setPortName}
+              error={fieldErrors.topology_port_name}
             />
             <FormIcon
               label="Icon"

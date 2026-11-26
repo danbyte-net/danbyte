@@ -53,7 +53,8 @@ export type SideCount = Record<Side, number>
 /**
  * Where a link end attaches to its node.
  * - `side`: `off` px along the side from its start (the left end of T/B,
- *   the top end of L/R). `port` names the interface; `id` its handle id.
+ *   the top end of L/R). `port` names the interface; `id` its handle id;
+ *   `text` is what the port prints when that is not its name (#541).
  *   `cap`: the side is on a photo taking its cables at its edge - the
  *   sides are the image's, and the node's box has this many px of
  *   caption under it. A line off the bottom leaves under the caption;
@@ -73,6 +74,7 @@ export type Anchor =
       side: Side
       off: number
       port?: string
+      text?: string
       id?: string
       cap?: number
     }
@@ -82,6 +84,7 @@ export type Anchor =
       fy: number
       exit: "T" | "B"
       port: string
+      text?: string
       stub?: true
     }
   | { k: "junction"; dir: Dir }

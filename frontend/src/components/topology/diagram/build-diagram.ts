@@ -3,7 +3,7 @@ import type { Edge, Node } from "@xyflow/react"
 import type { TopologyGraph, TopologyLinkOverride } from "@/lib/api"
 import { readableText } from "@/lib/color"
 import { endTextWidth } from "@/lib/diagram/geometry"
-import { measureText } from "@/lib/diagram/measure"
+import { fit as fitWidth, measureText } from "@/lib/diagram/measure"
 import type { Measure } from "@/lib/diagram/measure"
 import { LABEL } from "@/lib/diagram/theme"
 import { classifyEdges, orientHubToLeaf } from "../edge-semantics"
@@ -20,6 +20,8 @@ import type { EdgeColorMode, EdgeSem } from "../edge-style"
 import { sharedLag } from "../lag-bundles"
 import type { EdgeLag } from "../lag-bundles"
 import { groupSize } from "../group-size"
+import { devicePortMode, portTexts } from "../port-names"
+import type { PortNameMode } from "../port-names"
 import type { BandExits } from "../view-positions"
 import { layoutNodes } from "../layout"
 import type { SizeOf } from "../layout"
@@ -174,6 +176,9 @@ export interface DiagramOptions {
   /** The Labels setting: which of subnets, end addresses and port names
    * the links carry (all three when absent). */
   labels?: readonly LabelToken[]
+  /** What a port prints by - name (absent), label or description (#541);
+   * a device's own `port_name` wins. */
+  portName?: PortNameMode
   /** Saved arrangement: node id → centre. */
   positions?: Record<string, [number, number]>
   /** A trace map: each card's place along the traced run (trace-run.ts).
@@ -247,6 +252,10 @@ export interface DiagramModel {
   /** Per row, the x spans of its title strip that lines, cards and labels
    * take, as last planned: where its title chip may not go. */
   titles?: Map<string, [number, number][]>
+  /** Node id → port name → the text it prints (#541), cut to
+   * `PORT_TEXT_MAX_W`: only the ports that print something other than
+   * their name. */
+  portText?: Map<string, Map<string, string>>
 }
 
 /** A virtual chassis drawn as a stack, as the anchoring sees it: its
@@ -1786,15 +1795,19 @@ function anchorAll(
   const pass = (mode: DiagramMode, pinned?: Anchors["sides"]) => {
     const all = withJ(junctions)
     const allow = sideRules(model, all, frames)
-    return anchorLinks(all, withJunctionDirs(links, junctions, rects), mode, {
-      ...(pinned ? { sides: repin(pinned, model, arcs) } : {}),
-      ...(allow ? { allow } : {}),
-      blockers: solid,
-      ...(mode === "detailed" && model.roomy ? { roomy: model.roomy } : {}),
-      ...(photos ? { photos } : {}),
-      ...(caps ? { caps } : {}),
-      ...(model.nearExits ? { nearExits: true } : {}),
-    })
+    return withPortText(
+      anchorLinks(all, withJunctionDirs(links, junctions, rects), mode, {
+        ...(pinned ? { sides: repin(pinned, model, arcs) } : {}),
+        ...(allow ? { allow } : {}),
+        blockers: solid,
+        ...(mode === "detailed" && model.roomy ? { roomy: model.roomy } : {}),
+        ...(photos ? { photos } : {}),
+        ...(caps ? { caps } : {}),
+        ...(model.nearExits ? { nearExits: true } : {}),
+      }),
+      links,
+      model.portText
+    )
   }
   if (model.mode === "simple") {
     let anchors = pass("simple")
@@ -1872,6 +1885,70 @@ function anchorAll(
     junctions,
     arcs,
   }
+}
+
+/** The widest a port's printed text runs (#541) before it is cut with an
+ * ellipsis: the Hierarchy chip's `max-w-28`. */
+export const PORT_TEXT_MAX_W = 112
+
+/** Node id → port name → printed text for every device on the map whose
+ * ports print something other than their name (#541). */
+export function portTextsOf(
+  graph: TopologyGraph,
+  view: PortNameMode | undefined,
+  measure: Measure
+): Map<string, Map<string, string>> {
+  const out = new Map<string, Map<string, string>>()
+  for (const n of graph.nodes) {
+    if (n.type !== "device") continue
+    const texts = portTexts(
+      n.data.ports,
+      devicePortMode(n.data.port_name, view)
+    )
+    if (!texts.size) continue
+    for (const [port, t] of texts)
+      texts.set(
+        port,
+        fitWidth(t, PORT_TEXT_MAX_W, LABEL.END_SIZE, 400, measure)
+      )
+    out.set(n.id, texts)
+  }
+  return out
+}
+
+/** `anchors` with each named end and nub carrying the text its port prints
+ * (#541) beside its name - the name stays what anchors and nubs are keyed
+ * and matched on. In place; returns `anchors`. */
+function withPortText<T extends Pick<Anchors, "links" | "nubs">>(
+  anchors: T,
+  links: readonly Pick<AnchorLink, "id" | "source" | "target">[],
+  texts: ReadonlyMap<string, ReadonlyMap<string, string>> | undefined
+): T {
+  if (!texts?.size) return anchors
+  const name = (list: readonly Anchor[], node: string) => {
+    const mine = texts.get(node)
+    if (!mine) return
+    for (const a of list) {
+      if (a.k === "junction" || !a.port) continue
+      const t = mine.get(a.port)
+      if (t) a.text = t
+    }
+  }
+  for (const l of links) {
+    const ends = anchors.links.get(l.id)
+    if (!ends) continue
+    name(ends.a, l.source)
+    name(ends.b, l.target)
+  }
+  for (const [node, nubs] of anchors.nubs) {
+    const mine = texts.get(node)
+    if (!mine) continue
+    for (const n of nubs) {
+      const t = n.port ? mine.get(n.port) : undefined
+      if (t) n.text = t
+    }
+  }
+  return anchors
 }
 
 /** The edges with their anchors filled in, and each arc's side. */
@@ -2579,6 +2656,8 @@ export function buildDiagram(
     measure,
     ...(chassis.size ? { chassis } : {}),
   }
+  const texts = portTextsOf(graph, opts.portName, measure)
+  if (texts.size) model.portText = texts
 
   if (opts.rows?.length) {
     model.rows = opts.rows.map((r) => ({ ...r }))

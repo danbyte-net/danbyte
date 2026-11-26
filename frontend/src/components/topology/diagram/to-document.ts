@@ -66,6 +66,7 @@ import {
 } from "./link-geometry"
 import { captionPill, captionWith, PHOTO } from "./photo-anchors"
 import { nubRun } from "./plan"
+import { portTip } from "../port-names"
 import type { PhotoShown } from "./photo-anchors"
 import type {
   Anchor,
@@ -230,7 +231,7 @@ export function cardNode(
       w: r.w,
       h: r.h,
       side: DOC_SIDE[n.side],
-      ...(n.port ? { label: n.port } : {}),
+      ...(n.port ? { label: portTip(n.port, n.text) } : {}),
     }
   })
   return {
@@ -313,7 +314,7 @@ export function photoDocNode(
       w: r.w,
       h: r.h,
       side: DOC_SIDE[n.side],
-      ...(n.port ? { label: n.port } : {}),
+      ...(n.port ? { label: portTip(n.port, n.text) } : {}),
     })
   }
   const common = {
@@ -1200,10 +1201,11 @@ export function toDocument(
       ): DiagramEndLabel | undefined => {
         if (overlay || !anchor || placed === null) return undefined
         // A photo port is named in either mode, like a Detailed nub.
+        // What the port prints (#541), else its name.
         const text =
           anchor.k === "point"
-            ? !d.labels.noPorts && anchor.port
-            : anchor.k === "side" && named && anchor.port
+            ? !d.labels.noPorts && (anchor.text || anchor.port)
+            : anchor.k === "side" && named && (anchor.text || anchor.port)
         if (!text) return undefined
         return { text, ...(placed ? { at: placed } : {}) }
       }

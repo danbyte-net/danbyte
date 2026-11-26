@@ -45,6 +45,8 @@ import { CanvasTip } from "./canvas-tip"
 import { PartialMapChip } from "./partial-map-chip"
 import type { CanvasTipHandle } from "./canvas-tip"
 import { handleId } from "./port-handles"
+import { devicePortMode, portTexts } from "./port-names"
+import type { PortNameMode } from "./port-names"
 import { hierCardBox } from "./hier-card"
 import type { GroupEdgeInfo, TopoGroupData } from "./group-node"
 import {
@@ -696,6 +698,8 @@ export function build(
     /** The tenant's names for the monitoring states, so a header keeps
      * room for its pill as it will read. */
     checkLabels?: Partial<Record<"down" | "degraded", string>>
+    /** What the port chips print (#541); a device's own choice wins. */
+    portName?: PortNameMode
   }
 ) {
   const nodes: Node[] = graph.nodes.map((n) => ({
@@ -724,19 +728,21 @@ export function build(
 
   // Each device card's header is the Diagram's Simple card, laid out once
   // here: the layout sizes the card from it and the node draws it.
-  const carded = nodes.map((n) =>
-    n.type === "hier"
-      ? {
-          ...n,
-          data: {
-            ...n.data,
-            hierCard: hierCardBox(n.data as TopoNode["data"], {
-              checkLabels: opts.checkLabels,
-            }),
-          },
-        }
-      : n
-  )
+  // …and its port chips' text (#541): only the ports that print something
+  // other than their name.
+  const carded = nodes.map((n) => {
+    if (n.type !== "hier") return n
+    const d = n.data as TopoNode["data"]
+    const texts = portTexts(d.ports, devicePortMode(d.port_name, opts.portName))
+    return {
+      ...n,
+      data: {
+        ...n.data,
+        hierCard: hierCardBox(d, { checkLabels: opts.checkLabels }),
+        ...(texts.size ? { portText: Object.fromEntries(texts) } : {}),
+      },
+    }
+  })
   // Each card's own width: a Hierarchy card's header, a site card's name.
   const widthOf = (n: Node) => sizeOf(n).width
   const res = layoutHierarchy(carded, allEdges, widthOf, opts.positions)
@@ -897,6 +903,9 @@ export interface TopologyCanvasProps {
   /** Diagram: which labels the links carry (subnets, addresses, port
    * names); all three when absent. Keep the array stable. */
   diagramLabels?: readonly LabelToken[]
+  /** Diagram and Hierarchy: what a port prints by - name (absent), label
+   * or description (#541); a device's own choice wins. */
+  portName?: PortNameMode
   /** Diagram and Hierarchy: monitoring state per device id, for the
    * cards' pills. Kept out of the build so a refresh never re-lays the
    * map out. */
@@ -1140,6 +1149,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
     linkOverrides,
     nodeLines,
     diagramLabels,
+    portName,
     monitor,
     onDropDevices,
     onDropChassis,
@@ -1281,6 +1291,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
               links: linkOverrides,
               ...lineOpts,
               ...(diagramLabels ? { labels: diagramLabels } : {}),
+              ...(portName ? { portName } : {}),
               colorMode,
               direction,
               roleOrder,
@@ -1311,6 +1322,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
                 positions,
                 matched: matchedIds,
                 checkLabels,
+                ...(portName ? { portName } : {}),
               }),
               model: null,
             },
@@ -1336,6 +1348,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
       linkOverrides,
       lineOpts,
       diagramLabels,
+      portName,
       checkLabels,
       bandRowList,
       chassis,
@@ -1357,6 +1370,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
               links: linkOverrides,
               ...lineOpts,
               ...(diagramLabels ? { labels: diagramLabels } : {}),
+              ...(portName ? { portName } : {}),
               colorMode,
               direction,
               roleOrder,
@@ -1388,6 +1402,7 @@ const Inner = forwardRef<CanvasHandle, TopologyCanvasProps>(function Inner(
       linkOverrides,
       lineOpts,
       diagramLabels,
+      portName,
       colorMode,
       direction,
       roleOrder,

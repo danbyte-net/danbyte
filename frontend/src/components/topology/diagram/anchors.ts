@@ -176,6 +176,8 @@ export interface Nub {
   cable: number
   end: "a" | "b"
   port?: string
+  /** What the port prints when that is not its name (#541). */
+  text?: string
   side: Side
   /** Centre, px along the side from its start. */
   off: number

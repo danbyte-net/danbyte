@@ -2946,6 +2946,18 @@ class Device(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin, Mod
         help_text="How wide the topology Diagram draws this device's photo. "
                   "Blank inherits.",
     )
+    # Which field the topology prints a port by on this device's card (#541);
+    # blank inherits the map's choice. A port whose field is empty prints its
+    # name.
+    TOPOLOGY_PORT_NAME_CHOICES = [
+        ("name", "Name"), ("label", "Label"), ("description", "Description"),
+    ]
+    topology_port_name = models.CharField(
+        max_length=16, choices=TOPOLOGY_PORT_NAME_CHOICES, blank=True,
+        default="", db_default="",
+        help_text="What the topology prints this device's ports by: name, "
+                  "label or description. Blank inherits the map's choice.",
+    )
     icon = models.CharField(
         max_length=48, blank=True, default="", db_default="",
         help_text="Lucide icon name for this device on maps and floor plans. "

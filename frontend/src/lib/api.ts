@@ -2144,6 +2144,8 @@ export interface Device {
   topology_card?: string[] | null
   /** Photo size on the topology Diagram; "" inherits. */
   topology_photo_size?: "" | TopologyPhotoSize
+  /** What the topology prints its ports by (#541); "" inherits the map. */
+  topology_port_name?: "" | TopologyPortName
   /** Its own icon on maps and floor plans; "" uses its type's, then its
    * role's. */
   icon?: string
@@ -2367,6 +2369,8 @@ export interface DeviceWritePayload {
   local_context_data?: Record<string, unknown> | null
   topology_card?: string[] | null
   topology_photo_size?: "" | TopologyPhotoSize
+  /** What the topology prints its ports by (#541); "" inherits the map. */
+  topology_port_name?: "" | TopologyPortName
   icon?: string
 }
 
@@ -5319,7 +5323,16 @@ export interface TopoPort {
   kind: TopoPortKind
   /** Rear port sharing this row - a panel's front ⇄ rear pass-through. */
   pair?: string
+  /** The port's label and description (#541), each only when set. */
+  label?: string
+  description?: string
+  /** The `pair` rear port's. */
+  pair_label?: string
+  pair_description?: string
 }
+
+/** The field the topology prints a port by (#541). */
+export type TopologyPortName = "name" | "label" | "description"
 
 export interface TopoNode {
   id: string
@@ -5362,6 +5375,9 @@ export interface TopoNode {
     panel?: boolean
     /** Cabled ports, ordered - each is an edge anchor on the stencil card. */
     ports?: TopoPort[]
+    /** The device's own choice of what its ports print by (#541); absent
+     * follows the map. */
+    port_name?: TopologyPortName
     /** `include=card` only: the card lines this device resolved to. */
     card?: TopoCard
     /** `include=photo` only. */

@@ -11,6 +11,7 @@ import { CARD, NUB, nubRect, PILL } from "./card-layout"
 import { captionWith, PHOTO } from "./photo-anchors"
 import type { DiagramCardData } from "./types"
 import { IMPACT_RING } from "../what-if"
+import { portTip } from "../port-names"
 
 // A device drawn as its front photo (photo-anchors.ts): the image to
 // scale, a thin outline on each port a cable is plugged into, a grey tab
@@ -177,7 +178,7 @@ export const PhotoNode = memo(function PhotoNode({
             className="topo-nub absolute rounded-[2px] bg-muted-foreground/70"
             style={{ left: r.x, top: r.y, width: r.w, height: r.h }}
             data-port={n.port}
-            data-tip={n.port}
+            data-tip={n.port && portTip(n.port, n.text)}
           />
         )
       })}

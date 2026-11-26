@@ -13,6 +13,7 @@ import type { CardBox } from "./card-layout"
 import { PhotoNode } from "./photo-node"
 import type { DiagramCardData } from "./types"
 import { IMPACT_RING } from "../what-if"
+import { portTip } from "../port-names"
 
 // A Diagram card: a solid rounded box in the device role's colour, the name
 // bold and centred at the top, the card lines centred under it, and at most
@@ -165,7 +166,7 @@ export const CardNode = memo(function CardNode(props: NodeProps) {
             className="topo-nub absolute rounded-[2px] bg-muted-foreground/70"
             style={{ left: r.x, top: r.y, width: r.w, height: r.h }}
             data-port={n.port}
-            data-tip={n.port}
+            data-tip={n.port && portTip(n.port, n.text)}
           />
         )
       })}
