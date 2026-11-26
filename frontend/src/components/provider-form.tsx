@@ -10,6 +10,7 @@ import {
 } from "@/lib/api"
 import { apiAll } from "@/lib/api-all"
 import {
+  FormColor,
   FormColumn,
   FormColumns,
   FormCombobox,
@@ -52,6 +53,7 @@ export function ProviderForm({
   const [name, setName] = useState(provider?.name ?? "")
   const [slug, setSlug] = useState(provider?.slug ?? "")
   const [slugDirty, setSlugDirty] = useState(isEdit)
+  const [color, setColor] = useState(provider?.color ?? "")
   const [account, setAccount] = useState(provider?.account ?? "")
   const [portalUrl, setPortalUrl] = useState(provider?.portal_url ?? "")
   const [nocEmail, setNocEmail] = useState(provider?.noc_email ?? "")
@@ -83,6 +85,7 @@ export function ProviderForm({
     setName(provider.name)
     setSlug(provider.slug)
     setSlugDirty(true)
+    setColor(provider.color)
     setAccount(provider.account)
     setPortalUrl(provider.portal_url)
     setNocEmail(provider.noc_email)
@@ -115,6 +118,7 @@ export function ProviderForm({
       const payload: ProviderWritePayload = {
         name: name.trim(),
         slug: slug.trim() || slugify(name),
+        color,
         account: account.trim(),
         portal_url: portalUrl.trim(),
         noc_email: nocEmail.trim(),
@@ -187,6 +191,13 @@ export function ProviderForm({
           value={account}
           onChange={setAccount}
           error={fieldErrors.account}
+        />
+        <FormColor
+          label="Color"
+          info="Paints its provider networks on the maps."
+          value={color}
+          onChange={setColor}
+          error={fieldErrors.color}
         />
       </FormSection>
 

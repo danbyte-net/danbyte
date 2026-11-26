@@ -4,6 +4,7 @@ import { Cloud } from "lucide-react"
 
 import { TileBadge } from "@/components/floorplan/tile-badge"
 import { DynamicIcon } from "@/components/dynamic-icon"
+import { readableText } from "@/lib/color"
 import type {
   SiteMapDevice,
   SiteMapMarker,
@@ -93,22 +94,27 @@ export function deviceIcon(d: SiteMapDevice, opts: IconOpts = {}): L.DivIcon {
   })
 }
 
-/** A provider network's marker (#466): a neutral rounded square with a
- * cloud, so it never reads as a site; its name and circuit count in the
- * site label chip. */
+/** A provider network's marker (#466): a rounded square with a cloud, so
+ * it never reads as a site; its name and circuit count in the site label
+ * chip. Neutral, or filled with the network's colour - its own, else its
+ * provider's (#540) - the glyph black or white to read on it. */
 export function providerNetworkIcon(
-  pn: Pick<SiteMapProviderNetwork, "name" | "circuits">,
+  pn: Pick<SiteMapProviderNetwork, "name" | "circuits" | "color">,
   opts: IconOpts = {}
 ): L.DivIcon {
   const { selected = false, mini = false } = opts
   const glyph = renderToStaticMarkup(<Cloud className="sm-pin-icon" />)
+  const color = pn.color && HEX_COLOR.test(pn.color) ? pn.color : ""
+  const look = color
+    ? `background:${color};color:${readableText(color)};border-color:${color}`
+    : "background:var(--card);color:var(--foreground);border-color:var(--border)"
   const label = mini
     ? ""
     : `<span class="sm-label">${escapeHtml(pn.name)}<span class="sm-count">${pn.circuits.length}</span></span>`
   return L.divIcon({
     className: "sm-marker sm-pn" + (selected ? " sm-sel" : ""),
     html:
-      `<span class="sm-pin" style="border-radius:6px;background:var(--card);color:var(--foreground);border-color:var(--border)">${glyph}</span>` +
+      `<span class="sm-pin" style="border-radius:6px;${look}">${glyph}</span>` +
       label,
     iconSize: undefined as unknown as L.PointExpression,
     iconAnchor: [14, 14],

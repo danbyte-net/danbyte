@@ -27,6 +27,7 @@ import {
 import type { DocumentOptions } from "../diagram/to-document"
 import type { Dir, Pt, Rect } from "../diagram/types"
 import { groupBox } from "../group-size"
+import { providerNetworkLegend } from "../network-legend"
 import type { PosMap, Zone } from "../view-positions"
 import {
   laneEnds,
@@ -147,6 +148,7 @@ export function routingDocument(
       // A provider network: its name, then its provider, as on the Diagram.
       const cardIn: CardLayoutInput = {
         name: n.data.name,
+        ...(n.data.color ? { color: n.data.color } : {}),
         lines: [{ key: "provider", text: n.data.provider.name }],
       }
       const size = groupBox(n.data, measure)
@@ -248,7 +250,13 @@ export function routingLegendRows(
   map: Pick<RoutingTopology, "edges" | "nodes"> &
     Partial<Pick<RoutingTopology, "as_groups">>
 ): LegendItem[] {
-  const rows: LegendItem[] = []
+  // The coloured provider network cards first, keyed like role fills
+  // (#540).
+  const rows: LegendItem[] = providerNetworkLegend(map.nodes).map((n) => ({
+    kind: "role",
+    label: n.name,
+    color: n.color,
+  }))
   const has = (t: string) => map.edges.some((e) => e.type === t)
   if (has("ebgp")) rows.push({ kind: "line", label: "eBGP", width: 3 })
   if (has("ibgp"))

@@ -161,11 +161,15 @@ def circuit_ref(circuit) -> dict:
 
 
 def network_ref(pn) -> dict:
+    """``color`` is what the maps paint the network: its own, else its
+    provider's, else blank for the neutral card (#540)."""
     return {
         "id": str(pn.id),
         "name": pn.name,
         "service_id": pn.service_id,
-        "provider": {"id": str(pn.provider_id), "name": pn.provider.name},
+        "color": pn.effective_color,
+        "provider": {"id": str(pn.provider_id), "name": pn.provider.name,
+                     "color": pn.provider.color},
     }
 
 

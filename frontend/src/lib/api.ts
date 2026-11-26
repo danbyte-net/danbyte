@@ -1410,7 +1410,10 @@ export interface SiteMapProviderNetwork {
   id: string
   name: string
   service_id: string
-  provider: { id: string; name: string }
+  /** Its marker's colour (#540): its own, else its provider's; blank is
+   * the neutral marker. */
+  color?: string
+  provider: { id: string; name: string; color?: string }
   latitude: number
   longitude: number
   site_ids: string[]
@@ -5366,7 +5369,8 @@ export interface TopoNode {
     /** Provider network nodes (#466) - see TopoProviderNetworkData. */
     kind?: string
     provider_network_id?: string
-    provider?: { id: string; name: string }
+    provider?: { id: string; name: string; color?: string }
+    color?: string
     service_id?: string
     circuit_count?: number
     circuits?: TopoCircuitRef[]
@@ -5437,7 +5441,10 @@ export interface TopoProviderNetworkData {
   provider_network_id: string
   name: string
   service_id: string
-  provider: { id: string; name: string }
+  /** The colour the card wears (#540): its own, else its provider's;
+   * blank draws the neutral card. */
+  color?: string
+  provider: { id: string; name: string; color?: string }
   circuit_count: number
   circuits: TopoCircuitRef[]
   dimmed?: boolean
@@ -12247,6 +12254,8 @@ export interface ProviderOption {
   id: string
   name: string
   slug: string
+  /** `#rrggbb`, or blank (#540). */
+  color?: string
 }
 
 export interface Provider extends BusinessHoursReads {
@@ -12254,6 +12263,7 @@ export interface Provider extends BusinessHoursReads {
   numid: number | null
   name: string
   slug: string
+  color: string
   account: string
   portal_url: string
   noc_email: string
@@ -12274,6 +12284,7 @@ export interface Provider extends BusinessHoursReads {
 export interface ProviderWritePayload {
   name: string
   slug?: string
+  color?: string
   account?: string
   portal_url?: string
   noc_email?: string
@@ -12335,6 +12346,10 @@ export interface ProviderNetwork {
   provider: ProviderOption
   service_id: string
   description: string
+  /** Its own colour; blank takes the provider's (#540). */
+  color: string
+  /** What the maps paint it: its own colour, else its provider's. */
+  effective_color: string
   comments: string
   circuit_count: number
   tags: Tag[]
@@ -12348,6 +12363,7 @@ export interface ProviderNetworkWritePayload {
   provider_id: string
   service_id?: string
   description?: string
+  color?: string
   comments?: string
   tag_ids?: number[]
   custom_fields?: Record<string, unknown>

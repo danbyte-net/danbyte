@@ -1079,8 +1079,16 @@ panels as nodes - the truth on the wall vs the truth in the racks.
 
 A circuit that runs from one of your sites to a
 [provider network](circuits.md#provider-networks) - an MPLS cloud, a
-carrier's fabric - is drawn to a card of its own for that network: a neutral
-card with a cloud, its name, how many circuits meet there and its provider.
+carrier's fabric - is drawn to a card of its own for that network: a card
+with a cloud, its name, how many circuits meet there and its provider.
+
+- **Its color** is the network's own, else its provider's (see
+  [Provider colors](circuits.md#provider-colors)): the card is filled with
+  it, the text black or white to read on it, like a role-colored device
+  card. With no color on either it is the neutral card. The legend keys each
+  color - by the provider's name, or the network's when it has its own - and
+  the SVG, PDF, PNG and draw.io exports, the topology report and the Routing
+  tab's Circuits layer draw the same fill.
 Every circuit to the same network meets at the one card, so several sites on
 one MPLS service read as hub and spoke, the network in the middle.
 
@@ -2279,7 +2287,8 @@ graph, the grouped graph and a hand-picked map alike:
 ```json
 {"id": "pn:<uuid>", "type": "provider_network", "data": {
   "kind": "provider_network", "provider_network_id": "<uuid>",
-  "name": "MPLS", "service_id": "", "provider": {"id": "…", "name": "Telco"},
+  "name": "MPLS", "service_id": "", "color": "#ff8800",
+  "provider": {"id": "…", "name": "Telco", "color": "#112233"},
   "circuit_count": 2,
   "circuits": [{"id": "…", "cid": "C-1", "provider": {…}, "type": {…},
                 "status": {…}, "commit_rate_kbps": 100000,
@@ -2288,7 +2297,7 @@ graph, the grouped graph and a hand-picked map alike:
 {"id": "ce:<circuit uuid>", "source": "dev:<uuid>", "target": "pn:<uuid>",
  "type": "circuit", "data": {
   "circuit": {"id", "cid", "provider", "type", "status", "commit_rate_kbps"},
-  "provider_network": {"id", "name", "service_id", "provider"},
+  "provider_network": {"id", "name", "service_id", "color", "provider"},
   "termination": {"id", "side", "port_speed_kbps", "upstream_speed_kbps"},
   "site": {"id", "name"}, "device": {"id", "name"},
   "port": {"id", "name", "kind"}, "via": ["pp-1"],
@@ -2298,8 +2307,10 @@ graph, the grouped graph and a hand-picked map alike:
              "b_kind": "circuit_termination", …}]}}
 ```
 
-`circuit.type` and `status` are `null` when unset; `color` is the circuit
-type's colour, else its status's. On the grouped graph the `source` is the
+`circuit.type` and `status` are `null` when unset; a circuit edge's `color`
+is the circuit type's colour, else its status's. A network's `color` is its
+own, else its provider's, else blank (#540); `provider.color` is the
+provider's own. On the grouped graph the `source` is the
 group (`grp:<id>`), and an edge drawn from an uncabled end's site has no
 `device`, `port` or `pairs`. One node per network, listing only the circuits
 that drew; a network none of whose circuits drew is left out. The node and

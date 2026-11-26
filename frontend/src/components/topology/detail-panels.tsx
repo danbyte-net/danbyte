@@ -351,7 +351,18 @@ export function ProviderNetworkPanel({
         </OpenLink>
       }
     >
-      <PanelRow label="Provider">{d.provider.name}</PanelRow>
+      <PanelRow label="Provider">
+        {d.provider.color ? (
+          <ColorBadge name={d.provider.name} color={d.provider.color} />
+        ) : (
+          d.provider.name
+        )}
+      </PanelRow>
+      {d.color && d.color !== d.provider.color && (
+        <PanelRow label="Color">
+          <ColorBadge name={d.name} color={d.color} />
+        </PanelRow>
+      )}
       {d.service_id && (
         <PanelRow label="Service ID">
           <span className="font-mono">{d.service_id}</span>

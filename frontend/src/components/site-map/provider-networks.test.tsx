@@ -160,6 +160,21 @@ describe("the provider network marker", () => {
     ).not.toContain("MPLS cloud")
   })
 
+  it("is neutral without a colour, filled with one (#540)", () => {
+    const plain = providerNetworkIcon(network).options.html as string
+    expect(plain).toContain("background:var(--card)")
+    const dark = providerNetworkIcon({ ...network, color: "#112233" }).options
+      .html as string
+    expect(dark).toContain("background:#112233;color:#fff")
+    const pale = providerNetworkIcon({ ...network, color: "#fde047" }).options
+      .html as string
+    expect(pale).toContain("color:#0a0a0a")
+    // Only a hex reaches the style attribute.
+    const bad = providerNetworkIcon({ ...network, color: "red;x" }).options
+      .html as string
+    expect(bad).toContain("background:var(--card)")
+  })
+
   it("escapes the name", () => {
     const html = providerNetworkIcon({ ...network, name: "<b>x</b>" }).options
       .html as string

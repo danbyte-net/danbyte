@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { TableActions } from "@/components/table-actions"
+import { ColorBadge } from "@/components/cells/color-badge"
 import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 import { useCallback, useMemo, useState } from "react"
@@ -58,7 +59,14 @@ function ProviderNetworksPage() {
             params={{ id: row.original.id }}
             className="link font-medium"
           >
-            {row.original.name}
+            {row.original.effective_color ? (
+              <ColorBadge
+                name={row.original.name}
+                color={row.original.effective_color}
+              />
+            ) : (
+              row.original.name
+            )}
           </Link>
         ),
       },
@@ -66,15 +74,24 @@ function ProviderNetworksPage() {
         id: "provider",
         accessorFn: (n) => n.provider?.name ?? "",
         header: "Provider",
-        cell: ({ row }) => (
-          <span className="text-xs">{row.original.provider?.name ?? "-"}</span>
-        ),
+        cell: ({ row }) => {
+          const p = row.original.provider
+          if (!p) return <span className="text-xs">-</span>
+          return p.color ? (
+            <ColorBadge name={p.name} color={p.color} />
+          ) : (
+            <span className="text-xs">{p.name}</span>
+          )
+        },
         meta: {
           facet: {
             kind: "enum",
             label: "Provider",
             get: (r: ProviderNetwork) => r.provider?.id ?? "__none__",
-            formatValue: (_v, s) => ({ label: s.provider?.name ?? "None" }),
+            formatValue: (_v, s) => ({
+              label: s.provider?.name ?? "None",
+              color: s.provider?.color || undefined,
+            }),
           },
         },
       },

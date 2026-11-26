@@ -13,6 +13,7 @@ import {
 import { SimpleTable } from "@/components/ui/simple-table"
 import { TimeCell } from "@/components/cells/time-ago"
 import { TagList } from "@/components/cells/tag-list"
+import { ColorBadge } from "@/components/cells/color-badge"
 import { KvCard, dash, mono } from "@/components/kv-card"
 import { PhoneLink } from "@/components/cells/phone-link"
 import { BusinessHoursSummary } from "@/components/business-hours-field"
@@ -76,7 +77,9 @@ function Body({ provider: p }: { provider: Provider }) {
       }
       hero={
         <DetailHero
-          title={p.name}
+          title={
+            p.color ? <ColorBadge name={p.name} color={p.color} /> : p.name
+          }
           tags={
             p.tags.length > 0 && <TagList tags={p.tags} listTo="/providers" />
           }

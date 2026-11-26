@@ -265,8 +265,10 @@ that end's site first.
 
 A provider network - the MPLS cloud or carrier fabric your circuits' far
 ends land on - has no place of its own, so the map gives it one: a marker (a
-neutral rounded square with a cloud, its name and how many circuits reach
-it) at the centre of the placed sites it serves. When that point lands on or
+rounded square with a cloud, its name and how many circuits reach it -
+neutral, or filled with the network's
+[color](circuits.md#provider-colors), its own else its provider's) at the
+centre of the placed sites it serves. When that point lands on or
 next to one of them - a network serving one site, or sites in a ring round
 it - it moves north, by a quarter of the spread of its sites and at least
 0.05°; two networks serving the same sites step apart eastwards. Each
@@ -748,7 +750,7 @@ ones you can view.
 
 It also returns `provider_networks`: each
 [provider network](#provider-networks) a placed site's circuit reaches,
-`{id, name, service_id, provider: {id, name}, latitude, longitude,
+`{id, name, service_id, color, provider: {id, name, color}, latitude, longitude,
 site_ids, circuits: [{id, cid, site: {id, name}, type, status, color,
 commit_rate_kbps}]}`, `latitude`/`longitude` being where the map places it.
 The line of each such circuit is in `connections` as a `circuit` whose

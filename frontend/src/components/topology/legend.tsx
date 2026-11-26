@@ -7,6 +7,8 @@ import type { EdgeColorMode, NodeStyle } from "./topology-canvas"
 import { naturalCompare } from "@/lib/natural-sort"
 import { roleColourShown } from "./diagram/photo-anchors"
 
+export { providerNetworkLegend } from "./network-legend"
+
 // Line-key legend for the topology views, in the maps' shared legend frame.
 // Collapsible, remembered per browser, and its rows adapt to the active view
 // + color mode so it only explains lines that are actually on screen.
@@ -55,6 +57,9 @@ export interface LegendOptions {
   roles?: { name: string; color?: string }[]
   /** Diagram and Hierarchy: some card shows the monitoring pill. */
   monitorPill?: boolean
+  /** The coloured provider network cards on the map (#540), as
+   * `providerNetworkLegend` names them: keyed like role fills. */
+  networks?: { name: string; color: string }[]
   /** The Dependencies layer is on and draws a line (#450). */
   dependencies?: boolean
   /** A map another page embeds (`graphLegend`): only the lines it draws,
@@ -121,20 +126,28 @@ export function legendRows({
   speeds,
   roles = [],
   monitorPill = false,
+  networks = [],
   dependencies = false,
   present,
 }: LegendOptions): LegendItem[] {
   const out: LegendItem[] = []
+  // A coloured provider network's card is keyed like a role fill.
+  const networkRows = () => {
+    for (const n of networks)
+      out.push({ kind: "role", label: n.name, color: n.color })
+  }
   // Every line row, or on an embedded map only those it draws.
   const shows = (k: keyof LegendPresence) => !present || !!present[k]
-  if (grouped)
+  if (grouped) {
+    networkRows()
     out.push(
       { kind: "line", label: "Cables between groups", sem: "cable" },
       { kind: "box", label: "Site / location" }
     )
-  else if (viewStyle === "diagram") {
+  } else if (viewStyle === "diagram") {
     for (const r of roles)
       out.push({ kind: "role", label: r.name, color: r.color || undefined })
+    networkRows()
     if (monitorPill) out.push({ kind: "pill", label: "Monitoring" })
     if (present?.cable !== false)
       out.push({ kind: "line", label: "Cable", sem: "cable" })
@@ -182,6 +195,7 @@ export function legendRows({
     if (viewStyle === "hierarchy") {
       for (const r of roles)
         out.push({ kind: "role", label: r.name, color: r.color || undefined })
+      networkRows()
       if (monitorPill) out.push({ kind: "pill", label: "Monitoring" })
     }
     out.push(

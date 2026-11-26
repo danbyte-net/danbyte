@@ -119,7 +119,11 @@ import {
   PopoverField,
   TopologyFilters,
 } from "@/components/topology/filters-popover"
-import { CanvasLegend, legendRows } from "@/components/topology/legend"
+import {
+  CanvasLegend,
+  legendRows,
+  providerNetworkLegend,
+} from "@/components/topology/legend"
 import { PartialMapChip } from "@/components/topology/partial-map-chip"
 import {
   ExportMenu,
@@ -3144,6 +3148,11 @@ function TopologyPage() {
       if (n.data.role && roleColourShown(n.data)) drawn.add(n.data.role.name)
     return rolesInGraph.filter((r) => drawn.has(r.name))
   }, [graph, rolesInGraph])
+  /** The coloured provider network cards the legend keys (#540). */
+  const legendNetworks = useMemo(
+    () => providerNetworkLegend(graph?.nodes ?? []),
+    [graph]
+  )
   /** The Arrange menu's "Levels…": reordering, bonding or spacing the
    * levels drops pinned coordinates and lays the map out again. */
   const relevel = () => {
@@ -3343,6 +3352,7 @@ function TopologyPage() {
     types: presentTypes,
     speeds: presentSpeeds,
     roles: legendRoles,
+    networks: legendNetworks,
     monitorPill: cardMonitor,
   })
   const exportDocument = (req: ExportRequest) =>
@@ -4414,6 +4424,7 @@ function TopologyPage() {
                 }
                 speeds={presentSpeeds}
                 roles={legendRoles}
+                networks={legendNetworks}
                 monitorPill={cardMonitor}
               />
             </div>

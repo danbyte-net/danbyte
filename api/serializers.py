@@ -10074,7 +10074,7 @@ class ContactAssignmentSerializer(NumIdModelSerializer):
 class ProviderMiniSerializer(NumIdModelSerializer):
     class Meta:
         model = Provider
-        fields = ["id", "name", "slug"]
+        fields = ["id", "name", "slug", "color"]
 
 
 class ProviderSerializer(
@@ -10104,9 +10104,12 @@ class ProviderSerializer(
         v = getattr(obj, "network_count_annotated", None)
         return v if v is not None else _visible_count(self, obj, "networks")
 
+    def validate_color(self, value):
+        return hex_color_or_blank(value)
+
     class Meta:
         model = Provider
-        fields = ["id", "name", "slug", "account", "portal_url", "noc_email",
+        fields = ["id", "name", "slug", "color", "account", "portal_url", "noc_email",
                   "noc_phone", "support_contract", "support_phone",
                   "account_manager", "account_manager_id",
                   "account_manager_name",
@@ -10150,9 +10153,13 @@ class ProviderNetworkSerializer(
     CustomFieldsSerializerMixin, TaggableSerializerMixin, NumIdModelSerializer
 ):
     cf_model = "providernetwork"
+    # The name column already wears it (provider-networks.index.tsx).
+    list_columns_exclude = ("effective_color",)
     provider = ProviderMiniSerializer(read_only=True)
     tags = TagSerializer(many=True, read_only=True)
     circuit_count = serializers.SerializerMethodField()
+    # The colour the maps paint it: its own, else its provider's (#540).
+    effective_color = serializers.SerializerMethodField()
 
     provider_id = TenantScopedPrimaryKeyRelatedField(
         source="provider", queryset=Provider.objects.all(), write_only=True,
@@ -10170,13 +10177,19 @@ class ProviderNetworkSerializer(
         request = self.context.get("request")
         return path_count(request, Circuit, "terminations__provider_network", obj.pk)
 
+    def get_effective_color(self, obj) -> str:
+        return obj.effective_color
+
+    def validate_color(self, value):
+        return hex_color_or_blank(value)
+
     class Meta:
         model = ProviderNetwork
         fields = ["id", "name", "provider", "provider_id", "service_id",
-                  "description", "comments", "circuit_count",
-                  "tags", "tag_ids", "custom_fields",
+                  "description", "color", "effective_color", "comments",
+                  "circuit_count", "tags", "tag_ids", "custom_fields",
                   "created_at", "updated_at"]
-        read_only_fields = ["id", "created_at", "updated_at"]
+        read_only_fields = ["id", "effective_color", "created_at", "updated_at"]
 
 
 class CircuitMiniSerializer(NumIdModelSerializer):

@@ -660,7 +660,11 @@ export function ProviderNetworkInspector({
             params={{ id: pn.provider.id }}
             className="link"
           >
-            {pn.provider.name}
+            {pn.provider.color ? (
+              <ColorBadge name={pn.provider.name} color={pn.provider.color} />
+            ) : (
+              pn.provider.name
+            )}
           </Link>
         </PanelRow>
         {pn.service_id && (

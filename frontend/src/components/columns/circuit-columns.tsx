@@ -115,7 +115,14 @@ export function buildCircuitColumns<T extends Circuit = Circuit>(
             params={{ id: row.original.provider.id }}
             className="link text-xs"
           >
-            {row.original.provider.name}
+            {row.original.provider.color ? (
+              <ColorBadge
+                name={row.original.provider.name}
+                color={row.original.provider.color}
+              />
+            ) : (
+              row.original.provider.name
+            )}
           </Link>
         ) : (
           dash
@@ -125,7 +132,10 @@ export function buildCircuitColumns<T extends Circuit = Circuit>(
           kind: "enum",
           label: "Provider",
           get: (r: T) => r.provider?.id ?? "__none__",
-          formatValue: (_v, s) => ({ label: s.provider?.name ?? "None" }),
+          formatValue: (_v, s) => ({
+            label: s.provider?.name ?? "None",
+            color: s.provider.color || undefined,
+          }),
         },
       },
     }),

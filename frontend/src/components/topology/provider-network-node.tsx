@@ -4,6 +4,10 @@ import type { NodeProps } from "@xyflow/react"
 import { Cloud } from "lucide-react"
 
 import type { TopoProviderNetworkData } from "@/lib/api"
+import { readableText } from "@/lib/color"
+import { CARD as INK, mix } from "@/lib/diagram/theme"
+import { cn } from "@/lib/utils"
+import { normalizeHex } from "./diagram/card-layout"
 import { GroupName } from "./group-node"
 import { GROUP_TEXT, groupBox } from "./group-size"
 import { handleId } from "./port-handles"
@@ -12,7 +16,9 @@ import { handleId } from "./port-handles"
 // meets at - an MPLS cloud, a carrier's fabric. One card per network, sized
 // as a site card (group-size.ts: it grows to fit its whole name), its
 // circuits drawn to it from the devices (or the site cards) at their site
-// ends. Neutral like a site card: it has no role colour of its own.
+// ends. Neutral like a site card, unless the network or its provider has a
+// colour (#540): then the card is filled with it, the text black or white
+// as a role-coloured device card's, and its edge the fill a step darker.
 
 export const PROVIDER_NETWORK = "provider_network"
 
@@ -39,12 +45,32 @@ export const ProviderNetworkNode = memo(function ProviderNetworkNode({
   const d = data as unknown as TopoProviderNetworkData
   const n = d.circuit_count
   const box = groupBox(d)
+  const fill = normalizeHex(d.color)
+  // On a fill the muted rows keep the fill's ink, a little lighter.
+  const muted = fill ? "opacity-80" : "text-muted-foreground"
   return (
     <div
-      className={`flex flex-col justify-center gap-1 overflow-hidden rounded-lg border-2 bg-card px-3 transition-opacity ${
-        selected ? "border-primary ring-2 ring-primary/30" : "border-border"
-      } ${d.dimmed ? "opacity-30" : ""}`}
-      style={{ width: box.width, height: box.height }}
+      className={cn(
+        "flex flex-col justify-center gap-1 overflow-hidden rounded-lg border-2 px-3 transition-opacity",
+        !fill && "bg-card",
+        selected
+          ? "border-primary ring-2 ring-primary/30"
+          : !fill && "border-border",
+        d.dimmed && "opacity-30"
+      )}
+      style={{
+        width: box.width,
+        height: box.height,
+        ...(fill
+          ? {
+              backgroundColor: fill,
+              color: readableText(fill),
+              ...(selected
+                ? {}
+                : { borderColor: mix("#000000", fill, INK.EDGE_DARKEN) }),
+            }
+          : {}),
+      }}
       data-provider-network={d.provider_network_id}
     >
       {SIDES.map(({ side, pos }) => (
@@ -67,16 +93,16 @@ export const ProviderNetworkNode = memo(function ProviderNetworkNode({
       ))}
       <div className="flex items-baseline gap-2">
         <Cloud
-          className="size-4 shrink-0 self-start text-muted-foreground"
+          className={cn("size-4 shrink-0 self-start", muted)}
           style={{ marginTop: (GROUP_TEXT.NAME_LH - GROUP_TEXT.ICON) / 2 }}
           aria-hidden
         />
         <GroupName rows={box.rows} />
-        <span className="shrink-0 text-[11px] whitespace-nowrap text-muted-foreground">
+        <span className={cn("shrink-0 text-[11px] whitespace-nowrap", muted)}>
           <span className="num">{n}</span> {n === 1 ? "circuit" : "circuits"}
         </span>
       </div>
-      <div className="truncate pl-6 text-[11px] text-muted-foreground">
+      <div className={cn("truncate pl-6 text-[11px]", muted)}>
         {d.provider.name}
       </div>
     </div>

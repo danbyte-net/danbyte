@@ -6,6 +6,7 @@ import { useCallback, useState } from "react"
 import { api, type ProviderNetwork } from "@/lib/api"
 import { TimeCell } from "@/components/cells/time-ago"
 import { TagList } from "@/components/cells/tag-list"
+import { ColorBadge } from "@/components/cells/color-badge"
 import { KvCard, dash } from "@/components/kv-card"
 import type { KvRow } from "@/components/kv-card"
 import { QueryError } from "@/components/query-error"
@@ -67,7 +68,13 @@ function Body({ network: n }: { network: ProviderNetwork }) {
       }
       hero={
         <DetailHero
-          title={n.name}
+          title={
+            n.effective_color ? (
+              <ColorBadge name={n.name} color={n.effective_color} />
+            ) : (
+              n.name
+            )
+          }
           subtitle={
             <Link
               to="/providers/$id"
@@ -138,7 +145,11 @@ function NetworkOverview({ network: n }: { network: ProviderNetwork }) {
           params={{ id: n.provider.id }}
           className="link"
         >
-          {n.provider.name}
+          {n.provider.color ? (
+            <ColorBadge name={n.provider.name} color={n.provider.color} />
+          ) : (
+            n.provider.name
+          )}
         </Link>
       ),
     },

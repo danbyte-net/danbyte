@@ -19,8 +19,34 @@ A provider is the company you lease a circuit from.
 2. Give it a **name**.
 3. Optionally fill in the **account number**, **portal URL**, and **NOC email /
    phone** so support details live right next to the circuits.
-4. Optionally fill in the **support** details - see below.
-5. Save.
+4. Optionally pick a **color** - see [Provider colors](#provider-colors).
+5. Optionally fill in the **support** details - see below.
+6. Save.
+
+### Provider colors {#provider-colors}
+
+A provider's **color** paints its provider networks on the maps, so a
+printed plan tells one carrier's cloud from another's at a glance. It is
+blank by default (Danbyte seeds none), and blank draws the neutral card.
+
+- A **provider network** takes its provider's color unless it sets its own
+  on its edit page ("blank uses the provider's") - useful when one carrier
+  sells you two services you want apart.
+- On the [topology](topology.md#provider-networks) the network's card is
+  filled with the color, its text black or white to read on it, like a
+  role-colored device card; the legend keys each color, by the provider's
+  name or, for a network with its own, the network's. The SVG, PDF, PNG and
+  draw.io exports and the topology report carry it.
+- On the [site map](site-map.md#provider-networks) the network's marker is
+  filled with it.
+- Lists, detail pages and the provider pickers show a colored provider or
+  network as its color badge.
+- The circuit lines to a network keep the **circuit's** color (its type's,
+  else its status's).
+
+The API takes `color` as `#rrggbb` (stored lower case) or blank on
+`/api/providers/` and `/api/provider-networks/`; a provider network also
+reads `effective_color`, the color the maps paint it.
 
 ### Provider support details
 
@@ -65,7 +91,9 @@ when it doesn't terminate at your own facility.
 1. Open **Circuits → Provider networks** and click **Add provider network**.
 2. Pick the **provider** and give the network a **name** (e.g. "Telia IP
    transit"). Optionally record the provider's **service ID** for it.
-3. Save.
+3. Optionally pick a **color**; blank uses the provider's (see
+   [Provider colors](#provider-colors)).
+4. Save.
 
 ### Provider networks on the maps {#provider-networks}
 
@@ -74,7 +102,7 @@ A side at the site and its Z side on the carrier's MPLS network - draws on
 the maps as hub and spoke, the provider network in the middle:
 
 - the [topology](topology.md#provider-networks) draws the network as a card
-  of its own and a line to it from the device each circuit's site end is
+  of its own - in its [color](#provider-colors), when it has one - and a line to it from the device each circuit's site end is
   cabled to (through patch panels), or - grouped by site or location - from
   that device's card; grouped by site, an end that is not cabled still draws
   from its own site's card;

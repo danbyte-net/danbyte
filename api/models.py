@@ -9202,6 +9202,9 @@ class Provider(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableMixin):
         max_length=64, blank=True, default="",
         help_text="Account number with this provider.",
     )
+    # Paints the provider's networks on the maps (#540); a network may set
+    # its own. Blank draws them neutral.
+    color = models.CharField(max_length=7, blank=True, default="", db_default="")
     portal_url = models.URLField(blank=True, default="")
     noc_email = models.EmailField(blank=True, default="")
     noc_phone = models.CharField(max_length=64, blank=True, default="")
@@ -9266,6 +9269,8 @@ class ProviderNetwork(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableM
         help_text="The provider's identifier for this network/service.",
     )
     description = models.CharField(max_length=255, blank=True, default="")
+    # Its own colour on the maps (#540); blank takes its provider's.
+    color = models.CharField(max_length=7, blank=True, default="", db_default="")
     comments = models.TextField(blank=True, default="")
 
     class Meta:
@@ -9279,6 +9284,13 @@ class ProviderNetwork(NumIdMixin, TimestampedModel, CustomFieldsMixin, TaggableM
 
     def __str__(self) -> str:
         return self.name
+
+    @property
+    def effective_color(self) -> str:
+        """The colour the maps paint it: its own, else its provider's."""
+        if self.color:
+            return self.color
+        return self.provider.color if self.provider_id else ""
 
 
 class CircuitType(NumIdMixin, TimestampedModel):

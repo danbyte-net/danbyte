@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { TableActions } from "@/components/table-actions"
+import { ColorBadge } from "@/components/cells/color-badge"
 import { useQuery } from "@tanstack/react-query"
 import { type ColumnDef } from "@tanstack/react-table"
 import { useCallback, useMemo, useState } from "react"
@@ -56,7 +57,11 @@ function ProvidersPage() {
             params={{ id: row.original.id }}
             className="link font-medium"
           >
-            {row.original.name}
+            {row.original.color ? (
+              <ColorBadge name={row.original.name} color={row.original.color} />
+            ) : (
+              row.original.name
+            )}
           </Link>
         ),
       },

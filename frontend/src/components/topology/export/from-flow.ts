@@ -154,6 +154,8 @@ export function fromFlow(
       const pn = isProviderNetwork(n.data) ? n.data : null
       const input: CardLayoutInput = {
         name: g.name,
+        // A provider network wears its colour (#540); a site card none.
+        ...(pn?.color ? { color: pn.color } : {}),
         lines: pn
           ? [{ key: "provider", text: pn.provider.name }]
           : [

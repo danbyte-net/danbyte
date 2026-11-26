@@ -18,6 +18,8 @@ import {
 } from "./hidden"
 import { setHidden } from "@/components/hidden-objects"
 import { sizeOf } from "./node-registry"
+import { legendRows } from "./legend"
+import { providerNetworkLegend } from "./network-legend"
 
 // Provider networks on the topology (#466): the node a set of circuits
 // meets at, and the line from each device (or site card) to it - as the
@@ -213,6 +215,103 @@ describe("provider networks in the exports", () => {
       (l) => l.target.node === "pn:pn1" || l.source.node === "pn:pn1"
     )
     expect(links).toHaveLength(3)
+  })
+})
+
+describe("provider network colours (#540)", () => {
+  const coloured = (color: string, provider = ""): TopoNode => ({
+    ...network,
+    data: {
+      ...network.data,
+      color,
+      provider: { id: "p1", name: "Telco", color: provider },
+    },
+  })
+  const withNetwork = (n: TopoNode): TopologyGraph => ({
+    ...graph,
+    nodes: [graph.nodes[0], graph.nodes[1], n],
+  })
+  const exported = (g: TopologyGraph) => {
+    const b = buildDiagram(g, opts())
+    return toDocument(b.model, { nodes: b.nodes, edges: b.edges }, [], {
+      meta: { title: "WAN", generated_at: "2026-11-03T12:00:00Z" },
+      measure: approxMeasure,
+    })
+  }
+
+  it("fills the exported card with its colour, the text readable on it", () => {
+    const doc = exported(withNetwork(coloured("#112233", "#112233")))
+    const pn = doc.nodes.find((n) => n.id === "pn:pn1")!
+    expect(pn.fill).toBe("#112233")
+    expect(pn.ink).toBe("#ffffff")
+    expect(toSvg(doc)).toContain("#112233")
+    expect(toDrawio([doc])).toContain("#112233")
+    // A pale colour takes black text.
+    const pale = exported(withNetwork(coloured("#fde047")))
+    const p2 = pale.nodes.find((n) => n.id === "pn:pn1")!
+    expect(p2.ink).toBe("#0a0a0a")
+  })
+
+  it("stays the neutral card without one", () => {
+    const plain = exported(graph).nodes.find((n) => n.id === "pn:pn1")!
+    const site = exported(withNetwork(coloured(""))).nodes.find(
+      (n) => n.id === "pn:pn1"
+    )!
+    expect(site.fill).toBe(plain.fill)
+    expect(plain.fill).not.toBe("#112233")
+  })
+
+  it("keys each colour once, by provider or by the network's own", () => {
+    const other: TopoNode = {
+      ...coloured("#ff8800", "#112233"),
+      id: "pn:pn2",
+      data: {
+        ...coloured("#ff8800", "#112233").data,
+        provider_network_id: "pn2",
+        name: "Internet",
+      },
+    }
+    const twin: TopoNode = {
+      ...coloured("#112233", "#112233"),
+      id: "pn:pn3",
+      data: {
+        ...coloured("#112233", "#112233").data,
+        provider_network_id: "pn3",
+        name: "Backup",
+      },
+    }
+    const nodes = [
+      coloured("#112233", "#112233"),
+      twin,
+      other,
+      { ...network, id: "pn:pn4" },
+    ]
+    expect(providerNetworkLegend(nodes)).toEqual([
+      { name: "Internet", color: "#ff8800" },
+      { name: "Telco", color: "#112233" },
+    ])
+    const rows = legendRows({
+      viewStyle: "diagram",
+      grouped: false,
+      colorMode: "cable",
+      networks: providerNetworkLegend(nodes),
+    })
+    expect(rows.filter((r) => r.kind === "role")).toEqual([
+      { kind: "role", label: "Internet", color: "#ff8800" },
+      { kind: "role", label: "Telco", color: "#112233" },
+    ])
+    // Grouped maps draw the network cards too.
+    const grouped = legendRows({
+      viewStyle: "diagram",
+      grouped: true,
+      colorMode: "cable",
+      networks: [{ name: "Telco", color: "#112233" }],
+    })
+    expect(grouped[0]).toEqual({
+      kind: "role",
+      label: "Telco",
+      color: "#112233",
+    })
   })
 })
 

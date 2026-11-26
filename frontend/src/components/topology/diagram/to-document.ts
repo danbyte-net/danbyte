@@ -496,7 +496,9 @@ export function fitBox(
   size: { w: number; h: number },
   measure?: Measure
 ): CardBox {
-  const box = cardLayout({ ...input, color: null }, null, measure, {}, size.w)
+  // The fill is the input's (a coloured provider network, #540); a site
+  // or location card passes none and stays neutral.
+  const box = cardLayout(input, null, measure, {}, size.w)
   const dx = (size.w - box.w) / 2
   const titleRows = box.titleRows.map((r) => ({ ...r, x: r.x + dx }))
   return {
@@ -1056,11 +1058,14 @@ export function toDocument(
       kind?: string
       provider?: { name: string }
       provider_network_id?: string
+      color?: string
     }
     const count = group.device_count
     const network = group.kind === "provider_network"
     const groupCard: CardLayoutInput = {
       name: group.name ?? "",
+      // A provider network wears its colour (#540); a site card none.
+      ...(network && group.color ? { color: group.color } : {}),
       lines: network
         ? group.provider
           ? [{ key: "provider", text: group.provider.name }]

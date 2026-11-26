@@ -9,6 +9,7 @@ import {
 } from "@/lib/api"
 import { apiAll } from "@/lib/api-all"
 import {
+  FormColor,
   FormCombobox,
   FormFooter,
   FormSection,
@@ -43,6 +44,7 @@ export function ProviderNetworkForm({
   const [providerError, setProviderError] = useState<string | null>(null)
   const [serviceId, setServiceId] = useState(network?.service_id ?? "")
   const [description, setDescription] = useState(network?.description ?? "")
+  const [color, setColor] = useState(network?.color ?? "")
   const [comments, setComments] = useState(network?.comments ?? "")
   const [tagIds, setTagIds] = useState<number[]>(
     network?.tags.map((t) => t.id) ?? []
@@ -58,6 +60,7 @@ export function ProviderNetworkForm({
     setProviderError(null)
     setServiceId(network.service_id)
     setDescription(network.description)
+    setColor(network.color)
     setComments(network.comments)
     setTagIds(network.tags.map((t) => t.id))
     setCustomFields(network.custom_fields ?? {})
@@ -77,6 +80,7 @@ export function ProviderNetworkForm({
         provider_id: providerId,
         service_id: serviceId.trim(),
         description: description.trim(),
+        color,
         comments: comments.trim(),
         tag_ids: tagIds,
         custom_fields: customFields,
@@ -134,6 +138,7 @@ export function ProviderNetworkForm({
             options={(providers.data?.results ?? []).map((p) => ({
               value: p.id,
               label: p.name,
+              color: p.color || undefined,
             }))}
             placeholder="Select provider"
             searchPlaceholder="Search providers…"
@@ -148,6 +153,13 @@ export function ProviderNetworkForm({
           value={serviceId}
           onChange={setServiceId}
           error={fieldErrors.service_id}
+        />
+        <FormColor
+          label="Color"
+          hint="blank uses the provider's"
+          value={color}
+          onChange={setColor}
+          error={fieldErrors.color}
         />
       </FormSection>
 

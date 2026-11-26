@@ -168,6 +168,7 @@ export function CircuitForm({ circuit, onSaved, onCancel }: CircuitFormProps) {
               options={(providers.data?.results ?? []).map((p) => ({
                 value: p.id,
                 label: p.name,
+                color: p.color || undefined,
               }))}
               placeholder="Select provider"
               searchPlaceholder="Search providers…"
