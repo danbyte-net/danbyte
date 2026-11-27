@@ -393,12 +393,19 @@ class _Checker:
         for kind, key in (("device-type", "device"), ("module-type", "module")):
             listed = types.get(key) or []
             listed = {str(x) for x in listed} if isinstance(listed, list) else set()
-            have = {str(d.get("part_number") or d.get("model") or "")
-                    for p, d in yamls.items() if p.startswith(kind + "s/")}
-            for pn in sorted(listed - have):
+            # A type is listed by its part number, its model or its file's
+            # name (GS728TPv2 has the part number GS728TP-200).
+            names = {p: {str(d.get("part_number") or ""), str(d.get("model") or ""),
+                         _stem(p)} - {""}
+                     for p, d in yamls.items() if p.startswith(kind + "s/")}
+            known = set().union(*names.values()) if names else set()
+            for pn in sorted(listed - known):
                 self.add("error", "pack.yaml", f"types.{key} lists {pn}, which has no YAML.")
-            for pn in sorted(have - listed):
-                self.add("warning", "pack.yaml", f"types.{key} doesn't list {pn}.")
+            for p, own in sorted(names.items()):
+                if not own & listed:
+                    d = yamls[p]
+                    self.add("warning", "pack.yaml", f"types.{key} doesn't list "
+                             f"{d.get('part_number') or d.get('model') or _stem(p)}.")
         listed = types.get("accessory") or []
         listed = {str(x) for x in listed} if isinstance(listed, list) else set()
         have = {str(d.get("name") or "") for d in self.accessories.values()}

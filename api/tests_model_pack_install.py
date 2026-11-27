@@ -390,6 +390,20 @@ class CheckerTests(SimpleTestCase):
         self.p.write(".DS_Store", b"x")
         self.assertTrue(self.check().ok)
 
+    def test_a_type_may_be_listed_by_model_or_file_name(self):
+        # The manifest names GS728TPv2; its part number is GS728TP-200.
+        self.p.write("pack.yaml", PACK.format(version="1.1.0").replace(
+            "device: [X1]", "device: [X1, X2v2, X3]"))
+        self.p.write("device-types/Acme/X2.yaml", (
+            b"manufacturer: Acme\nmodel: X2v2\npart_number: X2-200\nslug: acme-x2v2\n"
+            b"u_height: 1\n"))
+        self.p.write("device-types/Acme/X3.yaml", (
+            b"manufacturer: Acme\nmodel: Ex Three\npart_number: X3-EU\nslug: acme-x3\n"
+            b"u_height: 1\n"))
+        found = str(self.check().findings)
+        self.assertNotIn("which has no YAML", found)
+        self.assertNotIn("doesn't list", found)
+
     def test_the_working_folders_extras_are_ignored(self):
         self.p.write("release/sources/Acme/X.blend", b"x")
         self.p.write("release/models/Acme/X.hq.glb", b"x")
