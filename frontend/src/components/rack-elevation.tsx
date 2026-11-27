@@ -1,4 +1,4 @@
-import { Fragment, useMemo, useState } from "react"
+import { Fragment, useMemo, useRef, useState } from "react"
 import type { ReactNode } from "react"
 import {
   DndContext,
@@ -52,6 +52,16 @@ import { QueryError } from "@/components/query-error"
 import { useMe } from "@/lib/use-me"
 import { cn } from "@/lib/utils"
 import { apiErrorToast } from "@/lib/api-toast"
+import { usePathwayRights } from "@/components/rack-pathways-pane"
+import {
+  EntryMarks,
+  HorizontalPathways,
+  PathwayStrip,
+  usePathwayFills,
+  useRackPathways,
+} from "@/components/rack-pathway-layer"
+import type { PathwayLayer } from "@/components/rack-pathway-layer"
+import { onFace } from "@/lib/rack-pathways"
 
 // Every mode draws mm-true rows so switching modes never resizes the rack:
 // Names/Images share one scale (19″ → ~430px wide, ~42px per U); Render is
@@ -97,6 +107,7 @@ export function RackElevation({
   ports,
   show = "all",
   prefetched = false,
+  pathways,
 }: {
   rack: Rack
   /** Controlled face - hides the internal Front/Rear toggle. */
@@ -126,6 +137,10 @@ export function RackElevation({
    * elevations wall, #431): don't refetch them per rack, only after a change
    * here invalidates them. */
   prefetched?: boolean
+  /** The rack page's Pathways layer (rack-pathway-layer): the rack's
+   * pathways drawn beside, over, above and below the units, to open, add
+   * and drag. Left out, nothing of them draws. */
+  pathways?: PathwayLayer
 }) {
   const [faceState, setFace] = useState<RackFace>("front")
   const [modeState, setMode] = useState<RackDisplayMode>("names")
@@ -159,6 +174,13 @@ export function RackElevation({
     },
     onError: (err) => apiErrorToast(err),
   })
+  // The Pathways layer: the rack's pathways, as its Pathways tab has them.
+  const layer = picker ? undefined : pathways
+  const pathwaysQ = useRackPathways(rack.id, !!layer)
+  const pathwayItems = layer ? (pathwaysQ.data?.items ?? []) : []
+  const fills = usePathwayFills(rack.id, !!layer)
+  const pathwayRights = usePathwayRights("rack")
+  const gridRef = useRef<HTMLDivElement>(null)
   const face = controlledFace ?? faceState
   const mode = controlledMode ?? modeState
   const labels = controlledLabels ?? labelsState
@@ -229,6 +251,39 @@ export function RackElevation({
         .filter((x): x is { d: Device; view: BlockView } => x !== null),
     [devices, face, show]
   )
+
+  // The units devices take on this face, which a horizontal manager can't
+  // be dragged into.
+  const takenUnits = useMemo(() => {
+    const out = new Set<number>()
+    for (const { d } of visible)
+      for (let i = 0; i < Math.max(1, d.u_height); i++)
+        out.add((d.position as number) + i)
+    return out
+  }, [visible])
+  // A press on an empty unit with the layer on adds a horizontal manager
+  // there - unless one is there already.
+  const addHorizontal =
+    layer && pathwayRights.canAdd
+      ? (unit: number) => {
+          const there = pathwayItems.some(
+            (p) =>
+              p.kind === "horizontal" &&
+              onFace(p, face) &&
+              (p.u_from ?? 0) <= unit &&
+              unit <= (p.u_to ?? p.u_from ?? 0)
+          )
+          if (!there)
+            layer.onOpen({
+              preset: {
+                kind: "horizontal",
+                face,
+                u_from: String(unit),
+                u_to: String(unit),
+              },
+            })
+        }
+      : undefined
 
   // Planned rack-elevation moves, drawn as ghosts: a device in THIS rack
   // whose open planned change touches position/face (and stays in this rack)
@@ -391,7 +446,14 @@ export function RackElevation({
           onDragStart={canDrag ? onDragStart : undefined}
           onDragEnd={canDrag ? onDragEnd : undefined}
         >
-          <div className="overflow-x-auto rounded-lg border border-border bg-card p-1.5">
+          <div
+            className={cn(
+              "overflow-x-auto rounded-lg border border-border bg-card",
+              // Room above and below the units for the roof's and the
+              // floor's entries.
+              layer ? "px-1.5 py-6" : "p-1.5"
+            )}
+          >
             <div className="flex gap-1.5">
               {!picker && (mountedLeft.length > 0 || canAddDevice) && (
                 <SideLane
@@ -404,7 +466,23 @@ export function RackElevation({
                   }
                 />
               )}
+              {layer && (
+                <PathwayStrip
+                  side="left"
+                  face={face}
+                  items={pathwayItems}
+                  units={units}
+                  rowHeight={rowHeight}
+                  first={rack.starting_unit}
+                  last={rack.starting_unit + rack.u_height - 1}
+                  descUnits={rack.desc_units}
+                  layer={layer}
+                  fills={fills}
+                  rackId={rack.id}
+                />
+              )}
               <div
+                ref={gridRef}
                 className="relative grid flex-1"
                 onPointerLeave={onHover ? () => onHover(null) : undefined}
                 style={{
@@ -423,14 +501,25 @@ export function RackElevation({
                     unit={unit}
                     row={i + 1}
                     droppable={canDrag}
-                    onPick={picker ? () => picker.onUnit(unit) : undefined}
+                    onPick={
+                      picker
+                        ? () => picker.onUnit(unit)
+                        : addHorizontal
+                          ? () => addHorizontal(unit)
+                          : undefined
+                    }
                     onEnter={onHover ? () => onHover(unit) : undefined}
                   >
                     <span className="w-6 shrink-0 text-right font-mono text-[10px] text-muted-foreground tabular-nums">
                       {unit}
                     </span>
                     {(canAddDevice || canMoveDevice) && (
-                      <span className="ml-auto hidden items-center gap-1.5 group-hover/unit:flex">
+                      <span
+                        className="ml-auto hidden items-center gap-1.5 group-hover/unit:flex"
+                        // Its links are the devices'; the band's own press
+                        // (the Pathways layer's add) stays out of them.
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         {canAddDevice && (
                           <Link
                             to="/devices/new"
@@ -560,8 +649,54 @@ export function RackElevation({
                       </div>
                     )
                   })}
+                {layer && (
+                  <>
+                    <HorizontalPathways
+                      face={face}
+                      items={pathwayItems}
+                      units={units}
+                      rowHeight={rowHeight}
+                      descUnits={rack.desc_units}
+                      first={rack.starting_unit}
+                      last={rack.starting_unit + rack.u_height - 1}
+                      taken={takenUnits}
+                      layer={layer}
+                      rackId={rack.id}
+                      gridRef={gridRef}
+                    />
+                    <EntryMarks
+                      surface="top"
+                      items={pathwayItems}
+                      pxPerMm={pxPerMm}
+                      layer={layer}
+                      fills={fills}
+                    />
+                    <EntryMarks
+                      surface="bottom"
+                      items={pathwayItems}
+                      pxPerMm={pxPerMm}
+                      layer={layer}
+                      fills={fills}
+                    />
+                  </>
+                )}
                 {picker?.overlay}
               </div>
+              {layer && (
+                <PathwayStrip
+                  side="right"
+                  face={face}
+                  items={pathwayItems}
+                  units={units}
+                  rowHeight={rowHeight}
+                  first={rack.starting_unit}
+                  last={rack.starting_unit + rack.u_height - 1}
+                  descUnits={rack.desc_units}
+                  layer={layer}
+                  fills={fills}
+                  rackId={rack.id}
+                />
+              )}
               {!picker && (mountedRight.length > 0 || canAddDevice) && (
                 <SideLane
                   side="side_right"
@@ -588,6 +723,7 @@ export function RackElevation({
       )}
 
       {q.isLoading && <Loading className="mt-2 min-h-16" />}
+      {layer && pathwaysQ.isError && <QueryError error={pathwaysQ.error} />}
 
       <SideAssignDialog
         rack={rack}

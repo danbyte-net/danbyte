@@ -49,7 +49,7 @@ import { EmptyState } from "@/components/empty-state"
 import { Loading } from "@/components/loading"
 import { QueryError } from "@/components/query-error"
 
-type Owner =
+export type Owner =
   | { rackId: string; rackTypeId?: never }
   | { rackTypeId: string; rackId?: never }
 
@@ -74,28 +74,39 @@ export function pathwaysKey(o: Owner) {
   return ["rack-pathways", o.rackId ?? o.rackTypeId]
 }
 
-/** A rack's or rack type's pathways (docs/dcim/racks.md → Pathways): what
- * it inherits from its kit, frame and type, and its own. */
-export function RackPathwaysPane(owner: Owner) {
-  const level = owner.rackId ? "rack" : "type"
+/** Who may do what to a level's pathways - the table's rules, which the
+ * elevation's layer follows too (the server still checks). */
+export function usePathwayRights(level: "rack" | "type") {
   const { canDo } = useMe()
   const typeOk = level === "rack" || canDo("racktype", "change")
   const canAdd = canDo("rackpathway", "add") && typeOk
   const canChange = canDo("rackpathway", "change") && typeOk
   const canDelete = canDo("rackpathway", "delete") && typeOk
+  return useMemo(
+    () => ({
+      canAdd,
+      canChange,
+      canDelete,
+      /** Edit it: a row of its own, or an inherited one through its overlay
+       * (made when there is none, so that needs add). */
+      canEdit: (p: ResolvedPathway) =>
+        canChange && !p.orphan && (isOwn(p, level) || canAdd || !!p.id),
+      canRemove: (p: ResolvedPathway) =>
+        canDelete && !!p.id && (isOwn(p, level) || p.orphan),
+      /** Hide, show or reset an inherited one. */
+      canOverlay: (p: ResolvedPathway) =>
+        !isOwn(p, level) && !p.orphan && canChange && (canAdd || !!p.id),
+    }),
+    [level, canAdd, canChange, canDelete]
+  )
+}
+
+/** A level's writes: `overlay` changes a pathway - an inherited one's row
+ * patched when there is one, else made - and `remove` deletes a row. */
+export function usePathwayWrites(owner: Owner) {
   const qc = useQueryClient()
-  const [editing, setEditing] = useState<ResolvedPathway | null>(null)
-  const [adding, setAdding] = useState(false)
-
-  const q = useQuery({
-    queryKey: pathwaysKey(owner),
-    queryFn: () =>
-      api<ResolvedPathways>(`${ENDPOINT}resolved/?${ownerParams(owner)}`),
-  })
-  const invalidate = () =>
-    qc.invalidateQueries({ queryKey: pathwaysKey(owner) })
-
-  // An inherited pathway's row: patched when there is one, else made.
+  const key = pathwaysKey(owner)
+  const invalidate = () => qc.invalidateQueries({ queryKey: key })
   const overlay = useMutation({
     mutationFn: ({
       p,
@@ -116,6 +127,24 @@ export function RackPathwaysPane(owner: Owner) {
     onSuccess: invalidate,
     onError: (err) => apiErrorToast(err),
   })
+  return { overlay, remove, invalidate }
+}
+
+/** A rack's or rack type's pathways (docs/dcim/racks.md → Pathways): what
+ * it inherits from its kit, frame and type, and its own. */
+export function RackPathwaysPane(owner: Owner) {
+  const level = owner.rackId ? "rack" : "type"
+  const rights = usePathwayRights(level)
+  const { canAdd } = rights
+  const [editing, setEditing] = useState<ResolvedPathway | null>(null)
+  const [adding, setAdding] = useState(false)
+
+  const q = useQuery({
+    queryKey: pathwaysKey(owner),
+    queryFn: () =>
+      api<ResolvedPathways>(`${ENDPOINT}resolved/?${ownerParams(owner)}`),
+  })
+  const { overlay, remove, invalidate } = usePathwayWrites(owner)
 
   const columns = useMemo(
     () =>
@@ -148,14 +177,11 @@ export function RackPathwaysPane(owner: Owner) {
               ],
         actions: {
           onEdit: (p) => setEditing(p),
-          canEdit: (p) =>
-            canChange && !p.orphan && (isOwn(p, level) || canAdd || !!p.id),
+          canEdit: rights.canEdit,
           onDelete: (p) => p.id && remove.mutate(p.id),
-          canDelete: (p) =>
-            canDelete && !!p.id && (isOwn(p, level) || p.orphan),
+          canDelete: rights.canRemove,
           extra: (p) => {
-            if (isOwn(p, level) || p.orphan || !(canChange && (canAdd || p.id)))
-              return null
+            if (!rights.canOverlay(p)) return null
             return (
               <>
                 {p.id && p.overridden.length > 0 && (
@@ -193,7 +219,7 @@ export function RackPathwaysPane(owner: Owner) {
           },
         },
       }),
-    [level, canAdd, canChange, canDelete, overlay, remove]
+    [level, rights, overlay, remove]
   )
 
   if (q.isLoading) return <Loading />
@@ -263,23 +289,88 @@ function PathwayDialog({
   onOpenChange: (open: boolean) => void
   onSaved: () => void
 }) {
-  const { fieldErrors, handleApiError, reset } = useFieldErrors()
-  const [form, setForm] = useState<PathwayForm>(() => formOf(null))
-  const [initial, setInitial] = useState<PathwayForm>(() => formOf(null))
-  const [accessory, setAccessory] = useState<string | null>(null)
-  const [device, setDevice] = useState<string | null>(null)
-  const own = pathway ? isOwn(pathway, level) : true
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent size="lg">
+        <DialogHeader>
+          <DialogTitle>
+            {pathway ? `Edit ${pathway.label}` : "Add pathway"}
+          </DialogTitle>
+        </DialogHeader>
+        {open && (
+          <PathwayEditor
+            owner={owner}
+            level={level}
+            pathway={pathway}
+            defaultFill={defaultFill}
+            onCancel={() => onOpenChange(false)}
+            onSaved={() => {
+              onSaved()
+              onOpenChange(false)
+            }}
+          />
+        )}
+      </DialogContent>
+    </Dialog>
+  )
+}
 
+/** The pathway form - the Pathways tab's dialog and the elevation's panel:
+ * a new pathway (with `preset`'s fields filled in), one of this level's own
+ * (every field sent) or an inherited one (only what changed, on its
+ * overlay row). `compact` lays it out for a narrow panel. */
+export function PathwayEditor({
+  owner,
+  level,
+  pathway,
+  preset,
+  defaultFill,
+  compact = false,
+  onCancel,
+  onSaved,
+}: {
+  owner: Owner
+  level: "rack" | "type"
+  pathway: ResolvedPathway | null
+  preset?: Partial<PathwayForm>
+  defaultFill: number
+  compact?: boolean
+  onCancel: () => void
+  onSaved: (row: RackPathwayRow) => void
+}) {
+  const { fieldErrors, handleApiError, reset } = useFieldErrors()
+  const own = pathway ? isOwn(pathway, level) : true
+  // Filled in from the start (a select must never see a blank first), and
+  // again when what it edits changes on the server (a save, a drag on the
+  // elevation) - not on a refetch that brings the same values.
+  const startForm = useMemo(() => {
+    const f = { ...formOf(pathway, defaultFill), ...(pathway ? {} : preset) }
+    if (!pathway && !f.kind) f.kind = "vertical"
+    return f
+  }, [pathway, preset, defaultFill])
+  const [form, setForm] = useState<PathwayForm>(startForm)
+  const [initial, setInitial] = useState<PathwayForm>(startForm)
+  const [accessory, setAccessory] = useState<string | null>(
+    pathway?.accessory_type?.id ?? null
+  )
+  const [device, setDevice] = useState<string | null>(
+    pathway?.device?.id ?? null
+  )
+  const startKey = JSON.stringify([
+    pathway?.key ?? null,
+    pathway?.id ?? null,
+    startForm,
+    pathway?.accessory_type?.id ?? null,
+    pathway?.device?.id ?? null,
+  ])
   useEffect(() => {
-    if (!open) return
-    const f = formOf(pathway, defaultFill)
-    if (!pathway) f.kind = "vertical"
-    setForm(f)
-    setInitial(f)
+    setForm(startForm)
+    setInitial(startForm)
     setAccessory(pathway?.accessory_type?.id ?? null)
     setDevice(pathway?.device?.id ?? null)
     reset()
-  }, [open, pathway, defaultFill, reset])
+    // startKey stands for startForm and the pathway's references.
+  }, [startKey, reset])
 
   const set = (k: keyof PathwayForm) => (v: string | null) =>
     setForm((f) => ({ ...f, [k]: v ?? "" }))
@@ -289,7 +380,7 @@ function PathwayDialog({
     queryKey: ["accessory-types", "cable-manager"],
     queryFn: () =>
       apiAll<AccessoryType>("/api/accessory-types/?kind=cable-manager"),
-    enabled: open && (kind === "vertical" || kind === "horizontal"),
+    enabled: kind === "vertical" || kind === "horizontal",
     staleTime: 5 * 60_000,
   })
   const managerOptions = (managers.data?.results ?? [])
@@ -298,7 +389,7 @@ function PathwayDialog({
   const devices = useQuery({
     queryKey: ["devices", { rack: owner.rackId, picker: "pathway" }],
     queryFn: () => apiAll<Device>(`/api/devices/?rack=${owner.rackId}`),
-    enabled: open && !!owner.rackId && kind === "horizontal",
+    enabled: !!owner.rackId && kind === "horizontal",
   })
   const deviceOptions = (devices.data?.results ?? [])
     .filter((d) => d.position != null)
@@ -327,10 +418,9 @@ function PathwayDialog({
         ? send(pathway.id, body)
         : send(null, { ...ownerBody(owner), ...body })
     },
-    onSuccess: () => {
-      onSaved()
+    onSuccess: (row) => {
       toast.success(pathway ? "Pathway saved" : "Pathway added")
-      onOpenChange(false)
+      onSaved(row)
     },
     onError: (err) => {
       const msg = handleApiError(err)
@@ -353,232 +443,223 @@ function PathwayDialog({
         ]
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent size="lg">
-        <DialogHeader>
-          <DialogTitle>
-            {pathway ? `Edit ${pathway.label}` : "Add pathway"}
-          </DialogTitle>
-        </DialogHeader>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault()
-            mutation.mutate()
-          }}
-          className="grid gap-4"
-        >
-          <FormRow>
-            <FormSelect
-              label="Kind"
-              value={kind}
-              disabled={!!pathway}
-              onChange={(v) =>
-                v && setForm((f) => ({ ...f, kind: v, subkind: "" }))
-              }
-              options={KINDS.map((k) => ({ value: k, label: KIND_LABEL[k] }))}
-              error={fieldErrors.kind}
-            />
-            <FormText
-              label="Name"
-              value={form.name}
-              onChange={set("name")}
-              placeholder={pathway?.label}
-              error={fieldErrors.name}
-            />
-          </FormRow>
-          <FormRow>
-            {SUBKINDS[kind].length > 0 && (
-              <FormSelect
-                label="Type"
-                value={form.subkind || null}
-                onChange={set("subkind")}
-                noneLabel="None"
-                options={SUBKINDS[kind].map((s) => ({
-                  value: s,
-                  label: SUBKIND_LABEL[s],
-                }))}
-                error={fieldErrors.subkind}
-              />
-            )}
-            {kind === "entry" && (
-              <FormSelect
-                label="Surface"
-                value={form.surface || null}
-                onChange={set("surface")}
-                options={[
-                  { value: "top", label: "Roof" },
-                  { value: "bottom", label: "Floor" },
-                  { value: "side", label: "Side panel" },
-                ]}
-                error={fieldErrors.surface}
-              />
-            )}
-          </FormRow>
-          <FormRow>
-            {sided && (
-              <FormSelect
-                label="Side"
-                value={form.side || null}
-                onChange={set("side")}
-                options={[
-                  { value: "left", label: "Left" },
-                  { value: "right", label: "Right" },
-                ]}
-                error={fieldErrors.side}
-              />
-            )}
-            {kind !== "entry" && (
-              <FormSelect
-                label="Face"
-                value={form.face || null}
-                onChange={set("face")}
-                options={faces}
-                error={fieldErrors.face}
-              />
-            )}
-          </FormRow>
-          {kind !== "entry" && (
-            <FormRow>
-              <FormText
-                label="From"
-                hint="U"
-                type="number"
-                min={1}
-                value={form.u_from}
-                onChange={set("u_from")}
-                error={fieldErrors.u_from}
-              />
-              <FormText
-                label="To"
-                hint="U"
-                type="number"
-                min={1}
-                value={form.u_to}
-                onChange={set("u_to")}
-                error={fieldErrors.u_to}
-              />
-            </FormRow>
-          )}
-          {kind === "channel" ? (
-            <FormRow>
-              <FormText
-                label="Offset"
-                hint="mm"
-                type="number"
-                min={0}
-                value={form.offset_mm}
-                onChange={set("offset_mm")}
-                error={fieldErrors.offset_mm}
-              />
-              <FormText
-                label="Depth"
-                hint="mm"
-                type="number"
-                min={0}
-                value={form.depth_mm}
-                onChange={set("depth_mm")}
-                error={fieldErrors.depth_mm}
-              />
-            </FormRow>
-          ) : (
-            <FormRow cols={3}>
-              <FormText
-                label="Width"
-                hint="mm"
-                type="number"
-                min={1}
-                value={form.inner_w_mm}
-                onChange={set("inner_w_mm")}
-                error={fieldErrors.inner_w_mm}
-              />
-              <FormText
-                label={kind === "entry" ? "Height" : "Depth"}
-                hint="mm"
-                type="number"
-                min={1}
-                value={form.inner_d_mm}
-                onChange={set("inner_d_mm")}
-                error={fieldErrors.inner_d_mm}
-              />
-              <FormText
-                label="Fill limit"
-                hint="%"
-                type="number"
-                min={1}
-                max={100}
-                placeholder={String(defaultFill)}
-                value={form.fill_limit_pct}
-                onChange={set("fill_limit_pct")}
-                error={fieldErrors.fill_limit_pct}
-              />
-            </FormRow>
-          )}
-          {kind === "entry" && (
-            <FormRow>
-              <FormText
-                label="Across"
-                hint="mm"
-                type="number"
-                value={form.x_mm}
-                onChange={set("x_mm")}
-                error={fieldErrors.x_mm}
-              />
-              <FormText
-                label="Back"
-                hint="mm"
-                type="number"
-                min={0}
-                value={form.y_mm}
-                onChange={set("y_mm")}
-                error={fieldErrors.y_mm}
-              />
-            </FormRow>
-          )}
-          {(kind === "vertical" || kind === "horizontal") && (
-            <FormCombobox
-              label="Model"
-              value={accessory}
-              onChange={setAccessory}
-              noneLabel="None"
-              placeholder="No model"
-              searchPlaceholder="Search cable managers…"
-              emptyText="No cable managers"
-              options={managerOptions}
-              error={fieldErrors.accessory_type_id}
-            />
-          )}
-          {kind === "horizontal" && owner.rackId && (
-            <FormCombobox
-              label="Device"
-              value={device}
-              onChange={setDevice}
-              noneLabel="None"
-              placeholder="No device"
-              searchPlaceholder="Search devices…"
-              emptyText="No devices in units"
-              options={deviceOptions}
-              error={fieldErrors.device_id}
-            />
-          )}
-          <FormTextarea
-            label="Description"
-            value={form.description}
-            onChange={(v) => set("description")(v)}
-            rows={2}
-            error={fieldErrors.description}
+    <form
+      onSubmit={(e) => {
+        e.preventDefault()
+        mutation.mutate()
+      }}
+      className="grid gap-4"
+    >
+      <FormRow>
+        <FormSelect
+          label="Kind"
+          value={kind}
+          disabled={!!pathway}
+          onChange={(v) =>
+            v && setForm((f) => ({ ...f, kind: v, subkind: "" }))
+          }
+          options={KINDS.map((k) => ({ value: k, label: KIND_LABEL[k] }))}
+          error={fieldErrors.kind}
+        />
+        <FormText
+          label="Name"
+          value={form.name}
+          onChange={set("name")}
+          placeholder={pathway?.label}
+          error={fieldErrors.name}
+        />
+      </FormRow>
+      <FormRow>
+        {SUBKINDS[kind].length > 0 && (
+          <FormSelect
+            label="Type"
+            value={form.subkind || null}
+            onChange={set("subkind")}
+            noneLabel="None"
+            options={SUBKINDS[kind].map((s) => ({
+              value: s,
+              label: SUBKIND_LABEL[s],
+            }))}
+            error={fieldErrors.subkind}
           />
-          {(fieldErrors.key || fieldErrors.rack_id) && (
-            <p className="text-sm text-destructive">
-              {fieldErrors.key || fieldErrors.rack_id}
-            </p>
-          )}
-          <FormFooter
-            onCancel={() => onOpenChange(false)}
-            submitting={mutation.isPending}
-            submitLabel={pathway ? "Save changes" : "Add pathway"}
+        )}
+        {kind === "entry" && (
+          <FormSelect
+            label="Surface"
+            value={form.surface || null}
+            onChange={set("surface")}
+            options={[
+              { value: "top", label: "Roof" },
+              { value: "bottom", label: "Floor" },
+              { value: "side", label: "Side panel" },
+            ]}
+            error={fieldErrors.surface}
           />
-        </form>
-      </DialogContent>
-    </Dialog>
+        )}
+      </FormRow>
+      <FormRow>
+        {sided && (
+          <FormSelect
+            label="Side"
+            value={form.side || null}
+            onChange={set("side")}
+            options={[
+              { value: "left", label: "Left" },
+              { value: "right", label: "Right" },
+            ]}
+            error={fieldErrors.side}
+          />
+        )}
+        {kind !== "entry" && (
+          <FormSelect
+            label="Face"
+            value={form.face || null}
+            onChange={set("face")}
+            options={faces}
+            error={fieldErrors.face}
+          />
+        )}
+      </FormRow>
+      {kind !== "entry" && (
+        <FormRow>
+          <FormText
+            label="From"
+            hint="U"
+            type="number"
+            min={1}
+            value={form.u_from}
+            onChange={set("u_from")}
+            error={fieldErrors.u_from}
+          />
+          <FormText
+            label="To"
+            hint="U"
+            type="number"
+            min={1}
+            value={form.u_to}
+            onChange={set("u_to")}
+            error={fieldErrors.u_to}
+          />
+        </FormRow>
+      )}
+      {kind === "channel" ? (
+        <FormRow>
+          <FormText
+            label="Offset"
+            hint="mm"
+            type="number"
+            min={0}
+            value={form.offset_mm}
+            onChange={set("offset_mm")}
+            error={fieldErrors.offset_mm}
+          />
+          <FormText
+            label="Depth"
+            hint="mm"
+            type="number"
+            min={0}
+            value={form.depth_mm}
+            onChange={set("depth_mm")}
+            error={fieldErrors.depth_mm}
+          />
+        </FormRow>
+      ) : (
+        <FormRow cols={compact ? 2 : 3}>
+          <FormText
+            label="Width"
+            hint="mm"
+            type="number"
+            min={1}
+            value={form.inner_w_mm}
+            onChange={set("inner_w_mm")}
+            error={fieldErrors.inner_w_mm}
+          />
+          <FormText
+            label={kind === "entry" ? "Height" : "Depth"}
+            hint="mm"
+            type="number"
+            min={1}
+            value={form.inner_d_mm}
+            onChange={set("inner_d_mm")}
+            error={fieldErrors.inner_d_mm}
+          />
+          <FormText
+            label="Fill limit"
+            hint="%"
+            type="number"
+            min={1}
+            max={100}
+            placeholder={String(defaultFill)}
+            value={form.fill_limit_pct}
+            onChange={set("fill_limit_pct")}
+            error={fieldErrors.fill_limit_pct}
+          />
+        </FormRow>
+      )}
+      {kind === "entry" && (
+        <FormRow>
+          <FormText
+            label="Across"
+            hint="mm"
+            type="number"
+            value={form.x_mm}
+            onChange={set("x_mm")}
+            error={fieldErrors.x_mm}
+          />
+          <FormText
+            label="Back"
+            hint="mm"
+            type="number"
+            min={0}
+            value={form.y_mm}
+            onChange={set("y_mm")}
+            error={fieldErrors.y_mm}
+          />
+        </FormRow>
+      )}
+      {(kind === "vertical" || kind === "horizontal") && (
+        <FormCombobox
+          label="Model"
+          value={accessory}
+          onChange={setAccessory}
+          noneLabel="None"
+          placeholder="No model"
+          searchPlaceholder="Search cable managers…"
+          emptyText="No cable managers"
+          options={managerOptions}
+          error={fieldErrors.accessory_type_id}
+        />
+      )}
+      {kind === "horizontal" && owner.rackId && (
+        <FormCombobox
+          label="Device"
+          value={device}
+          onChange={setDevice}
+          noneLabel="None"
+          placeholder="No device"
+          searchPlaceholder="Search devices…"
+          emptyText="No devices in units"
+          options={deviceOptions}
+          error={fieldErrors.device_id}
+        />
+      )}
+      <FormTextarea
+        label="Description"
+        value={form.description}
+        onChange={(v) => set("description")(v)}
+        rows={2}
+        error={fieldErrors.description}
+      />
+      {(fieldErrors.key || fieldErrors.rack_id) && (
+        <p className="text-sm text-destructive">
+          {fieldErrors.key || fieldErrors.rack_id}
+        </p>
+      )}
+      <FormFooter
+        onCancel={onCancel}
+        submitting={mutation.isPending}
+        submitLabel={pathway ? "Save changes" : "Add pathway"}
+      />
+    </form>
   )
 }

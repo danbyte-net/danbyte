@@ -58,6 +58,13 @@ import { JournalPanel } from "@/components/audit/journal-panel"
 import { BarIconButton } from "@/components/map-toolbar"
 import { DrawingDisplayMenu } from "@/components/drawing-display-menu"
 import { setLivePortsShown, useLivePortsShown } from "@/lib/live-ports-pref"
+import {
+  setRackPathwaysShown,
+  useRackPathwaysShown,
+} from "@/lib/rack-pathways-pref"
+import { setCableWaysFill, useCableWaysFill } from "@/lib/cable-ways-pref"
+import { PathwayPanel } from "@/components/rack-pathway-layer"
+import type { PathwayTarget } from "@/components/rack-pathway-layer"
 import { RackExportMenu } from "@/components/rack-export-menu"
 import { Loading } from "@/components/loading"
 import { useMe } from "@/lib/use-me"
@@ -596,6 +603,21 @@ function RackFaces({ rack, ports }: { rack: Rack; ports?: RackPortState }) {
   // a choice this browser keeps (Ports, shared with the cabinet's plate).
   const [show, setShow] = useUrlTab<RackShow>("all", "show", SHOWS)
   const livePorts = useLivePortsShown()
+  // The Pathways layer, a choice this browser keeps, and what its panel
+  // shows.
+  const pathwaysOn = useRackPathwaysShown()
+  const waysFill = useCableWaysFill()
+  const [pathway, setPathway] = useState<PathwayTarget | null>(null)
+  const layer = useMemo(
+    () =>
+      pathwaysOn
+        ? {
+            selected: pathway && "key" in pathway ? pathway.key : null,
+            onOpen: setPathway,
+          }
+        : undefined,
+    [pathwaysOn, pathway]
+  )
   const [zoom, setZoom] = useState(DEFAULT_ZOOM.names)
   const facesRef = useRef<HTMLDivElement>(null)
   const frameRef = useRef<HTMLDivElement>(null)
@@ -682,6 +704,23 @@ function RackFaces({ rack, ports }: { rack: Rack; ports?: RackPortState }) {
                     checked: livePorts,
                     onChange: setLivePortsShown,
                   },
+                  {
+                    label: "Pathways",
+                    checked: pathwaysOn,
+                    onChange: (on) => {
+                      setRackPathwaysShown(on)
+                      if (!on) setPathway(null)
+                    },
+                  },
+                  ...(pathwaysOn
+                    ? [
+                        {
+                          label: "Fill",
+                          checked: waysFill,
+                          onChange: setCableWaysFill,
+                        },
+                      ]
+                    : []),
                 ]}
                 choice={{
                   label: "Show",
@@ -715,31 +754,49 @@ function RackFaces({ rack, ports }: { rack: Rack; ports?: RackPortState }) {
                 className="ml-auto"
               />
             </div>
-            <HScroll viewportRef={frameRef} label="Rack faces">
-              <div
-                ref={facesRef}
-                className="mx-auto flex w-max items-start gap-8"
+            <div className="flex items-start gap-3">
+              <HScroll
+                viewportRef={frameRef}
+                label="Rack faces"
+                outerClassName="flex-1"
               >
-                {(["front", "rear"] as const).map((f) => (
-                  <div key={f}>
-                    <h3 className="mb-2 text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
-                      {f}
-                    </h3>
-                    <RackElevation
-                      rack={rack}
-                      face={f}
-                      mode={mode}
-                      labels={labels}
-                      showHeader={false}
-                      scale={zoom}
-                      draggable
-                      ports={livePorts ? ports : undefined}
-                      show={show}
-                    />
-                  </div>
-                ))}
-              </div>
-            </HScroll>
+                <div
+                  ref={facesRef}
+                  className="mx-auto flex w-max items-start gap-8"
+                >
+                  {(["front", "rear"] as const).map((f) => (
+                    <div key={f}>
+                      <h3 className="mb-2 text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
+                        {f}
+                      </h3>
+                      <RackElevation
+                        rack={rack}
+                        face={f}
+                        mode={mode}
+                        labels={labels}
+                        showHeader={false}
+                        scale={zoom}
+                        draggable
+                        ports={livePorts ? ports : undefined}
+                        show={show}
+                        pathways={layer}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </HScroll>
+              {layer && pathway && (
+                // The panel beside the faces, which shrink to fit beside it.
+                <div className="relative min-h-[34rem] w-[20.75rem] shrink-0 self-stretch">
+                  <PathwayPanel
+                    rackId={rack.id}
+                    target={pathway}
+                    onClose={() => setPathway(null)}
+                    onSelect={(key) => setPathway({ key })}
+                  />
+                </div>
+              )}
+            </div>
           </>
         )}
       </div>

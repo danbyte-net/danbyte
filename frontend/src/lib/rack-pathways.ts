@@ -179,3 +179,118 @@ export function isOwn(p: ResolvedPathway, level: "rack" | "type"): boolean {
     ? p.source === "manual"
     : p.source === "type" && !!p.id && p.key === `type:${p.id}`
 }
+
+// ── On the elevation ────────────────────────────────────────────────────────
+// The rack page's 2D elevation draws the pathways when its Pathways tick is
+// on (components/rack-pathway-layer.tsx): these place them.
+
+export type ElevationFace = "front" | "rear"
+
+/** Whether a shown pathway draws on an elevation face: a vertical or
+ * horizontal manager at that face or full depth, a 0U channel at that face,
+ * a roof or floor entry on both. Hidden ones and rows left from a kit are
+ * only listed (the Pathways tab). */
+export function onFace(p: ResolvedPathway, face: ElevationFace): boolean {
+  if (p.hidden || p.orphan) return false
+  if (p.kind === "entry") return p.surface === "top" || p.surface === "bottom"
+  if (p.u_from == null) return false
+  if (p.kind === "channel") return p.face === face
+  return !p.face || p.face === "full" || p.face === face
+}
+
+/** A pathway's units, low to high (one unit when it has no end). */
+export function span(p: Pick<ResolvedPathway, "u_from" | "u_to">): {
+  lo: number
+  hi: number
+} {
+  const a = p.u_from ?? 0
+  const b = p.u_to ?? a
+  return { lo: Math.min(a, b), hi: Math.max(a, b) }
+}
+
+/** One side's vertical managers and 0U channels on a face, each in a lane
+ * counted from the rails out: managers first, then channels, each taking
+ * the first lane where it overlaps nothing. */
+export function sideLanes(
+  items: ResolvedPathway[],
+  side: "left" | "right",
+  face: ElevationFace
+): { lanes: number; placed: { p: ResolvedPathway; lane: number }[] } {
+  const mine = items
+    .filter(
+      (p) =>
+        (p.kind === "vertical" || p.kind === "channel") &&
+        p.side === side &&
+        onFace(p, face)
+    )
+    .sort(
+      (a, b) =>
+        (a.kind === "vertical" ? 0 : 1) - (b.kind === "vertical" ? 0 : 1) ||
+        span(a).lo - span(b).lo
+    )
+  const taken: { lo: number; hi: number }[][] = []
+  const placed = mine.map((p) => {
+    const s = span(p)
+    let lane = taken.findIndex((l) =>
+      l.every((o) => o.hi < s.lo || s.hi < o.lo)
+    )
+    if (lane < 0) lane = taken.push([]) - 1
+    taken[lane].push(s)
+    return { p, lane }
+  })
+  return { lanes: taken.length, placed }
+}
+
+/** The free run of units around `unit` that none of `spans` covers, inside
+ * `first`..`last`; null when one covers `unit`. */
+export function freeRun(
+  spans: { lo: number; hi: number }[],
+  unit: number,
+  first: number,
+  last: number
+): { lo: number; hi: number } | null {
+  if (spans.some((s) => s.lo <= unit && unit <= s.hi)) return null
+  let lo = first
+  let hi = last
+  for (const s of spans) {
+    if (s.hi < unit) lo = Math.max(lo, s.hi + 1)
+    if (s.lo > unit) hi = Math.min(hi, s.lo - 1)
+  }
+  return { lo, hi }
+}
+
+/** What a press on an empty unit of a side strip adds: a vertical manager
+ * over the free run of units there, or - where a manager already runs - a
+ * 0U channel over the free run of channels. */
+export function addPreset(
+  items: ResolvedPathway[],
+  side: "left" | "right",
+  face: ElevationFace,
+  unit: number,
+  first: number,
+  last: number
+): Partial<PathwayForm> {
+  const spansOf = (kind: RackPathwayKind) =>
+    items
+      .filter((p) => p.kind === kind && p.side === side && onFace(p, face))
+      .map(span)
+  const vertical = freeRun(spansOf("vertical"), unit, first, last)
+  const run = vertical ??
+    freeRun(spansOf("channel"), unit, first, last) ?? { lo: unit, hi: unit }
+  return {
+    kind: vertical ? "vertical" : "channel",
+    side,
+    face,
+    u_from: String(run.lo),
+    u_to: String(run.hi),
+  }
+}
+
+/** The units a drag of one end of a vertical pathway leaves it: from the
+ * end that stays to the unit the moved one is dropped on. */
+export function dragSpan(
+  fixed: number,
+  moved: number
+): { u_from: number; u_to: number } {
+  return { u_from: Math.min(fixed, moved), u_to: Math.max(fixed, moved) }
+}

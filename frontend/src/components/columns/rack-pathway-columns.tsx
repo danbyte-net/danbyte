@@ -40,9 +40,17 @@ const SOURCE_VARIANT = {
   manual: "outline",
 } as const
 
-export function SourceBadge({ p }: { p: ResolvedPathway }) {
+export function SourceBadge({
+  p,
+  className,
+}: {
+  p: ResolvedPathway
+  className?: string
+}) {
   return (
-    <Badge variant={SOURCE_VARIANT[p.source]}>{SOURCE_LABEL[p.source]}</Badge>
+    <Badge variant={SOURCE_VARIANT[p.source]} className={className}>
+      {SOURCE_LABEL[p.source]}
+    </Badge>
   )
 }
 
