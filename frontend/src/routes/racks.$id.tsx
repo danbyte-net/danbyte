@@ -46,6 +46,7 @@ import {
 import { QueryError } from "@/components/query-error"
 import { RackDeleteDialog } from "@/components/rack-delete-dialog"
 import { RackElevation } from "@/components/rack-elevation"
+import { cn } from "@/lib/utils"
 import { RackPathwaysPane } from "@/components/rack-pathways-pane"
 import type { RackDisplayMode, RackShow } from "@/components/rack-elevation"
 import { StatusBadge } from "@/components/status-badge"
@@ -665,7 +666,12 @@ function RackFaces({ rack, ports }: { rack: Rack; ports?: RackPortState }) {
     return () => ro.disconnect()
   }, [viz])
   const panelOpen = !!layer && !!pathway
+  // Front and rear one above the other: when even the smallest zoom can't
+  // fit them side by side (the Pathways layer's strips, a narrow page, the
+  // panel), rather than cutting the rear off.
+  const [stacked, setStacked] = useState(false)
   useLayoutEffect(() => {
+    setStacked(false)
     if (!manual) setZoom(DEFAULT_ZOOM[mode])
   }, [frameWidth, manual, mode, pathwaysOn, panelOpen])
   useLayoutEffect(() => {
@@ -675,8 +681,12 @@ function RackFaces({ rack, ports }: { rack: Rack; ports?: RackPortState }) {
     if (faces.scrollWidth > frame.clientWidth) {
       const smaller = [...ZOOM_STEPS].reverse().find((z) => z < zoom)
       if (smaller) setZoom(smaller)
+      else if (!stacked) {
+        setStacked(true)
+        setZoom(DEFAULT_ZOOM[mode])
+      }
     }
-  }, [zoom, manual, frameWidth, facesWidth])
+  }, [zoom, manual, frameWidth, facesWidth, stacked, mode])
 
   // Reset to the mode's sensible default zoom when switching modes.
   const changeMode = (m: RackDisplayMode) => {
@@ -795,7 +805,10 @@ function RackFaces({ rack, ports }: { rack: Rack; ports?: RackPortState }) {
               >
                 <div
                   ref={facesRef}
-                  className="mx-auto flex w-max items-start gap-8"
+                  className={cn(
+                    "mx-auto flex w-max items-start gap-8",
+                    stacked && "flex-col"
+                  )}
                 >
                   {(["front", "rear"] as const).map((f) => (
                     <div key={f} data-face={f}>
