@@ -200,7 +200,7 @@ beforeEach(() => {
     x: 0,
     y: 0,
     toJSON: () => ({}),
-  } as DOMRect)
+  })
 })
 afterEach(() => {
   cleanup()
@@ -342,6 +342,31 @@ describe("the Pathways layer", () => {
       u_from: 7,
       u_to: 10,
     })
+  })
+
+  it("edits a kit's pathway in the panel through its overlay row", async () => {
+    wrap(
+      <PathwayPanel
+        rackId="r1"
+        target={{ key: LEFT_FRONT.key }}
+        onClose={() => undefined}
+        onSelect={() => undefined}
+      />
+    )
+    const to = await screen.findByRole("spinbutton", { name: /To/ })
+    fireEvent.change(to, { target: { value: "8" } })
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }))
+    await waitFor(() => expect(writes()).toHaveLength(1))
+    const [path, init] = writes()[0]
+    expect(path).toBe("/api/rack-pathways/")
+    expect(JSON.parse(String(init?.body))).toEqual({
+      rack_id: "r1",
+      key: LEFT_FRONT.key,
+      u_to: 8,
+    })
+    // Hide is offered for an inherited one; Delete is not.
+    expect(screen.getByRole("button", { name: "Hide" })).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Delete" })).toBeNull()
   })
 
   it("saves a dragged end: a row of its own patched", async () => {

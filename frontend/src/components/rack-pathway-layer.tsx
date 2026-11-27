@@ -633,7 +633,7 @@ export function PathwayPanel({
 }) {
   const q = useRackPathways(rackId)
   const rights = usePathwayRights("rack")
-  const { overlay, remove } = usePathwayWrites({ rackId })
+  const { overlay, remove, invalidate } = usePathwayWrites({ rackId })
   const owner = useMemo(() => ({ rackId }), [rackId])
   const key = "key" in target ? target.key : null
   const p = key ? (q.data?.items.find((i) => i.key === key) ?? null) : null
@@ -654,9 +654,14 @@ export function PathwayPanel({
   const doc = q.data
   if (!doc) return null
   if (key && !p)
+    // A pathway just added shows once the list has it.
     return shell(
       "Pathway",
-      <p className="text-muted-foreground">Not on this rack.</p>
+      q.isFetching ? (
+        <Loading />
+      ) : (
+        <p className="text-muted-foreground">Not on this rack.</p>
+      )
     )
 
   if (!p) {
@@ -672,7 +677,10 @@ export function PathwayPanel({
         defaultFill={doc.fill_limit_pct}
         compact
         onCancel={onClose}
-        onSaved={(row) => onSelect(`manual:${row.id}`)}
+        onSaved={(row) => {
+          void invalidate()
+          onSelect(`manual:${row.id}`)
+        }}
       />
     )
   }
@@ -743,7 +751,7 @@ export function PathwayPanel({
           defaultFill={doc.fill_limit_pct}
           compact
           onCancel={onClose}
-          onSaved={() => undefined}
+          onSaved={() => void invalidate()}
         />
       ) : (
         <PathwayFacts p={p} />
