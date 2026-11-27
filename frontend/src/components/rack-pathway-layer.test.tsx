@@ -15,7 +15,7 @@ import type { Rack, ResolvedPathway, ResolvedPathways } from "@/lib/api"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { RackElevation } from "./rack-elevation"
 import { PathwayPanel } from "./rack-pathway-layer"
-import type { PathwayLayer } from "./rack-pathway-layer"
+import type { PathwayLayer, PathwayTarget } from "./rack-pathway-layer"
 
 // The Pathways layer on the rack's elevation: the rack's vertical managers
 // and channels beside the rails at their units, horizontal managers in
@@ -175,8 +175,11 @@ const wrap = (ui: React.ReactNode) => {
   )
 }
 
-function layer(): PathwayLayer & { onOpen: ReturnType<typeof vi.fn> } {
-  return { selected: null, onOpen: vi.fn() }
+function layer() {
+  return {
+    selected: null,
+    onOpen: vi.fn<(t: PathwayTarget) => void>(),
+  } satisfies PathwayLayer
 }
 
 const writes = () =>

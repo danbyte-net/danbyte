@@ -439,6 +439,45 @@ for that pathway, making it (201) when there is none. On a rack, each
 resolved item also has `cables`: the recorded cable ways through it, of the
 cables the reader may view (absent without a grant on cable ways).
 
+### On the elevation {#pathways-elevation}
+
+Tick **Pathways** in the [elevation](#rack-elevations)'s **Display ▾** to draw
+the rack's shown pathways on its 2D faces (off by default; your browser
+keeps the choice):
+
+- **Vertical managers and 0U channels** are bars in a strip beside each
+  rail, over their units: a face's own and the full-depth ones, managers
+  nearest the rails, channels (dashed) outside them. Each says its type
+  (*Finger*, *Channel*, *0U*), its source (*Kit*, *Default*, *Type*,
+  *Manual*) and a pin when the rack has its row.
+- **Horizontal managers** sit dashed in their units over the gear, marked
+  with a cable icon.
+- **Roof and floor entries** are marks above and below the units, at their
+  place across the rack.
+
+With **Fill** (next to Pathways, the 3D views' choice) the managers and
+entries take the fill overlay's colour from the cables recorded through
+them ([In 3D](#cable-ways-3d)); otherwise they stay grey. Hidden pathways
+and rows left from a kit are only on the Pathways tab.
+
+Press a pathway to open it in the panel beside the faces: the Pathways
+tab's form (an inherited one keeps only what you change), with **Reset**,
+**Hide** and **Delete** where the tab offers them. Who may not change
+pathways sees what it is, and no drag handles or add spots.
+
+- **Add**: press an empty unit in a strip - the dashed lane at its outer
+  edge is always free - for a vertical manager over the free units there
+  (a 0U channel where a manager already runs), an empty unit of the rack
+  for a horizontal manager, or the roof or floor for an entry. The form
+  opens with that side, face, units or place filled in.
+- **Drag** a bar's top or bottom end to other units, or a horizontal
+  manager (one not tied to a device) to free units: it saves at once, as a
+  device dragged on the elevation does. The From and To fields do the same
+  from the keyboard.
+
+The SVG and PDF [exports](#export) draw the devices only; Render's PNG is
+a picture of the screen, so it has the pathways when they are on.
+
 ## Cable ways {#cable-ways}
 
 A cable's **way** is the pathways it runs along inside a rack: from its
@@ -658,8 +697,9 @@ searchable list of the rack's devices. Three
 **Display ▾**, after the modes, holds the drawing's ticks: **Text** (Images
 and Render) writes the names over the photos and drawings, so a photo-real
 rack stays clean when you want it to; **Ports** draws each device's live
-ports - see [below](#live-ports-on-the-elevation); and **Show** picks the
-gear to show. On a narrow screen the button is its icon.
+ports - see [below](#live-ports-on-the-elevation); **Pathways** draws the
+rack's [pathways](#pathways-elevation) to edit, with **Fill** beside it;
+and **Show** picks the gear to show. On a narrow screen the button is its icon.
 
 **Depth-aware faces:** a device mounts on one face, but if its device type is
 **full depth** (the default) it fills the other face too, and shows its

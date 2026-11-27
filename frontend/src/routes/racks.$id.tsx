@@ -15,6 +15,7 @@ import { Minus, Plus } from "lucide-react"
 import {
   Suspense,
   useCallback,
+  useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -618,6 +619,27 @@ function RackFaces({ rack, ports }: { rack: Rack; ports?: RackPortState }) {
         : undefined,
     [pathwaysOn, pathway]
   )
+  // The panel narrows the faces: keep the pathway pressed (or the face
+  // pressed to add one) in sight once the zoom has settled.
+  useEffect(() => {
+    if (!pathway) return
+    const t = window.setTimeout(() => {
+      const frame = frameRef.current
+      const faces = facesRef.current
+      const el =
+        "key" in pathway
+          ? faces?.querySelector('[data-pathway][aria-pressed="true"]')
+          : pathway.preset.face
+            ? faces?.querySelector(`[data-face="${pathway.preset.face}"]`)
+            : null
+      if (!frame || !el) return
+      const f = frame.getBoundingClientRect()
+      const r = el.getBoundingClientRect()
+      if (r.right > f.right) frame.scrollLeft += r.right - f.right + 8
+      else if (r.left < f.left) frame.scrollLeft -= f.left - r.left + 8
+    }, 250)
+    return () => window.clearTimeout(t)
+  }, [pathway])
   const [zoom, setZoom] = useState(DEFAULT_ZOOM.names)
   const facesRef = useRef<HTMLDivElement>(null)
   const frameRef = useRef<HTMLDivElement>(null)
@@ -632,9 +654,20 @@ function RackFaces({ rack, ports }: { rack: Rack; ports?: RackPortState }) {
     ro.observe(frame)
     return () => ro.disconnect()
   }, [viz])
+  // The faces' own width: the Pathways layer's strips widen them once its
+  // pathways load, and the zoom steps down for them too.
+  const [facesWidth, setFacesWidth] = useState(0)
+  useLayoutEffect(() => {
+    const faces = facesRef.current
+    if (!faces) return
+    const ro = new ResizeObserver(() => setFacesWidth(faces.scrollWidth))
+    ro.observe(faces)
+    return () => ro.disconnect()
+  }, [viz])
+  const panelOpen = !!layer && !!pathway
   useLayoutEffect(() => {
     if (!manual) setZoom(DEFAULT_ZOOM[mode])
-  }, [frameWidth, manual, mode])
+  }, [frameWidth, manual, mode, pathwaysOn, panelOpen])
   useLayoutEffect(() => {
     const frame = frameRef.current
     const faces = facesRef.current
@@ -643,7 +676,7 @@ function RackFaces({ rack, ports }: { rack: Rack; ports?: RackPortState }) {
       const smaller = [...ZOOM_STEPS].reverse().find((z) => z < zoom)
       if (smaller) setZoom(smaller)
     }
-  }, [zoom, manual, frameWidth])
+  }, [zoom, manual, frameWidth, facesWidth])
 
   // Reset to the mode's sensible default zoom when switching modes.
   const changeMode = (m: RackDisplayMode) => {
@@ -765,7 +798,7 @@ function RackFaces({ rack, ports }: { rack: Rack; ports?: RackPortState }) {
                   className="mx-auto flex w-max items-start gap-8"
                 >
                   {(["front", "rear"] as const).map((f) => (
-                    <div key={f}>
+                    <div key={f} data-face={f}>
                       <h3 className="mb-2 text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
                         {f}
                       </h3>

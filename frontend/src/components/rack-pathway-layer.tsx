@@ -181,7 +181,9 @@ export function usePathwayMove(rackId: string) {
     )
 }
 
-const LANE_PX = 22
+const LANE_PX = 18
+/** The empty lane at a strip's outer edge where who may add presses. */
+const ADD_PX = 12
 
 /** One side's strip beside the rails: its vertical managers and 0U channels
  * at their units, and - for who may add - a press on an empty unit adds
@@ -222,7 +224,16 @@ export function PathwayStrip({
     hi: number
   } | null>(null)
   const { lanes, placed } = sideLanes(items, side, face)
-  const cols = Math.max(1, lanes)
+  // Who may add gets an empty lane at the outer edge, so a strip whose
+  // managers run full height still has a spot to press.
+  const addLane = rights.canAdd
+  const cols = Math.max(addLane ? 0 : 1, lanes) + (addLane ? 1 : 0)
+  const template = [
+    ...Array.from({ length: cols - (addLane ? 1 : 0) }, () => `${LANE_PX}px`),
+  ]
+  if (addLane)
+    if (side === "left") template.unshift(`${ADD_PX}px`)
+    else template.push(`${ADD_PX}px`)
   const rowOf = (u: number) => units.indexOf(u) + 1
 
   const startEnd = (
@@ -278,7 +289,7 @@ export function PathwayStrip({
       className="grid shrink-0"
       style={{
         gridTemplateRows: `repeat(${units.length}, ${rowHeight}px)`,
-        gridTemplateColumns: `repeat(${cols}, ${LANE_PX}px)`,
+        gridTemplateColumns: template.join(" "),
       }}
     >
       {units.map((u, i) => (
@@ -301,6 +312,17 @@ export function PathwayStrip({
           style={{ gridRow: i + 1, gridColumn: "1 / -1" }}
         />
       ))}
+      {addLane && (
+        // The add lane, outlined so it reads as a place to press.
+        <div
+          aria-hidden
+          className="pointer-events-none m-px rounded-sm border border-dashed border-border"
+          style={{
+            gridRow: "1 / -1",
+            gridColumn: side === "left" ? 1 : cols,
+          }}
+        />
+      )}
       {placed.map(({ p, lane }) => {
         const s =
           preview?.key === p.key ? { lo: preview.lo, hi: preview.hi } : span(p)
