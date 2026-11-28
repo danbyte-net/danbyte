@@ -274,6 +274,15 @@ class RenderImportTests(_Pack):
         self.assertIn("marked out of date", out)
         self.assertTrue(self.dt_x1().pack_import["images"]["stale"])
 
+    def test_a_module_may_be_named_by_its_model(self):
+        # A module type without a part number is named by its model.
+        self._write("module-types/Acme/NM-9.yaml", self.MODULE.replace(
+            "part_number: NM-9\n", "").replace("model: NM-9", "model: Fan Nine").encode())
+        self.renders(modules={"FAN 1": "Fan Nine"})
+        out = self.run_import("--apply")
+        self.assertNotIn("renders.modules.FAN 1", out)
+        self.assertEqual(list(self.dt_x1().model_reference), ["FAN 1"])
+
     def test_unknown_module_is_noted_and_the_photos_kept(self):
         self.renders(modules={"FAN 1": "NM-9", "PS-0": "PWR-C4-950WAC-R"})
         out = self.run_import("--apply")

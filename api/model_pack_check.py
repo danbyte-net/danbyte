@@ -837,8 +837,10 @@ class _Checker:
         for p in sorted(self.rack_types):
             self.rack_type(p, self.rack_types[p])
         self.manifest(yamls)
-        module_parts = {str(d.get("part_number") or d.get("model"))
-                        for p, d in yamls.items() if p.startswith("module-types/")}
+        # A module is named by its part number, or by its model when it has none
+        # (or a pack names it so): both are what the import looks it up by.
+        module_parts = {str(v) for p, d in yamls.items() if p.startswith("module-types/")
+                        for v in (d.get("part_number"), d.get("model")) if v}
         for p in sorted(yamls, key=lambda n: (not n.startswith("module-types/"), n)):
             kind = "module-type" if p.startswith("module-types/") else "device-type"
             self.part(kind, p, yamls[p], module_parts)

@@ -523,6 +523,9 @@ def _map_modules(dt, modules, notes) -> tuple[dict, dict]:
             notes.append(f"renders.modules.{bay}: the model has no bay:{bay}.")
             continue
         hits = list(ModuleType.objects.filter(tenant_id=dt.tenant_id, part_number=pn)[:20])
+        if not hits:
+            # A module type without a part number is named by its model.
+            hits = list(ModuleType.objects.filter(tenant_id=dt.tenant_id, name=pn)[:20])
         if len(hits) > 1:
             own = [m for m in hits if m.manufacturer_id == dt.manufacturer_id]
             hits = own or hits
